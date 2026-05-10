@@ -1,0 +1,19 @@
+{
+  "auto_backup_enabled": true,
+  "auto_backup_interval_hours": 24,
+  "scan_parallel_photos": 4,
+  "export_incremental_default": false,
+  "selection_accent_color": "#d4a44c",
+  "photoshop_path": null,
+  "theme": "dark",
+  "ai_embedding_models_dir": null,
+  "ai_embedding_image_model_path": null,
+  "ai_embedding_text_model_path": null,
+  "ai_embedding_tokenizer_path": null,
+  "ai_embedding_hf_repo_id": "inference4j/clip-vit-base-patch32",
+  "ai_embedding_dimension": 512,
+  "ai_embedding_image_size": 224,
+  "ai_embedding_max_text_tokens": 77,
+  "thumb_cache_max_bytes": 1500000000,
+  "thumb_cache_max_files": 50000
+}
