@@ -27,4 +27,12 @@ export const reviewApi = {
 
   manualIdentify: (foto_path: string, catalog: string, box: number[], new_name: string) =>
     post(`${API_BASE}/manual_identify`, { foto_path, catalog, box, new_name }),
+
+  graduationManualOverride: (
+    catalog: string,
+    payload: { rowids: number[]; action: 'confirm' | 'remove'; item: 'gown' | 'diploma' | 'sash' | 'cap' }
+  ) => post<{ ok: boolean; updated: number; item: string; action: string }>(
+    `${API_BASE}/review/graduation/manual-override`,
+    { catalog, ...payload }
+  ),
 };

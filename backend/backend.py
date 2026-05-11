@@ -780,6 +780,12 @@ def ensure_graduation_columns(conn):
         ("graduation_tags", "TEXT DEFAULT '[]'"),
         ("graduation_score", "REAL DEFAULT 0"),
         ("graduation_analyzed_at", "TEXT"),
+        ("gown_confidence", "REAL DEFAULT 0"),
+        ("diploma_confidence", "REAL DEFAULT 0"),
+        ("sash_confidence", "REAL DEFAULT 0"),
+        ("cap_confidence", "REAL DEFAULT 0"),
+        ("graduation_reviewed", "INTEGER DEFAULT 0"),
+        ("manual_graduation_tags", "TEXT DEFAULT '[]'"),
     )
 
     for table_name in ("photos", "fotos", "ocorrencias"):
@@ -1155,6 +1161,20 @@ def get_graduation_analysis_status(catalog: str = ""):
                 "error": "graduation_analysis_status_failed",
                 "detail": str(e),
             },
+        )
+
+
+GraduationManualOverrideRequest = rm.GraduationManualOverrideRequest
+
+@app.post("/api/review/graduation/manual-override")
+def graduation_manual_override(req: GraduationManualOverrideRequest):
+    try:
+        return rm.graduation_manual_override(req)
+    except Exception as e:
+        logging.getLogger(__name__).exception("[graduation_manual_override] erro")
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": str(e)},
         )
 
 

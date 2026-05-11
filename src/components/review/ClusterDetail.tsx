@@ -1,10 +1,11 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import type { RichCluster, RichClusterFace } from '../../services/api';
-import ClusterHero from './ClusterHero';
+import ClusterHero, { type ClusterHeroHandle } from './ClusterHero';
 import ClusterStatsPanel from './ClusterStatsPanel';
 import ClusterToolbar from './ClusterToolbar';
 import type { FilterOption, SortOption, ViewMode } from './ClusterToolbar';
 import { PhotoCard } from './PhotoCard';
+import { GraduationActions, type GraduationActionsHandle, type GraduationItem } from './GraduationActions';
 import styles from './ClusterDetail.module.css';
 
 interface ClusterDetailProps {
@@ -12,6 +13,7 @@ interface ClusterDetailProps {
   catalog: string;
   onAssigned: (clusterId: string) => void;
   onSkip: () => void;
+  onClusterUpdate: (next: RichCluster) => void;
 }
 
 function filterFaces(faces: RichClusterFace[], filter: FilterOption): RichClusterFace[] {
@@ -43,12 +45,15 @@ export default function ClusterDetail({
   catalog,
   onAssigned,
   onSkip,
+  onClusterUpdate,
 }: ClusterDetailProps) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState<FilterOption>('all');
   const [sort, setSort] = useState<SortOption>('best_match');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [zoom, setZoom] = useState(200); // altura dos cards em px
+  const heroRef = useRef<ClusterHeroHandle>(null);
+  const graduationRef = useRef<GraduationActionsHandle>(null);
 
   // Reset ao mudar cluster
   useEffect(() => {
@@ -56,6 +61,37 @@ export default function ClusterDetail({
     setFilter('all');
     setSort('best_match');
   }, [cluster.cluster_id]);
+
+  useEffect(() => {
+    function isTypingInField(target: EventTarget | null): boolean {
+      const el = target as HTMLElement | null;
+      if (!el) return false;
+      const tag = el.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+    }
+    function onKey(e: KeyboardEvent) {
+      if (isTypingInField(e.target)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      const map: Record<string, GraduationItem> = { b: 'gown', c: 'diploma', f: 'sash', k: 'cap' };
+      if (map[k]) {
+        e.preventDefault();
+        graduationRef.current?.toggle(map[k]);
+        return;
+      }
+      if (e.key === 'Delete') {
+        e.preventDefault();
+        onSkip();
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        heroRef.current?.startIdentify();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onSkip]);
 
   const visibleFaces = useMemo(() =>
     sortFaces(filterFaces(cluster.faces, filter), sort),
@@ -87,6 +123,7 @@ export default function ClusterDetail({
       {/* ── Seção superior: hero + stats ── */}
       <div className={styles.topSection}>
         <ClusterHero
+          ref={heroRef}
           cluster={cluster}
           catalog={catalog}
           onAssigned={onAssigned}
@@ -95,6 +132,16 @@ export default function ClusterDetail({
         <ClusterStatsPanel
           cluster={cluster}
           selectedCount={selected.size}
+        />
+      </div>
+
+      {/* ── Ações manuais de formatura ── */}
+      <div className={styles.graduationActionsWrap}>
+        <GraduationActions
+          ref={graduationRef}
+          cluster={cluster}
+          catalog={catalog}
+          onUpdate={onClusterUpdate}
         />
       </div>
 

@@ -137,6 +137,12 @@ export interface RichCluster {
   has_diploma?: boolean;
   has_sash?: boolean;
   has_cap?: boolean;
+  gown_confidence?: number;
+  diploma_confidence?: number;
+  sash_confidence?: number;
+  cap_confidence?: number;
+  graduation_reviewed?: boolean;
+  manual_graduation_tags?: string[];
   debug_graduation_source?: string;
   preview_image?: string;
   discovered_at?: string;

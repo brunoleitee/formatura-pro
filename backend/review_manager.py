@@ -15,6 +15,7 @@ import time
 import urllib.parse
 import unicodedata
 
+import cv2
 import numpy as np
 from fastapi import HTTPException, Query
 from pydantic import BaseModel
@@ -369,6 +370,13 @@ class GraduationAnalysisRequest(BaseModel):
     catalog: str = ""
 
 
+class GraduationManualOverrideRequest(BaseModel):
+    catalog: str = ""
+    rowids: list[int]
+    action: str   # "confirm" | "remove"
+    item: str     # "gown" | "diploma" | "sash" | "cap"
+
+
 class QualitySettingsReq(BaseModel):
     blur_blurry_threshold: float
     blur_attention_threshold: float
@@ -668,46 +676,449 @@ def _derive_sharpness_score(item: dict) -> float:
     return _clamp01(base + blur_boost)
 
 
-def analyze_graduation_items(photo: dict | str | None = None, enable_heuristics: bool = False) -> dict:
-    photo_path = ""
+def _extract_photo_path(photo: dict | str | None) -> str:
     if isinstance(photo, str):
-        photo_path = photo
-    elif isinstance(photo, dict):
-        photo_path = str(photo.get("foto_path") or photo.get("original_path") or photo.get("path") or "")
+        return photo
+    if isinstance(photo, dict):
+        return str(photo.get("foto_path") or photo.get("original_path") or photo.get("path") or "")
+    return ""
 
+
+def _extract_face_boxes(photo: dict | str | None) -> list[tuple[int, int, int, int]]:
+    if not isinstance(photo, dict):
+        return []
+    boxes = []
+    raw_boxes = photo.get("face_boxes") or []
+    if isinstance(raw_boxes, (list, tuple)):
+        for raw in raw_boxes:
+            try:
+                if isinstance(raw, dict):
+                    box = raw.get("box") or raw.get("bbox") or raw.get("face_box")
+                else:
+                    box = raw
+                if not box or len(box) < 4:
+                    continue
+                x1, y1, x2, y2 = [int(v) for v in box[:4]]
+                if x2 > x1 and y2 > y1:
+                    boxes.append((x1, y1, x2, y2))
+            except Exception:
+                continue
+    single_box = photo.get("box") if isinstance(photo, dict) else None
+    if not boxes and isinstance(single_box, (list, tuple)) and len(single_box) >= 4:
+        try:
+            x1, y1, x2, y2 = [int(v) for v in single_box[:4]]
+            if x2 > x1 and y2 > y1:
+                boxes.append((x1, y1, x2, y2))
+        except Exception:
+            pass
+    return boxes
+
+
+def _load_photo_bgr(photo_path: str):
+    if not photo_path or not os.path.exists(photo_path):
+        return None
+    image_loader = _get("imread_unicode")
+    if callable(image_loader):
+        try:
+            img = image_loader(photo_path)
+            if img is not None:
+                return img
+        except Exception:
+            pass
+    try:
+        data = np.fromfile(photo_path, dtype=np.uint8)
+        if data.size == 0:
+            return None
+        return cv2.imdecode(data, cv2.IMREAD_COLOR)
+    except Exception:
+        return None
+
+
+def _resize_for_analysis(img_bgr, face_boxes: list[tuple[int, int, int, int]]):
+    if img_bgr is None:
+        return None, []
+    h, w = img_bgr.shape[:2]
+    max_side = max(h, w)
+    if max_side <= 900:
+        return img_bgr, face_boxes
+    scale = 900.0 / float(max_side)
+    resized = cv2.resize(
+        img_bgr,
+        (max(1, int(round(w * scale))), max(1, int(round(h * scale)))),
+        interpolation=cv2.INTER_AREA,
+    )
+    scaled_boxes = [
+        (
+            int(round(x1 * scale)),
+            int(round(y1 * scale)),
+            int(round(x2 * scale)),
+            int(round(y2 * scale)),
+        )
+        for x1, y1, x2, y2 in face_boxes
+    ]
+    return resized, scaled_boxes
+
+
+def _pick_primary_face(face_boxes: list[tuple[int, int, int, int]], w: int, h: int):
+    if not face_boxes:
+        return None
+    return max(
+        face_boxes,
+        key=lambda box: ((box[2] - box[0]) * (box[3] - box[1]), -(box[1] + box[3])),
+    )
+
+
+def _clip_rect(rect: tuple[int, int, int, int], w: int, h: int) -> tuple[int, int, int, int]:
+    x1, y1, x2, y2 = rect
+    x1 = max(0, min(w - 1, int(x1)))
+    y1 = max(0, min(h - 1, int(y1)))
+    x2 = max(x1 + 1, min(w, int(x2)))
+    y2 = max(y1 + 1, min(h, int(y2)))
+    return x1, y1, x2, y2
+
+
+def _extract_roi(img, rect: tuple[int, int, int, int]):
+    if img is None:
+        return None
+    h, w = img.shape[:2]
+    x1, y1, x2, y2 = _clip_rect(rect, w, h)
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return img[y1:y2, x1:x2]
+
+
+def _component_stats(mask_u8):
+    if mask_u8 is None or mask_u8.size == 0:
+        return []
+    num_labels, labels, stats, _centroids = cv2.connectedComponentsWithStats(mask_u8, connectivity=8)
+    components = []
+    for idx in range(1, num_labels):
+        x, y, w, h, area = stats[idx]
+        if area <= 0 or w <= 0 or h <= 0:
+            continue
+        components.append({
+            "x": int(x),
+            "y": int(y),
+            "w": int(w),
+            "h": int(h),
+            "area": int(area),
+            "aspect": float(max(w, h) / max(1, min(w, h))),
+            "fill_ratio": float(area / max(1, w * h)),
+        })
+    return components
+
+
+def _best_component(mask_u8, min_area_ratio: float = 0.0, min_aspect: float = 1.0):
+    if mask_u8 is None or mask_u8.size == 0:
+        return None
+    roi_area = float(mask_u8.shape[0] * mask_u8.shape[1])
+    best = None
+    for comp in _component_stats(mask_u8):
+        area_ratio = comp["area"] / max(1.0, roi_area)
+        if area_ratio < min_area_ratio or comp["aspect"] < min_aspect:
+            continue
+        score = area_ratio * min(comp["aspect"], 4.0) * max(comp["fill_ratio"], 0.15)
+        comp["area_ratio"] = area_ratio
+        comp["score"] = score
+        if best is None or score > best["score"]:
+            best = comp
+    return best
+
+
+def _build_analysis_regions(primary_face, w: int, h: int):
+    if primary_face is not None:
+        x1, y1, x2, y2 = primary_face
+        face_w = max(1, x2 - x1)
+        face_h = max(1, y2 - y1)
+        center_x = (x1 + x2) / 2.0
+        torso = _clip_rect(
+            (
+                center_x - face_w * 1.55,
+                y2 + face_h * 0.05,
+                center_x + face_w * 1.55,
+                y2 + face_h * 2.9,
+            ),
+            w,
+            h,
+        )
+        head = _clip_rect(
+            (
+                center_x - face_w * 1.15,
+                y1 - face_h * 0.95,
+                center_x + face_w * 1.15,
+                y1 + face_h * 0.25,
+            ),
+            w,
+            h,
+        )
+        hands = _clip_rect(
+            (
+                center_x - face_w * 1.85,
+                y2 + face_h * 0.9,
+                center_x + face_w * 1.85,
+                y2 + face_h * 2.75,
+            ),
+            w,
+            h,
+        )
+    else:
+        torso = _clip_rect((int(w * 0.2), int(h * 0.28), int(w * 0.8), int(h * 0.92)), w, h)
+        head = _clip_rect((int(w * 0.28), 0, int(w * 0.72), int(h * 0.32)), w, h)
+        hands = _clip_rect((int(w * 0.18), int(h * 0.48), int(w * 0.82), int(h * 0.92)), w, h)
+    return {"torso": torso, "head": head, "hands": hands}
+
+
+def _mask_ratio(mask) -> float:
+    if mask is None or mask.size == 0:
+        return 0.0
+    return float(np.count_nonzero(mask) / max(1, mask.size))
+
+
+def _clamp01(value: float) -> float:
+    return float(max(0.0, min(1.0, value)))
+
+
+GRADUATION_CONFIDENCE_THRESHOLD = 0.85
+
+
+def analyze_graduation_items(photo: dict | str | None = None, enable_heuristics: bool = False) -> dict:
+    photo_path = _extract_photo_path(photo)
+    face_boxes = _extract_face_boxes(photo)
     tags: list[str] = []
     normalized_path = unicodedata.normalize("NFKD", photo_path)
     normalized_path = "".join(ch for ch in normalized_path if not unicodedata.combining(ch)).casefold()
+    source_parts: list[str] = []
+    run_visual_analysis = bool(enable_heuristics or (isinstance(photo, dict) and photo.get("force_visual_analysis")))
+    path_has_gown = False
+    path_has_diploma = False
+    path_has_sash = False
+    path_has_cap = False
 
     if enable_heuristics and normalized_path:
         if "beca" in normalized_path:
-            tags.append("beca")
+            path_has_gown = True
         if "canudo" in normalized_path or "diploma" in normalized_path:
-            tags.append("canudo")
+            path_has_diploma = True
         if "faixa" in normalized_path:
-            tags.append("faixa")
+            path_has_sash = True
         if "capelo" in normalized_path:
-            tags.append("capelo")
+            path_has_cap = True
+        if any((path_has_gown, path_has_diploma, path_has_sash, path_has_cap)):
+            source_parts.append("path")
+
+    img_bgr = None
+    gown_confidence = 0.0
+    sash_confidence = 0.0
+    cap_confidence = 0.0
+    diploma_confidence = 0.0
+    face_present = False
+
+    if run_visual_analysis:
+        img_bgr = _load_photo_bgr(photo_path)
+        img_bgr, face_boxes = _resize_for_analysis(img_bgr, face_boxes)
+
+    if img_bgr is not None and img_bgr.ndim == 3:
+        h, w = img_bgr.shape[:2]
+        primary_face = _pick_primary_face(face_boxes, w, h)
+        face_present = primary_face is not None
+        regions = _build_analysis_regions(primary_face, w, h)
+        hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+        torso_hsv = _extract_roi(hsv, regions["torso"])
+        head_hsv = _extract_roi(hsv, regions["head"])
+        hands_hsv = _extract_roi(hsv, regions["hands"])
+
+        if torso_hsv is not None and torso_hsv.size > 0:
+            torso_h = torso_hsv[:, :, 0]
+            torso_s = torso_hsv[:, :, 1]
+            torso_v = torso_hsv[:, :, 2]
+            dark_mask = ((torso_v < 72) & (torso_s < 150)).astype(np.uint8) * 255
+            dark_mask = cv2.morphologyEx(dark_mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+            dark_ratio = _mask_ratio(dark_mask)
+            lower_slice = dark_mask[int(dark_mask.shape[0] * 0.35):, :]
+            lower_dark_ratio = _mask_ratio(lower_slice)
+            central_band = dark_mask[:, int(dark_mask.shape[1] * 0.2):int(dark_mask.shape[1] * 0.8)]
+            central_dark_ratio = _mask_ratio(central_band)
+            lower_central = dark_mask[int(dark_mask.shape[0] * 0.45):, int(dark_mask.shape[1] * 0.24):int(dark_mask.shape[1] * 0.76)]
+            lower_central_ratio = _mask_ratio(lower_central)
+            edge_cols = max(1, int(dark_mask.shape[1] * 0.14))
+            side_mask = np.concatenate((dark_mask[:, :edge_cols], dark_mask[:, -edge_cols:]), axis=1)
+            side_dark_ratio = _mask_ratio(side_mask)
+            background_penalty = max(0.0, side_dark_ratio - central_dark_ratio)
+            upper_torso = torso_hsv[:max(1, int(torso_hsv.shape[0] * 0.34)), :, :]
+            upper_s = upper_torso[:, :, 1]
+            upper_v = upper_torso[:, :, 2]
+            collar_mask = ((upper_s > 82) & (upper_v > 74)).astype(np.uint8) * 255
+            collar_mask = cv2.morphologyEx(collar_mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+            collar_ratio = _mask_ratio(collar_mask)
+            face_bonus = 0.06 if face_present else 0.0
+            collar_present = collar_ratio > 0.045
+            if (
+                face_present and
+                dark_ratio > 0.38 and
+                lower_dark_ratio > 0.52 and
+                central_dark_ratio > 0.5 and
+                lower_central_ratio > 0.56 and
+                collar_present
+            ):
+                gown_confidence = _clamp01(
+                    0.42 * dark_ratio +
+                    0.72 * lower_dark_ratio +
+                    0.55 * central_dark_ratio +
+                    0.5 * lower_central_ratio +
+                    0.48 * collar_ratio +
+                    face_bonus -
+                    1.05 * background_penalty
+                )
+                if path_has_gown:
+                    gown_confidence = _clamp01(gown_confidence + 0.03)
+
+            vivid_mask = (
+                (torso_s > 108) &
+                (torso_v > 88) &
+                ~((torso_h > 4) & (torso_h < 28) & (torso_v > 118))
+            ).astype(np.uint8) * 255
+            vivid_mask = cv2.morphologyEx(vivid_mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+            vivid_mask = cv2.morphologyEx(vivid_mask, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
+            best_sash = _best_component(vivid_mask, min_area_ratio=0.014, min_aspect=2.0)
+            if best_sash:
+                center_x = best_sash["x"] + (best_sash["w"] / 2.0)
+                center_y = best_sash["y"] + (best_sash["h"] / 2.0)
+                touches_center = 1.0 if vivid_mask.shape[1] * 0.26 <= center_x <= vivid_mask.shape[1] * 0.74 else 0.0
+                torso_mid = 1.0 if vivid_mask.shape[0] * 0.18 <= center_y <= vivid_mask.shape[0] * 0.76 else 0.0
+                band_width = best_sash["w"] / max(1.0, vivid_mask.shape[1])
+                band_height = best_sash["h"] / max(1.0, vivid_mask.shape[0])
+                orientation_score = 1.0 if band_width > 0.34 or band_height > 0.25 else 0.0
+                diagonal_bias = abs((center_x / max(1.0, vivid_mask.shape[1])) - (center_y / max(1.0, vivid_mask.shape[0])))
+                diagonal_score = 1.0 if diagonal_bias > 0.12 else 0.0
+                compact_penalty = 0.26 if best_sash["area_ratio"] > 0.16 else 0.0
+                edge_penalty = 0.18 if (center_x < vivid_mask.shape[1] * 0.18 or center_x > vivid_mask.shape[1] * 0.82) else 0.0
+                if touches_center and torso_mid and orientation_score:
+                    sash_confidence = _clamp01(
+                        best_sash["score"] * 3.7 +
+                        best_sash["fill_ratio"] * 0.28 +
+                        touches_center * 0.16 +
+                        torso_mid * 0.16 +
+                        orientation_score * 0.18 +
+                        diagonal_score * 0.12 -
+                        compact_penalty -
+                        edge_penalty
+                    )
+                    if path_has_sash:
+                        sash_confidence = _clamp01(sash_confidence + 0.03)
+
+        if head_hsv is not None and head_hsv.size > 0:
+            head_s = head_hsv[:, :, 1]
+            head_v = head_hsv[:, :, 2]
+            head_dark = ((head_v < 72) & (head_s < 140)).astype(np.uint8) * 255
+            head_dark = cv2.morphologyEx(head_dark, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+            best_cap = _best_component(head_dark, min_area_ratio=0.024, min_aspect=1.25)
+            if face_present and best_cap and best_cap["fill_ratio"] > 0.42:
+                center_y = best_cap["y"] + (best_cap["h"] / 2.0)
+                center_x = best_cap["x"] + (best_cap["w"] / 2.0)
+                top_bias = 1.0 if center_y <= head_dark.shape[0] * 0.4 else 0.0
+                central_bias = 1.0 if head_dark.shape[1] * 0.24 <= center_x <= head_dark.shape[1] * 0.76 else 0.0
+                flat_shape = 1.0 if best_cap["w"] >= best_cap["h"] * 1.5 else 0.0
+                triangular_hint = 1.0 if best_cap["fill_ratio"] < 0.72 else 0.0
+                tall_penalty = 0.3 if best_cap["h"] > head_dark.shape[0] * 0.46 else 0.0
+                if top_bias and central_bias and (flat_shape or triangular_hint):
+                    cap_confidence = _clamp01(
+                        best_cap["score"] * 3.6 +
+                        best_cap["fill_ratio"] * 0.18 +
+                        top_bias * 0.24 +
+                        central_bias * 0.16 +
+                        flat_shape * 0.16 +
+                        triangular_hint * 0.08 -
+                        tall_penalty
+                    )
+                    if path_has_cap:
+                        cap_confidence = _clamp01(cap_confidence + 0.03)
+
+        if hands_hsv is not None and hands_hsv.size > 0:
+            hand_h = hands_hsv[:, :, 0]
+            hand_s = hands_hsv[:, :, 1]
+            hand_v = hands_hsv[:, :, 2]
+            light_mask = ((hand_v > 188) & (hand_s < 64)).astype(np.uint8) * 255
+            green_mask = ((hand_h > 42) & (hand_h < 84) & (hand_s > 100) & (hand_v > 84)).astype(np.uint8) * 255
+            diploma_mask = cv2.bitwise_or(light_mask, green_mask)
+            diploma_mask = cv2.morphologyEx(diploma_mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+            diploma_mask = cv2.morphologyEx(diploma_mask, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+            best_diploma = _best_component(diploma_mask, min_area_ratio=0.007, min_aspect=2.5)
+            if best_diploma and best_diploma["fill_ratio"] > 0.24:
+                center_x = best_diploma["x"] + (best_diploma["w"] / 2.0)
+                center_y = best_diploma["y"] + (best_diploma["h"] / 2.0)
+                torso_adjacent = 1.0 if hands_hsv.shape[0] * 0.18 <= center_y <= hands_hsv.shape[0] * 0.72 else 0.0
+                central_bias = 1.0 if hands_hsv.shape[1] * 0.18 <= center_x <= hands_hsv.shape[1] * 0.82 else 0.0
+                small_object = 1.0 if 0.01 <= best_diploma["area_ratio"] <= 0.072 else 0.0
+                long_shape = 1.0 if best_diploma["aspect"] >= 2.8 else 0.0
+                large_penalty = 0.36 if best_diploma["area_ratio"] > 0.09 else 0.0
+                if torso_adjacent and central_bias and small_object and long_shape:
+                    diploma_confidence = _clamp01(
+                        best_diploma["score"] * 4.1 +
+                        best_diploma["fill_ratio"] * 0.16 +
+                        torso_adjacent * 0.18 +
+                        central_bias * 0.12 +
+                        small_object * 0.12 +
+                        long_shape * 0.12 -
+                        large_penalty
+                    )
+                    if path_has_diploma:
+                        diploma_confidence = _clamp01(diploma_confidence + 0.03)
+
+        visual_tags = []
+        if gown_confidence >= GRADUATION_CONFIDENCE_THRESHOLD:
+            visual_tags.append("beca")
+        if sash_confidence >= GRADUATION_CONFIDENCE_THRESHOLD:
+            visual_tags.append("faixa")
+        if cap_confidence >= GRADUATION_CONFIDENCE_THRESHOLD:
+            visual_tags.append("capelo")
+        if diploma_confidence >= GRADUATION_CONFIDENCE_THRESHOLD:
+            visual_tags.append("canudo")
+        if visual_tags:
+            tags.extend(visual_tags)
+            source_parts.append("visual")
 
     tags = _normalize_saved_graduation_tags(tags)
-    has_gown = "beca" in tags
-    has_diploma = "canudo" in tags
-    has_sash = "faixa" in tags
-    has_cap = "capelo" in tags
-    graduation_score = (
-        (40.0 if has_gown else 0.0) +
-        (30.0 if has_diploma else 0.0) +
-        (25.0 if has_sash else 0.0) +
-        (20.0 if has_cap else 0.0)
-    )
+    has_gown = bool(gown_confidence >= GRADUATION_CONFIDENCE_THRESHOLD)
+    has_diploma = bool(diploma_confidence >= GRADUATION_CONFIDENCE_THRESHOLD)
+    has_sash = bool(sash_confidence >= GRADUATION_CONFIDENCE_THRESHOLD)
+    has_cap = bool(cap_confidence >= GRADUATION_CONFIDENCE_THRESHOLD)
+    resolved_tags = list(tags)
+    if has_gown:
+        resolved_tags.append("beca")
+    if has_diploma:
+        resolved_tags.append("canudo")
+    if has_sash:
+        resolved_tags.append("faixa")
+    if has_cap:
+        resolved_tags.append("capelo")
+    tags = _normalize_saved_graduation_tags(resolved_tags)
+    graduation_score = 0.0
+    if has_gown:
+        graduation_score += 22.0 + gown_confidence * 18.0
+    if has_diploma:
+        graduation_score += 16.0 + diploma_confidence * 14.0
+    if has_sash:
+        graduation_score += 14.0 + sash_confidence * 11.0
+    if has_cap:
+        graduation_score += 12.0 + cap_confidence * 10.0
+    if not any((has_gown, has_diploma, has_sash, has_cap)):
+        graduation_score = 0.0
+
     return {
         "has_gown": has_gown,
         "has_diploma": has_diploma,
         "has_sash": has_sash,
         "has_cap": has_cap,
         "graduation_tags": tags,
-        "graduation_score": graduation_score,
-        "source": "path_heuristic" if tags else "none",
+        "graduation_score": round(float(graduation_score), 4),
+        "source": "+".join(source_parts) if source_parts else "none",
+        "debug": {
+            "gown_confidence": round(float(gown_confidence), 4),
+            "diploma_confidence": round(float(diploma_confidence), 4),
+            "sash_confidence": round(float(sash_confidence), 4),
+            "cap_confidence": round(float(cap_confidence), 4),
+            "face_present": face_present,
+        },
     }
 
 
@@ -731,6 +1142,46 @@ def _build_face_priority_meta(item: dict, cohesion_hint: float) -> dict:
     has_diploma = _coerce_flag(raw_has_diploma) if raw_has_diploma is not None else (_coerce_flag(fallback.get("has_diploma")) or ("canudo" in resolved_tags))
     has_sash = _coerce_flag(raw_has_sash) if raw_has_sash is not None else (_coerce_flag(fallback.get("has_sash")) or ("faixa" in resolved_tags))
     has_cap = _coerce_flag(raw_has_cap) if raw_has_cap is not None else (_coerce_flag(fallback.get("has_cap")) or ("capelo" in resolved_tags))
+
+    fallback_debug = fallback.get("debug") or {}
+    gown_confidence = float(item["gown_confidence"]) if item.get("gown_confidence") is not None else float(fallback_debug.get("gown_confidence") or 0.0)
+    diploma_confidence = float(item["diploma_confidence"]) if item.get("diploma_confidence") is not None else float(fallback_debug.get("diploma_confidence") or 0.0)
+    sash_confidence = float(item["sash_confidence"]) if item.get("sash_confidence") is not None else float(fallback_debug.get("sash_confidence") or 0.0)
+    cap_confidence = float(item["cap_confidence"]) if item.get("cap_confidence") is not None else float(fallback_debug.get("cap_confidence") or 0.0)
+
+    try:
+        raw_manual = item.get("manual_graduation_tags") or "[]"
+        manual_list = json.loads(raw_manual) if isinstance(raw_manual, str) else list(raw_manual or [])
+        if not isinstance(manual_list, list):
+            manual_list = []
+    except Exception:
+        manual_list = []
+
+    if "beca" in manual_list:
+        has_gown = True
+        gown_confidence = 1.0
+    elif "!beca" in manual_list:
+        has_gown = False
+        gown_confidence = 0.0
+    if "canudo" in manual_list:
+        has_diploma = True
+        diploma_confidence = 1.0
+    elif "!canudo" in manual_list:
+        has_diploma = False
+        diploma_confidence = 0.0
+    if "faixa" in manual_list:
+        has_sash = True
+        sash_confidence = 1.0
+    elif "!faixa" in manual_list:
+        has_sash = False
+        sash_confidence = 0.0
+    if "capelo" in manual_list:
+        has_cap = True
+        cap_confidence = 1.0
+    elif "!capelo" in manual_list:
+        has_cap = False
+        cap_confidence = 0.0
+
     face_front_score = _derive_face_front_score(item)
     sharpness_score = _derive_sharpness_score(item)
 
@@ -764,6 +1215,11 @@ def _build_face_priority_meta(item: dict, cohesion_hint: float) -> dict:
         "has_diploma": has_diploma,
         "has_sash": has_sash,
         "has_cap": has_cap,
+        "gown_confidence": round(_clamp01(gown_confidence), 4),
+        "diploma_confidence": round(_clamp01(diploma_confidence), 4),
+        "sash_confidence": round(_clamp01(sash_confidence), 4),
+        "cap_confidence": round(_clamp01(cap_confidence), 4),
+        "manual_graduation_tags": list(manual_list),
         "face_front_score": round(face_front_score, 4),
         "sharpness_score": round(sharpness_score, 4),
         "graduation_score": round(graduation_score, 4),
@@ -920,7 +1376,9 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             SELECT rowid, aluno_id, foto_path, x1, y1, x2, y2,
                    blur_status, blur_score, closed_eyes,
                    has_gown, has_diploma, has_sash, has_cap,
-                   face_front_score, graduation_score, graduation_tags
+                   face_front_score, graduation_score, graduation_tags,
+                   gown_confidence, diploma_confidence, sash_confidence, cap_confidence,
+                   manual_graduation_tags
             FROM ocorrencias
             WHERE x1 IS NOT NULL
               AND (
@@ -956,6 +1414,11 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 "face_front_score": occ["face_front_score"],
                 "graduation_score": occ["graduation_score"],
                 "graduation_tags": occ["graduation_tags"],
+                "gown_confidence": occ["gown_confidence"],
+                "diploma_confidence": occ["diploma_confidence"],
+                "sash_confidence": occ["sash_confidence"],
+                "cap_confidence": occ["cap_confidence"],
+                "manual_graduation_tags": occ["manual_graduation_tags"],
             })
 
         if len(items) < min_cluster_size:
@@ -1032,6 +1495,13 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             cluster_has_diploma = any(meta["has_diploma"] for meta in priority_meta)
             cluster_has_sash = any(meta["has_sash"] for meta in priority_meta)
             cluster_has_cap = any(meta["has_cap"] for meta in priority_meta)
+            cluster_gown_confidence = max((meta["gown_confidence"] for meta in priority_meta), default=0.0)
+            cluster_diploma_confidence = max((meta["diploma_confidence"] for meta in priority_meta), default=0.0)
+            cluster_sash_confidence = max((meta["sash_confidence"] for meta in priority_meta), default=0.0)
+            cluster_cap_confidence = max((meta["cap_confidence"] for meta in priority_meta), default=0.0)
+            cluster_manual_tags = sorted({
+                tag for meta in priority_meta for tag in (meta.get("manual_graduation_tags") or [])
+            })
             priority_score = max_graduation_score + cohesion_score + photo_count
             rep_item = _pick_cluster_cover_item(comp_items, priority_meta)
             rep_item_meta = priority_meta[comp_items.index(rep_item)]
@@ -1052,6 +1522,11 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 "has_diploma": cluster_has_diploma,
                 "has_sash": cluster_has_sash,
                 "has_cap": cluster_has_cap,
+                "gown_confidence": round(float(cluster_gown_confidence), 4),
+                "diploma_confidence": round(float(cluster_diploma_confidence), 4),
+                "sash_confidence": round(float(cluster_sash_confidence), 4),
+                "cap_confidence": round(float(cluster_cap_confidence), 4),
+                "manual_graduation_tags": cluster_manual_tags,
                 "debug_graduation_source": debug_graduation_source,
                 "preview_image": rep_item["foto_path"],
                 "discovered_at": now_iso,
@@ -1135,6 +1610,7 @@ def _build_graduation_analysis_payload(photo_path: str, detected: dict) -> dict:
             (25.0 if has_sash else 0.0) +
             (20.0 if has_cap else 0.0)
         )
+    debug = detected.get("debug") or {}
     return {
         "has_gown": 1 if has_gown else 0,
         "has_diploma": 1 if has_diploma else 0,
@@ -1143,6 +1619,10 @@ def _build_graduation_analysis_payload(photo_path: str, detected: dict) -> dict:
         "graduation_tags": json.dumps(tags, ensure_ascii=False),
         "graduation_score": float(score or 0.0),
         "graduation_analyzed_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        "gown_confidence": round(float(debug.get("gown_confidence") or 0.0), 4),
+        "diploma_confidence": round(float(debug.get("diploma_confidence") or 0.0), 4),
+        "sash_confidence": round(float(debug.get("sash_confidence") or 0.0), 4),
+        "cap_confidence": round(float(debug.get("cap_confidence") or 0.0), 4),
         "source": str(detected.get("source") or "none"),
         "photo_path": photo_path,
     }
@@ -1186,6 +1666,30 @@ def _build_photo_source_query(cur):
             ]
             return f"SELECT {', '.join(select_cols)} FROM fotos WHERE {path_col} IS NOT NULL AND {path_col} != ''", "fotos"
     return "", ""
+
+
+def _load_face_boxes_for_photo(cur, photo_path: str) -> list[tuple[int, int, int, int]]:
+    cur.execute(
+        """
+        SELECT x1, y1, x2, y2
+        FROM ocorrencias
+        WHERE foto_path = ?
+          AND x1 IS NOT NULL
+          AND y1 IS NOT NULL
+          AND x2 IS NOT NULL
+          AND y2 IS NOT NULL
+        """,
+        (photo_path,),
+    )
+    boxes = []
+    for row in cur.fetchall():
+        try:
+            x1, y1, x2, y2 = [int(row[key]) for key in ("x1", "y1", "x2", "y2")]
+            if x2 > x1 and y2 > y1:
+                boxes.append((x1, y1, x2, y2))
+        except Exception:
+            continue
+    return boxes
 
 
 def _load_graduation_job_photo_paths(cur) -> tuple[list[str], str]:
@@ -1236,87 +1740,110 @@ def _load_graduation_job_photo_paths(cur) -> tuple[list[str], str]:
 
 
 def _update_graduation_fields_for_photo(cur, photo_path: str, payload: dict) -> int:
+    gown_conf = payload.get("gown_confidence", 0.0)
+    diploma_conf = payload.get("diploma_confidence", 0.0)
+    sash_conf = payload.get("sash_confidence", 0.0)
+    cap_conf = payload.get("cap_confidence", 0.0)
+
     updated = 0
     if _table_exists(cur, "photos"):
         photo_cols = set(_list_table_columns(cur, "photos"))
         if "original_path" in photo_cols:
-            cur.execute(
-                """
-                UPDATE photos
-                SET has_gown = ?,
-                    has_diploma = ?,
-                    has_sash = ?,
-                    has_cap = ?,
-                    graduation_tags = ?,
-                    graduation_score = ?,
-                    graduation_analyzed_at = ?
-                WHERE original_path = ?
-                """,
-                (
-                    payload["has_gown"],
-                    payload["has_diploma"],
-                    payload["has_sash"],
-                    payload["has_cap"],
-                    payload["graduation_tags"],
-                    payload["graduation_score"],
-                    payload["graduation_analyzed_at"],
-                    photo_path,
-                ),
-            )
+            has_conf_cols = "gown_confidence" in photo_cols
+            if has_conf_cols:
+                cur.execute(
+                    """
+                    UPDATE photos
+                    SET has_gown = ?, has_diploma = ?, has_sash = ?, has_cap = ?,
+                        graduation_tags = ?, graduation_score = ?, graduation_analyzed_at = ?,
+                        gown_confidence = ?, diploma_confidence = ?, sash_confidence = ?, cap_confidence = ?
+                    WHERE original_path = ?
+                    """,
+                    (payload["has_gown"], payload["has_diploma"], payload["has_sash"], payload["has_cap"],
+                     payload["graduation_tags"], payload["graduation_score"], payload["graduation_analyzed_at"],
+                     gown_conf, diploma_conf, sash_conf, cap_conf, photo_path),
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE photos
+                    SET has_gown = ?, has_diploma = ?, has_sash = ?, has_cap = ?,
+                        graduation_tags = ?, graduation_score = ?, graduation_analyzed_at = ?
+                    WHERE original_path = ?
+                    """,
+                    (payload["has_gown"], payload["has_diploma"], payload["has_sash"], payload["has_cap"],
+                     payload["graduation_tags"], payload["graduation_score"], payload["graduation_analyzed_at"], photo_path),
+                )
             updated += int(cur.rowcount or 0)
+
     if _table_exists(cur, "fotos"):
         foto_cols = set(_list_table_columns(cur, "fotos"))
         path_col = "path" if "path" in foto_cols else ("foto_path" if "foto_path" in foto_cols else "")
         if path_col:
-            cur.execute(
-                f"""
-                UPDATE fotos
-                SET has_gown = ?,
-                    has_diploma = ?,
-                    has_sash = ?,
-                    has_cap = ?,
-                    graduation_tags = ?,
-                    graduation_score = ?,
-                    graduation_analyzed_at = ?
-                WHERE {path_col} = ?
-                """,
-                (
-                    payload["has_gown"],
-                    payload["has_diploma"],
-                    payload["has_sash"],
-                    payload["has_cap"],
-                    payload["graduation_tags"],
-                    payload["graduation_score"],
-                    payload["graduation_analyzed_at"],
-                    photo_path,
-                ),
-            )
+            has_conf_cols = "gown_confidence" in foto_cols
+            if has_conf_cols:
+                cur.execute(
+                    f"""
+                    UPDATE fotos
+                    SET has_gown = ?, has_diploma = ?, has_sash = ?, has_cap = ?,
+                        graduation_tags = ?, graduation_score = ?, graduation_analyzed_at = ?,
+                        gown_confidence = ?, diploma_confidence = ?, sash_confidence = ?, cap_confidence = ?
+                    WHERE {path_col} = ?
+                    """,
+                    (payload["has_gown"], payload["has_diploma"], payload["has_sash"], payload["has_cap"],
+                     payload["graduation_tags"], payload["graduation_score"], payload["graduation_analyzed_at"],
+                     gown_conf, diploma_conf, sash_conf, cap_conf, photo_path),
+                )
+            else:
+                cur.execute(
+                    f"""
+                    UPDATE fotos
+                    SET has_gown = ?, has_diploma = ?, has_sash = ?, has_cap = ?,
+                        graduation_tags = ?, graduation_score = ?, graduation_analyzed_at = ?
+                    WHERE {path_col} = ?
+                    """,
+                    (payload["has_gown"], payload["has_diploma"], payload["has_sash"], payload["has_cap"],
+                     payload["graduation_tags"], payload["graduation_score"], payload["graduation_analyzed_at"], photo_path),
+                )
             updated += int(cur.rowcount or 0)
 
-    cur.execute(
-        """
-        UPDATE ocorrencias
-        SET has_gown = ?,
-            has_diploma = ?,
-            has_sash = ?,
-            has_cap = ?,
-            graduation_tags = ?,
-            graduation_score = ?,
-            graduation_analyzed_at = ?
-        WHERE foto_path = ?
-        """,
-        (
-            payload["has_gown"],
-            payload["has_diploma"],
-            payload["has_sash"],
-            payload["has_cap"],
-            payload["graduation_tags"],
-            payload["graduation_score"],
-            payload["graduation_analyzed_at"],
-            photo_path,
-        ),
-    )
+    occ_cols = set(_list_table_columns(cur, "ocorrencias"))
+    has_conf_cols = "gown_confidence" in occ_cols
+    if has_conf_cols:
+        cur.execute(
+            """
+            UPDATE ocorrencias
+            SET has_gown = ?, has_diploma = ?, has_sash = ?, has_cap = ?,
+                graduation_tags = ?, graduation_score = ?, graduation_analyzed_at = ?,
+                gown_confidence = ?, diploma_confidence = ?, sash_confidence = ?, cap_confidence = ?
+            WHERE foto_path = ?
+            """,
+            (payload["has_gown"], payload["has_diploma"], payload["has_sash"], payload["has_cap"],
+             payload["graduation_tags"], payload["graduation_score"], payload["graduation_analyzed_at"],
+             gown_conf, diploma_conf, sash_conf, cap_conf, photo_path),
+        )
+    else:
+        cur.execute(
+            """
+            UPDATE ocorrencias
+            SET has_gown = ?, has_diploma = ?, has_sash = ?, has_cap = ?,
+                graduation_tags = ?, graduation_score = ?, graduation_analyzed_at = ?
+            WHERE foto_path = ?
+            """,
+            (payload["has_gown"], payload["has_diploma"], payload["has_sash"], payload["has_cap"],
+             payload["graduation_tags"], payload["graduation_score"], payload["graduation_analyzed_at"], photo_path),
+        )
     return updated
+
+
+def _payload_has_graduation_signal(payload: dict) -> bool:
+    return bool(
+        payload.get("has_gown") or
+        payload.get("has_diploma") or
+        payload.get("has_sash") or
+        payload.get("has_cap") or
+        float(payload.get("graduation_score") or 0.0) > 0.0
+    )
 
 
 def start_graduation_analysis(req: GraduationAnalysisRequest):
@@ -1347,6 +1874,7 @@ def start_graduation_analysis(req: GraduationAnalysisRequest):
 
     def worker():
         updated_rows = 0
+        positive_updates = 0
         total = 0
         try:
             if callable(backup_catalog_db):
@@ -1374,7 +1902,7 @@ def start_graduation_analysis(req: GraduationAnalysisRequest):
                             "updated": 0,
                             "updated_faces": 0,
                             "source_table": source_table,
-                            "source": "mock",
+                            "source": "visual_heuristic",
                         },
                         "finished_at": time.time(),
                     })
@@ -1382,9 +1910,27 @@ def start_graduation_analysis(req: GraduationAnalysisRequest):
 
                 for idx, photo_path in enumerate(photo_paths, start=1):
                     try:
-                        detected = analyze_graduation_items(photo_path, enable_heuristics=True)
+                        detected = analyze_graduation_items(
+                            {"foto_path": photo_path, "face_boxes": _load_face_boxes_for_photo(cur, photo_path)},
+                            enable_heuristics=True,
+                        )
                         payload = _build_graduation_analysis_payload(photo_path, detected)
                         updated_rows += _update_graduation_fields_for_photo(cur, photo_path, payload)
+                        has_signal = _payload_has_graduation_signal(payload)
+                        if has_signal:
+                            positive_updates += 1
+                        if callable(log_info) and has_signal:
+                            debug = detected.get("debug") or {}
+                            log_info(
+                                f"[graduation-detected] path={photo_path} "
+                                f"tags={detected.get('graduation_tags') or []} "
+                                f"confidences={{"
+                                f"'gown': {debug.get('gown_confidence', 0.0)}, "
+                                f"'diploma': {debug.get('diploma_confidence', 0.0)}, "
+                                f"'sash': {debug.get('sash_confidence', 0.0)}, "
+                                f"'cap': {debug.get('cap_confidence', 0.0)}"
+                                f"}}"
+                            )
                     except Exception as photo_error:
                         if callable(log_info):
                             log_info(f"[graduation_analysis] foto com erro: {photo_path} :: {photo_error}")
@@ -1393,7 +1939,7 @@ def start_graduation_analysis(req: GraduationAnalysisRequest):
                     graduation_analysis_state.update({
                         "processed": idx,
                         "total": total,
-                        "updated": updated_rows,
+                        "updated": positive_updates,
                         "progress": idx / total,
                         "status_text": f"Analisando {idx} de {total} fotos...",
                     })
@@ -1404,14 +1950,14 @@ def start_graduation_analysis(req: GraduationAnalysisRequest):
                 "running": False,
                 "progress": 1.0,
                 "processed": total,
-                "updated": updated_rows,
+                "updated": positive_updates,
                 "status_text": "Análise de itens de formatura concluída.",
                 "result": {
                     "catalog": catalog,
                     "processed_files": total,
-                    "updated": updated_rows,
-                    "updated_faces": updated_rows,
-                    "source": "mock",
+                    "updated": positive_updates,
+                    "updated_faces": positive_updates,
+                    "source": "visual_heuristic",
                 },
                 "error": None,
                 "finished_at": time.time(),
@@ -1443,6 +1989,56 @@ def get_graduation_analysis_status(catalog: str = ""):
     state.setdefault("running", bool(state.get("is_running")))
     state.setdefault("updated", 0)
     return state
+
+
+_ITEM_TO_TAG = {
+    "gown": "beca",
+    "diploma": "canudo",
+    "sash": "faixa",
+    "cap": "capelo",
+}
+
+
+def graduation_manual_override(req: GraduationManualOverrideRequest):
+    get_db = _get("get_db")
+    cat = req.catalog or _current_catalog()
+    if not cat:
+        raise HTTPException(400, "Nenhum catálogo selecionado")
+    tag = _ITEM_TO_TAG.get(req.item)
+    if not tag:
+        raise HTTPException(400, f"Item inválido: {req.item}")
+    if req.action not in ("confirm", "remove"):
+        raise HTTPException(400, f"Ação inválida: {req.action}")
+    if not req.rowids:
+        raise HTTPException(400, "Nenhum rowid fornecido")
+
+    neg_tag = f"!{tag}"
+    with get_db(cat) as conn:
+        cur = conn.cursor()
+        updated = 0
+        for rowid in req.rowids:
+            cur.execute("SELECT manual_graduation_tags FROM ocorrencias WHERE rowid = ?", (rowid,))
+            row = cur.fetchone()
+            if not row:
+                continue
+            try:
+                tags = json.loads(row["manual_graduation_tags"] or "[]")
+                if not isinstance(tags, list):
+                    tags = []
+            except Exception:
+                tags = []
+            tags = [t for t in tags if t not in (tag, neg_tag)]
+            if req.action == "confirm":
+                tags.append(tag)
+            else:
+                tags.append(neg_tag)
+            cur.execute(
+                "UPDATE ocorrencias SET manual_graduation_tags = ?, graduation_reviewed = 1 WHERE rowid = ?",
+                (json.dumps(tags, ensure_ascii=False), rowid),
+            )
+            updated += int(cur.rowcount or 0)
+        conn.commit()
+    return {"ok": True, "updated": updated, "item": req.item, "action": req.action}
 
 
 class MergePeopleReq(BaseModel):

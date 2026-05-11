@@ -122,6 +122,11 @@ function ReviewViewContent() {
     setSelected(clusters[idx + 1] ?? clusters[idx - 1] ?? null);
   }, [selected, clusters]);
 
+  const handleClusterUpdate = useCallback((next: RichCluster) => {
+    setClusters(prev => prev.map(c => (c.cluster_id === next.cluster_id ? next : c)));
+    setSelected(prev => (prev && prev.cluster_id === next.cluster_id ? next : prev));
+  }, []);
+
   const handleStartGraduationAnalysis = useCallback(async () => {
     if (!currentCatalog || graduationStatus?.is_running || isStartingGraduationAnalysis) return;
     setIsStartingGraduationAnalysis(true);
@@ -170,6 +175,7 @@ function ReviewViewContent() {
             catalog={currentCatalog}
             onAssigned={handleAssigned}
             onSkip={handleSkip}
+            onClusterUpdate={handleClusterUpdate}
           />
         ) : (
           <WelcomeState

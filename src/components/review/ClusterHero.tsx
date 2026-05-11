@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
 import { UserPlus, EyeOff, MoreHorizontal, Check, X, Sparkles } from 'lucide-react';
 import type { RichCluster, SearchResult } from '../../services/api';
 import { api } from '../../services/api';
@@ -10,6 +10,10 @@ interface ClusterHeroProps {
   catalog: string;
   onAssigned: (clusterId: string) => void;
   onSkip: () => void;
+}
+
+export interface ClusterHeroHandle {
+  startIdentify: () => void;
 }
 
 function formatDate(iso?: string) {
@@ -24,12 +28,12 @@ function formatDate(iso?: string) {
   }
 }
 
-export default function ClusterHero({
+const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function ClusterHero({
   cluster,
   catalog,
   onAssigned,
   onSkip,
-}: ClusterHeroProps) {
+}, ref) {
   const [identifying, setIdentifying] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const [selectedStudent, setSelectedStudent] = useState<{ id: string; name: string } | null>(null);
@@ -76,6 +80,10 @@ export default function ClusterHero({
   useEffect(() => {
     if (identifying) setTimeout(() => inputRef.current?.focus(), 80);
   }, [identifying]);
+
+  useImperativeHandle(ref, () => ({
+    startIdentify: () => setIdentifying(true),
+  }), []);
 
   const handleAssign = async () => {
     const typedName = nameInput.trim();
@@ -242,4 +250,6 @@ export default function ClusterHero({
       </div>
     </div>
   );
-}
+});
+
+export default ClusterHero;
