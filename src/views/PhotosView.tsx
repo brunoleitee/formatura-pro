@@ -6,7 +6,7 @@ import { useApp } from '../context/AppContext';
 type PhotoFilter = 'all' | 'mapped' | 'unmapped';
 
 export default function PhotosView() {
-  const { currentCatalog } = useApp();
+  const { currentCatalog, refreshKey } = useApp();
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [filter, setFilter] = useState<PhotoFilter>('all');
   const [loading, setLoading] = useState(false);
@@ -16,14 +16,14 @@ export default function PhotosView() {
     if (!currentCatalog) return;
     setLoading(true);
     try {
-      const arr = await api.getAllPhotos();
+      const arr = await api.getAllPhotos(currentCatalog);
       setPhotos(arr);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [currentCatalog]);
+  }, [currentCatalog, refreshKey]);
 
   useEffect(() => { Promise.resolve().then(loadPhotos); }, [loadPhotos]);
 
@@ -64,88 +64,92 @@ export default function PhotosView() {
         </div>
       </div>
 
-      {loading && photos.length === 0 ? (
-        <div className="empty-state">
-          <RefreshCw size={32} className="spin" />
-          <p>Carregando fotos...</p>
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="empty-state">
-          <ImageIcon size={48} opacity={0.3} />
-          <h3>Nenhuma foto encontrada</h3>
-          <p>Use "Escanear Pasta" na barra superior para adicionar fotos.</p>
-        </div>
-      ) : (
-        <div className="photo-grid">
-          {filtered.map((photo, i) => {
-            const isMapped = photo.faces && photo.faces.length > 0;
-            const firstName = isMapped
-              ? photo.faces.map(f => f.aluno_id).filter((v, idx, a) => a.indexOf(v) === idx).join(', ')
-              : 'Não identificada';
-            return (
-              <div
-                key={photo.path || i}
-                className={`photo-card ${selected?.path === photo.path ? 'selected' : ''}`}
-                onClick={() => setSelected(selected?.path === photo.path ? null : photo)}
-              >
-                <div className="photo-img-placeholder">
-                  <img
-                    src={api.thumbUrl(photo.path, 300)}
-                    alt={photo.name}
-                    loading="lazy"
-                    onError={e => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                    }}
-                  />
-                  {photo.blur_label && photo.blur_label !== 'ok' && (
-                    <div className={`blur-badge blur-${photo.blur_label}`}>
-                      {photo.blur_label === 'blurry' ? 'Desfocada' : 'Atenção'}
+      <div style={{ display: 'flex', flex: 1, gap: '16px', overflow: 'hidden', minHeight: 0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+          {loading && photos.length === 0 ? (
+            <div className="empty-state">
+              <RefreshCw size={32} className="spin" />
+              <p>Carregando fotos...</p>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="empty-state">
+              <ImageIcon size={48} opacity={0.3} />
+              <h3>Nenhuma foto encontrada</h3>
+              <p>Use "Escanear Pasta" na barra superior para adicionar fotos.</p>
+            </div>
+          ) : (
+            <div className="photo-grid">
+              {filtered.map((photo, i) => {
+                const isMapped = photo.faces && photo.faces.length > 0;
+                const firstName = isMapped
+                  ? photo.faces.map(f => f.aluno_id).filter((v, idx, a) => a.indexOf(v) === idx).join(', ')
+                  : 'Não identificada';
+                return (
+                  <div
+                    key={photo.path || i}
+                    className={`photo-card ${selected?.path === photo.path ? 'selected' : ''}`}
+                    onClick={() => setSelected(selected?.path === photo.path ? null : photo)}
+                  >
+                    <div className="photo-img-placeholder">
+                      <img
+                        src={api.thumbUrl(photo.path, 300)}
+                        alt={photo.name}
+                        loading="lazy"
+                        onError={e => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                      {photo.blur_label && photo.blur_label !== 'ok' && (
+                        <div className={`blur-badge blur-${photo.blur_label}`}>
+                          {photo.blur_label === 'blurry' ? 'Desfocada' : 'Atenção'}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                <div className="photo-info">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ overflow: 'hidden', flex: 1 }}>
-                      <div className="photo-name" title={photo.name}>{photo.name}</div>
-                      <div className="photo-status">
-                        <div className={`status-indicator ${isMapped ? 'mapped' : 'unmapped'}`} />
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {firstName}
-                        </span>
+                    <div className="photo-info">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ overflow: 'hidden', flex: 1 }}>
+                          <div className="photo-name" title={photo.name}>{photo.name}</div>
+                          <div className="photo-status">
+                            <div className={`status-indicator ${isMapped ? 'mapped' : 'unmapped'}`} />
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {firstName}
+                            </span>
+                          </div>
+                        </div>
+                        <button className="icon-btn" style={{ flexShrink: 0 }}>
+                          <MoreVertical size={14} />
+                        </button>
                       </div>
                     </div>
-                    <button className="icon-btn" style={{ flexShrink: 0 }}>
-                      <MoreVertical size={14} />
-                    </button>
                   </div>
-                </div>
-              </div>
-            );
-          })}
+                );
+              })}
+            </div>
+          )}
         </div>
-      )}
 
-      {selected && (
-        <div className="photo-detail-panel">
-          <div className="photo-detail-header">
-            <span>{selected.name}</span>
-            <button className="icon-btn" onClick={() => setSelected(null)}>✕</button>
+        {selected && (
+          <div className="photo-detail-panel">
+            <div className="photo-detail-header">
+              <span>{selected.name}</span>
+              <button className="icon-btn" onClick={() => setSelected(null)}>✕</button>
+            </div>
+            <img
+              src={api.thumbUrl(selected.path, 600)}
+              alt={selected.name}
+              style={{ width: '100%', borderRadius: 8, marginBottom: 12, objectFit: 'contain' }}
+            />
+            <div className="detail-info">
+              <div className="detail-row"><span>Tamanho</span><span>{selected.size ? `${(selected.size / 1024).toFixed(0)} KB` : '—'}</span></div>
+              <div className="detail-row"><span>Qualidade</span><span>{selected.blur_label || '—'}</span></div>
+              <div className="detail-row"><span>Faces</span><span>{selected.total_faces_in_db}</span></div>
+              {selected.faces.length > 0 && (
+                <div className="detail-row"><span>Pessoas</span><span>{selected.faces.map(f => f.aluno_id).join(', ')}</span></div>
+              )}
+            </div>
           </div>
-          <img
-            src={api.thumbUrl(selected.path, 600)}
-            alt={selected.name}
-            style={{ width: '100%', borderRadius: 8, marginBottom: 12 }}
-          />
-          <div className="detail-info">
-            <div className="detail-row"><span>Tamanho</span><span>{selected.size ? `${(selected.size / 1024).toFixed(0)} KB` : '—'}</span></div>
-            <div className="detail-row"><span>Qualidade</span><span>{selected.blur_label || '—'}</span></div>
-            <div className="detail-row"><span>Faces</span><span>{selected.total_faces_in_db}</span></div>
-            {selected.faces.length > 0 && (
-              <div className="detail-row"><span>Pessoas</span><span>{selected.faces.map(f => f.aluno_id).join(', ')}</span></div>
-            )}
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

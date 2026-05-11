@@ -130,8 +130,8 @@ export const api = {
   // People
   getPeople: (unknown = false) =>
     fetchJSON<Person[]>(`${API_BASE}/people?unknown=${unknown}`),
-  getAllPhotos: (limit = 1000) =>
-    fetchJSON<Photo[]>(`${API_BASE}/photos/all?limit=${limit}`),
+  getAllPhotos: (catalog = '', limit = 1000) =>
+    fetchJSON<Photo[]>(`${API_BASE}/photos/all?catalog=${encodeURIComponent(catalog)}&limit=${limit}`),
   getPersonPhotos: (aluno_id: string) =>
     fetchJSON<Photo[]>(`${API_BASE}/photos/${encodeURIComponent(aluno_id)}`),
   renamePerson: (old_id: string, new_id: string) =>
