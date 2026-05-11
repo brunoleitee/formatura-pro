@@ -322,8 +322,28 @@ def save_quality_settings(data):
         json.dump(settings, f, ensure_ascii=False, indent=2)
     return settings
 
+LAST_CATALOG_FILE = os.path.join(DATA_DIR, "last_catalog.txt")
+
+def _load_last_catalog():
+    try:
+        if os.path.exists(LAST_CATALOG_FILE):
+            name = open(LAST_CATALOG_FILE, encoding="utf-8").read().strip()
+            db_path = os.path.join(CATALOG_DIR, f"{name}.db")
+            if name and os.path.exists(db_path):
+                return name
+    except Exception:
+        pass
+    return ""
+
+def _save_last_catalog(name: str):
+    try:
+        with open(LAST_CATALOG_FILE, "w", encoding="utf-8") as f:
+            f.write(name)
+    except Exception:
+        pass
+
 class AppState:
-    current_catalog = ""
+    current_catalog = _load_last_catalog()
 
 scan_state = {
     "is_scanning": False,
@@ -406,7 +426,7 @@ def configure_modules():
         catalog_db_path=catalog_db_path,
         sanitize_catalog_name=sanitize_catalog_name,
         get_current_catalog=lambda: AppState.current_catalog,
-        set_current_catalog=lambda value: setattr(AppState, "current_catalog", value),
+        set_current_catalog=lambda value: [setattr(AppState, "current_catalog", value), _save_last_catalog(value)],
     )
 
     cdm.configure(
@@ -1014,7 +1034,9 @@ ManualSearchReq = rm.ManualSearchReq
 
 @app.post("/api/manual_identify")
 def manual_identify(req: ManualIdentifyReq):
-    return rm.manual_identify(req)
+    result = rm.manual_identify(req)
+    pdm.invalidate_people_cache()
+    return result
 
 @app.get("/api/select-folder")
 def select_folder():
@@ -1052,14 +1074,18 @@ RenameReq = rm.RenameReq
 
 @app.post("/api/rename-person")
 def rename_person(req: RenameReq):
-    return rm.rename_person(req)
+    result = rm.rename_person(req)
+    pdm.invalidate_people_cache()
+    return result
 
 DeletePersonReq = rm.DeletePersonReq
 
 @app.post("/api/delete-person")
 def delete_person(req: DeletePersonReq):
     try:
-        return rm.delete_person(req)
+        result = rm.delete_person(req)
+        pdm.invalidate_people_cache()
+        return result
     except HTTPException:
         raise
     except Exception as e:

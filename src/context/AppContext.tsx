@@ -37,7 +37,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       const data = await api.getCatalogs();
       setCatalogs(data.catalogs);
-      if (data.current) setCurrentCatalog(data.current);
+      if (data.current) {
+        setCurrentCatalog(data.current);
+      } else if (data.catalogs.length > 0) {
+        // Backend reiniciou e perdeu o catálogo selecionado — re-afirmar
+        const toSelect = data.catalogs[0];
+        await api.setCatalog(toSelect);
+        setCurrentCatalog(toSelect);
+      }
     } catch (e) {
       console.error('Erro ao carregar catálogos:', e);
     } finally {
