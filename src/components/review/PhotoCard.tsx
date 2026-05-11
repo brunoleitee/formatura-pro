@@ -34,10 +34,12 @@ function getBadges(face: RichClusterFace): Badge[] {
   return badges;
 }
 
+import type React from 'react';
+
 interface PhotoCardProps {
   face: RichClusterFace;
   selected: boolean;
-  onToggle: () => void;
+  onToggle: (e: React.MouseEvent<HTMLDivElement>) => void;
   thumbSize?: number;
   viewMode?: 'photo' | 'face';
 }

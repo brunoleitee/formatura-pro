@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef, type CSSProperties } from 'react';
 import type { RichCluster, RichClusterFace } from '../../services/api';
-import { useDragSelection } from '../../hooks/useDragSelection';
+// import { useDragSelection } from '../../hooks/useDragSelection';
 import ClusterHero, { type ClusterHeroHandle } from './ClusterHero';
 import ClusterStatsPanel from './ClusterStatsPanel';
 import ClusterToolbar from './ClusterToolbar';
@@ -57,6 +57,7 @@ export default function ClusterDetail({
   const [viewMode, setViewMode] = useState<ViewMode>('face');
   const [zoom, setZoom] = useState(ZOOM_FACE_DEFAULT);
   const [collapsed, setCollapsed] = useState(false);
+  const [lastSelectedRowId, setLastSelectedRowId] = useState<number | null>(null);
   const heroRef = useRef<ClusterHeroHandle>(null);
   const graduationRef = useRef<GraduationActionsHandle>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -66,7 +67,13 @@ export default function ClusterDetail({
     setSelected(new Set());
     setFilter('all');
     setSort('best_match');
+    setLastSelectedRowId(null);
   }, [cluster.cluster_id]);
+
+  // Resetar selection state ao mudar view mode, filter, ou sort (opcional, mas recomendado)
+  useEffect(() => {
+    setLastSelectedRowId(null);
+  }, [filter, sort]);
 
   // Resetar zoom ao trocar modo: cada modo tem seu default próprio
   useEffect(() => {
@@ -82,6 +89,11 @@ export default function ClusterDetail({
     }
     function onKey(e: KeyboardEvent) {
       if (isTypingInField(e.target)) return;
+      if (e.key === 'Escape') {
+        setSelected(new Set());
+        setLastSelectedRowId(null);
+        return;
+      }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       const map: Record<string, GraduationItem> = { b: 'gown', c: 'diploma', f: 'sash', k: 'cap' };
@@ -109,28 +121,67 @@ export default function ClusterDetail({
     [cluster.faces, filter, sort]
   );
 
-  const { selectionBox, handleMouseDown } = useDragSelection(
-    gridRef,
-    (face: RichClusterFace) => face.rowid,
-    selected,
-    setSelected,
-    visibleFaces
+  const visibleRowIds = useMemo(
+    () => visibleFaces.map(f => f.rowid),
+    [visibleFaces]
   );
 
-  const toggleSelect = useCallback((rowid: number) => {
+  // --- Drag Selection Desativado ---
+  // const { selectionBox, handleMouseDown } = useDragSelection(
+  //   gridRef,
+  //   (face: RichClusterFace) => face.rowid,
+  //   selected,
+  //   setSelected,
+  //   visibleFaces
+  // );
+  // const selectionBox = null;
+  // const handleMouseDown = undefined;
+
+  const handlePhotoSelect = useCallback((rowid: number, event: React.MouseEvent) => {
     setSelected(prev => {
       const next = new Set(prev);
-      if (next.has(rowid)) next.delete(rowid);
-      else next.add(rowid);
+
+      if (event.shiftKey && lastSelectedRowId != null) {
+        const start = visibleRowIds.indexOf(lastSelectedRowId);
+        const end = visibleRowIds.indexOf(rowid);
+
+        if (start >= 0 && end >= 0) {
+          const [from, to] = start < end ? [start, end] : [end, start];
+
+          for (const id of visibleRowIds.slice(from, to + 1)) {
+            next.add(id);
+          }
+
+          return next;
+        }
+      }
+
+      if (event.ctrlKey || event.metaKey) {
+        if (next.has(rowid)) next.delete(rowid);
+        else next.add(rowid);
+
+        return next;
+      }
+
+      if (next.has(rowid) && next.size === 1) {
+        next.clear();
+      } else {
+        next.clear();
+        next.add(rowid);
+      }
+
       return next;
     });
-  }, []);
+
+    setLastSelectedRowId(rowid);
+  }, [lastSelectedRowId, visibleRowIds]);
 
   const handleSelectBest = useCallback(() => {
     const best = cluster.faces
       .filter(f => f.is_representative || f.blur_status === 'sharp')
       .map(f => f.rowid);
     setSelected(new Set(best.length > 0 ? best : cluster.faces.map(f => f.rowid)));
+    setLastSelectedRowId(null);
   }, [cluster.faces]);
 
   // thumbSize baseado no zoom (qualidade da thumbnail)
@@ -193,20 +244,19 @@ export default function ClusterDetail({
             '--grid-item-size': `${zoom}px`,
             '--photo-img-h': `${photoImgH}px`,
           } as CSSProperties}
-          onMouseDown={handleMouseDown}
         >
           {visibleFaces.map(face => (
             <PhotoCard
               key={face.rowid}
               face={face}
               selected={selected.has(face.rowid)}
-              onToggle={() => toggleSelect(face.rowid)}
+              onToggle={(e) => handlePhotoSelect(face.rowid, e)}
               thumbSize={thumbSize}
               viewMode={viewMode}
             />
           ))}
 
-          {/* ── Selection Box Overlay ── */}
+          {/* ── Selection Box Overlay ──
           {selectionBox && (
             <div
               className={styles.selectionBox}
@@ -218,6 +268,7 @@ export default function ClusterDetail({
               }}
             />
           )}
+          */}
         </div>
 
         {visibleFaces.length === 0 && (
