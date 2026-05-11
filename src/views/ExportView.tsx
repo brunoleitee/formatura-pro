@@ -48,7 +48,6 @@ function ExportViewContent() {
   const { currentCatalog } = useApp();
   const [people, setPeople] = useState<Person[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [destPath, setDestPath] = useState('');
   const [mode, setMode] = useState<ExportMode>('copy');
   const [conflict, setConflict] = useState<ConflictStrategy>('copy');
@@ -74,7 +73,6 @@ function ExportViewContent() {
 
   useEffect(() => {
     setSelected(new Set());
-    setHoveredId(null);
     setStatus(null);
     setPolling(false);
     setSearch('');
@@ -135,21 +133,20 @@ function ExportViewContent() {
   );
 
   const isExporting = status?.is_exporting ?? false;
+  const selectionSummary = `${selected.size} de ${people.length} selecionado${selected.size !== 1 ? 's' : ''}`;
+  const exportButtonLabel = isExporting ? 'Exportando...' : `Exportar${selected.size > 0 ? ` (${selected.size})` : ''}`;
+  const exportSuccessLabel = 'Exportação concluída com sucesso!';
 
-  const getRowStyle = (isSelected: boolean, isHovered: boolean) => ({
+  const getRowStyle = (isSelected: boolean) => ({
     width: '100%',
     minHeight: 56,
     borderRadius: 12,
     border: isSelected ? '1px solid rgba(96, 165, 250, 0.85)' : '1px solid rgba(255,255,255,0.04)',
     background: isSelected
       ? 'linear-gradient(180deg, rgba(37,99,235,0.18), rgba(37,99,235,0.10))'
-      : isHovered
-      ? 'linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.025))'
       : 'transparent',
     boxShadow: isSelected
       ? '0 0 0 1px rgba(59,130,246,0.18) inset, 0 10px 24px rgba(37,99,235,0.14)'
-      : isHovered
-      ? '0 8px 20px rgba(0,0,0,0.18), 0 0 0 1px rgba(255,255,255,0.02) inset'
       : 'none',
     padding: '10px 12px',
     display: 'flex',
@@ -158,8 +155,7 @@ function ExportViewContent() {
     gap: 12,
     textAlign: 'left' as const,
     cursor: 'pointer',
-    transition: 'background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease',
-    transform: isHovered ? 'translateY(-1px)' : 'translateY(0)',
+    transition: 'background 140ms ease, border-color 140ms ease, box-shadow 140ms ease',
     outline: 'none',
   });
 
@@ -197,20 +193,22 @@ function ExportViewContent() {
   });
 
   return (
-    <div className="view-container">
+    <div className="view-container notranslate" translate="no">
       <div className="view-header">
         <div>
           <h1>Exportar Fotos</h1>
-          <div className="view-subtitle">Organize as fotos por formando em pastas</div>
+          <div className="view-subtitle">
+            <span>Organize as fotos por formando em pastas</span>
+          </div>
         </div>
       </div>
 
-      {error && <div className="error-msg">{error}</div>}
+      {error && <div className="error-msg"><span>{error}</span></div>}
 
       {!!status?.export_summary && !isExporting && (
         <div className="export-summary">
           <Check size={20} color="var(--success-color)" />
-          <span>Exportação concluída com sucesso!</span>
+          <span>{exportSuccessLabel}</span>
           <button className="icon-btn" onClick={async () => {
             await api.clearExportSummary();
             setStatus(null);
@@ -221,7 +219,7 @@ function ExportViewContent() {
       {isExporting && status && (
         <div className="export-progress-bar-wrap">
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-            <span style={{ fontSize: '0.85rem' }}>{status.status_text}</span>
+            <span style={{ fontSize: '0.85rem' }}>{String(status.status_text || '')}</span>
             <span style={{ fontSize: '0.85rem' }}>{Math.round(status.progress)}%</span>
           </div>
           <div className="progress-track">
@@ -240,10 +238,11 @@ function ExportViewContent() {
               onChange={e => setSearch(e.target.value)}
             />
             <button className="btn-secondary" onClick={selectAll} style={{ whiteSpace: 'nowrap' }}>
-              <Users size={14} /> Todos
+              <Users size={14} />
+              <span>Todos</span>
             </button>
             <button className="btn-secondary" onClick={clearAll} style={{ whiteSpace: 'nowrap' }}>
-              Limpar
+              <span>Limpar</span>
             </button>
           </div>
 
@@ -256,7 +255,7 @@ function ExportViewContent() {
               {filtered.map((p) => {
                 const personId = getPersonId(p);
                 const isSelected = selected.has(personId);
-                const isHovered = hoveredId === personId;
+                const photoCountLabel = `${p.total_photos} fotos`;
 
                 return (
                   <button
@@ -264,10 +263,8 @@ function ExportViewContent() {
                     key={personId}
                     className={`export-person-row ${isSelected ? 'selected' : ''}`}
                     onClick={() => toggleSelect(personId)}
-                    onMouseEnter={() => setHoveredId(personId)}
-                    onMouseLeave={() => setHoveredId((prev) => (prev === personId ? null : prev))}
                     aria-pressed={isSelected}
-                    style={getRowStyle(isSelected, isHovered)}
+                    style={getRowStyle(isSelected)}
                   >
                     <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
                       <span aria-hidden="true" style={getAvatarStyle(isSelected)}>
@@ -285,7 +282,7 @@ function ExportViewContent() {
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          {getPersonLabel(p)}
+                          <span>{getPersonLabel(p)}</span>
                         </span>
                         <span
                           className="person-count"
@@ -295,7 +292,7 @@ function ExportViewContent() {
                             letterSpacing: '0.01em',
                           }}
                         >
-                          {p.total_photos} fotos
+                          <span>{photoCountLabel}</span>
                         </span>
                       </span>
                     </span>
@@ -308,7 +305,7 @@ function ExportViewContent() {
             </div>
           )}
           <div className="export-selection-count">
-            {selected.size} de {people.length} selecionado{selected.size !== 1 ? 's' : ''}
+            <span>{selectionSummary}</span>
           </div>
         </div>
 
@@ -390,7 +387,7 @@ function ExportViewContent() {
               <RefreshCw size={16} className="spin" style={{ display: isExporting ? 'block' : 'none' }} />
               <Download size={16} style={{ display: isExporting ? 'none' : 'block' }} />
             </span>
-            {isExporting ? 'Exportando...' : `Exportar${selected.size > 0 ? ` (${selected.size})` : ''}`}
+            <span>{exportButtonLabel}</span>
           </button>
         </div>
       </div>
