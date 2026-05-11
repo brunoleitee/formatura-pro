@@ -19,6 +19,20 @@ export default function CatalogView() {
   const { selectedPhoto, setSelectedPhoto, handlePhotoClick } = usePhotoSelection();
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(filteredPhotos);
 
+  useEffect(() => {
+    console.log('[catalog-debug]', {
+      rawTotal: photos.length,
+      filteredTotal: filteredPhotos.length,
+      filter,
+      samples: photos.slice(0, 10).map(p => ({
+        name: p.name,
+        path: p.path,
+        faces: p.faces,
+        type: p.type
+      }))
+    });
+  }, [photos, filteredPhotos, filter]);
+
   const [auditStatus, setAuditStatus] = useState<{ is_auditing: boolean; status_text: string; progress: number } | null>(null);
 
   const startQualityAudit = useCallback(async () => {

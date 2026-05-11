@@ -1,5 +1,5 @@
 import { api, type Photo } from '../../services/api';
-import { isKnownFace } from '../../utils/photoMapping';
+import { isKnownFace } from '../../utils/personIdentity';
 
 interface PhotoDetailPanelProps {
   photo: Photo;

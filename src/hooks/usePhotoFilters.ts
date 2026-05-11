@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import type { Photo } from '../services/api';
 import { extractSubfolders } from '../utils/pathUtils';
-import { isPhotoMapped, isPhotoUnmapped } from '../utils/photoMapping';
+import { isPhotoMapped, isPhotoUnmapped } from '../utils/personIdentity';
 
 export type PhotoFilter = 'all' | 'mapped' | 'unmapped';
 

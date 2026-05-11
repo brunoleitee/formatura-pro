@@ -83,13 +83,15 @@ def get_people(unknown: bool = False):
             if unknown:
                 cur.execute("""
                     SELECT aluno_id, COUNT(*) as total FROM ocorrencias
-                    WHERE aluno_id LIKE 'Pessoa %' OR aluno_id = 'Desconhecido'
+                    WHERE lower(aluno_id) IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'não_mapeado', '__unknown__')
+                       OR aluno_id LIKE 'Pessoa%'
                     GROUP BY aluno_id ORDER BY total DESC, aluno_id ASC
                 """)
             else:
                 cur.execute("""
                     SELECT aluno_id, COUNT(*) as total FROM ocorrencias
-                    WHERE aluno_id NOT LIKE 'Pessoa %' AND aluno_id != 'Desconhecido'
+                    WHERE lower(aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'não_mapeado', '__unknown__')
+                      AND aluno_id NOT LIKE 'Pessoa%'
                     GROUP BY aluno_id ORDER BY aluno_id ASC
                 """)
 
@@ -214,7 +216,7 @@ def get_all_photos(limit: int = 1000):
                    MAX(blur_score) as blur_score,
                    MAX(blur_status) as blur_status,
                    MAX(closed_eyes) as closed_eyes,
-                   COUNT(*) as face_count
+                   COUNT(CASE WHEN x1 IS NOT NULL THEN 1 END) as face_count
             FROM ocorrencias
             GROUP BY foto_path
             ORDER BY foto_path
@@ -242,7 +244,13 @@ def get_all_photos(limit: int = 1000):
                 stat = os.stat(p)
                 unique_photos[p]["size"] = stat.st_size
                 unique_photos[p]["mtime"] = stat.st_mtime
+                from PIL import Image
+                with Image.open(p) as img:
+                    unique_photos[p]["width"] = img.width
+                    unique_photos[p]["height"] = img.height
             except Exception:
+                unique_photos[p]["width"] = None
+                unique_photos[p]["height"] = None
                 pass
         if unique_photos:
             paths = list(unique_photos.keys())

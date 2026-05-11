@@ -452,7 +452,10 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             SELECT rowid, aluno_id, foto_path, x1, y1, x2, y2
             FROM ocorrencias
             WHERE x1 IS NOT NULL
-              AND (aluno_id = 'Desconhecido' OR aluno_id LIKE 'Pessoa %')
+              AND (
+                  lower(aluno_id) IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'não_mapeado', '__unknown__')
+                  OR aluno_id LIKE 'Pessoa%'
+              )
             ORDER BY foto_path ASC, rowid ASC
         """)
         rows = cur.fetchall()

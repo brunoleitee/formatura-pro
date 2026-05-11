@@ -25,6 +25,8 @@ export interface Photo {
   size: number | null;
   mtime: number | null;
   ctime: number | null;
+  width?: number | null;
+  height?: number | null;
   faces: PhotoFace[];
   total_faces_in_db: number;
   discarded: boolean;
