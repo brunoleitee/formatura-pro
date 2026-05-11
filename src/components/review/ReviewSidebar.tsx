@@ -11,6 +11,7 @@ interface ReviewSidebarProps {
   clusters: RichCluster[];
   loading: boolean;
   selectedId: string | null;
+  graduationAnalysisRan?: boolean;
   onSelect: (cluster: RichCluster) => void;
   onRefresh: () => void;
 }
@@ -90,6 +91,7 @@ export default function ReviewSidebar({
   clusters,
   loading,
   selectedId,
+  graduationAnalysisRan = false,
   onSelect,
   onRefresh,
 }: ReviewSidebarProps) {
@@ -134,7 +136,13 @@ export default function ReviewSidebar({
     !search &&
     visible.length === 0 &&
     (priorityFilter === 'gown' || priorityFilter === 'diploma' || priorityFilter === 'sash' || priorityFilter === 'cap') &&
+    !graduationAnalysisRan &&
     !hasGraduationAnalysis;
+  const showNoMatchingGraduationClusters =
+    !search &&
+    visible.length === 0 &&
+    (priorityFilter === 'gown' || priorityFilter === 'diploma' || priorityFilter === 'sash' || priorityFilter === 'cap') &&
+    (graduationAnalysisRan || hasGraduationAnalysis);
 
   return (
     <aside className={styles.sidebar}>
@@ -210,6 +218,8 @@ export default function ReviewSidebar({
                 ? 'Sem resultados'
                 : showMissingGraduationAnalysis
                 ? 'A IA ainda não analisou beca/canudo/faixa neste catálogo.'
+                : showNoMatchingGraduationClusters
+                ? 'Nenhum cluster com beca/canudo/faixa encontrado.'
                 : 'Tudo identificado!'}
             </span>
           </div>
