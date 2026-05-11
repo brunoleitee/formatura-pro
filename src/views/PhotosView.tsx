@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Image as ImageIcon, RefreshCw, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { api, type Photo, type PhotoFace } from '../services/api';
 import { useApp } from '../context/AppContext';
@@ -92,6 +92,8 @@ export default function PhotosView() {
   const [selected, setSelected] = useState<Photo | null>(null);
   const [selectedSubfolder, setSelectedSubfolder] = useState<string | null>(null);
   const [viewerPhoto, setViewerPhoto] = useState<Photo | null>(null);
+  const lastClickTime = useRef<number>(0);
+  const lastClickPhoto = useRef<string>('');
 
   const subfolders = useMemo(() => extractSubfolders(photos, currentCatalog), [photos, currentCatalog]);
 
@@ -224,8 +226,18 @@ export default function PhotosView() {
                   <div
                     key={photo.path || i}
                     className={`photo-card ${selected?.path === photo.path ? 'selected' : ''}`}
-                    onClick={() => setSelected(selected?.path === photo.path ? null : photo)}
-                    onDoubleClick={() => setViewerPhoto(photo)}
+                    onClick={() => {
+                      const now = Date.now();
+                      const timeSinceLastClick = now - lastClickTime.current;
+                      if (timeSinceLastClick < 300 && lastClickPhoto.current === photo.path) {
+                        setViewerPhoto(photo);
+                        lastClickTime.current = 0;
+                      } else {
+                        lastClickTime.current = now;
+                        lastClickPhoto.current = photo.path;
+                        setSelected(selected?.path === photo.path ? null : photo);
+                      }
+                    }}
                   >
                     <PhotoThumb photo={photo} />
 <div className="photo-info">
