@@ -1,1 +1,0 @@
-import urllib.request; req = urllib.request.Request('http://127.0.0.1:8000/api/rename-person', data=b'{\"old_id\":\"Pessoa 1\",\"new_id\":\"Teste\"}', headers={'Content-Type': 'application/json'}); print(urllib.request.urlopen(req).read())
