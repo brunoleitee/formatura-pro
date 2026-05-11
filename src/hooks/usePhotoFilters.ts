@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import type { Photo } from '../services/api';
 import { isPhotoMapped, isPhotoUnmapped } from '../utils/personIdentity';
+import { getPhotoSubfolder, sameSubfolder } from '../utils/catalogPathUtils';
 
 export type PhotoFilter = 'all' | 'mapped' | 'unmapped';
 
@@ -8,19 +9,20 @@ export function usePhotoFilters(photos: Photo[], currentCatalog: string, selecte
   const [filter, setFilter] = useState<PhotoFilter>('all');
 
   const filteredPhotos = useMemo(() => {
-    return photos.filter(p => {
+    let result = photos.filter(p => {
       if (p.discarded) return false;
 
       if (selectedSubfolder) {
-        const parts = p.path.split(/[/\\]/);
-        const ci = parts.findIndex(part => part === currentCatalog);
-        if (ci < 0 || parts[ci + 1] !== selectedSubfolder) return false;
+        const photoSubfolder = getPhotoSubfolder(p);
+        if (!sameSubfolder(photoSubfolder, selectedSubfolder)) return false;
       }
 
       if (filter === 'mapped') return isPhotoMapped(p);
       if (filter === 'unmapped') return isPhotoUnmapped(p);
       return true;
     });
+
+    return result;
   }, [photos, currentCatalog, selectedSubfolder, filter]);
 
   return { filter, setFilter, filteredPhotos };
