@@ -18,8 +18,10 @@ interface AppContextValue {
   refreshKey: number;
   catalogSubfolder: string | null;
   catalogSubfolders: string[];
+  isLoadingCatalogPhotos: boolean;
   setCatalogSubfolder: (s: string | null) => void;
   setCatalogSubfolders: (folders: string[]) => void;
+  setIsLoadingCatalogPhotos: (loading: boolean) => void;
   setCatalog: (name: string) => Promise<void>;
   refreshCatalogs: () => Promise<void>;
   bumpRefresh: () => void;
@@ -37,6 +39,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [catalogSubfolder, setCatalogSubfolder] = useState<string | null>(null);
   const [catalogSubfolders, setCatalogSubfolders] = useState<string[]>([]);
+  const [isLoadingCatalogPhotos, setIsLoadingCatalogPhotos] = useState(false);
 
   const refreshCatalogs = useCallback(async () => {
     setIsLoadingCatalogs(true);
@@ -86,8 +89,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshKey,
       catalogSubfolder,
       catalogSubfolders,
+      isLoadingCatalogPhotos,
       setCatalogSubfolder,
       setCatalogSubfolders,
+      setIsLoadingCatalogPhotos,
       setCatalog,
       refreshCatalogs,
       bumpRefresh,

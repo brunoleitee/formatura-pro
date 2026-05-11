@@ -13,11 +13,16 @@ import { PhotoFilters } from '../components/photos/PhotoFilters';
 import { extractSubfolders } from '../utils/pathUtils';
 
 export default function CatalogView() {
-  const { currentCatalog, catalogSubfolder, setCatalogSubfolders } = useApp();
+  const { currentCatalog, catalogSubfolder, setCatalogSubfolders, setIsLoadingCatalogPhotos } = useApp();
   const { photos, loading, loadPhotos } = useCatalogPhotos();
   const { filter, setFilter, filteredPhotos } = usePhotoFilters(photos, currentCatalog, catalogSubfolder);
   const { selectedPhoto, setSelectedPhoto, handlePhotoClick } = usePhotoSelection();
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(filteredPhotos);
+
+  // Sincronizar loading com contexto
+  useEffect(() => {
+    setIsLoadingCatalogPhotos(loading);
+  }, [loading, setIsLoadingCatalogPhotos]);
 
   const [auditStatus, setAuditStatus] = useState<{
     is_auditing: boolean; status_text: string; progress: number;
@@ -25,8 +30,9 @@ export default function CatalogView() {
 
   // Publica subfolders no contexto para a Sidebar mostrar a árvore
   useEffect(() => {
-    setCatalogSubfolders(extractSubfolders(photos, currentCatalog));
-  }, [photos, currentCatalog, setCatalogSubfolders]);
+    const subfolders = extractSubfolders(photos);
+    setCatalogSubfolders(subfolders);
+  }, [photos, setCatalogSubfolders]);
 
   const startQualityAudit = useCallback(async () => {
     try {

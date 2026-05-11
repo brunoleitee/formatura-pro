@@ -1,15 +1,45 @@
 import type { Photo } from '../services/api';
 
-export function extractSubfolders(photos: Photo[], catalogName: string): string[] {
-  const folders = new Set<string>();
-  for (const photo of photos) {
-    const pathParts = photo.path.split(/[/\\]/);
-    if (pathParts.length > 1) {
-      const catalogIndex = pathParts.findIndex((p: string) => p === catalogName);
-      if (catalogIndex >= 0 && catalogIndex + 1 < pathParts.length - 1) {
-        folders.add(pathParts[catalogIndex + 1]);
-      }
-    }
+function getCatalogSubfolder(photo: Photo): string | null {
+  const rawPath =
+    (photo as any).relative_folder ||
+    (photo as any).subfolder ||
+    (photo as any).folder ||
+    (photo as any).original_path ||
+    photo.path ||
+    (photo as any).file_path ||
+    (photo as any).src ||
+    '';
+
+  if (!rawPath) return null;
+
+  const normalized = rawPath.replaceAll('\\', '/');
+
+  // Procurar pasta logo abaixo de /fotos/
+  const fotosIndex = normalized.toLowerCase().lastIndexOf('/fotos/');
+  if (fotosIndex >= 0) {
+    const afterFotos = normalized.slice(fotosIndex + '/fotos/'.length);
+    const parts = afterFotos.split('/').filter(Boolean);
+    return parts.length > 1 ? parts[0] : null;
   }
-  return Array.from(folders).sort();
+
+  // Fallback: tentar pegar a pasta pai do arquivo
+  const parts = normalized.split('/').filter(Boolean);
+  if (parts.length >= 2) {
+    return parts[parts.length - 2];
+  }
+
+  return null;
+}
+
+export function extractSubfolders(photos: Photo[]): string[] {
+  const subfolders = Array.from(
+    new Set(
+      photos
+        .map(photo => getCatalogSubfolder(photo))
+        .filter(Boolean) as string[]
+    )
+  ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+  return subfolders;
 }

@@ -30,7 +30,7 @@ export function Sidebar({
 }: SidebarProps) {
   const {
     currentCatalog, catalogs, activeView, navigate, setCatalog, refreshCatalogs,
-    catalogSubfolder, catalogSubfolders, setCatalogSubfolder,
+    catalogSubfolder, catalogSubfolders, setCatalogSubfolder, isLoadingCatalogPhotos,
   } = useApp();
 
   // Busca global
@@ -196,9 +196,13 @@ export function Sidebar({
                   {/* Subpastas */}
                   {folderTreeExpanded && (
                     <div className={ftStyles.children}>
-                      {catalogSubfolders.length === 0 ? (
+                      {isLoadingCatalogPhotos ? (
                         <div className={ftStyles.item} style={{ opacity: 0.6, fontStyle: 'italic' }}>
                           Carregando pastas...
+                        </div>
+                      ) : catalogSubfolders.length === 0 ? (
+                        <div className={ftStyles.item} style={{ opacity: 0.6, fontStyle: 'italic' }}>
+                          Nenhuma subpasta encontrada
                         </div>
                       ) : (
                         catalogSubfolders.map(sub => (
