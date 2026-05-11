@@ -1,3 +1,4 @@
+import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
 import { useApp } from '../context/AppContext';
@@ -9,31 +10,23 @@ import { PhotoGrid } from '../components/photos/PhotoGrid';
 import { PhotoDetailPanel } from '../components/photos/PhotoDetailPanel';
 import { PhotoViewerModal } from '../components/photos/PhotoViewerModal';
 import { PhotoFilters } from '../components/photos/PhotoFilters';
-import { FolderTree } from '../components/photos/FolderTree';
-import { useState, useEffect, useCallback } from 'react';
+import { extractSubfolders } from '../utils/pathUtils';
 
 export default function CatalogView() {
-  const { currentCatalog } = useApp();
+  const { currentCatalog, catalogSubfolder, setCatalogSubfolders } = useApp();
   const { photos, loading, loadPhotos } = useCatalogPhotos();
-  const { filter, setFilter, selectedSubfolder, setSelectedSubfolder, subfolders, filteredPhotos } = usePhotoFilters(photos, currentCatalog);
+  const { filter, setFilter, filteredPhotos } = usePhotoFilters(photos, currentCatalog, catalogSubfolder);
   const { selectedPhoto, setSelectedPhoto, handlePhotoClick } = usePhotoSelection();
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(filteredPhotos);
 
-  useEffect(() => {
-    console.log('[catalog-debug]', {
-      rawTotal: photos.length,
-      filteredTotal: filteredPhotos.length,
-      filter,
-      samples: photos.slice(0, 10).map(p => ({
-        name: p.name,
-        path: p.path,
-        faces: p.faces,
-        type: p.type
-      }))
-    });
-  }, [photos, filteredPhotos, filter]);
+  const [auditStatus, setAuditStatus] = useState<{
+    is_auditing: boolean; status_text: string; progress: number;
+  } | null>(null);
 
-  const [auditStatus, setAuditStatus] = useState<{ is_auditing: boolean; status_text: string; progress: number } | null>(null);
+  // Publica subfolders no contexto para a Sidebar mostrar a árvore
+  useEffect(() => {
+    setCatalogSubfolders(extractSubfolders(photos, currentCatalog));
+  }, [photos, currentCatalog, setCatalogSubfolders]);
 
   const startQualityAudit = useCallback(async () => {
     try {
@@ -45,30 +38,26 @@ export default function CatalogView() {
   useEffect(() => {
     if (!currentCatalog) return;
     const checkAudit = async () => {
-      try {
-        const st = await api.getQualityAuditStatus();
-        setAuditStatus(st);
-      } catch {}
+      try { setAuditStatus(await api.getQualityAuditStatus()); } catch {}
     };
     checkAudit();
-    const interval = setInterval(checkAudit, 2000);
-    return () => clearInterval(interval);
+    const id = setInterval(checkAudit, 2000);
+    return () => clearInterval(id);
   }, [currentCatalog]);
+
+  const subtitle = loading && photos.length === 0
+    ? 'Carregando fotos...'
+    : `${filteredPhotos.length} foto${filteredPhotos.length !== 1 ? 's' : ''} encontrada${filteredPhotos.length !== 1 ? 's' : ''}` +
+      (catalogSubfolder ? ` em "${catalogSubfolder}"` : '');
 
   return (
     <div className="view-container">
       <div className="view-header">
         <div>
           <h1>Evento</h1>
-          <p className="view-subtitle">
-            {loading && photos.length === 0 ? 'Carregando fotos...' : 
-              `${filteredPhotos.length} foto${filteredPhotos.length !== 1 ? 's' : ''} encontrada${filteredPhotos.length !== 1 ? 's' : ''}` +
-              (selectedSubfolder ? ` em "${selectedSubfolder}"` : '')
-            }
-          </p>
+          <p className="view-subtitle">{subtitle}</p>
         </div>
         <div className="view-header-actions">
-          <FolderTree subfolders={subfolders} selectedSubfolder={selectedSubfolder} onSelectSubfolder={setSelectedSubfolder} />
           <PhotoFilters filter={filter} onFilterChange={setFilter} />
           <button className="icon-btn" title="Atualizar" onClick={loadPhotos}>
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
@@ -78,7 +67,7 @@ export default function CatalogView() {
               {auditStatus.status_text} ({Math.round(auditStatus.progress * 100)}%)
             </span>
           ) : (
-            <button className="icon-btn" title="Auditar qualidade das fotos" onClick={startQualityAudit} style={{ marginLeft: 4 }}>
+            <button className="icon-btn" title="Auditar qualidade" onClick={startQualityAudit} style={{ marginLeft: 4 }}>
               <span style={{ fontSize: '0.7rem' }}>QA</span>
             </button>
           )}

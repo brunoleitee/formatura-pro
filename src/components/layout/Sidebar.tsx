@@ -1,7 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { FolderOpen, ChevronDown, Trash2, Image as ImageIcon, Users, UserCheck, Download, Settings, Search, ScanLine, Loader, Users as UsersIcon } from 'lucide-react';
+import {
+  FolderOpen, ChevronDown, ChevronRight, Trash2,
+  Image as ImageIcon, Users, UserCheck, Download,
+  Settings, Search, ScanLine, Loader, Users as UsersIcon,
+  Folder,
+} from 'lucide-react';
 import { useApp, type ViewName } from '../../context/AppContext';
 import { api } from '../../services/api';
+import ftStyles from './SidebarFolderTree.module.css';
 
 interface SidebarProps {
   showCatalogDropdown: boolean;
@@ -22,13 +28,19 @@ export function Sidebar({
   scanMsg,
   scanProgress,
 }: SidebarProps) {
-  const { currentCatalog, catalogs, activeView, navigate, setCatalog, refreshCatalogs } = useApp();
+  const {
+    currentCatalog, catalogs, activeView, navigate, setCatalog, refreshCatalogs,
+    catalogSubfolder, catalogSubfolders, setCatalogSubfolder,
+  } = useApp();
 
-  // Busca global — estado local na sidebar
+  // Busca global
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ name: string; catalog: string }[]>([]);
   const [showSearch, setShowSearch] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+
+  // Árvore de pastas do catálogo
+  const [folderTreeExpanded, setFolderTreeExpanded] = useState(true);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -60,6 +72,9 @@ export function Sidebar({
     { view: 'export',   icon: <Download size={17} />,  label: 'Exportador' },
     { view: 'settings', icon: <Settings size={17} />,  label: 'Configurações' },
   ];
+
+  const showFolderTree =
+    activeView === 'photos' && !!currentCatalog && catalogSubfolders.length > 0;
 
   return (
     <div className="sidebar">
@@ -148,13 +163,53 @@ export function Sidebar({
         <div className="nav-section">
           <div className="nav-section-title">Biblioteca</div>
           {navItems.map(item => (
-            <div
-              key={item.view}
-              className={`nav-item ${activeView === item.view || (item.view === 'people' && activeView === 'person-detail') ? 'active' : ''}`}
-              onClick={() => navigate(item.view)}
-            >
-              {item.icon}
-              <span>{item.label}</span>
+            <div key={item.view}>
+              <div
+                className={`nav-item ${activeView === item.view || (item.view === 'people' && activeView === 'person-detail') ? 'active' : ''}`}
+                onClick={() => navigate(item.view)}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </div>
+
+              {/* Árvore de pastas embutida abaixo do item Catálogo */}
+              {item.view === 'photos' && showFolderTree && (
+                <div className={ftStyles.tree}>
+                  {/* Linha raiz */}
+                  <div className={`${ftStyles.rootRow} ${catalogSubfolder === null ? ftStyles.active : ''}`}>
+                    <button
+                      className={ftStyles.chevron}
+                      onClick={() => setFolderTreeExpanded(v => !v)}
+                    >
+                      {folderTreeExpanded
+                        ? <ChevronDown size={11} />
+                        : <ChevronRight size={11} />}
+                    </button>
+                    <span
+                      className={ftStyles.rootLabel}
+                      onClick={() => { setCatalogSubfolder(null); navigate('photos'); }}
+                    >
+                      Fotos
+                    </span>
+                  </div>
+
+                  {/* Subpastas */}
+                  {folderTreeExpanded && (
+                    <div className={ftStyles.children}>
+                      {catalogSubfolders.map(sub => (
+                        <div
+                          key={sub}
+                          className={`${ftStyles.item} ${catalogSubfolder === sub ? ftStyles.active : ''}`}
+                          onClick={() => { setCatalogSubfolder(sub); navigate('photos'); }}
+                        >
+                          <Folder size={12} className={ftStyles.folderIcon} />
+                          <span className={ftStyles.itemLabel}>{sub}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -162,7 +217,7 @@ export function Sidebar({
         <div className="nav-section">
           <div className="nav-section-title">Ferramentas</div>
 
-          {/* Escanear — ação direta, não navega */}
+          {/* Escanear */}
           <div
             className={`nav-item ${isScanning ? 'sidebar-scanning' : ''}`}
             onClick={() => { if (!isScanning && currentCatalog) onScanClick(); }}
@@ -190,7 +245,7 @@ export function Sidebar({
         </div>
       </div>
 
-      {/* Progresso do scan (rodapé da sidebar) */}
+      {/* Progresso do scan (rodapé) */}
       {isScanning && (
         <div className="sidebar-scan-footer">
           <div className="sidebar-scan-progress">

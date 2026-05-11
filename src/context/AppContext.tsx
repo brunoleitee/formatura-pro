@@ -16,6 +16,10 @@ interface AppContextValue {
   activeView: ViewName;
   selectedPersonId: string | null;
   refreshKey: number;
+  catalogSubfolder: string | null;
+  catalogSubfolders: string[];
+  setCatalogSubfolder: (s: string | null) => void;
+  setCatalogSubfolders: (folders: string[]) => void;
   setCatalog: (name: string) => Promise<void>;
   refreshCatalogs: () => Promise<void>;
   bumpRefresh: () => void;
@@ -31,6 +35,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activeView, setActiveView] = useState<ViewName>('people');
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [catalogSubfolder, setCatalogSubfolder] = useState<string | null>(null);
+  const [catalogSubfolders, setCatalogSubfolders] = useState<string[]>([]);
 
   const refreshCatalogs = useCallback(async () => {
     setIsLoadingCatalogs(true);
@@ -56,6 +62,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       await api.setCatalog(name);
       setCurrentCatalog(name);
+      setCatalogSubfolder(null);
+      setCatalogSubfolders([]);
     } catch (e) {
       console.error('Erro ao definir catálogo:', e);
     }
@@ -76,6 +84,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       activeView,
       selectedPersonId,
       refreshKey,
+      catalogSubfolder,
+      catalogSubfolders,
+      setCatalogSubfolder,
+      setCatalogSubfolders,
       setCatalog,
       refreshCatalogs,
       bumpRefresh,

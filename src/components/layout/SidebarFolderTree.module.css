@@ -1,0 +1,106 @@
+/* Árvore de pastas embutida na Sidebar, abaixo do item Catálogo */
+
+.tree {
+  margin: 2px 0 4px 0;
+  padding-bottom: 2px;
+}
+
+/* Linha raiz (ex.: "Fotos") */
+.rootRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px 3px 10px;
+  font-size: 0.76rem;
+  color: var(--text-secondary, #94a3b8);
+  user-select: none;
+}
+
+.rootRow.active .rootLabel {
+  color: var(--text-primary, #e2e8f0);
+}
+
+/* Botão de expand/collapse */
+.chevron {
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  opacity: 0.55;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+}
+
+.chevron:hover { opacity: 1; }
+
+/* Label da raiz — clicável para "todas as fotos" */
+.rootLabel {
+  cursor: pointer;
+  flex: 1;
+  font-weight: 600;
+  font-size: 0.74rem;
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.75;
+  transition: opacity 0.1s;
+}
+
+.rootLabel:hover { opacity: 1; }
+
+/* Filhos */
+.children {
+  padding-left: 22px;
+}
+
+/* Item de pasta */
+.item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 6px;
+  border-radius: 4px;
+  margin: 1px 4px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #94a3b8);
+  transition: background 0.1s, color 0.1s;
+}
+
+.item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary, #e2e8f0);
+}
+
+.item.active {
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+}
+
+.item.active .folderIcon { color: #60a5fa; }
+
+/* Ícone de pasta */
+.folderIcon {
+  flex-shrink: 0;
+  color: #ca8a04;
+  opacity: 0.85;
+}
+
+.item.active .folderIcon {
+  color: #60a5fa;
+  opacity: 1;
+}
+
+/* Label da pasta */
+.itemLabel {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,35 +1,27 @@
 import { useState, useMemo } from 'react';
 import type { Photo } from '../services/api';
-import { extractSubfolders } from '../utils/pathUtils';
 import { isPhotoMapped, isPhotoUnmapped } from '../utils/personIdentity';
 
 export type PhotoFilter = 'all' | 'mapped' | 'unmapped';
 
-export function usePhotoFilters(photos: Photo[], currentCatalog: string) {
+export function usePhotoFilters(photos: Photo[], currentCatalog: string, selectedSubfolder: string | null) {
   const [filter, setFilter] = useState<PhotoFilter>('all');
-  const [selectedSubfolder, setSelectedSubfolder] = useState<string | null>(null);
-
-  const subfolders = useMemo(() => extractSubfolders(photos, currentCatalog), [photos, currentCatalog]);
 
   const filteredPhotos = useMemo(() => {
     return photos.filter(p => {
+      if (p.discarded) return false;
+
       if (selectedSubfolder) {
-        const pathParts = p.path.split(/[/\\]/);
-        const catalogIndex = pathParts.findIndex(part => part === currentCatalog);
-        if (catalogIndex < 0 || pathParts[catalogIndex + 1] !== selectedSubfolder) return false;
+        const parts = p.path.split(/[/\\]/);
+        const ci = parts.findIndex(part => part === currentCatalog);
+        if (ci < 0 || parts[ci + 1] !== selectedSubfolder) return false;
       }
+
       if (filter === 'mapped') return isPhotoMapped(p);
       if (filter === 'unmapped') return isPhotoUnmapped(p);
       return true;
     });
-  }, [photos, currentCatalog, filter, selectedSubfolder]);
+  }, [photos, currentCatalog, selectedSubfolder, filter]);
 
-  return {
-    filter,
-    setFilter,
-    selectedSubfolder,
-    setSelectedSubfolder,
-    subfolders,
-    filteredPhotos
-  };
+  return { filter, setFilter, filteredPhotos };
 }
