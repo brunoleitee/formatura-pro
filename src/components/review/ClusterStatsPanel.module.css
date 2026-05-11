@@ -1,11 +1,11 @@
 /* ClusterStatsPanel — painel de estatísticas da direita */
 
 .panel {
-  width: 280px;
+  width: 220px;
   flex-shrink: 0;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 12px;
+  border-radius: 10px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -20,8 +20,8 @@
 
 .tab {
   flex: 1;
-  padding: 11px 8px;
-  font-size: 0.78rem;
+  padding: 7px 6px;
+  font-size: 0.72rem;
   font-weight: 500;
   color: #475569;
   background: none;
@@ -54,31 +54,31 @@
 /* ── Body ── */
 .body {
   flex: 1;
-  padding: 14px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 8px;
 }
 
 /* ── Stat grid 2x2 ── */
 .statsGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 5px;
 }
 
 .statCard {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-  padding: 10px 12px;
+  border-radius: 6px;
+  padding: 5px 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .statValue {
-  font-size: 1.35rem;
+  font-size: 1rem;
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.02em;
@@ -90,7 +90,7 @@
 .red    { color: #ef4444; }
 
 .statLabel {
-  font-size: 0.7rem;
+  font-size: 0.62rem;
   color: #475569;
   line-height: 1.2;
 }
@@ -99,7 +99,7 @@
 .confidence {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
 }
 
 .confHeader {}
@@ -111,7 +111,7 @@
 }
 
 .confPct {
-  font-size: 1.4rem;
+  font-size: 0.95rem;
   font-weight: 700;
   color: #3b82f6;
   letter-spacing: -0.02em;

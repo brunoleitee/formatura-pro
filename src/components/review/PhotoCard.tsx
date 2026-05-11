@@ -4,11 +4,13 @@ import type { RichClusterFace } from '../../services/api';
 import { API_BASE } from '../../services/api/core';
 import styles from './PhotoCard.module.css';
 
-function faceContextThumb(face: RichClusterFace, size: number) {
-  if (!face.box || face.box.length < 4 || !face.path) {
-    return face.path
-      ? `${API_BASE}/image_thumb?path=${encodeURIComponent(face.path)}&size=${size}`
-      : '';
+function thumbUrl(face: RichClusterFace, size: number, mode: 'photo' | 'face') {
+  if (!face.path) return '';
+  if (mode === 'photo') {
+    return `${API_BASE}/image_thumb?path=${encodeURIComponent(face.path)}&size=${size}`;
+  }
+  if (!face.box || face.box.length < 4) {
+    return `${API_BASE}/image_thumb?path=${encodeURIComponent(face.path)}&size=${size}`;
   }
   const [x1, y1, x2, y2] = face.box;
   return `${API_BASE}/thumb?path=${encodeURIComponent(face.path)}&x1=${x1}&y1=${y1}&x2=${x2}&y2=${y2}&size=${size}&expand=1.4`;
@@ -33,6 +35,7 @@ interface PhotoCardProps {
   onToggle: () => void;
   thumbSize?: number;
   cardHeight?: number;
+  viewMode?: 'photo' | 'face';
 }
 
 export const PhotoCard = memo(function PhotoCard({
@@ -41,13 +44,14 @@ export const PhotoCard = memo(function PhotoCard({
   onToggle,
   thumbSize = 400,
   cardHeight = 200,
+  viewMode = 'face',
 }: PhotoCardProps) {
   const [loaded, setLoaded] = useState(false);
   const badges = getBadges(face);
 
   return (
     <div
-      className={`${styles.card} ${selected ? styles.selected : ''}`}
+      className={`${styles.card} ${selected ? styles.selected : ''} ${viewMode === 'photo' ? styles.modePhoto : styles.modeFace}`}
       style={{ '--card-h': `${cardHeight}px` } as CSSProperties}
       onClick={onToggle}
       translate="no"
@@ -56,7 +60,7 @@ export const PhotoCard = memo(function PhotoCard({
       <div className={styles.imgWrap}>
         {!loaded && <div className={styles.skeleton} />}
         <img
-          src={faceContextThumb(face, thumbSize)}
+          src={thumbUrl(face, thumbSize, viewMode)}
           alt=""
           loading="lazy"
           decoding="async"

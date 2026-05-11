@@ -8,6 +8,8 @@ import { PhotoCard } from './PhotoCard';
 import { GraduationActions, type GraduationActionsHandle, type GraduationItem } from './GraduationActions';
 import styles from './ClusterDetail.module.css';
 
+const ZOOM_DEFAULT = 200;
+
 interface ClusterDetailProps {
   cluster: RichCluster;
   catalog: string;
@@ -50,8 +52,9 @@ export default function ClusterDetail({
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState<FilterOption>('all');
   const [sort, setSort] = useState<SortOption>('best_match');
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
-  const [zoom, setZoom] = useState(200); // altura dos cards em px
+  const [viewMode, setViewMode] = useState<ViewMode>('face');
+  const [zoom, setZoom] = useState(ZOOM_DEFAULT); // altura dos cards em px
+  const [collapsed, setCollapsed] = useState(false);
   const heroRef = useRef<ClusterHeroHandle>(null);
   const graduationRef = useRef<GraduationActionsHandle>(null);
 
@@ -120,22 +123,26 @@ export default function ClusterDetail({
 
   return (
     <div className={styles.root} key={cluster.cluster_id} translate="no">
-      {/* ── Seção superior: hero + stats ── */}
-      <div className={styles.topSection}>
+      {/* ── Header compacto ── */}
+      <div className={`${styles.topSection} ${collapsed ? styles.topSectionCollapsed : ''}`}>
         <ClusterHero
           ref={heroRef}
           cluster={cluster}
           catalog={catalog}
+          collapsed={collapsed}
+          onToggleCollapsed={() => setCollapsed(v => !v)}
           onAssigned={onAssigned}
           onSkip={onSkip}
         />
-        <ClusterStatsPanel
-          cluster={cluster}
-          selectedCount={selected.size}
-        />
+        {!collapsed && (
+          <ClusterStatsPanel
+            cluster={cluster}
+            selectedCount={selected.size}
+          />
+        )}
       </div>
 
-      {/* ── Ações manuais de formatura ── */}
+      {/* ── Linha pequena: badges + Corrigir itens ── */}
       <div className={styles.graduationActionsWrap}>
         <GraduationActions
           ref={graduationRef}
@@ -145,7 +152,7 @@ export default function ClusterDetail({
         />
       </div>
 
-      {/* ── Toolbar ── */}
+      {/* ── Toolbar compacta ── */}
       <ClusterToolbar
         filter={filter}
         sort={sort}
@@ -160,7 +167,7 @@ export default function ClusterDetail({
         onSelectBest={handleSelectBest}
       />
 
-      {/* ── Grid de fotos ── */}
+      {/* ── Grid de fotos (prioridade visual) ── */}
       <div className={styles.gridScroll}>
         <div
           className={styles.grid}
@@ -176,6 +183,7 @@ export default function ClusterDetail({
               onToggle={() => toggleSelect(face.rowid)}
               thumbSize={thumbSize}
               cardHeight={cardHeight}
+              viewMode={viewMode}
             />
           ))}
         </div>

@@ -25,7 +25,7 @@ export function AppShell() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ name: string; catalog: string }[]>([]);
   const [showSearch, setShowSearch] = useState(false);
-  const searchRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
 
   useEffect(() => {
     refreshCatalogs();

@@ -1,10 +1,12 @@
-import { useCallback, useImperativeHandle, forwardRef } from 'react';
-import { Check, X, Sparkles } from 'lucide-react';
+import { useCallback, useImperativeHandle, forwardRef, useState } from 'react';
+import { Check, X, Sparkles, Settings2, ChevronUp } from 'lucide-react';
 import type { RichCluster } from '../../services/api';
 import { api } from '../../services/api';
 import styles from './GraduationActions.module.css';
 
 export type GraduationItem = 'gown' | 'diploma' | 'sash' | 'cap';
+
+const ITEMS: GraduationItem[] = ['gown', 'diploma', 'sash', 'cap'];
 
 const ITEM_TAG: Record<GraduationItem, string> = {
   gown: 'beca',
@@ -78,6 +80,7 @@ export interface GraduationActionsHandle {
 
 export const GraduationActions = forwardRef<GraduationActionsHandle, GraduationActionsProps>(
   function GraduationActions({ cluster, catalog, onUpdate }, ref) {
+    const [open, setOpen] = useState(false);
     const rowids = cluster.faces.map(f => f.rowid);
 
     const runOverride = useCallback(
@@ -106,43 +109,86 @@ export const GraduationActions = forwardRef<GraduationActionsHandle, GraduationA
 
     useImperativeHandle(ref, () => ({ toggle }), [toggle]);
 
+    const summary = ITEMS.map(item => ({ item, state: getItemState(cluster, item) }));
+    const visible = summary.filter(({ state }) => state !== 'none' && state !== 'manual_remove');
+    const hasManual = summary.some(({ state }) => state === 'manual_confirm' || state === 'manual_remove');
+
     return (
       <div className={styles.root}>
-        {(['gown', 'diploma', 'sash', 'cap'] as const).map((item) => {
-          const state = getItemState(cluster, item);
-          const isManual = state === 'manual_confirm' || state === 'manual_remove';
-          const isConfirmed = state === 'manual_confirm' || state === 'ai_confirmed' || state === 'ai_possible';
-          const isRemoved = state === 'manual_remove';
-          return (
-            <div key={item} className={styles.row}>
-              <span className={styles.itemLabel}>{ITEM_LABEL[item]}</span>
-              <div className={styles.btnGroup}>
-                <button
-                  type="button"
-                  className={`${styles.btn} ${styles.btnConfirm} ${isConfirmed ? styles.active : ''}`}
-                  onClick={() => runOverride(item, 'confirm')}
-                  title={`Confirmar ${ITEM_LABEL[item].toLowerCase()}`}
+        <div className={styles.bar}>
+          <div className={styles.summary}>
+            {visible.length === 0 ? (
+              <span className={styles.empty}>Nenhum item detectado</span>
+            ) : (
+              visible.map(({ item, state }) => (
+                <span
+                  key={item}
+                  className={`${styles.chip} ${
+                    state === 'manual_confirm' ? styles.chipManual :
+                    state === 'ai_confirmed' ? styles.chipConfirmed :
+                    styles.chipPossible
+                  }`}
                 >
-                  <Check size={12} />
-                  <span>Confirmar</span>
-                </button>
-                <button
-                  type="button"
-                  className={`${styles.btn} ${styles.btnRemove} ${isRemoved ? styles.active : ''}`}
-                  onClick={() => runOverride(item, 'remove')}
-                  title={`Remover ${ITEM_LABEL[item].toLowerCase()}`}
-                >
-                  <X size={12} />
-                  <span>Remover</span>
-                </button>
-              </div>
-              <span className={`${styles.manualBadge} ${isManual ? styles.visible : ''}`}>
+                  {ITEM_LABEL[item]}
+                </span>
+              ))
+            )}
+            {hasManual && (
+              <span className={styles.manualBadge}>
                 <Sparkles size={9} />
                 <span>Manual</span>
               </span>
-            </div>
-          );
-        })}
+            )}
+          </div>
+          <button
+            type="button"
+            className={`${styles.btnToggle} ${open ? styles.btnToggleOpen : ''}`}
+            onClick={() => setOpen(v => !v)}
+            title={open ? 'Fechar correção' : 'Corrigir itens'}
+          >
+            {open ? <ChevronUp size={13} /> : <Settings2 size={13} />}
+            <span>{open ? 'Fechar' : 'Corrigir itens'}</span>
+          </button>
+        </div>
+
+        {open && (
+          <div className={styles.panel}>
+            {ITEMS.map(item => {
+              const state = getItemState(cluster, item);
+              const isConfirmed = state === 'manual_confirm' || state === 'ai_confirmed' || state === 'ai_possible';
+              const isRemoved = state === 'manual_remove';
+              const isManual = state === 'manual_confirm' || state === 'manual_remove';
+              return (
+                <div key={item} className={styles.row}>
+                  <span className={styles.itemLabel}>{ITEM_LABEL[item]}</span>
+                  <div className={styles.btnGroup}>
+                    <button
+                      type="button"
+                      className={`${styles.btn} ${styles.btnConfirm} ${isConfirmed ? styles.active : ''}`}
+                      onClick={() => runOverride(item, 'confirm')}
+                      title={`Confirmar ${ITEM_LABEL[item].toLowerCase()}`}
+                    >
+                      <Check size={11} />
+                      <span>Confirmar</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`${styles.btn} ${styles.btnRemove} ${isRemoved ? styles.active : ''}`}
+                      onClick={() => runOverride(item, 'remove')}
+                      title={`Remover ${ITEM_LABEL[item].toLowerCase()}`}
+                    >
+                      <X size={11} />
+                      <span>Remover</span>
+                    </button>
+                  </div>
+                  <span className={`${styles.rowManualTag} ${isManual ? styles.rowManualTagVisible : ''}`}>
+                    Manual
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }

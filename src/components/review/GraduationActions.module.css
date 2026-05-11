@@ -1,9 +1,113 @@
 .root {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px 14px;
-  border-radius: 10px;
+  gap: 0;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.empty {
+  font-size: 0.7rem;
+  color: #475569;
+  letter-spacing: 0.02em;
+}
+
+.chip {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.chipConfirmed {
+  background: rgba(59, 130, 246, 0.12);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.22);
+}
+
+.chipPossible {
+  background: rgba(100, 116, 139, 0.08);
+  color: #94a3b8;
+  border: 1px solid rgba(100, 116, 139, 0.18);
+  font-weight: 600;
+}
+
+.chipManual {
+  background: rgba(168, 85, 247, 0.14);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.manualBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(168, 85, 247, 0.12);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.28);
+  border-radius: 4px;
+}
+
+.btnToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #94a3b8;
+  font-size: 0.74rem;
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.btnToggle:hover {
+  color: #e2e8f0;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.btnToggleOpen {
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(255, 255, 255, 0.02);
 }
@@ -15,10 +119,10 @@
 }
 
 .itemLabel {
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 600;
   color: #cbd5e1;
-  width: 64px;
+  width: 58px;
   flex-shrink: 0;
 }
 
@@ -32,10 +136,10 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 10px;
-  font-size: 0.72rem;
+  padding: 3px 9px;
+  font-size: 0.7rem;
   font-weight: 500;
-  border-radius: 6px;
+  border-radius: 5px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.02);
   color: #94a3b8;
@@ -62,22 +166,16 @@
   color: #f87171;
 }
 
-.manualBadge {
+.rowManualTag {
   display: none;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 6px;
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  background: rgba(168, 85, 247, 0.14);
   color: #c084fc;
-  border: 1px solid rgba(168, 85, 247, 0.3);
-  border-radius: 4px;
   margin-left: auto;
 }
 
-.manualBadge.visible {
-  display: inline-flex;
+.rowManualTagVisible {
+  display: inline;
 }

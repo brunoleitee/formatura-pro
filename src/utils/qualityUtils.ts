@@ -1,4 +1,4 @@
-import type { Photo } from '../../services/api';
+import type { Photo } from '../services/api';
 
 export function isPhotoBlurry(photo: Photo): boolean {
   return photo.blur_label === 'Possivelmente desfocada' || photo.blur_label === 'blurry';

@@ -1,9 +1,9 @@
-import { Grid2x2, List, Maximize2, Sparkles, ChevronDown } from 'lucide-react';
+import { Image as ImageIcon, User, Maximize2, Sparkles, ChevronDown } from 'lucide-react';
 import styles from './ClusterToolbar.module.css';
 
 export type FilterOption = 'all' | 'best' | 'sharp';
 export type SortOption = 'best_match' | 'sharpest' | 'rowid';
-export type ViewMode = 'grid' | 'list';
+export type ViewMode = 'photo' | 'face';
 
 interface ClusterToolbarProps {
   filter: FilterOption;
@@ -84,21 +84,23 @@ export default function ClusterToolbar({
       {/* Separador */}
       <div className={styles.sep} />
 
-      {/* Toggle grid/list */}
+      {/* Toggle Foto/Rosto */}
       <div className={styles.viewToggle}>
         <button
-          className={`${styles.viewBtn} ${viewMode === 'grid' ? styles.viewBtnActive : ''}`}
-          onClick={() => onViewMode('grid')}
-          title="Grid"
+          className={`${styles.viewBtn} ${viewMode === 'photo' ? styles.viewBtnActive : ''}`}
+          onClick={() => onViewMode('photo')}
+          title="Foto inteira"
+          type="button"
         >
-          <Grid2x2 size={14} />
+          <ImageIcon size={14} />
         </button>
         <button
-          className={`${styles.viewBtn} ${viewMode === 'list' ? styles.viewBtnActive : ''}`}
-          onClick={() => onViewMode('list')}
-          title="Lista"
+          className={`${styles.viewBtn} ${viewMode === 'face' ? styles.viewBtnActive : ''}`}
+          onClick={() => onViewMode('face')}
+          title="Rosto"
+          type="button"
         >
-          <List size={14} />
+          <User size={14} />
         </button>
       </div>
 

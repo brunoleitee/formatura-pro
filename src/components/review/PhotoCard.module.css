@@ -50,6 +50,18 @@
   transition: opacity 0.3s ease;
 }
 
+.modeFace .img {
+  object-fit: cover;
+}
+
+.modePhoto .img {
+  object-fit: contain;
+}
+
+.modePhoto {
+  background: #0a0c14;
+}
+
 .visible {
   opacity: 1;
 }

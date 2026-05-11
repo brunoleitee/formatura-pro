@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
-import { UserPlus, EyeOff, MoreHorizontal, Check, X, Sparkles } from 'lucide-react';
+import { UserPlus, EyeOff, Check, X, Sparkles, ChevronUp, ChevronDown } from 'lucide-react';
 import type { RichCluster, SearchResult } from '../../services/api';
 import { api } from '../../services/api';
 import { faceThumb } from './FaceCard';
@@ -8,6 +8,8 @@ import styles from './ClusterHero.module.css';
 interface ClusterHeroProps {
   cluster: RichCluster;
   catalog: string;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
   onAssigned: (clusterId: string) => void;
   onSkip: () => void;
 }
@@ -16,21 +18,11 @@ export interface ClusterHeroHandle {
   startIdentify: () => void;
 }
 
-function formatDate(iso?: string) {
-  if (!iso) return '';
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-      + ' às '
-      + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '';
-  }
-}
-
 const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function ClusterHero({
   cluster,
   catalog,
+  collapsed = false,
+  onToggleCollapsed,
   onAssigned,
   onSkip,
 }, ref) {
@@ -45,11 +37,9 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
 
   const rep = cluster.representative;
   const pct = Math.round(cluster.cohesion_score * 100);
-  const dateStr = formatDate(cluster.discovered_at);
   const showSuggestions = suggestions.length > 0 && nameInput.length >= 2;
   const faceCountLabel = `${cluster.face_count} foto${cluster.face_count !== 1 ? 's' : ''}`;
   const cohesionLabel = `${pct}% coesão`;
-  const descriptionLabel = 'Grupo descoberto automaticamente pela IA. Selecione as melhores fotos e identifique.';
 
   const loadSuggestions = useCallback(async (q: string) => {
     if (q.length < 2) { setSuggestions([]); return; }
@@ -113,12 +103,12 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
   const canAssign = Boolean(selectedStudent?.id || nameInput.trim());
 
   return (
-    <div className={`${styles.hero} notranslate`} translate="no">
+    <div className={`${styles.hero} ${collapsed ? styles.heroCollapsed : ''} notranslate`} translate="no">
       {/* Avatar circular */}
-      <div className={styles.avatar}>
+      <div className={`${styles.avatar} ${collapsed ? styles.avatarTiny : ''}`}>
         {rep ? (
           <img
-            src={faceThumb(rep.path, rep.box, 160)}
+            src={faceThumb(rep.path, rep.box, 120)}
             alt="Representante"
             className={styles.avatarImg}
           />
@@ -130,7 +120,7 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
 
       {/* Coluna de info */}
       <div className={styles.info}>
-        {/* Linha do título */}
+        {/* Linha do título + meta em uma linha só */}
         <div className={styles.titleRow}>
           <h1 className={styles.title}>Pessoa desconhecida</h1>
           <span className={styles.clusterBadge}>#{cluster.cluster_number}</span>
@@ -138,24 +128,11 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
             <Sparkles size={10} />
             <span>IA {pct}%</span>
           </span>
-        </div>
-
-        {/* Meta */}
-        <div className={styles.meta}>
-          <span className={styles.metaItem}>
-            <span>{faceCountLabel}</span>
-          </span>
+          <span className={styles.metaDot}>·</span>
+          <span className={styles.metaItem}>{faceCountLabel}</span>
           <span className={styles.metaDot}>·</span>
           <span className={styles.metaConf}>{cohesionLabel}</span>
-          <span className={`${styles.metaDot} ${dateStr ? styles.inlineVisible : styles.inlineHidden}`}>·</span>
-          <span className={`${styles.metaDate} ${dateStr ? styles.inlineVisible : styles.inlineHidden}`}>Grupo criado em {dateStr}</span>
         </div>
-
-        {/* Descrição */}
-        <p className={styles.description}>
-          <Sparkles size={11} className={styles.descIcon} />
-          <span>{descriptionLabel}</span>
-        </p>
 
         {/* Ações ou identify inline */}
         <div className={`${styles.actions} ${identifying ? styles.blockHidden : styles.blockVisible}`}>
@@ -167,14 +144,25 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
             <UserPlus size={14} />
             <span>Identificar pessoa</span>
           </button>
-          <button className={styles.btnSecondary} onClick={onSkip} type="button">
+          <button
+            className={`${styles.btnSecondary} ${collapsed ? styles.inlineHidden : styles.inlineFlexVisible}`}
+            onClick={onSkip}
+            type="button"
+          >
             <EyeOff size={14} />
-            <span>Ignorar grupo</span>
+            <span>Ignorar</span>
           </button>
-          <button className={styles.btnIcon} title="Mais ações" type="button">
-            <MoreHorizontal size={15} />
-            <span>Mais ações</span>
-          </button>
+          {onToggleCollapsed && (
+            <button
+              className={styles.btnIcon}
+              onClick={onToggleCollapsed}
+              type="button"
+              title={collapsed ? 'Expandir detalhes' : 'Recolher detalhes'}
+            >
+              {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+              <span>{collapsed ? 'Expandir' : 'Recolher'}</span>
+            </button>
+          )}
         </div>
 
         <div className={`${styles.identifyInline} ${identifying ? styles.blockVisible : styles.blockHidden}`}>

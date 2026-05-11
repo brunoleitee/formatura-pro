@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode, useState, useEffect, useCallback, useRef } from 'react';
-import { UserCheck, RefreshCw, Sparkles } from 'lucide-react';
+import { UserCheck, RefreshCw, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../services/api';
 import type { GraduationAnalysisStatus, RichCluster } from '../services/api';
 import { useApp } from '../context/AppContext';
@@ -199,25 +199,37 @@ function GraduationAnalysisPanel({
   isStarting: boolean;
   onStart: () => void;
 }) {
+  const [open, setOpen] = useState(false);
   const isRunning = Boolean(status?.is_running);
   const progress = Math.max(0, Math.min(100, (status?.progress ?? 0) * 100));
   const hasResult = Boolean(status?.result);
-  const showProgress = isRunning || hasResult;
-  const statusLabel = status?.error
-    ? status.error
-    : status?.status_text || 'Pronto para rodar a análise visual em segundo plano.';
-  const buttonLabel = isRunning || isStarting ? 'Analisando...' : 'Analisar itens de formatura';
-  const resultLabel = status?.result
-    ? `${status.result.processed_files} foto${status.result.processed_files !== 1 ? 's' : ''} analisada${status.result.processed_files !== 1 ? 's' : ''} · ${status.result.updated_faces} registro${status.result.updated_faces !== 1 ? 's' : ''} atualizado${status.result.updated_faces !== 1 ? 's' : ''}`
-    : '';
+  const buttonLabel = isRunning || isStarting ? 'Analisando...' : (hasResult ? 'Reanalisar' : 'Analisar');
+
+  // Status compacto resumido: mostra contagem quando há resultado, ou progresso, ou pronto pra rodar
+  let compactStatus: string;
+  if (isRunning) {
+    compactStatus = `Analisando ${status?.processed ?? 0}/${status?.total ?? 0} (${Math.round(progress)}%)`;
+  } else if (status?.error) {
+    compactStatus = status.error;
+  } else if (status?.result) {
+    const n = status.result.processed_files;
+    compactStatus = `Itens analisados: ${n} foto${n !== 1 ? 's' : ''}`;
+  } else {
+    compactStatus = 'Itens de formatura não analisados';
+  }
 
   return (
-    <div className={styles.analysisPanel} translate="no">
-      <div className={styles.analysisHeader}>
-        <div className={styles.analysisEyebrow}>
-          <Sparkles size={13} />
-          <span>Itens de formatura</span>
-        </div>
+    <div className={`${styles.analysisPanel} ${open ? styles.analysisPanelOpen : ''}`} translate="no">
+      <div className={styles.analysisCompact}>
+        <span className={styles.analysisEyebrow}>
+          <Sparkles size={11} />
+          <span>{compactStatus}</span>
+        </span>
+        {isRunning && (
+          <span className={styles.analysisCompactBar}>
+            <span className={styles.analysisCompactBarFill} style={{ width: `${progress}%` }} />
+          </span>
+        )}
         <button
           type="button"
           className={styles.analysisButton}
@@ -225,30 +237,48 @@ function GraduationAnalysisPanel({
           disabled={isRunning || isStarting}
         >
           <RefreshCw
-            size={13}
+            size={11}
             className={`${styles.spin} ${isRunning || isStarting ? styles.inlineVisible : styles.inlineHidden}`}
           />
           <span>{buttonLabel}</span>
         </button>
+        <button
+          type="button"
+          className={styles.analysisToggle}
+          onClick={() => setOpen(v => !v)}
+          title={open ? 'Recolher' : 'Detalhes'}
+        >
+          {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        </button>
       </div>
 
-      <p className={styles.analysisStatus}>
-        <span>{statusLabel}</span>
-      </p>
-
-      <div className={`${styles.analysisProgressWrap} ${showProgress ? styles.blockVisible : styles.blockHidden}`}>
-        <div className={styles.analysisProgressMeta}>
-          <span>{status?.processed ?? 0} / {status?.total ?? 0} fotos</span>
-          <span>{Math.round(progress)}%</span>
+      {open && (
+        <div className={styles.analysisDetails}>
+          <p className={styles.analysisStatus}>
+            <span>{status?.status_text || 'Pronto para rodar a análise visual em segundo plano.'}</span>
+          </p>
+          {(isRunning || hasResult) && (
+            <div className={styles.analysisProgressWrap}>
+              <div className={styles.analysisProgressMeta}>
+                <span>{status?.processed ?? 0} / {status?.total ?? 0} fotos</span>
+                <span>{Math.round(progress)}%</span>
+              </div>
+              <div className={styles.analysisProgressTrack}>
+                <div className={styles.analysisProgressFill} style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+          )}
+          {!isRunning && status?.result && (
+            <div className={styles.analysisResult}>
+              <span>
+                {status.result.processed_files} foto{status.result.processed_files !== 1 ? 's' : ''} analisada{status.result.processed_files !== 1 ? 's' : ''}
+                {' · '}
+                {status.result.updated_faces} registro{status.result.updated_faces !== 1 ? 's' : ''} atualizado{status.result.updated_faces !== 1 ? 's' : ''}
+              </span>
+            </div>
+          )}
         </div>
-        <div className={styles.analysisProgressTrack}>
-          <div className={styles.analysisProgressFill} style={{ width: `${progress}%` }} />
-        </div>
-      </div>
-
-      <div className={`${styles.analysisResult} ${!isRunning && status?.result ? styles.blockVisible : styles.blockHidden}`}>
-        <span>{resultLabel}</span>
-      </div>
+      )}
     </div>
   );
 }

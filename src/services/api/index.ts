@@ -4,7 +4,9 @@ import { peopleApi } from './peopleApi';
 import { reviewApi } from './reviewApi';
 import { exportApi } from './exportApi';
 import { fetchJSON, post, API_BASE } from './core';
-import type { AppSettings, QualitySettings, Stats } from './types';
+import type { AppSettings, QualitySettings, Stats, Photo } from './types';
+
+export type { Photo };
 
 // The combined api object matching the previous shape
 export const api = {
