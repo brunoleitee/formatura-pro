@@ -333,3 +333,11 @@
 .btnCancel:hover {
   color: #94a3b8;
 }
+
+/* ── Mensagem de erro ao salvar ── */
+.saveError {
+  font-size: 0.75rem;
+  color: #f87171;
+  align-self: center;
+  flex-shrink: 0;
+}

@@ -35,6 +35,7 @@ export default function ClusterHero({
   const [nameInput, setNameInput] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const rep = cluster.representative;
@@ -62,6 +63,7 @@ export default function ClusterHero({
     setIdentifying(false);
     setNameInput('');
     setSuggestions([]);
+    setSaveError(null);
   }, [cluster.cluster_id]);
 
   useEffect(() => {
@@ -71,13 +73,18 @@ export default function ClusterHero({
   const handleAssign = async () => {
     const name = nameInput.trim();
     if (!name || saving) return;
+    setSaveError(null);
     setSaving(true);
     try {
       const rowids = cluster.faces.map(f => f.rowid);
       await api.assignCluster(catalog, cluster.cluster_id, name, rowids);
       setTimeout(() => onAssigned(cluster.cluster_id), 600);
-    } catch { /* ignore */ }
-    finally { setSaving(false); }
+    } catch (err) {
+      console.error('[assignCluster] erro:', err);
+      setSaveError('Não foi possível identificar este grupo. Tente novamente.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -215,10 +222,14 @@ export default function ClusterHero({
               </button>
               <button
                 className={styles.btnCancel}
-                onClick={() => { setIdentifying(false); setNameInput(''); setSuggestions([]); }}
+                onClick={() => { setIdentifying(false); setNameInput(''); setSuggestions([]); setSaveError(null); }}
               >
                 <X size={14} />
               </button>
+
+              {saveError && (
+                <span className={styles.saveError}>{saveError}</span>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

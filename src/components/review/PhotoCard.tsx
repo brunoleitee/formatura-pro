@@ -7,6 +7,11 @@ import styles from './PhotoCard.module.css';
 const API_BASE = 'http://127.0.0.1:8000/api';
 
 function faceContextThumb(face: RichClusterFace, size: number) {
+  if (!face.box || face.box.length < 4 || !face.path) {
+    return face.path
+      ? `${API_BASE}/image_thumb?path=${encodeURIComponent(face.path)}&size=${size}`
+      : '';
+  }
   const [x1, y1, x2, y2] = face.box;
   return `${API_BASE}/thumb?path=${encodeURIComponent(face.path)}&x1=${x1}&y1=${y1}&x2=${x2}&y2=${y2}&size=${size}&expand=1.4`;
 }

@@ -417,6 +417,7 @@ def manual_identify(req: ManualIdentifyReq):
 
 
 def bulk_manual_identify(req: BulkManualIdentifyReq):
+    import logging
     backup_catalog_db = _get("backup_catalog_db")
     get_db = _get("get_db")
     backup_catalog_db(req.catalog, "antes_identificar_lote")
@@ -426,37 +427,49 @@ def bulk_manual_identify(req: BulkManualIdentifyReq):
         raise HTTPException(status_code=400, detail="Nenhuma face informada.")
 
     new_name = (req.new_name or "").strip() or "Desconhecido"
+    updated = 0
     with get_db(req.catalog) as conn:
         cur = conn.cursor()
-        cur.execute("INSERT OR IGNORE INTO alunos VALUES (?, ?)", (new_name, "n/a"))
+        cur.execute("INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path) VALUES (?, ?)", (new_name, "n/a"))
         for i in range(0, len(rowids), 900):
             chunk = rowids[i:i + 900]
             placeholders = ",".join(["?"] * len(chunk))
+            # OR REPLACE garante que conflitos de UNIQUE constraint sejam resolvidos:
+            # se já existir uma linha com (new_name, foto_path, x1...) a antiga é removida.
             cur.execute(
-                f"UPDATE ocorrencias SET aluno_id = ? WHERE rowid IN ({placeholders})",
+                f"UPDATE OR REPLACE ocorrencias SET aluno_id = ? WHERE rowid IN ({placeholders})",
                 [new_name] + chunk,
             )
+            updated += cur.rowcount
         conn.commit()
+        logging.info(f"[bulk_manual_identify] catalog={req.catalog} name={new_name!r} rowids={len(rowids)} updated={updated}")
         if new_name and new_name != "Desconhecido":
             _ensure_person_reference(conn, req.catalog, new_name)
 
-    return {"status": "ok", "updated": len(rowids), "new_name": new_name}
+    return {"ok": True, "status": "ok", "updated": updated, "new_name": new_name}
 
 
 def assign_cluster(req: AssignClusterReq):
     """Atribui nome a um cluster inteiro, atualizando todas as ocorrências."""
-    if not req.rowids:
-        raise HTTPException(status_code=400, detail="Nenhuma face informada.")
-    aluno_id = (req.aluno_id or "").strip()
-    if not aluno_id:
-        raise HTTPException(status_code=400, detail="Nome do aluno não informado.")
-    bulk_req = BulkManualIdentifyReq(
-        catalog=req.catalog,
-        new_name=aluno_id,
-        rowids=req.rowids,
-    )
-    result = bulk_manual_identify(bulk_req)
-    return {**result, "cluster_id": req.cluster_id}
+    import logging
+    try:
+        if not req.rowids:
+            raise HTTPException(status_code=400, detail="Nenhuma face informada.")
+        aluno_id = (req.aluno_id or "").strip()
+        if not aluno_id:
+            raise HTTPException(status_code=400, detail="Nome do aluno não informado.")
+        bulk_req = BulkManualIdentifyReq(
+            catalog=req.catalog,
+            new_name=aluno_id,
+            rowids=req.rowids,
+        )
+        result = bulk_manual_identify(bulk_req)
+        return {"ok": True, **result, "cluster_id": req.cluster_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"[assign_cluster] cluster={req.cluster_id} catalog={req.catalog} aluno={req.aluno_id!r} erro: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao identificar grupo: {e}")
 
 
 def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster_size: int = 2, limit: int = 80):

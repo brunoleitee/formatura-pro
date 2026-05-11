@@ -969,7 +969,16 @@ AssignClusterReq = rm.AssignClusterReq
 
 @app.post("/api/review/unknown-clusters/assign")
 def assign_cluster(req: AssignClusterReq):
-    return rm.assign_cluster(req)
+    try:
+        return rm.assign_cluster(req)
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_info(f"[assign_cluster] Erro inesperado: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": str(e), "detail": "Erro interno ao atribuir cluster"},
+        )
 
 @app.get("/api/culling/analyze/{aluno_id}")
 def analyze_culling(aluno_id: str, catalog: str = ""):
