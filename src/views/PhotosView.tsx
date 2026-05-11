@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Image as ImageIcon, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Image as ImageIcon, RefreshCw, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { api, type Photo, type PhotoFace } from '../services/api';
 import { useApp } from '../context/AppContext';
 
@@ -56,13 +56,27 @@ function PhotoThumb({ photo }: { photo: Photo }) {
           <span>Erro</span>
         </div>
       )}
-      {photo.blur_label && photo.blur_label !== 'ok' && (
+      {(photo.blur_label === 'blurry' || photo.blur_label === 'attention') && (
         <div className={`blur-badge blur-${photo.blur_label}`}>
-          {photo.blur_label === 'blurry' ? 'Desfocada' : 'Atenção'}
+          {photo.blur_label === 'blurry' ? 'Desfocada' : 'Verificar foco'}
         </div>
       )}
     </div>
   );
+}
+
+function extractSubfolders(photos: Photo[], catalogName: string): string[] {
+  const folders = new Set<string>();
+  for (const photo of photos) {
+    const pathParts = photo.path.split(/[/\\]/);
+    if (pathParts.length > 1) {
+      const catalogIndex = pathParts.findIndex(p => p === catalogName);
+      if (catalogIndex >= 0 && catalogIndex + 1 < pathParts.length - 1) {
+        folders.add(pathParts[catalogIndex + 1]);
+      }
+    }
+  }
+  return Array.from(folders).sort();
 }
 
 export default function PhotosView() {
@@ -71,6 +85,10 @@ export default function PhotosView() {
   const [filter, setFilter] = useState<PhotoFilter>('all');
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Photo | null>(null);
+  const [selectedSubfolder, setSelectedSubfolder] = useState<string | null>(null);
+  const [viewerPhoto, setViewerPhoto] = useState<Photo | null>(null);
+
+  const subfolders = useMemo(() => extractSubfolders(photos, currentCatalog), [photos, currentCatalog]);
 
   const loadPhotos = useCallback(async () => {
     if (!currentCatalog) return;
@@ -89,6 +107,11 @@ export default function PhotosView() {
   useEffect(() => { Promise.resolve().then(loadPhotos); }, [loadPhotos]);
 
   const filtered = photos.filter(p => {
+    if (selectedSubfolder) {
+      const pathParts = p.path.split(/[/\\]/);
+      const catalogIndex = pathParts.findIndex(part => part === currentCatalog);
+      if (catalogIndex < 0 || pathParts[catalogIndex + 1] !== selectedSubfolder) return false;
+    }
     if (filter === 'mapped') return isPhotoMapped(p);
     if (filter === 'unmapped') return isPhotoUnmapped(p);
     return true;
@@ -101,6 +124,23 @@ export default function PhotosView() {
     sample: photos.slice(0, 5).map(p => ({ name: p.name, faces: p.faces })),
   });
 
+  useEffect(() => {
+    if (!viewerPhoto) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setViewerPhoto(null);
+      } else if (e.key === 'ArrowLeft') {
+        const idx = filtered.findIndex(p => p.path === viewerPhoto.path);
+        if (idx > 0) setViewerPhoto(filtered[idx - 1]);
+      } else if (e.key === 'ArrowRight') {
+        const idx = filtered.findIndex(p => p.path === viewerPhoto.path);
+        if (idx < filtered.length - 1) setViewerPhoto(filtered[idx + 1]);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [viewerPhoto, filtered]);
+
   const tabs: { key: PhotoFilter; label: string }[] = [
     { key: 'all', label: 'Todas' },
     { key: 'mapped', label: 'Identificadas' },
@@ -112,9 +152,33 @@ export default function PhotosView() {
       <div className="view-header">
         <div>
           <h1>Catálogo do Evento</h1>
-          <p className="view-subtitle">{filtered.length} foto{filtered.length !== 1 ? 's' : ''} encontrada{filtered.length !== 1 ? 's' : ''}</p>
+          <p className="view-subtitle">
+            {loading && photos.length === 0 ? 'Carregando fotos...' : 
+              `${filtered.length} foto${filtered.length !== 1 ? 's' : ''} encontrada${filtered.length !== 1 ? 's' : ''}` +
+              (selectedSubfolder ? ` em "${selectedSubfolder}"` : '')
+            }
+          </p>
         </div>
         <div className="view-header-actions">
+          {subfolders.length > 0 && (
+            <div className="subfolder-filters">
+              <button
+                className={`subfolder-btn ${selectedSubfolder === null ? 'active' : ''}`}
+                onClick={() => setSelectedSubfolder(null)}
+              >
+                Todas as pastas
+              </button>
+              {subfolders.map(folder => (
+                <button
+                  key={folder}
+                  className={`subfolder-btn ${selectedSubfolder === folder ? 'active' : ''}`}
+                  onClick={() => setSelectedSubfolder(folder)}
+                >
+                  {folder}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="tab-group">
             {tabs.map(t => (
               <button
@@ -156,9 +220,10 @@ export default function PhotosView() {
                     key={photo.path || i}
                     className={`photo-card ${selected?.path === photo.path ? 'selected' : ''}`}
                     onClick={() => setSelected(selected?.path === photo.path ? null : photo)}
+                    onDoubleClick={() => setViewerPhoto(photo)}
                   >
                     <PhotoThumb photo={photo} />
-                    <div className="photo-info">
+<div className="photo-info">
                       <div className="photo-name" title={photo.name}>{photo.name}</div>
                       <div className="photo-status">
                         <div className={`status-indicator ${isMapped ? 'mapped' : 'unmapped'}`} />
@@ -194,6 +259,39 @@ export default function PhotosView() {
           </div>
         )}
       </div>
+
+      {viewerPhoto && (
+        <div className="photo-viewer-modal" onClick={() => setViewerPhoto(null)}>
+          <div className="photo-viewer-content" onClick={e => e.stopPropagation()}>
+            <button className="viewer-close" onClick={() => setViewerPhoto(null)}>
+              <X size={24} />
+            </button>
+            <div className="viewer-image-wrap">
+              {filtered.findIndex(p => p.path === viewerPhoto.path) > 0 && (
+                <button className="viewer-nav viewer-prev" onClick={() => {
+                  const idx = filtered.findIndex(p => p.path === viewerPhoto.path);
+                  setViewerPhoto(filtered[idx - 1]);
+                }}>
+                  <ChevronLeft size={32} />
+                </button>
+              )}
+              <img src={api.thumbUrl(viewerPhoto.path, 1200)} alt={viewerPhoto.name} />
+              {filtered.findIndex(p => p.path === viewerPhoto.path) < filtered.length - 1 && (
+                <button className="viewer-nav viewer-next" onClick={() => {
+                  const idx = filtered.findIndex(p => p.path === viewerPhoto.path);
+                  setViewerPhoto(filtered[idx + 1]);
+                }}>
+                  <ChevronRight size={32} />
+                </button>
+              )}
+            </div>
+            <div className="viewer-footer">
+              <span className="viewer-name">{viewerPhoto.name}</span>
+              <span className="viewer-counter">{filtered.findIndex(p => p.path === viewerPhoto.path) + 1} / {filtered.length}</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
