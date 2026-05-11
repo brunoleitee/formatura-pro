@@ -13,6 +13,17 @@ interface Point {
   y: number;
 }
 
+function findScrollableParent(node: HTMLElement | null): HTMLElement | null {
+  if (!node) return null;
+  if (node.scrollHeight > node.clientHeight) {
+    const overflowY = window.getComputedStyle(node).overflowY;
+    if (overflowY === 'auto' || overflowY === 'scroll') {
+      return node;
+    }
+  }
+  return findScrollableParent(node.parentElement);
+}
+
 export function useDragSelection<T extends { rowid: number }>(
   containerRef: React.RefObject<HTMLElement | null>,
   getItemId: (item: T) => number,
@@ -27,6 +38,8 @@ export function useDragSelection<T extends { rowid: number }>(
   const isCtrlRef = useRef(false);
   const wasDraggingRef = useRef(false);
   const dragTimeoutRef = useRef<number | null>(null);
+  const currentMousePosRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  const scrollRafRef = useRef<number | null>(null);
   const minDragPixels = 6;
 
   const getItemElement = useCallback((itemId: number): HTMLElement | null => {
@@ -84,6 +97,77 @@ export function useDragSelection<T extends { rowid: number }>(
     return newSelected;
   }, [items, getItemId, getItemElement, elementIntersectsBox]);
 
+  const updateSelectionFromMouse = useCallback((clientX: number, clientY: number) => {
+    if (!startPointRef.current || !containerRef.current) return;
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const currentPoint: Point = {
+      x: clientX - containerRect.left,
+      y: clientY - containerRect.top,
+    };
+
+    const deltaX = currentPoint.x - startPointRef.current.x;
+    const deltaY = currentPoint.y - startPointRef.current.y;
+    const dragDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+    if (dragDistance >= minDragPixels) {
+      wasDraggingRef.current = true;
+    }
+
+    // Only show selection box if dragging more than minimum pixels
+    if (!wasDraggingRef.current) {
+      setSelectionBox(null);
+      return;
+    }
+
+    const box: SelectionBox = {
+      x: Math.min(startPointRef.current.x, currentPoint.x),
+      y: Math.min(startPointRef.current.y, currentPoint.y),
+      width: Math.abs(deltaX),
+      height: Math.abs(deltaY),
+    };
+
+    setSelectionBox(box);
+
+    // Update selected items in real-time
+    const newSelected = calculateSelectedItems(box);
+    setSelected(newSelected);
+  }, [containerRef, calculateSelectedItems, setSelected]);
+
+  const scrollLoop = useCallback(() => {
+    if (!currentMousePosRef.current || !containerRef.current || !startPointRef.current) {
+      scrollRafRef.current = null;
+      return;
+    }
+
+    if (wasDraggingRef.current) {
+      const scrollContainer = findScrollableParent(containerRef.current);
+      if (scrollContainer) {
+        const scrollRect = scrollContainer.getBoundingClientRect();
+        const { clientY, clientX } = currentMousePosRef.current;
+        
+        let scrollDelta = 0;
+        const EDGE_THRESHOLD = 80;
+        const MAX_SCROLL_SPEED = 18;
+
+        if (clientY < scrollRect.top + EDGE_THRESHOLD) {
+          const intensity = Math.max(0, 1 - (clientY - scrollRect.top) / EDGE_THRESHOLD);
+          scrollDelta = -intensity * MAX_SCROLL_SPEED;
+        } else if (clientY > scrollRect.bottom - EDGE_THRESHOLD) {
+          const intensity = Math.max(0, 1 - (scrollRect.bottom - clientY) / EDGE_THRESHOLD);
+          scrollDelta = intensity * MAX_SCROLL_SPEED;
+        }
+
+        if (scrollDelta !== 0) {
+          scrollContainer.scrollTop += scrollDelta;
+          updateSelectionFromMouse(clientX, clientY);
+        }
+      }
+    }
+
+    scrollRafRef.current = requestAnimationFrame(scrollLoop);
+  }, [containerRef, updateSelectionFromMouse]);
+
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLElement>) => {
     if (!containerRef.current?.contains(e.target as Node)) return;
 
@@ -115,6 +199,8 @@ export function useDragSelection<T extends { rowid: number }>(
     isCtrlRef.current = e.ctrlKey || e.metaKey;
     initialSelectedRef.current = new Set(selected);
     wasDraggingRef.current = false;
+    currentMousePosRef.current = { clientX: e.clientX, clientY: e.clientY };
+    
     if (dragTimeoutRef.current) {
       clearTimeout(dragTimeoutRef.current);
       dragTimeoutRef.current = null;
@@ -123,44 +209,24 @@ export function useDragSelection<T extends { rowid: number }>(
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!startPointRef.current || !containerRef.current) return;
+    
+    currentMousePosRef.current = { clientX: e.clientX, clientY: e.clientY };
+    updateSelectionFromMouse(e.clientX, e.clientY);
 
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const currentPoint: Point = {
-      x: e.clientX - containerRect.left,
-      y: e.clientY - containerRect.top,
-    };
-
-    const deltaX = currentPoint.x - startPointRef.current.x;
-    const deltaY = currentPoint.y - startPointRef.current.y;
-    const dragDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-
-    if (dragDistance >= minDragPixels) {
-      wasDraggingRef.current = true;
+    if (!scrollRafRef.current) {
+      scrollRafRef.current = requestAnimationFrame(scrollLoop);
     }
-
-    // Only show selection box if dragging more than minimum pixels
-    if (!wasDraggingRef.current) {
-      setSelectionBox(null);
-      return;
-    }
-
-    const box: SelectionBox = {
-      x: Math.min(startPointRef.current.x, currentPoint.x),
-      y: Math.min(startPointRef.current.y, currentPoint.y),
-      width: Math.abs(deltaX),
-      height: Math.abs(deltaY),
-    };
-
-    setSelectionBox(box);
-
-    // Update selected items in real-time
-    const newSelected = calculateSelectedItems(box);
-    setSelected(newSelected);
-  }, [containerRef, calculateSelectedItems, setSelected]);
+  }, [containerRef, updateSelectionFromMouse, scrollLoop]);
 
   const handleMouseUp = useCallback(() => {
     setSelectionBox(null);
     startPointRef.current = null;
+    currentMousePosRef.current = null;
+    
+    if (scrollRafRef.current) {
+      cancelAnimationFrame(scrollRafRef.current);
+      scrollRafRef.current = null;
+    }
     
     if (wasDraggingRef.current) {
       // Start a timeout to reset wasDraggingRef if click doesn't fire
@@ -178,6 +244,13 @@ export function useDragSelection<T extends { rowid: number }>(
       setSelectionBox(null);
       startPointRef.current = null;
       wasDraggingRef.current = false;
+      currentMousePosRef.current = null;
+      
+      if (scrollRafRef.current) {
+        cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
+      
       // Reset to initial selection
       setSelected(new Set(initialSelectedRef.current));
     }
@@ -207,6 +280,10 @@ export function useDragSelection<T extends { rowid: number }>(
       document.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('click', handleCaptureClick, true);
+      
+      if (scrollRafRef.current) {
+        cancelAnimationFrame(scrollRafRef.current);
+      }
     };
   }, [handleMouseMove, handleMouseUp, handleKeyDown]);
 
