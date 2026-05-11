@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { api } from '../services/api';
+import { api, type Photo } from '../services/api';
 import { useApp } from '../context/AppContext';
 import { useCatalogPhotos } from '../hooks/useCatalogPhotos';
 import { usePhotoFilters } from '../hooks/usePhotoFilters';
@@ -16,7 +16,7 @@ export default function CatalogView() {
   const { currentCatalog, catalogSubfolder, setCatalogSubfolders, setIsLoadingCatalogPhotos } = useApp();
   const { photos, loading, loadPhotos } = useCatalogPhotos();
   const { filter, setFilter, filteredPhotos } = usePhotoFilters(photos, currentCatalog, catalogSubfolder);
-  const { selectedPhoto, setSelectedPhoto, handlePhotoClick } = usePhotoSelection();
+  const { selectedPhoto, handlePhotoClick } = usePhotoSelection();
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(filteredPhotos);
 
   // Sincronizar loading com contexto
@@ -27,6 +27,8 @@ export default function CatalogView() {
   const [auditStatus, setAuditStatus] = useState<{
     is_auditing: boolean; status_text: string; progress: number;
   } | null>(null);
+
+  const [detailsPhoto, setDetailsPhoto] = useState<Photo | null>(null);
 
   // Publica subfolders no contexto para a Sidebar mostrar a árvore
   useEffect(() => {
@@ -92,14 +94,15 @@ export default function CatalogView() {
               photos={filteredPhotos}
               selectedPhoto={selectedPhoto}
               onPhotoClick={(photo) => handlePhotoClick(photo, setViewerPhoto)}
+              onOpenDetails={setDetailsPhoto}
             />
           )}
         </div>
 
-        {selectedPhoto && (
+        {detailsPhoto && (
           <PhotoDetailPanel
-            photo={selectedPhoto}
-            onClose={() => setSelectedPhoto(null)}
+            photo={detailsPhoto}
+            onClose={() => setDetailsPhoto(null)}
           />
         )}
       </div>

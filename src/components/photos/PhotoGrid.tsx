@@ -6,9 +6,10 @@ interface PhotoGridProps {
   photos: Photo[];
   selectedPhoto: Photo | null;
   onPhotoClick: (photo: Photo) => void;
+  onOpenDetails: (photo: Photo) => void;
 }
 
-export function PhotoGrid({ photos, selectedPhoto, onPhotoClick }: PhotoGridProps) {
+export function PhotoGrid({ photos, selectedPhoto, onPhotoClick, onOpenDetails }: PhotoGridProps) {
   if (photos.length === 0) {
     return (
       <div className="empty-state">
@@ -27,6 +28,7 @@ export function PhotoGrid({ photos, selectedPhoto, onPhotoClick }: PhotoGridProp
           photo={photo}
           isSelected={selectedPhoto?.path === photo.path}
           onClick={onPhotoClick}
+          onOpenDetails={onOpenDetails}
         />
       ))}
     </div>

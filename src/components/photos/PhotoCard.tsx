@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Image as ImageIcon } from 'lucide-react';
+import { Image as ImageIcon, MoreHorizontal } from 'lucide-react';
 import { api, type Photo } from '../../services/api';
 import { isPhotoBlurry, isPhotoAttention } from '../../utils/qualityUtils';
 import { isPhotoMapped, isKnownFace } from '../../utils/personIdentity';
@@ -8,9 +8,10 @@ interface PhotoCardProps {
   photo: Photo;
   isSelected: boolean;
   onClick: (photo: Photo) => void;
+  onOpenDetails: (photo: Photo) => void;
 }
 
-export function PhotoCard({ photo, isSelected, onClick }: PhotoCardProps) {
+export function PhotoCard({ photo, isSelected, onClick, onOpenDetails }: PhotoCardProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [thumbSize, setThumbSize] = useState({ w: 0, h: 0 });
@@ -42,6 +43,36 @@ export function PhotoCard({ photo, isSelected, onClick }: PhotoCardProps) {
               }}
               onError={() => setHasError(true)}
             />
+            <button
+              data-interactive="true"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenDetails(photo);
+              }}
+              title="Ver detalhes"
+              className="photo-card-details-btn"
+              style={{
+                position: 'absolute',
+                top: '6px',
+                right: '6px',
+                zIndex: 10,
+                background: 'rgba(0,0,0,0.6)',
+                border: 'none',
+                borderRadius: '4px',
+                padding: '4px',
+                color: 'white',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: 0.8,
+                transition: 'opacity 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+              onMouseLeave={(e) => e.currentTarget.style.opacity = '0.8'}
+            >
+              <MoreHorizontal size={16} />
+            </button>
             {isLoaded && thumbSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, i) => {
               if (face.x1 == null) return null;
               
