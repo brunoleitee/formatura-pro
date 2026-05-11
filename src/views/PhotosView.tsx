@@ -30,13 +30,6 @@ function PhotoThumb({ photo }: { photo: Photo }) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
 
-  console.log('[quality-debug]', photo.name, {
-    blur_label: photo.blur_label,
-    blur_status: photo.blur_status,
-    blur_score: photo.blur_score,
-    closed_eyes: photo.closed_eyes
-  });
-
   return (
     <div className="photo-img-placeholder">
       {!hasError && (
@@ -63,9 +56,14 @@ function PhotoThumb({ photo }: { photo: Photo }) {
           <span>Erro</span>
         </div>
       )}
-      {(photo.blur_label === 'blurry' || photo.blur_label === 'attention') && (
-        <div className={`blur-badge blur-${photo.blur_label}`}>
-          {photo.blur_label === 'blurry' ? 'Desfocada' : 'Verificar foco'}
+      {(photo.blur_label === 'Possivelmente desfocada' || photo.blur_label === 'blurry') && (
+        <div className="blur-badge blur-blurry">
+          Desfocada
+        </div>
+      )}
+      {(photo.blur_label === 'Atenção' || photo.blur_label === 'attention') && (
+        <div className="blur-badge blur-attention">
+          Verificar foco
         </div>
       )}
     </div>
@@ -219,15 +217,6 @@ export default function PhotosView() {
           ) : (
             <div className="photo-grid">
               {filtered.map((photo, i) => {
-                if (i === 0) {
-                  console.log('[quality-debug] sample photos:', filtered.slice(0, 3).map(p => ({
-                    name: p.name,
-                    blur_label: p.blur_label,
-                    blur_status: p.blur_status,
-                    blur_score: p.blur_score,
-                    closed_eyes: p.closed_eyes
-                  })));
-                }
                 const isMapped = isPhotoMapped(photo);
                 const knownNames = (photo.faces ?? []).filter(isKnownFace).map(f => f.aluno_id).filter((v, idx, a) => a.indexOf(v) === idx);
                 const firstName = knownNames.length > 0 ? knownNames.join(', ') : 'Não mapeada';
