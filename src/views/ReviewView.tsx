@@ -79,7 +79,7 @@ export default function ReviewView() {
     <div className="view-container">
       <div className="view-header">
         <div>
-          <h1>Revisão de Faces</h1>
+          <h1>Revisão IA</h1>
           <p className="view-subtitle">{clusters.length} grupo{clusters.length !== 1 ? 's' : ''} pendente{clusters.length !== 1 ? 's' : ''}</p>
         </div>
         <button className="icon-btn" onClick={load}>

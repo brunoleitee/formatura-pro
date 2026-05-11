@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:all": "concurrently --shell powershell \"vite\" \"python backend/backend.py\"",
+    "dev:all": "powershell -ExecutionPolicy Bypass -File ./start.ps1",
+    "dev:tauri": "powershell -ExecutionPolicy Bypass -File ./start.ps1",
+    "tauri": "npx tauri dev",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"

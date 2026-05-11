@@ -377,9 +377,9 @@
 /* ── Photo Grid ── */
 .photo-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  grid-auto-rows: 260px;
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-auto-rows: 240px;
+  gap: 10px;
   overflow-y: auto;
   padding-bottom: 20px;
   flex: 1;
@@ -389,11 +389,11 @@
 .photo-grid:empty { display: none; }
 
 .photo-card {
-  background-color: var(--bg-secondary);
-  border-radius: 10px;
+  background-color: var(--bg-primary);
+  border-radius: 6px;
   overflow: hidden;
-  border: 1px solid var(--border-color);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s;
+  border: 1px solid rgba(255,255,255,0.07);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
   cursor: pointer;
   width: 100%;
   min-width: 0;
@@ -401,15 +401,22 @@
   flex-direction: column;
   height: 100%;
 }
-.photo-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
-.photo-card.selected { border-color: var(--accent-color); box-shadow: 0 0 0 2px rgba(59,130,246,0.3); }
-.photo-card.discarded { opacity: 0.5; }
+.photo-card:hover {
+  border-color: rgba(255,255,255,0.18);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.5);
+}
+.photo-card:hover .photo-img-placeholder img { transform: scale(1.04); }
+.photo-card.selected {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.3);
+}
+.photo-card.discarded { opacity: 0.45; }
 
 .photo-img-placeholder {
   width: 100%;
   flex: 1;
   min-height: 0;
-  background-color: var(--bg-tertiary);
+  background-color: #111318;
   position: relative;
   overflow: hidden;
 }
@@ -420,7 +427,8 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.3s ease, transform 0.35s ease;
+  transform: scale(1);
 }
 
 @keyframes shimmer {
@@ -433,9 +441,9 @@
   inset: 0;
   background: linear-gradient(
     90deg,
-    var(--bg-tertiary) 25%,
-    rgba(255, 255, 255, 0.04) 50%,
-    var(--bg-tertiary) 75%
+    #111318 25%,
+    rgba(255, 255, 255, 0.03) 50%,
+    #111318 75%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
@@ -450,24 +458,25 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: var(--bg-tertiary);
+  background: #111318;
   color: var(--text-secondary);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
+  opacity: 0.6;
 }
 
 .blur-badge {
   position: absolute;
-  bottom: 6px;
-  left: 6px;
-  padding: 2px 7px;
-  border-radius: 4px;
-  font-size: 0.7rem;
+  bottom: 5px;
+  left: 5px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.65rem;
   font-weight: 600;
 }
-.blur-badge.blur-blurry { background: rgba(239,68,68,0.85); color: white; }
-.blur-badge.blur-attention { background: rgba(245,158,11,0.85); color: white; }
+.blur-badge.blur-blurry { background: rgba(239,68,68,0.8); color: white; }
+.blur-badge.blur-attention { background: rgba(245,158,11,0.8); color: white; }
 
-.photo-info { padding: 10px 10px 8px; }
+.photo-info { padding: 10px 10px 8px; flex-shrink: 0; }
 .photo-name {
   font-size: 0.82rem;
   font-weight: 500;
@@ -483,6 +492,8 @@
   display: flex;
   align-items: center;
   gap: 5px;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .status-indicator {
@@ -497,15 +508,15 @@
 
 /* Photo detail panel */
 .photo-detail-panel {
-  width: 280px;
+  width: 256px;
   flex-shrink: 0;
   background: var(--bg-secondary);
   border-left: 1px solid var(--border-color);
-  border-radius: 10px;
-  padding: 16px;
+  border-radius: 8px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   overflow-y: auto;
 }
 
@@ -514,15 +525,15 @@
   align-items: center;
   justify-content: space-between;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
-.detail-info { display: flex; flex-direction: column; gap: 8px; }
+.detail-info { display: flex; flex-direction: column; gap: 6px; }
 
 .detail-row {
   display: flex;
   justify-content: space-between;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
 }
 .detail-row span:first-child { color: var(--text-secondary); }
 

@@ -1,9 +1,30 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Image as ImageIcon, MoreVertical, RefreshCw } from 'lucide-react';
-import { api, type Photo } from '../services/api';
+import { Image as ImageIcon, RefreshCw } from 'lucide-react';
+import { api, type Photo, type PhotoFace } from '../services/api';
 import { useApp } from '../context/AppContext';
 
 type PhotoFilter = 'all' | 'mapped' | 'unmapped';
+
+function isKnownFace(face: PhotoFace): boolean {
+  const id = String(face?.aluno_id ?? '').trim().toLowerCase();
+  return Boolean(
+    id &&
+    id !== 'unknown' &&
+    id !== 'desconhecido' &&
+    id !== 'sem_nome' &&
+    id !== 'nao_mapeado' &&
+    id !== 'não_mapeado' &&
+    id !== '__unknown__'
+  );
+}
+
+function isPhotoMapped(photo: Photo): boolean {
+  return Array.isArray(photo.faces) && photo.faces.some(isKnownFace);
+}
+
+function isPhotoUnmapped(photo: Photo): boolean {
+  return !isPhotoMapped(photo);
+}
 
 function PhotoThumb({ photo }: { photo: Photo }) {
   const [isLoaded, setIsLoaded] = useState(false);
@@ -68,9 +89,16 @@ export default function PhotosView() {
   useEffect(() => { Promise.resolve().then(loadPhotos); }, [loadPhotos]);
 
   const filtered = photos.filter(p => {
-    if (filter === 'mapped') return p.faces && p.faces.length > 0;
-    if (filter === 'unmapped') return !p.faces || p.faces.length === 0;
+    if (filter === 'mapped') return isPhotoMapped(p);
+    if (filter === 'unmapped') return isPhotoUnmapped(p);
     return true;
+  });
+
+  console.log('[PhotosView filter]', {
+    total: photos.length,
+    mapped: photos.filter(isPhotoMapped).length,
+    unmapped: photos.filter(isPhotoUnmapped).length,
+    sample: photos.slice(0, 5).map(p => ({ name: p.name, faces: p.faces })),
   });
 
   const tabs: { key: PhotoFilter; label: string }[] = [
@@ -83,7 +111,7 @@ export default function PhotosView() {
     <div className="view-container">
       <div className="view-header">
         <div>
-          <h1>Fotos</h1>
+          <h1>Catálogo do Evento</h1>
           <p className="view-subtitle">{filtered.length} foto{filtered.length !== 1 ? 's' : ''} encontrada{filtered.length !== 1 ? 's' : ''}</p>
         </div>
         <div className="view-header-actions">
@@ -120,10 +148,9 @@ export default function PhotosView() {
           ) : (
             <div className="photo-grid">
               {filtered.map((photo, i) => {
-                const isMapped = photo.faces && photo.faces.length > 0;
-                const firstName = isMapped
-                  ? photo.faces.map(f => f.aluno_id).filter((v, idx, a) => a.indexOf(v) === idx).join(', ')
-                  : 'Não identificada';
+                const isMapped = isPhotoMapped(photo);
+                const knownNames = (photo.faces ?? []).filter(isKnownFace).map(f => f.aluno_id).filter((v, idx, a) => a.indexOf(v) === idx);
+                const firstName = knownNames.length > 0 ? knownNames.join(', ') : 'Não mapeada';
                 return (
                   <div
                     key={photo.path || i}
@@ -132,19 +159,10 @@ export default function PhotosView() {
                   >
                     <PhotoThumb photo={photo} />
                     <div className="photo-info">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div style={{ overflow: 'hidden', flex: 1 }}>
-                          <div className="photo-name" title={photo.name}>{photo.name}</div>
-                          <div className="photo-status">
-                            <div className={`status-indicator ${isMapped ? 'mapped' : 'unmapped'}`} />
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {firstName}
-                            </span>
-                          </div>
-                        </div>
-                        <button className="icon-btn" style={{ flexShrink: 0 }}>
-                          <MoreVertical size={14} />
-                        </button>
+                      <div className="photo-name" title={photo.name}>{photo.name}</div>
+                      <div className="photo-status">
+                        <div className={`status-indicator ${isMapped ? 'mapped' : 'unmapped'}`} />
+                        <span>{firstName}</span>
                       </div>
                     </div>
                   </div>
@@ -169,8 +187,8 @@ export default function PhotosView() {
               <div className="detail-row"><span>Tamanho</span><span>{selected.size ? `${(selected.size / 1024).toFixed(0)} KB` : '—'}</span></div>
               <div className="detail-row"><span>Qualidade</span><span>{selected.blur_label || '—'}</span></div>
               <div className="detail-row"><span>Faces</span><span>{selected.total_faces_in_db}</span></div>
-              {selected.faces.length > 0 && (
-                <div className="detail-row"><span>Pessoas</span><span>{selected.faces.map(f => f.aluno_id).join(', ')}</span></div>
+              {selected.faces.filter(isKnownFace).length > 0 && (
+                <div className="detail-row"><span>Pessoas</span><span>{selected.faces.filter(isKnownFace).map(f => f.aluno_id).join(', ')}</span></div>
               )}
             </div>
           </div>

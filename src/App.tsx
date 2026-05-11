@@ -108,13 +108,13 @@ function AppShell() {
   };
 
   const navItems: { view: ViewName; icon: React.ReactNode; label: string }[] = [
-    { view: 'photos', icon: <ImageIcon size={18} />, label: 'Todas as Fotos' },
+    { view: 'photos', icon: <ImageIcon size={18} />, label: 'Catálogo' },
     { view: 'people', icon: <Users size={18} />, label: 'Identificados' },
-    { view: 'review', icon: <UserCheck size={18} />, label: 'Revisão' },
+    { view: 'review', icon: <UserCheck size={18} />, label: 'Revisão IA' },
   ];
 
   const toolItems: { view: ViewName; icon: React.ReactNode; label: string }[] = [
-    { view: 'export', icon: <Download size={18} />, label: 'Exportar' },
+    { view: 'export', icon: <Download size={18} />, label: 'Exportador' },
     { view: 'settings', icon: <Settings size={18} />, label: 'Configurações' },
   ];
 
