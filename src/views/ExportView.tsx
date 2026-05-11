@@ -110,8 +110,37 @@ function ExportViewContent() {
   };
 
   const getPersonId = (person: Person) => person.id || person.name || 'Sem_Nome';
-  const getPersonInitial = (person: Person) => (person.name || person.id || '?').trim().charAt(0).toUpperCase() || '?';
   const getPersonLabel = (person: Person) => person.name || person.id || 'Sem nome';
+  const initialsFromName = (name: string) => {
+    const parts = name
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2);
+    if (parts.length === 0) return '';
+    return parts.map((part) => part.charAt(0).toUpperCase()).join('');
+  };
+  const getAvatarLabel = (person: Person, index: number) => {
+    if (person.name) {
+      const initials = initialsFromName(person.name);
+      if (initials) return initials;
+    }
+    return String(index + 1).padStart(2, '0');
+  };
+  const getAvatarSrc = (person: Person) => {
+    if (!person.cover_path) return null;
+    if (person.cover_box) {
+      return api.faceThumbUrl(
+        person.cover_path,
+        person.cover_box[0],
+        person.cover_box[1],
+        person.cover_box[2],
+        person.cover_box[3],
+        96
+      );
+    }
+    return api.thumbUrl(person.cover_path, 96);
+  };
 
   const selectAll = () => setSelected(new Set(filtered.map(getPersonId)));
   const clearAll = () => setSelected(new Set());
@@ -252,10 +281,12 @@ function ExportViewContent() {
             </div>
           ) : (
             <div className="export-person-list" style={{ gap: 8, paddingRight: 4 }}>
-              {filtered.map((p) => {
+              {filtered.map((p, index) => {
                 const personId = getPersonId(p);
                 const isSelected = selected.has(personId);
                 const photoCountLabel = `${p.total_photos} fotos`;
+                const avatarSrc = getAvatarSrc(p);
+                const avatarLabel = getAvatarLabel(p, index);
 
                 return (
                   <button
@@ -267,8 +298,23 @@ function ExportViewContent() {
                     style={getRowStyle(isSelected)}
                   >
                     <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
-                      <span aria-hidden="true" style={getAvatarStyle(isSelected)}>
-                        {getPersonInitial(p)}
+                      <span aria-hidden="true" style={{ ...getAvatarStyle(isSelected), overflow: 'hidden' }}>
+                        {avatarSrc ? (
+                          <img
+                            src={avatarSrc}
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                              display: 'block',
+                            }}
+                          />
+                        ) : (
+                          avatarLabel
+                        )}
                       </span>
                       <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
                         <span
