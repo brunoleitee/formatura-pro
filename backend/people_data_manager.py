@@ -246,8 +246,15 @@ def get_all_photos(limit: int = 1000):
                 unique_photos[p]["mtime"] = stat.st_mtime
                 from PIL import Image
                 with Image.open(p) as img:
-                    unique_photos[p]["width"] = img.width
-                    unique_photos[p]["height"] = img.height
+                    w, h = img.width, img.height
+                    try:
+                        exif = img._getexif()
+                        if exif and exif.get(274) in [5, 6, 7, 8]:
+                            w, h = h, w
+                    except Exception:
+                        pass
+                    unique_photos[p]["width"] = w
+                    unique_photos[p]["height"] = h
             except Exception:
                 unique_photos[p]["width"] = None
                 unique_photos[p]["height"] = None

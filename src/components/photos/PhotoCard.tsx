@@ -13,6 +13,7 @@ interface PhotoCardProps {
 export function PhotoCard({ photo, isSelected, onClick }: PhotoCardProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [thumbSize, setThumbSize] = useState({ w: 0, h: 0 });
 
   const isMapped = isPhotoMapped(photo);
   const knownNames = (photo.faces ?? [])
@@ -28,46 +29,65 @@ export function PhotoCard({ photo, isSelected, onClick }: PhotoCardProps) {
     >
       <div className="photo-img-placeholder">
         {!hasError && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-            <div style={{
-              position: 'relative',
-              maxWidth: '100%',
-              maxHeight: '100%',
-              display: 'inline-block'
-            }}>
-              <img
-                src={api.thumbUrl(photo.path, 300)}
-                alt={photo.name}
-                loading="lazy"
-                decoding="async"
-                style={{ opacity: isLoaded ? 1 : 0, display: 'block', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
-                onLoad={() => setIsLoaded(true)}
-                onError={() => setHasError(true)}
-              />
-              {isLoaded && photo.width && photo.height && (photo.faces || []).map((face, i) => {
-                if (face.x1 == null) return null;
-                const isKnown = isKnownFace(face);
-                const color = isKnown ? '#22c55e' : '#9ca3af';
-                const left = (face.x1 / photo.width!) * 100;
-                const top = (face.y1 / photo.height!) * 100;
-                const width = ((face.x2 - face.x1) / photo.width!) * 100;
-                const height = ((face.y2 - face.y1) / photo.height!) * 100;
-                return (
-                  <div
-                    key={i}
-                    className={`face-box ${isKnown ? 'known' : 'unknown'}`}
-                    style={{
-                      position: 'absolute',
-                      left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%`,
-                      border: `2px solid ${color}`,
-                      pointerEvents: 'none',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                );
-              })}
-            </div>
-          </div>
+          <>
+            <img
+              src={api.thumbUrl(photo.path, 300)}
+              alt={photo.name}
+              loading="lazy"
+              decoding="async"
+              style={{ opacity: isLoaded ? 1 : 0 }}
+              onLoad={(e) => {
+                setIsLoaded(true);
+                setThumbSize({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight });
+              }}
+              onError={() => setHasError(true)}
+            />
+            {isLoaded && thumbSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, i) => {
+              if (face.x1 == null) return null;
+              
+              const imgRatio = photo.width! / photo.height!;
+              const containerRatio = thumbSize.w / thumbSize.h;
+              
+              let renderedW = thumbSize.w;
+              let renderedH = thumbSize.h;
+              
+              if (imgRatio > containerRatio) {
+                renderedH = thumbSize.w / imgRatio;
+              } else {
+                renderedW = thumbSize.h * imgRatio;
+              }
+              
+              const offsetX = (thumbSize.w - renderedW) / 2;
+              const offsetY = (thumbSize.h - renderedH) / 2;
+
+              const isKnown = isKnownFace(face);
+              
+              const faceCenterX = offsetX + ((face.x1 + face.x2) / 2 / photo.width!) * renderedW;
+              const faceCenterY = offsetY + ((face.y1 + face.y2) / 2 / photo.height!) * renderedH;
+              
+              const color = isKnown ? '#22c55e' : '#9ca3af';
+
+              const widthPx = ((face.x2 - face.x1) / photo.width!) * renderedW;
+              const heightPx = ((face.y2 - face.y1) / photo.height!) * renderedH;
+
+              return (
+                <div
+                  key={i}
+                  style={{
+                    position: 'absolute',
+                    left: `${faceCenterX}px`, top: `${faceCenterY}px`,
+                    width: `${widthPx}px`, height: `${heightPx}px`,
+                    border: `2px solid ${color}`,
+                    borderRadius: '6px',
+                    transform: 'translate(-50%, -50%)',
+                    pointerEvents: 'none',
+                    boxSizing: 'border-box',
+                    zIndex: 1
+                  }}
+                />
+              );
+            })}
+          </>
         )}
         {!isLoaded && !hasError && <div className="photo-skeleton" />}
         {hasError && (
