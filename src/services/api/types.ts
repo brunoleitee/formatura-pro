@@ -60,18 +60,22 @@ export interface ExportStatus {
 
 export interface GraduationAnalysisStatus {
   is_running: boolean;
+  running?: boolean;
   progress: number;
   processed: number;
   total: number;
+  updated?: number;
   status_text: string;
   catalog: string;
   result: {
     catalog: string;
     processed_files: number;
+    updated?: number;
     updated_faces: number;
+    source_table?: string;
     source: string;
   } | null;
-  error: string;
+  error: string | null;
   started_at: number | null;
   finished_at: number | null;
 }

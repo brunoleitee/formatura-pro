@@ -117,6 +117,7 @@ export default function ReviewView() {
         clusters={clusters}
         loading={loading}
         selectedId={selected?.cluster_id ?? null}
+        graduationAnalysisRan={Boolean(graduationStatus?.result || graduationStatus?.finished_at)}
         onSelect={setSelected}
         onRefresh={load}
       />
@@ -208,7 +209,7 @@ function GraduationAnalysisPanel({
 
       {!isRunning && status?.result && (
         <div className={styles.analysisResult}>
-          {status.result.processed_files} foto{status.result.processed_files !== 1 ? 's' : ''} analisada{status.result.processed_files !== 1 ? 's' : ''} · {status.result.updated_faces} face{status.result.updated_faces !== 1 ? 's' : ''} atualizada{status.result.updated_faces !== 1 ? 's' : ''}
+          {status.result.processed_files} foto{status.result.processed_files !== 1 ? 's' : ''} analisada{status.result.processed_files !== 1 ? 's' : ''} · {status.result.updated_faces} registro{status.result.updated_faces !== 1 ? 's' : ''} atualizado{status.result.updated_faces !== 1 ? 's' : ''}
         </div>
       )}
     </div>
