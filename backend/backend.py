@@ -1157,6 +1157,14 @@ def get_graduation_analysis_status(catalog: str = ""):
             },
         )
 
+
+@app.on_event("startup")
+async def log_graduation_analysis_routes():
+    print("[graduation-analysis] routes registered", flush=True)
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        print(path, flush=True)
+
 @app.get("/api/culling/analyze/{aluno_id}")
 def analyze_culling(aluno_id: str, catalog: str = ""):
     return mm.analyze_culling(aluno_id, catalog)
