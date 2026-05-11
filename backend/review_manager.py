@@ -339,6 +339,13 @@ class BulkManualIdentifyReq(BaseModel):
     rowids: list[int]
 
 
+class AssignClusterReq(BaseModel):
+    catalog: str
+    cluster_id: str
+    aluno_id: str
+    rowids: list[int]
+
+
 class QualitySettingsReq(BaseModel):
     blur_blurry_threshold: float
     blur_attention_threshold: float
@@ -434,6 +441,22 @@ def bulk_manual_identify(req: BulkManualIdentifyReq):
             _ensure_person_reference(conn, req.catalog, new_name)
 
     return {"status": "ok", "updated": len(rowids), "new_name": new_name}
+
+
+def assign_cluster(req: AssignClusterReq):
+    """Atribui nome a um cluster inteiro, atualizando todas as ocorrências."""
+    if not req.rowids:
+        raise HTTPException(status_code=400, detail="Nenhuma face informada.")
+    aluno_id = (req.aluno_id or "").strip()
+    if not aluno_id:
+        raise HTTPException(status_code=400, detail="Nome do aluno não informado.")
+    bulk_req = BulkManualIdentifyReq(
+        catalog=req.catalog,
+        new_name=aluno_id,
+        rowids=req.rowids,
+    )
+    result = bulk_manual_identify(bulk_req)
+    return {**result, "cluster_id": req.cluster_id}
 
 
 def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster_size: int = 2, limit: int = 80):

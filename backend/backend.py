@@ -758,6 +758,19 @@ class DbConnection:
             )
         """)
         c.execute("CREATE INDEX IF NOT EXISTS idx_face_embeddings_path ON face_embeddings(foto_path)")
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS unknown_face_clusters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cluster_id TEXT NOT NULL,
+                face_id INTEGER,
+                original_path TEXT,
+                confidence REAL,
+                created_at REAL DEFAULT (strftime('%s','now')),
+                updated_at REAL DEFAULT (strftime('%s','now'))
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ufc_cluster_id ON unknown_face_clusters(cluster_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ufc_original_path ON unknown_face_clusters(original_path)")
         try:
             c.execute("""
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_ocor_unique
@@ -942,6 +955,21 @@ def get_unknown_clusters(
     limit: int = 80
 ):
     return rm.get_unknown_clusters(catalog, min_score, min_cluster_size, limit)
+
+@app.get("/api/review/unknown-clusters")
+def get_review_unknown_clusters(
+    catalog: str = "",
+    min_score: float = 0.58,
+    min_cluster_size: int = 2,
+    limit: int = 100
+):
+    return rm.get_unknown_clusters(catalog, min_score, min_cluster_size, limit)
+
+AssignClusterReq = rm.AssignClusterReq
+
+@app.post("/api/review/unknown-clusters/assign")
+def assign_cluster(req: AssignClusterReq):
+    return rm.assign_cluster(req)
 
 @app.get("/api/culling/analyze/{aluno_id}")
 def analyze_culling(aluno_id: str, catalog: str = ""):
