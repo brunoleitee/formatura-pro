@@ -6,6 +6,7 @@ import os
 import hashlib
 import json
 import logging
+import math
 import re
 import shutil
 import threading
@@ -53,6 +54,13 @@ UNKNOWN_ALUNO_IDS = (
     "não_mapeado",
     "__unknown__",
 )
+GRADUATION_TAG_ORDER = ("beca", "canudo", "faixa", "capelo")
+GRADUATION_KEYWORDS = {
+    "beca": ("beca", "gown", "robe"),
+    "canudo": ("canudo", "diploma", "certificate", "certificado"),
+    "faixa": ("faixa", "sash", "stole"),
+    "capelo": ("capelo", "cap", "mortarboard", "chapeu"),
+}
 
 
 def configure(**kwargs):
@@ -570,7 +578,136 @@ def _ensure_action_logs_table(cur):
             created_at REAL DEFAULT (strftime('%s','now'))
         )
         """
+        )
+
+
+def _normalize_search_text(value: str) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return text.casefold()
+
+
+def _path_keyword_match(path: str, tag: str) -> bool:
+    normalized_path = _normalize_search_text(os.path.basename(path or ""))
+    return any(keyword in normalized_path for keyword in GRADUATION_KEYWORDS[tag])
+
+
+def _coerce_flag(value) -> bool:
+    if isinstance(value, str):
+        value = value.strip().lower()
+        if value in ("1", "true", "yes", "sim"):
+            return True
+        if value in ("0", "false", "no", "nao", "não", ""):
+            return False
+    return bool(value)
+
+
+def _clamp01(value) -> float:
+    try:
+        return float(np.clip(float(value), 0.0, 1.0))
+    except Exception:
+        return 0.0
+
+
+def _derive_face_front_score(item: dict) -> float:
+    raw_score = item.get("face_front_score")
+    if raw_score is not None:
+        return _clamp01(raw_score)
+    x1, y1, x2, y2 = [int(v) for v in item.get("box", [0, 0, 1, 1])]
+    width = max(1, x2 - x1)
+    height = max(1, y2 - y1)
+    ratio = width / max(height, 1)
+    ratio_score = max(0.0, 1.0 - (abs(ratio - 0.82) / 0.55))
+    closed_eyes_penalty = 0.4 if item.get("closed_eyes") else 0.0
+    return _clamp01(ratio_score * (1.0 - closed_eyes_penalty))
+
+
+def _derive_sharpness_score(item: dict) -> float:
+    blur_score = float(item.get("blur_score") or 0.0)
+    status = str(item.get("blur_status") or "").strip().lower()
+    if status == "sharp":
+        base = 0.72
+    elif status == "attention":
+        base = 0.42
+    elif status == "blurry":
+        base = 0.14
+    else:
+        base = 0.22
+    blur_boost = min(blur_score / 420.0, 0.28)
+    return _clamp01(base + blur_boost)
+
+
+def _build_face_priority_meta(item: dict, cohesion_hint: float) -> dict:
+    has_gown = _coerce_flag(item.get("has_gown")) or _path_keyword_match(item.get("foto_path", ""), "beca")
+    has_diploma = _coerce_flag(item.get("has_diploma")) or _path_keyword_match(item.get("foto_path", ""), "canudo")
+    has_sash = _coerce_flag(item.get("has_sash")) or _path_keyword_match(item.get("foto_path", ""), "faixa")
+    has_cap = _coerce_flag(item.get("has_cap")) or _path_keyword_match(item.get("foto_path", ""), "capelo")
+    face_front_score = _derive_face_front_score(item)
+    sharpness_score = _derive_sharpness_score(item)
+
+    computed_graduation_score = (
+        (40.0 if has_gown else 0.0) +
+        (30.0 if has_diploma else 0.0) +
+        (25.0 if has_sash else 0.0) +
+        (20.0 if has_cap else 0.0) +
+        face_front_score * 15.0 +
+        sharpness_score * 10.0
     )
+    raw_score = item.get("graduation_score")
+    graduation_score = max(computed_graduation_score, float(raw_score)) if raw_score is not None else computed_graduation_score
+
+    tags = []
+    if has_gown:
+        tags.append("beca")
+    if has_diploma:
+        tags.append("canudo")
+    if has_sash:
+        tags.append("faixa")
+    if has_cap:
+        tags.append("capelo")
+
+    x1, y1, x2, y2 = [int(v) for v in item.get("box", [0, 0, 1, 1])]
+    face_area = max(1, (x2 - x1) * (y2 - y1))
+
+    return {
+        "has_gown": has_gown,
+        "has_diploma": has_diploma,
+        "has_sash": has_sash,
+        "has_cap": has_cap,
+        "face_front_score": round(face_front_score, 4),
+        "sharpness_score": round(sharpness_score, 4),
+        "graduation_score": round(graduation_score, 4),
+        "tags": tags,
+        "face_area": face_area,
+        "cohesion_hint": float(cohesion_hint or 0.0),
+        "has_graduation_signal": bool(tags) or raw_score is not None,
+    }
+
+
+def _pick_cluster_cover_item(comp_items: list[dict], priority_meta: list[dict]) -> dict:
+    best_idx = 0
+    best_rank = None
+    for idx, (item, meta) in enumerate(zip(comp_items, priority_meta)):
+        rank = (
+            1 if meta["has_gown"] and (meta["has_diploma"] or meta["has_sash"]) else 0,
+            1 if meta["has_gown"] else 0,
+            1 if meta["has_diploma"] else 0,
+            1 if meta["has_sash"] else 0,
+            1 if meta["has_cap"] else 0,
+            meta["face_front_score"] * meta["sharpness_score"],
+            meta["face_area"],
+            meta["cohesion_hint"],
+            meta["graduation_score"],
+        )
+        if best_rank is None or rank > best_rank:
+            best_rank = rank
+            best_idx = idx
+    return comp_items[best_idx]
+
+
+def _ordered_cluster_tags(priority_meta: list[dict]) -> list[str]:
+    present = {tag for meta in priority_meta for tag in meta["tags"]}
+    return [tag for tag in GRADUATION_TAG_ORDER if tag in present]
 
 
 def assign_cluster(req: AssignUnknownClusterRequest):
@@ -683,7 +820,9 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
         cur = conn.cursor()
         cur.execute("""
             SELECT rowid, aluno_id, foto_path, x1, y1, x2, y2,
-                   blur_status, blur_score, closed_eyes
+                   blur_status, blur_score, closed_eyes,
+                   has_gown, has_diploma, has_sash, has_cap,
+                   face_front_score, graduation_score
             FROM ocorrencias
             WHERE x1 IS NOT NULL
               AND (
@@ -712,6 +851,12 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 "blur_status": occ["blur_status"],
                 "blur_score": occ["blur_score"],
                 "closed_eyes": bool(occ["closed_eyes"]) if occ["closed_eyes"] is not None else False,
+                "has_gown": occ["has_gown"],
+                "has_diploma": occ["has_diploma"],
+                "has_sash": occ["has_sash"],
+                "has_cap": occ["has_cap"],
+                "face_front_score": occ["face_front_score"],
+                "graduation_score": occ["graduation_score"],
             })
 
         if len(items) < min_cluster_size:
@@ -776,17 +921,39 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             if centroid_norm > 0:
                 centroid = centroid / centroid_norm
             rep_scores = comp_emb @ centroid
-            rep_local_idx = comp_idxs[int(np.argmax(rep_scores))]
-            rep_item = items[rep_local_idx]
             unique_paths = sorted({item["foto_path"] for item in comp_items})
             cohesion_score = float(np.clip(np.mean(rep_scores), 0.0, 1.0)) if len(rep_scores) else 0.0
+            priority_meta = [
+                _build_face_priority_meta(item, float(rep_scores[local_idx]) if local_idx < len(rep_scores) else 0.0)
+                for local_idx, item in enumerate(comp_items)
+            ]
+            max_graduation_score = max((meta["graduation_score"] for meta in priority_meta), default=0.0)
+            avg_graduation_score = float(np.mean([meta["graduation_score"] for meta in priority_meta])) if priority_meta else 0.0
+            photo_count = len(unique_paths)
+            if priority_meta:
+                priority_score = (
+                    max_graduation_score +
+                    avg_graduation_score * 0.3 +
+                    cohesion_score * 0.2 +
+                    math.log(photo_count + 1) * 5.0
+                )
+            else:
+                priority_score = cohesion_score + photo_count * 0.01
+            rep_item = _pick_cluster_cover_item(comp_items, priority_meta)
+            rep_item_meta = priority_meta[comp_items.index(rep_item)]
+            graduation_tags = _ordered_cluster_tags(priority_meta)
             cluster_num = len(clusters) + 1
             clusters.append({
                 "cluster_id": f"cluster_{cluster_num}",
                 "cluster_number": cluster_num,
                 "face_count": len(comp_items),
-                "photo_count": len(unique_paths),
+                "photo_count": photo_count,
+                "total_photos": photo_count,
                 "cohesion_score": round(cohesion_score, 4),
+                "cohesion": round(cohesion_score, 4),
+                "priority_score": round(float(priority_score), 4),
+                "graduation_tags": graduation_tags,
+                "preview_image": rep_item["foto_path"],
                 "discovered_at": now_iso,
                 "representative": {
                     "rowid": rep_item["rowid"],
@@ -796,6 +963,12 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                     "blur_status": rep_item.get("blur_status"),
                     "blur_score": rep_item.get("blur_score"),
                     "closed_eyes": rep_item.get("closed_eyes", False),
+                    "has_gown": rep_item_meta["has_gown"],
+                    "has_diploma": rep_item_meta["has_diploma"],
+                    "has_sash": rep_item_meta["has_sash"],
+                    "has_cap": rep_item_meta["has_cap"],
+                    "face_front_score": rep_item_meta["face_front_score"],
+                    "graduation_score": rep_item_meta["graduation_score"],
                     "is_representative": True,
                 },
                 "faces": [
@@ -807,13 +980,22 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                         "blur_status": item.get("blur_status"),
                         "blur_score": item.get("blur_score"),
                         "closed_eyes": item.get("closed_eyes", False),
+                        "has_gown": meta["has_gown"],
+                        "has_diploma": meta["has_diploma"],
+                        "has_sash": meta["has_sash"],
+                        "has_cap": meta["has_cap"],
+                        "face_front_score": meta["face_front_score"],
+                        "graduation_score": meta["graduation_score"],
                         "is_representative": item["rowid"] == rep_item["rowid"],
                     }
-                    for item in comp_items
+                    for item, meta in zip(comp_items, priority_meta)
                 ],
             })
 
-        clusters.sort(key=lambda c: (c["cohesion_score"], c["face_count"], c["photo_count"]), reverse=True)
+        clusters.sort(
+            key=lambda c: (c["priority_score"], c["cohesion_score"], c["total_photos"]),
+            reverse=True,
+        )
         # Renumber after sort
         for i, cl in enumerate(clusters):
             cl["cluster_number"] = i + 1

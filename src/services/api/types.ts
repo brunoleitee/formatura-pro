@@ -92,6 +92,12 @@ export interface RichClusterFace {
   blur_status?: string | null;
   blur_score?: number | null;
   closed_eyes?: boolean;
+  has_gown?: boolean;
+  has_diploma?: boolean;
+  has_sash?: boolean;
+  has_cap?: boolean;
+  face_front_score?: number | null;
+  graduation_score?: number | null;
   is_representative?: boolean;
 }
 
@@ -100,7 +106,12 @@ export interface RichCluster {
   cluster_number: number;
   face_count: number;
   photo_count: number;
+  total_photos?: number;
   cohesion_score: number;
+  cohesion?: number;
+  priority_score?: number;
+  graduation_tags?: string[];
+  preview_image?: string;
   discovered_at?: string;
   representative: RichClusterFace;
   faces: RichClusterFace[];

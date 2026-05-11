@@ -5,6 +5,8 @@ import type { RichCluster } from '../../services/api';
 import { faceThumb } from './FaceCard';
 import styles from './ReviewSidebar.module.css';
 
+type PriorityFilter = 'all' | 'gown' | 'diploma' | 'sash' | 'high_priority';
+
 interface ReviewSidebarProps {
   clusters: RichCluster[];
   loading: boolean;
@@ -26,6 +28,14 @@ const ClusterItem = memo(function ClusterItem({
 }) {
   const rep = cluster.representative;
   const pct = Math.round(cluster.cohesion_score * 100);
+  const tags = cluster.graduation_tags ?? [];
+  const badgeLabels = [
+    { id: 'ia', label: 'IA', variant: 'ia' as const },
+    ...(tags.includes('beca') ? [{ id: 'beca', label: 'Beca', variant: 'tag' as const }] : []),
+    ...(tags.includes('canudo') ? [{ id: 'canudo', label: 'Canudo', variant: 'tag' as const }] : []),
+    ...(tags.includes('faixa') ? [{ id: 'faixa', label: 'Faixa', variant: 'tag' as const }] : []),
+    ...(tags.includes('capelo') ? [{ id: 'capelo', label: 'Capelo', variant: 'tag' as const }] : []),
+  ];
 
   return (
     <motion.button
@@ -57,13 +67,21 @@ const ClusterItem = memo(function ClusterItem({
       <div className={styles.itemInfo}>
         <span className={styles.itemName}>Pessoa desconhecida</span>
         <span className={styles.itemMeta}>
-          {cluster.face_count} foto{cluster.face_count !== 1 ? 's' : ''}
+          {(cluster.total_photos ?? cluster.photo_count ?? cluster.face_count)} foto{(cluster.total_photos ?? cluster.photo_count ?? cluster.face_count) !== 1 ? 's' : ''}
           <span className={styles.dot}>·</span>
           <span className={styles.confidence}>{pct}%</span>
         </span>
+        <span className={styles.badgeRow}>
+          {badgeLabels.map((badge) => (
+            <span
+              key={badge.id}
+              className={badge.variant === 'ia' ? styles.iaBadge : styles.tagBadge}
+            >
+              {badge.label}
+            </span>
+          ))}
+        </span>
       </div>
-
-      <div className={styles.iaBadge}>IA</div>
     </motion.button>
   );
 });
@@ -76,13 +94,31 @@ export default function ReviewSidebar({
   onRefresh,
 }: ReviewSidebarProps) {
   const [search, setSearch] = useState('');
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
+
+  const filteredByPriority = clusters.filter((cluster) => {
+    const tags = cluster.graduation_tags ?? [];
+    switch (priorityFilter) {
+      case 'gown':
+        return tags.includes('beca');
+      case 'diploma':
+        return tags.includes('canudo');
+      case 'sash':
+        return tags.includes('faixa');
+      case 'high_priority':
+        return (cluster.priority_score ?? 0) >= 25;
+      default:
+        return true;
+    }
+  });
 
   const visible = search.trim()
-    ? clusters.filter((_, i) =>
+    ? filteredByPriority.filter((cluster, i) =>
         `grupo ${i + 1}`.includes(search.toLowerCase()) ||
-        String(clusters[i]?.face_count).includes(search)
+        String(cluster.face_count).includes(search) ||
+        (cluster.graduation_tags ?? []).some(tag => tag.includes(search.toLowerCase()))
       )
-    : clusters;
+    : filteredByPriority;
 
   return (
     <aside className={styles.sidebar}>
@@ -127,6 +163,20 @@ export default function ReviewSidebar({
             <X size={11} />
           </button>
         )}
+      </div>
+
+      <div className={styles.filterWrap}>
+        <select
+          className={styles.filterSelect}
+          value={priorityFilter}
+          onChange={(e) => setPriorityFilter(e.target.value as PriorityFilter)}
+        >
+          <option value="all">Todos</option>
+          <option value="gown">Com beca</option>
+          <option value="diploma">Com canudo</option>
+          <option value="sash">Com faixa</option>
+          <option value="high_priority">Alta prioridade IA</option>
+        </select>
       </div>
 
       {/* Cluster list */}

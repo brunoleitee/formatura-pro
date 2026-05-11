@@ -136,6 +136,27 @@
   color: #e2e8f0;
 }
 
+.filterWrap {
+  margin: -2px 12px 8px;
+  flex-shrink: 0;
+}
+
+.filterSelect {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 0.76rem;
+  color: #cbd5e1;
+  outline: none;
+  font-family: inherit;
+}
+
+.filterSelect:focus {
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
 /* ── List ── */
 .list {
   flex: 1;
@@ -259,6 +280,14 @@
   gap: 4px;
 }
 
+.badgeRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-height: 16px;
+}
+
 .dot {
   opacity: 0.5;
 }
@@ -276,6 +305,18 @@
   background: rgba(16, 185, 129, 0.12);
   color: #10b981;
   border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 4px;
+  padding: 2px 5px;
+  flex-shrink: 0;
+}
+
+.tagBadge {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  background: rgba(59, 130, 246, 0.1);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.18);
   border-radius: 4px;
   padding: 2px 5px;
   flex-shrink: 0;

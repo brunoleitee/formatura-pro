@@ -679,6 +679,24 @@ def ensure_quality_columns(conn):
     if 'photo_hash' not in columns:
         c.execute("ALTER TABLE ocorrencias ADD COLUMN photo_hash TEXT")
         modified = True
+    if 'has_gown' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN has_gown INTEGER")
+        modified = True
+    if 'has_diploma' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN has_diploma INTEGER")
+        modified = True
+    if 'has_sash' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN has_sash INTEGER")
+        modified = True
+    if 'has_cap' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN has_cap INTEGER")
+        modified = True
+    if 'face_front_score' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN face_front_score REAL")
+        modified = True
+    if 'graduation_score' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN graduation_score REAL")
+        modified = True
     if modified:
         conn.commit()
 
@@ -712,7 +730,13 @@ class DbConnection:
                 y2 INTEGER,
                 blur_score REAL,
                 blur_status TEXT,
-                closed_eyes INTEGER
+                closed_eyes INTEGER,
+                has_gown INTEGER,
+                has_diploma INTEGER,
+                has_sash INTEGER,
+                has_cap INTEGER,
+                face_front_score REAL,
+                graduation_score REAL
             )
         """)
         ensure_quality_columns(self.conn)
