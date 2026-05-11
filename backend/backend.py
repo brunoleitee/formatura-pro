@@ -975,19 +975,23 @@ def get_review_unknown_clusters(
 ):
     return rm.get_unknown_clusters(catalog, min_score, min_cluster_size, limit)
 
-AssignClusterReq = rm.AssignClusterReq
+AssignUnknownClusterRequest = rm.AssignUnknownClusterRequest
 
 @app.post("/api/review/unknown-clusters/assign")
-def assign_cluster(req: AssignClusterReq):
+def assign_cluster(req: AssignUnknownClusterRequest):
     try:
         return rm.assign_cluster(req)
     except HTTPException:
         raise
     except Exception as e:
-        log_info(f"[assign_cluster] Erro inesperado: {e}")
+        logging.getLogger(__name__).exception("[assign_unknown_cluster] erro")
         return JSONResponse(
             status_code=500,
-            content={"ok": False, "error": str(e), "detail": "Erro interno ao atribuir cluster"},
+            content={
+                "ok": False,
+                "error": "assign_unknown_cluster_failed",
+                "detail": str(e),
+            },
         )
 
 @app.get("/api/culling/analyze/{aluno_id}")

@@ -12,8 +12,10 @@ export const reviewApi = {
       `${API_BASE}/review/unknown-clusters?catalog=${encodeURIComponent(catalog)}&min_score=${min_score}&min_cluster_size=${min_cluster_size}&limit=${limit}`
     ),
 
-  assignCluster: (catalog: string, cluster_id: string, aluno_id: string, rowids: number[]) =>
-    post(`${API_BASE}/review/unknown-clusters/assign`, { catalog, cluster_id, aluno_id, rowids }),
+  assignCluster: (
+    catalog: string,
+    payload: { cluster_id: string; aluno_id: string | null; nome_formando: string | null }
+  ) => post(`${API_BASE}/review/unknown-clusters/assign`, { catalog, ...payload }),
 
   manualIdentify: (foto_path: string, catalog: string, box: number[], new_name: string) =>
     post(`${API_BASE}/manual_identify`, { foto_path, catalog, box, new_name }),

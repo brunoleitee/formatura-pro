@@ -4,10 +4,14 @@ Gerenciamento de revisão e manipulação de dados de alunos e ocorrências faci
 
 import os
 import hashlib
+import json
+import logging
+import re
 import shutil
 import threading
 import time
 import urllib.parse
+import unicodedata
 
 import numpy as np
 from fastapi import HTTPException, Query
@@ -37,6 +41,15 @@ def get_face_cache_path_cached(catalog_name, aluno_id):
 from PIL import Image
 
 _cfg = {}
+logger = logging.getLogger(__name__)
+UNKNOWN_ALUNO_IDS = (
+    "unknown",
+    "desconhecido",
+    "sem_nome",
+    "nao_mapeado",
+    "não_mapeado",
+    "__unknown__",
+)
 
 
 def configure(**kwargs):
@@ -339,11 +352,11 @@ class BulkManualIdentifyReq(BaseModel):
     rowids: list[int]
 
 
-class AssignClusterReq(BaseModel):
-    catalog: str
+class AssignUnknownClusterRequest(BaseModel):
+    catalog: str = ""
     cluster_id: str
-    aluno_id: str
-    rowids: list[int]
+    aluno_id: str | None = None
+    nome_formando: str | None = None
 
 
 class QualitySettingsReq(BaseModel):
@@ -449,27 +462,208 @@ def bulk_manual_identify(req: BulkManualIdentifyReq):
     return {"ok": True, "status": "ok", "updated": updated, "new_name": new_name}
 
 
-def assign_cluster(req: AssignClusterReq):
-    """Atribui nome a um cluster inteiro, atualizando todas as ocorrências."""
-    import logging
-    try:
-        if not req.rowids:
-            raise HTTPException(status_code=400, detail="Nenhuma face informada.")
-        aluno_id = (req.aluno_id or "").strip()
-        if not aluno_id:
-            raise HTTPException(status_code=400, detail="Nome do aluno não informado.")
-        bulk_req = BulkManualIdentifyReq(
-            catalog=req.catalog,
-            new_name=aluno_id,
-            rowids=req.rowids,
+AssignClusterReq = AssignUnknownClusterRequest
+
+
+def _normalize_formando_name(name: str | None) -> str:
+    return re.sub(r"\s+", " ", str(name or "").strip())
+
+
+def _build_stable_aluno_id(name: str) -> str:
+    ascii_name = unicodedata.normalize("NFKD", name)
+    ascii_name = "".join(ch for ch in ascii_name if not unicodedata.combining(ch))
+    ascii_name = re.sub(r"[^\w\s-]", "", ascii_name, flags=re.UNICODE)
+    ascii_name = re.sub(r"[\s-]+", "_", ascii_name).strip("_").upper()
+    return ascii_name or "FORMANDO"
+
+
+def _find_existing_aluno_id(cur, candidates: list[str]) -> str | None:
+    seen = set()
+    filtered = []
+    for candidate in candidates:
+        value = str(candidate or "").strip()
+        if not value:
+            continue
+        key = value.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        filtered.append(value)
+
+    for value in filtered:
+        cur.execute("SELECT aluno_id FROM alunos WHERE lower(aluno_id) = lower(?) LIMIT 1", (value,))
+        row = cur.fetchone()
+        if row and row["aluno_id"]:
+            return str(row["aluno_id"])
+
+    for value in filtered:
+        cur.execute("SELECT aluno_id FROM ocorrencias WHERE lower(aluno_id) = lower(?) LIMIT 1", (value,))
+        row = cur.fetchone()
+        if row and row["aluno_id"]:
+            return str(row["aluno_id"])
+    return None
+
+
+def _resolve_assign_aluno(cur, aluno_id: str | None, nome_formando: str | None) -> tuple[str, str]:
+    resolved_aluno_id = str(aluno_id or "").strip()
+    normalized_name = _normalize_formando_name(nome_formando)
+
+    if not resolved_aluno_id and not normalized_name:
+        raise HTTPException(status_code=400, detail="Informe aluno_id ou nome_formando")
+
+    if resolved_aluno_id:
+        existing = _find_existing_aluno_id(cur, [resolved_aluno_id])
+        resolved_aluno_id = existing or resolved_aluno_id
+        cur.execute(
+            "INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path) VALUES (?, ?)",
+            (resolved_aluno_id, "n/a"),
         )
-        result = bulk_manual_identify(bulk_req)
-        return {"ok": True, **result, "cluster_id": req.cluster_id}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"[assign_cluster] cluster={req.cluster_id} catalog={req.catalog} aluno={req.aluno_id!r} erro: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erro ao identificar grupo: {e}")
+        return resolved_aluno_id, normalized_name or resolved_aluno_id
+
+    generated_aluno_id = _build_stable_aluno_id(normalized_name)
+    existing = _find_existing_aluno_id(cur, [normalized_name, generated_aluno_id])
+    resolved_aluno_id = existing or generated_aluno_id
+    cur.execute(
+        "INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path) VALUES (?, ?)",
+        (resolved_aluno_id, "n/a"),
+    )
+    return resolved_aluno_id, normalized_name
+
+
+def _sync_unknown_face_clusters(cur, clusters: list[dict]):
+    now = time.time()
+    cur.execute("DELETE FROM unknown_face_clusters")
+    rows = []
+    for cluster in clusters:
+        for face in cluster.get("faces", []):
+            rows.append(
+                (
+                    cluster["cluster_id"],
+                    int(face["rowid"]),
+                    face["path"],
+                    float(cluster.get("cohesion_score") or 0.0),
+                    now,
+                    now,
+                )
+            )
+    if rows:
+        cur.executemany(
+            """
+            INSERT INTO unknown_face_clusters
+            (cluster_id, face_id, original_path, confidence, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+
+
+def _ensure_action_logs_table(cur):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS action_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            action TEXT NOT NULL,
+            details TEXT,
+            created_at REAL DEFAULT (strftime('%s','now'))
+        )
+        """
+    )
+
+
+def assign_cluster(req: AssignUnknownClusterRequest):
+    """Atribui nome a um cluster desconhecido resolvendo aluno existente ou novo nome digitado."""
+    backup_catalog_db = _get("backup_catalog_db")
+    get_db = _get("get_db")
+    catalog = _sanitize_catalog_name(req.catalog or _current_catalog())
+    if not catalog:
+        raise HTTPException(status_code=400, detail="Nenhum catalogo selecionado")
+
+    backup_catalog_db(catalog, "antes_atribuir_cluster_desconhecido")
+
+    with get_db(catalog) as conn:
+        cur = conn.cursor()
+        resolved_aluno_id, normalized_name = _resolve_assign_aluno(cur, req.aluno_id, req.nome_formando)
+
+        cur.execute(
+            """
+            SELECT face_id, original_path
+            FROM unknown_face_clusters
+            WHERE cluster_id = ?
+            ORDER BY id ASC
+            """,
+            (req.cluster_id,),
+        )
+        cluster_rows = cur.fetchall()
+        if not cluster_rows:
+            raise HTTPException(status_code=404, detail="Cluster desconhecido não encontrado.")
+
+        face_ids = [int(row["face_id"]) for row in cluster_rows if row["face_id"] is not None]
+        updated = 0
+        if face_ids:
+            for idx in range(0, len(face_ids), 900):
+                chunk = face_ids[idx:idx + 900]
+                placeholders = ",".join(["?"] * len(chunk))
+                cur.execute(
+                    f"UPDATE OR REPLACE ocorrencias SET aluno_id = ? WHERE rowid IN ({placeholders})",
+                    [resolved_aluno_id] + chunk,
+                )
+                updated += cur.rowcount
+        else:
+            paths = [row["original_path"] for row in cluster_rows if row["original_path"]]
+            if not paths:
+                raise HTTPException(status_code=404, detail="Cluster sem faces vinculadas.")
+            for idx in range(0, len(paths), 900):
+                chunk = paths[idx:idx + 900]
+                placeholders = ",".join(["?"] * len(chunk))
+                cur.execute(
+                    f"""
+                    UPDATE ocorrencias
+                    SET aluno_id = ?
+                    WHERE foto_path IN ({placeholders})
+                      AND (
+                          lower(aluno_id) IN ({",".join(["?"] * len(UNKNOWN_ALUNO_IDS))})
+                          OR aluno_id LIKE 'Pessoa%'
+                      )
+                    """,
+                    [resolved_aluno_id] + chunk + list(UNKNOWN_ALUNO_IDS),
+                )
+                updated += cur.rowcount
+
+        _ensure_action_logs_table(cur)
+        cur.execute(
+            "INSERT INTO action_logs (action, details) VALUES (?, ?)",
+            (
+                "unknown_cluster_assigned",
+                json.dumps(
+                    {
+                        "cluster_id": req.cluster_id,
+                        "aluno_id": resolved_aluno_id,
+                        "nome_formando": normalized_name or resolved_aluno_id,
+                        "updated": updated,
+                    },
+                    ensure_ascii=False,
+                ),
+            ),
+        )
+        cur.execute("DELETE FROM unknown_face_clusters WHERE cluster_id = ?", (req.cluster_id,))
+        conn.commit()
+
+        if resolved_aluno_id and resolved_aluno_id != "Desconhecido":
+            _ensure_person_reference(conn, catalog, resolved_aluno_id)
+
+    try:
+        import people_data_manager as pdm
+        pdm.invalidate_people_cache()
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "cluster_id": req.cluster_id,
+        "aluno_id": resolved_aluno_id,
+        "nome_formando": normalized_name or resolved_aluno_id,
+        "updated": updated,
+    }
 
 
 def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster_size: int = 2, limit: int = 80):
@@ -497,6 +691,8 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
         """)
         rows = cur.fetchall()
         if not rows:
+            _sync_unknown_face_clusters(cur, [])
+            conn.commit()
             return {"clusters": []}
 
         items = []
@@ -516,6 +712,7 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             })
 
         if len(items) < min_cluster_size:
+            _sync_unknown_face_clusters(cur, [])
             conn.commit()
             return {"clusters": []}
 
@@ -527,6 +724,7 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             items = [item for item, keep in zip(items, valid) if keep]
 
         if len(items) < min_cluster_size:
+            _sync_unknown_face_clusters(cur, [])
             conn.commit()
             return {"clusters": []}
 
@@ -616,6 +814,7 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
         # Renumber after sort
         for i, cl in enumerate(clusters):
             cl["cluster_number"] = i + 1
+        _sync_unknown_face_clusters(cur, clusters)
         conn.commit()
         return {"clusters": clusters[:limit], "threshold": threshold, "min_cluster_size": min_cluster_size}
 

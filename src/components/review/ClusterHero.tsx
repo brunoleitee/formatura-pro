@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserPlus, EyeOff, MoreHorizontal, Check, X, Sparkles } from 'lucide-react';
-import type { RichCluster } from '../../services/api';
+import type { RichCluster, SearchResult } from '../../services/api';
 import { api } from '../../services/api';
 import { faceThumb } from './FaceCard';
 import styles from './ClusterHero.module.css';
@@ -33,10 +33,12 @@ export default function ClusterHero({
 }: ClusterHeroProps) {
   const [identifying, setIdentifying] = useState(false);
   const [nameInput, setNameInput] = useState('');
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState<{ id: string; name: string } | null>(null);
+  const [suggestions, setSuggestions] = useState<Array<{ id: string; name: string }>>([]);
+  const [isAssigning, setIsAssigning] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const assignLockRef = useRef(false);
 
   const rep = cluster.representative;
   const pct = Math.round(cluster.cohesion_score * 100);
@@ -47,8 +49,9 @@ export default function ClusterHero({
     try {
       const res = await api.globalSearch(q);
       setSuggestions(
-        res.map((r: { name: string }) => r.name)
-           .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i)
+        res
+           .map((r: SearchResult) => ({ id: r.name, name: r.name }))
+           .filter((v, i, a) => a.findIndex((item) => item.id === v.id) === i)
            .slice(0, 6)
       );
     } catch { /* ignore */ }
@@ -62,6 +65,7 @@ export default function ClusterHero({
   useEffect(() => {
     setIdentifying(false);
     setNameInput('');
+    setSelectedStudent(null);
     setSuggestions([]);
     setSaveError(null);
   }, [cluster.cluster_id]);
@@ -71,21 +75,31 @@ export default function ClusterHero({
   }, [identifying]);
 
   const handleAssign = async () => {
-    const name = nameInput.trim();
-    if (!name || saving) return;
+    const typedName = nameInput.trim();
+    const alunoId = selectedStudent?.id ?? null;
+    const nomeFormando = typedName || null;
+    if ((!alunoId && !nomeFormando) || assignLockRef.current) return;
+
+    assignLockRef.current = true;
     setSaveError(null);
-    setSaving(true);
+    setIsAssigning(true);
     try {
-      const rowids = cluster.faces.map(f => f.rowid);
-      await api.assignCluster(catalog, cluster.cluster_id, name, rowids);
-      setTimeout(() => onAssigned(cluster.cluster_id), 600);
+      await api.assignCluster(catalog, {
+        cluster_id: cluster.cluster_id,
+        aluno_id: alunoId,
+        nome_formando: nomeFormando,
+      });
+      onAssigned(cluster.cluster_id);
     } catch (err) {
       console.error('[assignCluster] erro:', err);
       setSaveError('Não foi possível identificar este grupo. Tente novamente.');
     } finally {
-      setSaving(false);
+      assignLockRef.current = false;
+      setIsAssigning(false);
     }
   };
+
+  const canAssign = Boolean(selectedStudent?.id || nameInput.trim());
 
   return (
     <div className={styles.hero}>
@@ -178,10 +192,22 @@ export default function ClusterHero({
                   className={styles.nameInput}
                   placeholder="Digite o nome do formando..."
                   value={nameInput}
-                  onChange={e => setNameInput(e.target.value)}
+                  onChange={e => {
+                    const nextValue = e.target.value;
+                    setNameInput(nextValue);
+                    if (selectedStudent && nextValue.trim() !== selectedStudent.name) {
+                      setSelectedStudent(null);
+                    }
+                  }}
                   onKeyDown={e => {
                     if (e.key === 'Enter') handleAssign();
-                    if (e.key === 'Escape') { setIdentifying(false); setNameInput(''); }
+                    if (e.key === 'Escape') {
+                      setIdentifying(false);
+                      setNameInput('');
+                      setSelectedStudent(null);
+                      setSuggestions([]);
+                      setSaveError(null);
+                    }
                   }}
                 />
                 <AnimatePresence>
@@ -195,16 +221,17 @@ export default function ClusterHero({
                     >
                       {suggestions.map(s => (
                         <button
-                          key={s}
+                          key={s.id}
                           className={styles.suggestion}
                           onMouseDown={e => {
                             e.preventDefault();
-                            setNameInput(s);
+                            setNameInput(s.name);
+                            setSelectedStudent(s);
                             setSuggestions([]);
                             inputRef.current?.focus();
                           }}
                         >
-                          {s}
+                          {s.name}
                         </button>
                       ))}
                     </motion.div>
@@ -215,14 +242,20 @@ export default function ClusterHero({
               <button
                 className={styles.btnConfirm}
                 onClick={handleAssign}
-                disabled={saving || !nameInput.trim()}
+                disabled={isAssigning || !canAssign}
               >
                 <Check size={14} />
-                {saving ? 'Salvando...' : 'Confirmar'}
+                {isAssigning ? 'Salvando...' : 'Confirmar'}
               </button>
               <button
                 className={styles.btnCancel}
-                onClick={() => { setIdentifying(false); setNameInput(''); setSuggestions([]); setSaveError(null); }}
+                onClick={() => {
+                  setIdentifying(false);
+                  setNameInput('');
+                  setSelectedStudent(null);
+                  setSuggestions([]);
+                  setSaveError(null);
+                }}
               >
                 <X size={14} />
               </button>
