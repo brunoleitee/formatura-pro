@@ -1,363 +1,107 @@
-/* ── Clusters Desconhecidos – visual Lightroom/Tonfotos ── */
+/* ReviewView — layout raiz, sem padding próprio */
 
-.container {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
-}
-
-/* ── Header ── */
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 0 16px 0;
-  flex-shrink: 0;
-}
-
-.headerLeft h1 {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.headerLeft p {
-  font-size: 0.82rem;
-  color: var(--text-secondary);
-  margin: 3px 0 0 0;
-}
-
-.headerActions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* ── Grid de cards ── */
-.clusterGrid {
+/* Ocupa todo o view-area (que é flex col) */
+.root {
   flex: 1;
-  overflow-y: auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 16px;
-  padding-bottom: 16px;
-  align-content: start;
+  display: flex;
+  overflow: hidden;
+  background: #0d0f1a;
 }
 
-/* ── Card individual ── */
-.clusterCard {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  overflow: hidden;
-  cursor: pointer;
-  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+/* Área principal (direita do sidebar) */
+.main {
+  flex: 1;
   display: flex;
   flex-direction: column;
-}
-
-.clusterCard:hover {
-  transform: translateY(-2px);
-  border-color: rgba(59, 130, 246, 0.5);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(59, 130, 246, 0.2);
-}
-
-.clusterCard:active {
-  transform: translateY(0);
-}
-
-/* ── Imagem do representante ── */
-.clusterThumb {
-  position: relative;
-  aspect-ratio: 1;
   overflow: hidden;
-  background: var(--bg-tertiary);
-  flex-shrink: 0;
+  background: #0f111a;
+  position: relative;
 }
 
-.clusterThumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  transition: transform 0.25s ease;
+/* ── Sem catálogo ── */
+.noCatalog {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #475569;
+  font-size: 0.9rem;
 }
 
-.clusterCard:hover .clusterThumb img {
-  transform: scale(1.04);
-}
-
-.clusterThumbPlaceholder {
-  width: 100%;
-  height: 100%;
+/* ── Welcome state ── */
+.welcome {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-secondary);
-  opacity: 0.4;
+  padding: 32px;
 }
 
-/* Badge "Desconhecido" no canto superior direito */
-.badgeUnknown {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  background: rgba(15, 17, 26, 0.75);
-  backdrop-filter: blur(6px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 20px;
-  padding: 3px 9px;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-}
-
-/* ── Info do card ── */
-.clusterInfo {
-  padding: 12px 14px 14px;
+.welcomeInner {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  max-width: 380px;
 }
 
-.clusterTitle {
+.welcomeOrb {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: rgba(59, 130, 246, 0.06);
+  border: 1px solid rgba(59, 130, 246, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(59, 130, 246, 0.45);
+  margin-bottom: 6px;
+}
+
+.welcomeTitle {
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.welcomeSubtitle {
   font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: #475569;
+  margin: 0;
+  line-height: 1.6;
 }
 
-.clusterMeta {
+.welcomeHint {
   font-size: 0.78rem;
-  color: var(--text-secondary);
+  color: rgba(59, 130, 246, 0.5);
+  margin-top: 4px;
+  letter-spacing: 0.02em;
+}
+
+.welcomeRefresh {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-}
-
-.clusterCount {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.confidencePill {
-  font-size: 0.72rem;
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 10px;
-  background: rgba(59, 130, 246, 0.12);
-  color: #60a5fa;
-  border: 1px solid rgba(59, 130, 246, 0.2);
-}
-
-/* ── Detail view (cluster expandido) ── */
-.detailView {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
-}
-
-.detailHeader {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-bottom: 14px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border-color);
-  margin-bottom: 14px;
-}
-
-.backBtn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  border-radius: 8px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
+  gap: 7px;
+  padding: 9px 18px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+  color: #64748b;
   font-size: 0.84rem;
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-  flex-shrink: 0;
-}
-
-.backBtn:hover {
-  border-color: var(--text-secondary);
-  color: var(--text-primary);
-}
-
-.detailHeaderInfo {
-  flex: 1;
-  min-width: 0;
-}
-
-.detailTitle {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 2px 0;
-}
-
-.detailSubtitle {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* ── Grid de faces no detail ── */
-.facesGrid {
-  flex: 1;
-  overflow-y: auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 8px;
-  padding-bottom: 12px;
-  align-content: start;
-}
-
-.faceCard {
-  aspect-ratio: 1;
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--bg-tertiary);
-  position: relative;
-}
-
-.faceCard img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-/* ── Painel de identificação ── */
-.identifyPanel {
-  flex-shrink: 0;
-  margin-top: 14px;
-  padding: 14px 16px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.identifyRow {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-}
-
-.inputWrap {
-  flex: 1;
-  position: relative;
-}
-
-.nameInput {
-  width: 100%;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  color: var(--text-primary);
-  padding: 10px 14px;
-  font-size: 0.92rem;
-  outline: none;
-  transition: border-color 0.2s;
+  transition: color 0.15s, border-color 0.15s;
   font-family: inherit;
+  margin-top: 8px;
 }
 
-.nameInput:focus {
-  border-color: var(--accent-color);
-}
-
-.nameInput::placeholder {
-  color: var(--text-secondary);
-  opacity: 0.6;
-}
-
-.suggestionsDropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  z-index: 50;
-  overflow: hidden;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-}
-
-.suggestionItem {
-  display: block;
-  width: 100%;
-  padding: 9px 14px;
-  text-align: left;
-  font-size: 0.88rem;
-  color: var(--text-primary);
-  transition: background 0.15s;
-  cursor: pointer;
-  border: none;
-  background: none;
-  font-family: inherit;
-}
-
-.suggestionItem:hover {
-  background: var(--bg-tertiary);
-}
-
-.secondaryActions {
-  display: flex;
-  gap: 8px;
-}
-
-/* ── Feedback message ── */
-.feedbackMsg {
-  padding: 10px 14px;
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.25);
-  border-radius: 8px;
-  font-size: 0.86rem;
-  color: #34d399;
-  flex-shrink: 0;
-  margin-bottom: 10px;
-}
-
-/* ── Empty / loading states ── */
-.emptyState {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  color: var(--text-secondary);
-  text-align: center;
-}
-
-.emptyState h3 {
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.emptyState p {
-  font-size: 0.88rem;
-  margin: 0;
-  max-width: 280px;
+.welcomeRefresh:hover {
+  color: #94a3b8;
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 /* ── Spinner ── */
