@@ -23,12 +23,15 @@ cache_lock = threading.Lock()
 
 def get_face_cache_path_cached(catalog_name, aluno_id):
     """Obtém face_cache_path com cache para evitar queries repetidas."""
-    from backend import get_db  # Import local para evitar circular
     cache_key = f"{catalog_name}:{aluno_id}"
     with cache_lock:
         if cache_key in face_cache_path_cache:
             return face_cache_path_cache[cache_key]
-    
+
+    get_db = _get("get_db")
+    if not callable(get_db):
+        return None
+
     with get_db(catalog_name) as conn:
         cur = conn.cursor()
         cur.execute("SELECT face_cache_path FROM alunos WHERE aluno_id = ?", (aluno_id,))

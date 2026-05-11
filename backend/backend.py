@@ -979,11 +979,22 @@ AssignUnknownClusterRequest = rm.AssignUnknownClusterRequest
 
 @app.post("/api/review/unknown-clusters/assign")
 def assign_cluster(req: AssignUnknownClusterRequest):
+    payload = req.model_dump() if hasattr(req, "model_dump") else req.dict()
+    print("[assign_unknown_cluster] payload:", payload, flush=True)
     try:
         return rm.assign_cluster(req)
-    except HTTPException:
-        raise
+    except HTTPException as e:
+        return JSONResponse(
+            status_code=e.status_code,
+            content={
+                "ok": False,
+                "error": "assign_unknown_cluster_http_error",
+                "detail": str(e.detail),
+            },
+        )
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         logging.getLogger(__name__).exception("[assign_unknown_cluster] erro")
         return JSONResponse(
             status_code=500,
