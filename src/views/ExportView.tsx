@@ -48,6 +48,7 @@ function ExportViewContent() {
   const { currentCatalog } = useApp();
   const [people, setPeople] = useState<Person[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [destPath, setDestPath] = useState('');
   const [mode, setMode] = useState<ExportMode>('copy');
   const [conflict, setConflict] = useState<ConflictStrategy>('copy');
@@ -73,6 +74,7 @@ function ExportViewContent() {
 
   useEffect(() => {
     setSelected(new Set());
+    setHoveredId(null);
     setStatus(null);
     setPolling(false);
     setSearch('');
@@ -111,6 +113,7 @@ function ExportViewContent() {
 
   const getPersonId = (person: Person) => person.id || person.name || 'Sem_Nome';
   const getPersonInitial = (person: Person) => (person.name || person.id || '?').trim().charAt(0).toUpperCase() || '?';
+  const getPersonLabel = (person: Person) => person.name || person.id || 'Sem nome';
 
   const selectAll = () => setSelected(new Set(filtered.map(getPersonId)));
   const clearAll = () => setSelected(new Set());
@@ -132,6 +135,66 @@ function ExportViewContent() {
   );
 
   const isExporting = status?.is_exporting ?? false;
+
+  const getRowStyle = (isSelected: boolean, isHovered: boolean) => ({
+    width: '100%',
+    minHeight: 56,
+    borderRadius: 12,
+    border: isSelected ? '1px solid rgba(96, 165, 250, 0.85)' : '1px solid rgba(255,255,255,0.04)',
+    background: isSelected
+      ? 'linear-gradient(180deg, rgba(37,99,235,0.18), rgba(37,99,235,0.10))'
+      : isHovered
+      ? 'linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.025))'
+      : 'transparent',
+    boxShadow: isSelected
+      ? '0 0 0 1px rgba(59,130,246,0.18) inset, 0 10px 24px rgba(37,99,235,0.14)'
+      : isHovered
+      ? '0 8px 20px rgba(0,0,0,0.18), 0 0 0 1px rgba(255,255,255,0.02) inset'
+      : 'none',
+    padding: '10px 12px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    textAlign: 'left' as const,
+    cursor: 'pointer',
+    transition: 'background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease',
+    transform: isHovered ? 'translateY(-1px)' : 'translateY(0)',
+    outline: 'none',
+  });
+
+  const getAvatarStyle = (isSelected: boolean) => ({
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    background: isSelected
+      ? 'linear-gradient(180deg, rgba(96,165,250,0.26), rgba(59,130,246,0.16))'
+      : 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))',
+    border: isSelected ? '1px solid rgba(96,165,250,0.32)' : '1px solid rgba(255,255,255,0.06)',
+    color: isSelected ? '#dbeafe' : 'rgba(255,255,255,0.88)',
+    fontSize: '0.78rem',
+    fontWeight: 700,
+    letterSpacing: '0.02em',
+  });
+
+  const getCheckStyle = (isSelected: boolean) => ({
+    width: 18,
+    height: 18,
+    borderRadius: 6,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    border: isSelected ? '1px solid rgba(96,165,250,0.44)' : '1px solid rgba(255,255,255,0.06)',
+    background: isSelected ? 'rgba(59,130,246,0.18)' : 'rgba(255,255,255,0.02)',
+    color: isSelected ? '#bfdbfe' : 'transparent',
+    boxShadow: isSelected ? '0 0 14px rgba(59,130,246,0.16)' : 'none',
+    transition: 'all 140ms ease',
+  });
 
   return (
     <div className="view-container">
@@ -189,60 +252,59 @@ function ExportViewContent() {
               <RefreshCw size={24} className="spin" />
             </div>
           ) : (
-            <div className="export-person-list">
-              {filtered.map(p => (
-                <button
-                  type="button"
-                  key={getPersonId(p)}
-                  className={`export-person-row ${selected.has(getPersonId(p)) ? 'selected' : ''}`}
-                  onClick={() => toggleSelect(getPersonId(p))}
-                  aria-pressed={selected.has(getPersonId(p))}
-                  style={{
-                    width: '100%',
-                    border: 'none',
-                    background: 'transparent',
-                    textAlign: 'left',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                    <span
-                      aria-hidden="true"
-                      style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: 999,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'rgba(59,130,246,0.12)',
-                        color: 'var(--accent-color)',
-                        flexShrink: 0,
-                        fontSize: '0.82rem',
-                        fontWeight: 700,
-                      }}
-                    >
-                      {getPersonInitial(p)}
-                    </span>
-                    <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                      <span className="person-name">{p.name || p.id || 'Sem nome'}</span>
-                      <span className="person-count">{p.total_photos} fotos</span>
-                    </span>
-                  </span>
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      width: 18,
-                      textAlign: 'center',
-                      color: 'var(--accent-color)',
-                      fontWeight: 700,
-                      visibility: selected.has(getPersonId(p)) ? 'visible' : 'hidden',
-                    }}
+            <div className="export-person-list" style={{ gap: 8, paddingRight: 4 }}>
+              {filtered.map((p) => {
+                const personId = getPersonId(p);
+                const isSelected = selected.has(personId);
+                const isHovered = hoveredId === personId;
+
+                return (
+                  <button
+                    type="button"
+                    key={personId}
+                    className={`export-person-row ${isSelected ? 'selected' : ''}`}
+                    onClick={() => toggleSelect(personId)}
+                    onMouseEnter={() => setHoveredId(personId)}
+                    onMouseLeave={() => setHoveredId((prev) => (prev === personId ? null : prev))}
+                    aria-pressed={isSelected}
+                    style={getRowStyle(isSelected, isHovered)}
                   >
-                    ✓
-                  </span>
-                </button>
-              ))}
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
+                      <span aria-hidden="true" style={getAvatarStyle(isSelected)}>
+                        {getPersonInitial(p)}
+                      </span>
+                      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
+                        <span
+                          className="person-name"
+                          style={{
+                            fontSize: '0.9rem',
+                            fontWeight: 600,
+                            color: 'var(--text-primary)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {getPersonLabel(p)}
+                        </span>
+                        <span
+                          className="person-count"
+                          style={{
+                            fontSize: '0.74rem',
+                            color: isSelected ? 'rgba(191,219,254,0.88)' : 'var(--text-secondary)',
+                            letterSpacing: '0.01em',
+                          }}
+                        >
+                          {p.total_photos} fotos
+                        </span>
+                      </span>
+                    </span>
+                    <span aria-hidden="true" style={getCheckStyle(isSelected)}>
+                      <Check size={12} strokeWidth={2.4} />
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
           <div className="export-selection-count">
