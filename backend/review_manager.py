@@ -8,6 +8,7 @@ import json
 import logging
 import math
 import re
+import datetime
 import shutil
 import threading
 import time
@@ -667,15 +668,46 @@ def _derive_sharpness_score(item: dict) -> float:
     return _clamp01(base + blur_boost)
 
 
-def analyze_graduation_items(photo: dict | None = None) -> dict:
+def analyze_graduation_items(photo: dict | str | None = None, enable_heuristics: bool = False) -> dict:
+    photo_path = ""
+    if isinstance(photo, str):
+        photo_path = photo
+    elif isinstance(photo, dict):
+        photo_path = str(photo.get("foto_path") or photo.get("original_path") or photo.get("path") or "")
+
+    tags: list[str] = []
+    normalized_path = unicodedata.normalize("NFKD", photo_path)
+    normalized_path = "".join(ch for ch in normalized_path if not unicodedata.combining(ch)).casefold()
+
+    if enable_heuristics and normalized_path:
+        if "beca" in normalized_path:
+            tags.append("beca")
+        if "canudo" in normalized_path or "diploma" in normalized_path:
+            tags.append("canudo")
+        if "faixa" in normalized_path:
+            tags.append("faixa")
+        if "capelo" in normalized_path:
+            tags.append("capelo")
+
+    tags = _normalize_saved_graduation_tags(tags)
+    has_gown = "beca" in tags
+    has_diploma = "canudo" in tags
+    has_sash = "faixa" in tags
+    has_cap = "capelo" in tags
+    graduation_score = (
+        (40.0 if has_gown else 0.0) +
+        (30.0 if has_diploma else 0.0) +
+        (25.0 if has_sash else 0.0) +
+        (20.0 if has_cap else 0.0)
+    )
     return {
-        "has_gown": False,
-        "has_diploma": False,
-        "has_sash": False,
-        "has_cap": False,
-        "graduation_tags": [],
-        "graduation_score": 0.0,
-        "source": "none",
+        "has_gown": has_gown,
+        "has_diploma": has_diploma,
+        "has_sash": has_sash,
+        "has_cap": has_cap,
+        "graduation_tags": tags,
+        "graduation_score": graduation_score,
+        "source": "path_heuristic" if tags else "none",
     }
 
 
@@ -995,19 +1027,12 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 for local_idx, item in enumerate(comp_items)
             ]
             photo_count = len(unique_paths)
+            max_graduation_score = max((meta["graduation_score"] for meta in priority_meta), default=0.0)
             cluster_has_gown = any(meta["has_gown"] for meta in priority_meta)
             cluster_has_diploma = any(meta["has_diploma"] for meta in priority_meta)
             cluster_has_sash = any(meta["has_sash"] for meta in priority_meta)
             cluster_has_cap = any(meta["has_cap"] for meta in priority_meta)
-            priority_score = cohesion_score * 100.0 + math.log(photo_count + 1) * 5.0
-            if cluster_has_gown:
-                priority_score += 40.0
-            if cluster_has_diploma:
-                priority_score += 30.0
-            if cluster_has_sash:
-                priority_score += 25.0
-            if cluster_has_cap:
-                priority_score += 20.0
+            priority_score = max_graduation_score + cohesion_score + photo_count
             rep_item = _pick_cluster_cover_item(comp_items, priority_meta)
             rep_item_meta = priority_meta[comp_items.index(rep_item)]
             graduation_tags = _ordered_cluster_tags(priority_meta)
@@ -1082,13 +1107,15 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
 def _default_graduation_analysis_status(catalog: str = "") -> dict:
     return {
         "is_running": False,
+        "running": False,
         "progress": 0.0,
         "processed": 0,
         "total": 0,
+        "updated": 0,
         "status_text": "Inativo",
         "catalog": catalog,
         "result": None,
-        "error": "",
+        "error": None,
         "started_at": None,
         "finished_at": None,
     }
@@ -1115,66 +1142,238 @@ def _build_graduation_analysis_payload(photo_path: str, detected: dict) -> dict:
         "has_cap": 1 if has_cap else 0,
         "graduation_tags": json.dumps(tags, ensure_ascii=False),
         "graduation_score": float(score or 0.0),
+        "graduation_analyzed_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         "source": str(detected.get("source") or "none"),
         "photo_path": photo_path,
     }
+
+
+def _list_table_columns(cur, table_name: str) -> list[str]:
+    try:
+        cur.execute(f"PRAGMA table_info({table_name})")
+        return [str(row["name"]) for row in cur.fetchall()]
+    except Exception:
+        return []
+
+
+def _table_exists(cur, table_name: str) -> bool:
+    cur.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND lower(name) = lower(?) LIMIT 1",
+        (table_name,),
+    )
+    return cur.fetchone() is not None
+
+
+def _build_photo_source_query(cur):
+    if _table_exists(cur, "photos"):
+        cols = set(_list_table_columns(cur, "photos"))
+        path_col = "original_path" if "original_path" in cols else ("path" if "path" in cols else "")
+        if path_col:
+            select_cols = [
+                f"{path_col} AS photo_path",
+                "status" if "status" in cols else "NULL AS status",
+                "discarded" if "discarded" in cols else "NULL AS discarded",
+            ]
+            return f"SELECT {', '.join(select_cols)} FROM photos WHERE {path_col} IS NOT NULL AND {path_col} != ''", "photos"
+    if _table_exists(cur, "fotos"):
+        cols = set(_list_table_columns(cur, "fotos"))
+        path_col = "path" if "path" in cols else ("foto_path" if "foto_path" in cols else "")
+        if path_col:
+            select_cols = [
+                f"{path_col} AS photo_path",
+                "status" if "status" in cols else "NULL AS status",
+                "discarded" if "discarded" in cols else "NULL AS discarded",
+            ]
+            return f"SELECT {', '.join(select_cols)} FROM fotos WHERE {path_col} IS NOT NULL AND {path_col} != ''", "fotos"
+    return "", ""
+
+
+def _load_graduation_job_photo_paths(cur) -> tuple[list[str], str]:
+    discarded_paths = set()
+    if _table_exists(cur, "discarded_photos"):
+        try:
+            cur.execute("SELECT foto_path FROM discarded_photos")
+            discarded_paths = {str(row["foto_path"]) for row in cur.fetchall() if row["foto_path"]}
+        except Exception:
+            discarded_paths = set()
+
+    query, source_table = _build_photo_source_query(cur)
+    photo_paths: list[str] = []
+    seen = set()
+    if query:
+        cur.execute(query)
+        for row in cur.fetchall():
+            photo_path = str(row["photo_path"] or "").strip()
+            if not photo_path or photo_path in seen or photo_path in discarded_paths:
+                continue
+            status = str(row["status"] or "").strip().lower()
+            if status == "discarded":
+                continue
+            discarded_flag = row["discarded"]
+            if discarded_flag is not None and _coerce_flag(discarded_flag):
+                continue
+            seen.add(photo_path)
+            photo_paths.append(photo_path)
+    if photo_paths:
+        return photo_paths, source_table
+
+    cur.execute(
+        """
+        SELECT DISTINCT foto_path AS photo_path
+        FROM ocorrencias
+        WHERE foto_path IS NOT NULL
+          AND x1 IS NOT NULL
+        ORDER BY foto_path ASC
+        """
+    )
+    for row in cur.fetchall():
+        photo_path = str(row["photo_path"] or "").strip()
+        if not photo_path or photo_path in seen or photo_path in discarded_paths:
+            continue
+        seen.add(photo_path)
+        photo_paths.append(photo_path)
+    return photo_paths, "ocorrencias"
+
+
+def _update_graduation_fields_for_photo(cur, photo_path: str, payload: dict) -> int:
+    updated = 0
+    if _table_exists(cur, "photos"):
+        photo_cols = set(_list_table_columns(cur, "photos"))
+        if "original_path" in photo_cols:
+            cur.execute(
+                """
+                UPDATE photos
+                SET has_gown = ?,
+                    has_diploma = ?,
+                    has_sash = ?,
+                    has_cap = ?,
+                    graduation_tags = ?,
+                    graduation_score = ?,
+                    graduation_analyzed_at = ?
+                WHERE original_path = ?
+                """,
+                (
+                    payload["has_gown"],
+                    payload["has_diploma"],
+                    payload["has_sash"],
+                    payload["has_cap"],
+                    payload["graduation_tags"],
+                    payload["graduation_score"],
+                    payload["graduation_analyzed_at"],
+                    photo_path,
+                ),
+            )
+            updated += int(cur.rowcount or 0)
+    if _table_exists(cur, "fotos"):
+        foto_cols = set(_list_table_columns(cur, "fotos"))
+        path_col = "path" if "path" in foto_cols else ("foto_path" if "foto_path" in foto_cols else "")
+        if path_col:
+            cur.execute(
+                f"""
+                UPDATE fotos
+                SET has_gown = ?,
+                    has_diploma = ?,
+                    has_sash = ?,
+                    has_cap = ?,
+                    graduation_tags = ?,
+                    graduation_score = ?,
+                    graduation_analyzed_at = ?
+                WHERE {path_col} = ?
+                """,
+                (
+                    payload["has_gown"],
+                    payload["has_diploma"],
+                    payload["has_sash"],
+                    payload["has_cap"],
+                    payload["graduation_tags"],
+                    payload["graduation_score"],
+                    payload["graduation_analyzed_at"],
+                    photo_path,
+                ),
+            )
+            updated += int(cur.rowcount or 0)
+
+    cur.execute(
+        """
+        UPDATE ocorrencias
+        SET has_gown = ?,
+            has_diploma = ?,
+            has_sash = ?,
+            has_cap = ?,
+            graduation_tags = ?,
+            graduation_score = ?,
+            graduation_analyzed_at = ?
+        WHERE foto_path = ?
+        """,
+        (
+            payload["has_gown"],
+            payload["has_diploma"],
+            payload["has_sash"],
+            payload["has_cap"],
+            payload["graduation_tags"],
+            payload["graduation_score"],
+            payload["graduation_analyzed_at"],
+            photo_path,
+        ),
+    )
+    return updated
 
 
 def start_graduation_analysis(req: GraduationAnalysisRequest):
     graduation_analysis_state = _value("graduation_analysis_state")
     get_db = _get("get_db")
     backup_catalog_db = _get("backup_catalog_db")
+    log_info = _get("log_info")
     catalog = _sanitize_catalog_name(req.catalog or _current_catalog())
     if not catalog:
         raise HTTPException(status_code=400, detail="Nenhum catalogo selecionado")
     if graduation_analysis_state.get("is_running"):
-        raise HTTPException(status_code=400, detail="Análise de itens de formatura já está em andamento.")
+        return dict(graduation_analysis_state)
 
     graduation_analysis_state.update({
         "is_running": True,
+        "running": True,
         "progress": 0.0,
         "processed": 0,
         "total": 0,
+        "updated": 0,
         "status_text": "Preparando análise de itens de formatura...",
         "catalog": catalog,
         "result": None,
-        "error": "",
+        "error": None,
         "started_at": time.time(),
         "finished_at": None,
     })
 
     def worker():
-        updated_faces = 0
+        updated_rows = 0
+        total = 0
         try:
             if callable(backup_catalog_db):
                 backup_catalog_db(catalog, "antes_analise_itens_formatura")
             with get_db(catalog) as conn:
                 cur = conn.cursor()
-                cur.execute(
-                    """
-                    SELECT DISTINCT foto_path
-                    FROM ocorrencias
-                    WHERE foto_path IS NOT NULL
-                      AND x1 IS NOT NULL
-                    ORDER BY foto_path ASC
-                    """
-                )
-                photo_paths = [str(row["foto_path"]) for row in cur.fetchall() if row["foto_path"]]
+                photo_paths, source_table = _load_graduation_job_photo_paths(cur)
                 total = len(photo_paths)
                 graduation_analysis_state.update({
                     "total": total,
+                    "updated": 0,
                     "status_text": "Nenhuma foto facial encontrada para análise." if total == 0 else f"Analisando 0 de {total} fotos...",
                 })
 
                 if total == 0:
                     graduation_analysis_state.update({
                         "is_running": False,
+                        "running": False,
                         "progress": 1.0,
                         "processed": 0,
+                        "updated": 0,
                         "result": {
                             "catalog": catalog,
                             "processed_files": 0,
+                            "updated": 0,
                             "updated_faces": 0,
+                            "source_table": source_table,
                             "source": "mock",
                         },
                         "finished_at": time.time(),
@@ -1182,35 +1381,19 @@ def start_graduation_analysis(req: GraduationAnalysisRequest):
                     return
 
                 for idx, photo_path in enumerate(photo_paths, start=1):
-                    detected = analyze_graduation_items({"foto_path": photo_path})
-                    payload = _build_graduation_analysis_payload(photo_path, detected)
-                    cur.execute(
-                        """
-                        UPDATE ocorrencias
-                        SET has_gown = ?,
-                            has_diploma = ?,
-                            has_sash = ?,
-                            has_cap = ?,
-                            graduation_tags = ?,
-                            graduation_score = ?
-                        WHERE foto_path = ?
-                        """,
-                        (
-                            payload["has_gown"],
-                            payload["has_diploma"],
-                            payload["has_sash"],
-                            payload["has_cap"],
-                            payload["graduation_tags"],
-                            payload["graduation_score"],
-                            payload["photo_path"],
-                        ),
-                    )
-                    updated_faces += int(cur.rowcount or 0)
+                    try:
+                        detected = analyze_graduation_items(photo_path, enable_heuristics=True)
+                        payload = _build_graduation_analysis_payload(photo_path, detected)
+                        updated_rows += _update_graduation_fields_for_photo(cur, photo_path, payload)
+                    except Exception as photo_error:
+                        if callable(log_info):
+                            log_info(f"[graduation_analysis] foto com erro: {photo_path} :: {photo_error}")
                     if idx % 25 == 0 or idx == total:
                         conn.commit()
                     graduation_analysis_state.update({
                         "processed": idx,
                         "total": total,
+                        "updated": updated_rows,
                         "progress": idx / total,
                         "status_text": f"Analisando {idx} de {total} fotos...",
                     })
@@ -1218,28 +1401,33 @@ def start_graduation_analysis(req: GraduationAnalysisRequest):
                 conn.commit()
             graduation_analysis_state.update({
                 "is_running": False,
+                "running": False,
                 "progress": 1.0,
+                "processed": total,
+                "updated": updated_rows,
                 "status_text": "Análise de itens de formatura concluída.",
                 "result": {
                     "catalog": catalog,
                     "processed_files": total,
-                    "updated_faces": updated_faces,
+                    "updated": updated_rows,
+                    "updated_faces": updated_rows,
                     "source": "mock",
                 },
-                "error": "",
+                "error": None,
                 "finished_at": time.time(),
             })
         except Exception as e:
             logger.exception("[graduation_analysis] erro")
             graduation_analysis_state.update({
                 "is_running": False,
+                "running": False,
                 "status_text": "Erro na análise de itens de formatura.",
                 "error": str(e),
                 "finished_at": time.time(),
             })
 
     threading.Thread(target=worker, daemon=True).start()
-    return {"status": "started", "catalog": catalog}
+    return {"status": "started", "catalog": catalog, "running": True}
 
 
 def get_graduation_analysis_status(catalog: str = ""):
@@ -1252,6 +1440,8 @@ def get_graduation_analysis_status(catalog: str = ""):
         return _default_graduation_analysis_status(requested_catalog)
     if requested_catalog and state.get("catalog") not in ("", requested_catalog) and not state.get("is_running"):
         return _default_graduation_analysis_status(requested_catalog)
+    state.setdefault("running", bool(state.get("is_running")))
+    state.setdefault("updated", 0)
     return state
 
 
