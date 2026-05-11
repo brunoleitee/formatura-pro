@@ -472,7 +472,8 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
     with get_db(cat) as conn:
         cur = conn.cursor()
         cur.execute("""
-            SELECT rowid, aluno_id, foto_path, x1, y1, x2, y2
+            SELECT rowid, aluno_id, foto_path, x1, y1, x2, y2,
+                   blur_status, blur_score, closed_eyes
             FROM ocorrencias
             WHERE x1 IS NOT NULL
               AND (
@@ -496,6 +497,9 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 "foto_path": occ["foto_path"],
                 "box": [occ["x1"], occ["y1"], occ["x2"], occ["y2"]],
                 "embedding": emb.astype("float32"),
+                "blur_status": occ["blur_status"],
+                "blur_score": occ["blur_score"],
+                "closed_eyes": bool(occ["closed_eyes"]) if occ["closed_eyes"] is not None else False,
             })
 
         if len(items) < min_cluster_size:
@@ -544,7 +548,10 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             root = find(idx)
             clusters_by_root.setdefault(root, []).append(idx)
 
+        import datetime as _dt
+
         clusters = []
+        now_iso = _dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         for comp_idxs in clusters_by_root.values():
             if len(comp_idxs) < min_cluster_size:
                 continue
@@ -559,16 +566,23 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             rep_item = items[rep_local_idx]
             unique_paths = sorted({item["foto_path"] for item in comp_items})
             cohesion_score = float(np.clip(np.mean(rep_scores), 0.0, 1.0)) if len(rep_scores) else 0.0
+            cluster_num = len(clusters) + 1
             clusters.append({
-                "cluster_id": f"cluster_{len(clusters) + 1}",
+                "cluster_id": f"cluster_{cluster_num}",
+                "cluster_number": cluster_num,
                 "face_count": len(comp_items),
                 "photo_count": len(unique_paths),
                 "cohesion_score": round(cohesion_score, 4),
+                "discovered_at": now_iso,
                 "representative": {
                     "rowid": rep_item["rowid"],
                     "path": rep_item["foto_path"],
                     "box": rep_item["box"],
                     "aluno_id": rep_item["aluno_id"],
+                    "blur_status": rep_item.get("blur_status"),
+                    "blur_score": rep_item.get("blur_score"),
+                    "closed_eyes": rep_item.get("closed_eyes", False),
+                    "is_representative": True,
                 },
                 "faces": [
                     {
@@ -576,12 +590,19 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                         "path": item["foto_path"],
                         "box": item["box"],
                         "aluno_id": item["aluno_id"],
+                        "blur_status": item.get("blur_status"),
+                        "blur_score": item.get("blur_score"),
+                        "closed_eyes": item.get("closed_eyes", False),
+                        "is_representative": item["rowid"] == rep_item["rowid"],
                     }
                     for item in comp_items
                 ],
             })
 
         clusters.sort(key=lambda c: (c["cohesion_score"], c["face_count"], c["photo_count"]), reverse=True)
+        # Renumber after sort
+        for i, cl in enumerate(clusters):
+            cl["cluster_number"] = i + 1
         conn.commit()
         return {"clusters": clusters[:limit], "threshold": threshold, "min_cluster_size": min_cluster_size}
 

@@ -89,13 +89,19 @@ export interface RichClusterFace {
   path: string;
   box: [number, number, number, number];
   aluno_id: string;
+  blur_status?: string | null;
+  blur_score?: number | null;
+  closed_eyes?: boolean;
+  is_representative?: boolean;
 }
 
 export interface RichCluster {
   cluster_id: string;
+  cluster_number: number;
   face_count: number;
   photo_count: number;
   cohesion_score: number;
+  discovered_at?: string;
   representative: RichClusterFace;
   faces: RichClusterFace[];
 }
