@@ -109,7 +109,10 @@ function ExportViewContent() {
     });
   };
 
-  const selectAll = () => setSelected(new Set(filtered.map(p => p.id)));
+  const getPersonId = (person: Person) => person.id || person.name || 'Sem_Nome';
+  const getPersonInitial = (person: Person) => (person.name || person.id || '?').trim().charAt(0).toUpperCase() || '?';
+
+  const selectAll = () => setSelected(new Set(filtered.map(getPersonId)));
   const clearAll = () => setSelected(new Set());
 
   const handleExport = async () => {
@@ -188,15 +191,57 @@ function ExportViewContent() {
           ) : (
             <div className="export-person-list">
               {filtered.map(p => (
-                <label key={p.id} className={`export-person-row ${selected.has(p.id) ? 'selected' : ''}`}>
-                  <input
-                    type="checkbox"
-                    checked={selected.has(p.id)}
-                    onChange={() => toggleSelect(p.id)}
-                  />
-                  <span className="person-name">{p.name}</span>
-                  <span className="person-count">{p.total_photos} fotos</span>
-                </label>
+                <button
+                  type="button"
+                  key={getPersonId(p)}
+                  className={`export-person-row ${selected.has(getPersonId(p)) ? 'selected' : ''}`}
+                  onClick={() => toggleSelect(getPersonId(p))}
+                  aria-pressed={selected.has(getPersonId(p))}
+                  style={{
+                    width: '100%',
+                    border: 'none',
+                    background: 'transparent',
+                    textAlign: 'left',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 999,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'rgba(59,130,246,0.12)',
+                        color: 'var(--accent-color)',
+                        flexShrink: 0,
+                        fontSize: '0.82rem',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {getPersonInitial(p)}
+                    </span>
+                    <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                      <span className="person-name">{p.name || p.id || 'Sem nome'}</span>
+                      <span className="person-count">{p.total_photos} fotos</span>
+                    </span>
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 18,
+                      textAlign: 'center',
+                      color: 'var(--accent-color)',
+                      fontWeight: 700,
+                      visibility: selected.has(getPersonId(p)) ? 'visible' : 'hidden',
+                    }}
+                  >
+                    ✓
+                  </span>
+                </button>
               ))}
             </div>
           )}
