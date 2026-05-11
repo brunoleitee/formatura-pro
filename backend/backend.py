@@ -211,6 +211,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Handler global de exceções: garante que erros 500 saiam como JSONResponse
+# e não como connection-reset, o que faz o browser bloquear por CORS.
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logging.error(f"[global_exception_handler] {request.method} {request.url.path} → {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"ok": False, "error": str(exc), "detail": "Erro interno no servidor"},
+    )
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RUNTIME_DIR = getattr(sys, "_MEIPASS", BASE_DIR)
 DATA_DIR = get_writable_app_dir()
