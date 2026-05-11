@@ -73,8 +73,8 @@ export function Sidebar({
     { view: 'settings', icon: <Settings size={17} />,  label: 'Configurações' },
   ];
 
-  const showFolderTree =
-    activeView === 'photos' && !!currentCatalog && catalogSubfolders.length > 0;
+  const shouldShowCatalogTree =
+    activeView === 'photos' && !!currentCatalog;
 
   return (
     <div className="sidebar">
@@ -173,7 +173,7 @@ export function Sidebar({
               </div>
 
               {/* Árvore de pastas embutida abaixo do item Catálogo */}
-              {item.view === 'photos' && showFolderTree && (
+              {item.view === 'photos' && shouldShowCatalogTree && (
                 <div className={ftStyles.tree}>
                   {/* Linha raiz */}
                   <div className={`${ftStyles.rootRow} ${catalogSubfolder === null ? ftStyles.active : ''}`}>
@@ -196,16 +196,22 @@ export function Sidebar({
                   {/* Subpastas */}
                   {folderTreeExpanded && (
                     <div className={ftStyles.children}>
-                      {catalogSubfolders.map(sub => (
-                        <div
-                          key={sub}
-                          className={`${ftStyles.item} ${catalogSubfolder === sub ? ftStyles.active : ''}`}
-                          onClick={() => { setCatalogSubfolder(sub); navigate('photos'); }}
-                        >
-                          <Folder size={12} className={ftStyles.folderIcon} />
-                          <span className={ftStyles.itemLabel}>{sub}</span>
+                      {catalogSubfolders.length === 0 ? (
+                        <div className={ftStyles.item} style={{ opacity: 0.6, fontStyle: 'italic' }}>
+                          Carregando pastas...
                         </div>
-                      ))}
+                      ) : (
+                        catalogSubfolders.map(sub => (
+                          <div
+                            key={sub}
+                            className={`${ftStyles.item} ${catalogSubfolder === sub ? ftStyles.active : ''}`}
+                            onClick={() => { setCatalogSubfolder(sub); navigate('photos'); }}
+                          >
+                            <Folder size={12} className={ftStyles.folderIcon} />
+                            <span className={ftStyles.itemLabel}>{sub}</span>
+                          </div>
+                        ))
+                      )}
                     </div>
                   )}
                 </div>
