@@ -49,7 +49,7 @@ export default function ClusterDetail({
   const [filter, setFilter] = useState<FilterOption>('all');
   const [sort, setSort] = useState<SortOption>('best_match');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
-  const [zoom, setZoom] = useState(200);
+  const [zoom, setZoom] = useState(200); // altura dos cards em px
 
   // Reset ao mudar cluster
   useState(() => {
@@ -79,7 +79,9 @@ export default function ClusterDetail({
     setSelected(new Set(best.length > 0 ? best : cluster.faces.map(f => f.rowid)));
   }, [cluster.faces]);
 
-  const thumbSize = zoom > 220 ? 600 : 400;
+  const cardHeight = zoom;
+  const colWidth = Math.round(zoom * 1.33);
+  const thumbSize = zoom > 200 ? 600 : 400;
 
   return (
     <motion.div
@@ -124,7 +126,7 @@ export default function ClusterDetail({
         <div
           className={styles.grid}
           style={{
-            gridTemplateColumns: `repeat(auto-fill, minmax(${zoom}px, 1fr))`,
+            gridTemplateColumns: `repeat(auto-fill, minmax(${colWidth}px, 1fr))`,
           }}
         >
           {visibleFaces.map(face => (
@@ -134,6 +136,7 @@ export default function ClusterDetail({
               selected={selected.has(face.rowid)}
               onToggle={() => toggleSelect(face.rowid)}
               thumbSize={thumbSize}
+              cardHeight={cardHeight}
             />
           ))}
         </div>

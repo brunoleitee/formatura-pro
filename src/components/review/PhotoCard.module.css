@@ -6,7 +6,7 @@
   overflow: hidden;
   cursor: pointer;
   background: #151720;
-  aspect-ratio: 3 / 4;
+  height: var(--card-h, 200px);
   user-select: none;
   outline: 2px solid transparent;
   outline-offset: -2px;

@@ -106,13 +106,13 @@ export default function ClusterToolbar({
       <div className={styles.zoomWrap}>
         <input
           type="range"
-          min={120}
-          max={320}
+          min={140}
+          max={280}
           step={20}
           value={zoom}
           onChange={e => onZoom(Number(e.target.value))}
           className={styles.zoomSlider}
-          title={`Zoom: ${zoom}px`}
+          title={`Altura: ${zoom}px`}
         />
       </div>
 

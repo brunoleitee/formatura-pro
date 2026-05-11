@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useState, type CSSProperties } from 'react';
 import { motion } from 'framer-motion';
 import { Check } from 'lucide-react';
 import type { RichClusterFace } from '../../services/api';
@@ -6,8 +6,9 @@ import styles from './PhotoCard.module.css';
 
 const API_BASE = 'http://127.0.0.1:8000/api';
 
-function photoThumb(path: string, size: number) {
-  return `${API_BASE}/image_thumb?path=${encodeURIComponent(path)}&size=${size}`;
+function faceContextThumb(face: RichClusterFace, size: number) {
+  const [x1, y1, x2, y2] = face.box;
+  return `${API_BASE}/thumb?path=${encodeURIComponent(face.path)}&x1=${x1}&y1=${y1}&x2=${x2}&y2=${y2}&size=${size}&expand=1.4`;
 }
 
 interface Badge {
@@ -28,6 +29,7 @@ interface PhotoCardProps {
   selected: boolean;
   onToggle: () => void;
   thumbSize?: number;
+  cardHeight?: number;
 }
 
 export const PhotoCard = memo(function PhotoCard({
@@ -35,6 +37,7 @@ export const PhotoCard = memo(function PhotoCard({
   selected,
   onToggle,
   thumbSize = 400,
+  cardHeight = 200,
 }: PhotoCardProps) {
   const [loaded, setLoaded] = useState(false);
   const badges = getBadges(face);
@@ -42,15 +45,16 @@ export const PhotoCard = memo(function PhotoCard({
   return (
     <motion.div
       className={`${styles.card} ${selected ? styles.selected : ''}`}
+      style={{ '--card-h': `${cardHeight}px` } as CSSProperties}
       whileHover={{ scale: 1.02 }}
       transition={{ type: 'spring', stiffness: 380, damping: 32 }}
       onClick={onToggle}
     >
-      {/* Foto completa */}
+      {/* Foto completa com face centering */}
       <div className={styles.imgWrap}>
         {!loaded && <div className={styles.skeleton} />}
         <img
-          src={photoThumb(face.path, thumbSize)}
+          src={faceContextThumb(face, thumbSize)}
           alt=""
           loading="lazy"
           decoding="async"
