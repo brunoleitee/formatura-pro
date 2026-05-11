@@ -58,6 +58,24 @@ export interface ExportStatus {
   export_summary: unknown | null;
 }
 
+export interface GraduationAnalysisStatus {
+  is_running: boolean;
+  progress: number;
+  processed: number;
+  total: number;
+  status_text: string;
+  catalog: string;
+  result: {
+    catalog: string;
+    processed_files: number;
+    updated_faces: number;
+    source: string;
+  } | null;
+  error: string;
+  started_at: number | null;
+  finished_at: number | null;
+}
+
 export interface QualitySettings {
   blur_blurry_threshold: number;
   blur_attention_threshold: number;

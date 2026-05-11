@@ -18,6 +18,114 @@
   position: relative;
 }
 
+.analysisPanel {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 12;
+  width: min(360px, calc(100% - 36px));
+  padding: 14px 15px;
+  border-radius: 14px;
+  border: 1px solid rgba(59, 130, 246, 0.18);
+  background:
+    linear-gradient(180deg, rgba(18, 24, 41, 0.96), rgba(12, 16, 28, 0.94));
+  box-shadow:
+    0 18px 42px rgba(2, 6, 23, 0.36),
+    0 0 0 1px rgba(59, 130, 246, 0.04) inset;
+  backdrop-filter: blur(16px);
+}
+
+.analysisHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.analysisEyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: rgba(96, 165, 250, 0.92);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.analysisButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  background: rgba(59, 130, 246, 0.14);
+  color: #dbeafe;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+  font-family: inherit;
+}
+
+.analysisButton:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(96, 165, 250, 0.34);
+  transform: translateY(-1px);
+}
+
+.analysisButton:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.analysisStatus {
+  margin: 10px 0 0;
+  color: #94a3b8;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.analysisProgressWrap {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.analysisProgressMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #cbd5e1;
+  font-size: 0.75rem;
+}
+
+.analysisProgressTrack {
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.analysisProgressFill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #60a5fa);
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.28);
+  transition: width 0.2s ease;
+}
+
+.analysisResult {
+  margin-top: 10px;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+}
+
 /* ── Sem catálogo ── */
 .noCatalog {
   flex: 1;
@@ -111,4 +219,22 @@
 
 .spin {
   animation: spin 1s linear infinite;
+}
+
+@media (max-width: 900px) {
+  .analysisPanel {
+    top: 14px;
+    right: 14px;
+    left: 14px;
+    width: auto;
+  }
+
+  .analysisHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .analysisButton {
+    width: 100%;
+  }
 }

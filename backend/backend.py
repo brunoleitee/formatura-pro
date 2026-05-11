@@ -385,6 +385,19 @@ manual_search_state = {
     "cancel_requested": False
 }
 
+graduation_analysis_state = {
+    "is_running": False,
+    "progress": 0.0,
+    "processed": 0,
+    "total": 0,
+    "status_text": "Inativo",
+    "catalog": "",
+    "result": None,
+    "error": "",
+    "started_at": None,
+    "finished_at": None,
+}
+
 quality_audit_state = {
     "is_auditing": False,
     "progress": 0.0,
@@ -473,6 +486,7 @@ def configure_modules():
         backup_catalog_db=backup_catalog_db,
         get_db=get_db,
         get_current_catalog=lambda: AppState.current_catalog,
+        sanitize_catalog_name=sanitize_catalog_name,
         face_box_area=se.face_box_area,
         ensure_face_engine=se.ensure_face_engine,
         imread_unicode=se.imread_unicode,
@@ -488,6 +502,8 @@ def configure_modules():
         clear_embedding_cache=clear_embedding_cache,
         thumb_cache_dir=THUMB_CACHE_DIR,
         manual_search_state=lambda: manual_search_state,
+        graduation_analysis_state=lambda: graduation_analysis_state,
+        log_info=log_info,
     )
 
     am.configure(
@@ -697,6 +713,9 @@ def ensure_quality_columns(conn):
     if 'graduation_score' not in columns:
         c.execute("ALTER TABLE ocorrencias ADD COLUMN graduation_score REAL")
         modified = True
+    if 'graduation_tags' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN graduation_tags TEXT")
+        modified = True
     if modified:
         conn.commit()
 
@@ -736,7 +755,8 @@ class DbConnection:
                 has_sash INTEGER,
                 has_cap INTEGER,
                 face_front_score REAL,
-                graduation_score REAL
+                graduation_score REAL,
+                graduation_tags TEXT
             )
         """)
         ensure_quality_columns(self.conn)
@@ -1000,6 +1020,7 @@ def get_review_unknown_clusters(
     return rm.get_unknown_clusters(catalog, min_score, min_cluster_size, limit)
 
 AssignUnknownClusterRequest = rm.AssignUnknownClusterRequest
+GraduationAnalysisRequest = rm.GraduationAnalysisRequest
 
 @app.post("/api/review/unknown-clusters/assign")
 def assign_cluster(req: AssignUnknownClusterRequest):
@@ -1025,6 +1046,38 @@ def assign_cluster(req: AssignUnknownClusterRequest):
             content={
                 "ok": False,
                 "error": "assign_unknown_cluster_failed",
+                "detail": str(e),
+            },
+        )
+
+@app.post("/api/review/graduation-analysis/start")
+def start_graduation_analysis(req: GraduationAnalysisRequest):
+    try:
+        return rm.start_graduation_analysis(req)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.getLogger(__name__).exception("[graduation_analysis_start] erro")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "ok": False,
+                "error": "graduation_analysis_start_failed",
+                "detail": str(e),
+            },
+        )
+
+@app.get("/api/review/graduation-analysis/status")
+def get_graduation_analysis_status(catalog: str = ""):
+    try:
+        return rm.get_graduation_analysis_status(catalog)
+    except Exception as e:
+        logging.getLogger(__name__).exception("[graduation_analysis_status] erro")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "ok": False,
+                "error": "graduation_analysis_status_failed",
                 "detail": str(e),
             },
         )

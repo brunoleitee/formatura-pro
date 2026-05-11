@@ -364,6 +364,10 @@ class AssignUnknownClusterRequest(BaseModel):
     nome_formando: str | None = None
 
 
+class GraduationAnalysisRequest(BaseModel):
+    catalog: str = ""
+
+
 class QualitySettingsReq(BaseModel):
     blur_blurry_threshold: float
     blur_attention_threshold: float
@@ -585,6 +589,49 @@ def _coerce_flag(value) -> bool:
     return bool(value)
 
 
+def _normalize_graduation_tag(tag: str) -> str | None:
+    normalized = str(tag or "").strip().casefold()
+    aliases = {
+        "beca": "beca",
+        "gown": "beca",
+        "robe": "beca",
+        "canudo": "canudo",
+        "diploma": "canudo",
+        "certificate": "canudo",
+        "faixa": "faixa",
+        "sash": "faixa",
+        "capelo": "capelo",
+        "cap": "capelo",
+        "mortarboard": "capelo",
+    }
+    return aliases.get(normalized)
+
+
+def _normalize_saved_graduation_tags(value) -> list[str]:
+    raw_tags = value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            raw_tags = []
+        else:
+            try:
+                raw_tags = json.loads(text)
+            except Exception:
+                raw_tags = [part.strip() for part in text.split(",") if part.strip()]
+    if not isinstance(raw_tags, (list, tuple, set)):
+        raw_tags = []
+
+    normalized = []
+    seen = set()
+    for item in raw_tags:
+        tag = _normalize_graduation_tag(str(item or ""))
+        if not tag or tag in seen:
+            continue
+        seen.add(tag)
+        normalized.append(tag)
+    return normalized
+
+
 def _clamp01(value) -> float:
     try:
         return float(np.clip(float(value), 0.0, 1.0))
@@ -626,6 +673,8 @@ def analyze_graduation_items(photo: dict | None = None) -> dict:
         "has_diploma": False,
         "has_sash": False,
         "has_cap": False,
+        "graduation_tags": [],
+        "graduation_score": 0.0,
         "source": "none",
     }
 
@@ -637,16 +686,19 @@ def _build_face_priority_meta(item: dict, cohesion_hint: float) -> dict:
     raw_has_sash = item.get("has_sash")
     raw_has_cap = item.get("has_cap")
     raw_score = item.get("graduation_score")
+    saved_tags = _normalize_saved_graduation_tags(item.get("graduation_tags"))
+    fallback_tags = _normalize_saved_graduation_tags(fallback.get("graduation_tags"))
+    resolved_tags = saved_tags or fallback_tags
 
     has_saved_fields = any(
         value is not None
-        for value in (raw_has_gown, raw_has_diploma, raw_has_sash, raw_has_cap, raw_score)
+        for value in (raw_has_gown, raw_has_diploma, raw_has_sash, raw_has_cap, raw_score, item.get("graduation_tags"))
     )
 
-    has_gown = _coerce_flag(raw_has_gown) if raw_has_gown is not None else _coerce_flag(fallback.get("has_gown"))
-    has_diploma = _coerce_flag(raw_has_diploma) if raw_has_diploma is not None else _coerce_flag(fallback.get("has_diploma"))
-    has_sash = _coerce_flag(raw_has_sash) if raw_has_sash is not None else _coerce_flag(fallback.get("has_sash"))
-    has_cap = _coerce_flag(raw_has_cap) if raw_has_cap is not None else _coerce_flag(fallback.get("has_cap"))
+    has_gown = _coerce_flag(raw_has_gown) if raw_has_gown is not None else (_coerce_flag(fallback.get("has_gown")) or ("beca" in resolved_tags))
+    has_diploma = _coerce_flag(raw_has_diploma) if raw_has_diploma is not None else (_coerce_flag(fallback.get("has_diploma")) or ("canudo" in resolved_tags))
+    has_sash = _coerce_flag(raw_has_sash) if raw_has_sash is not None else (_coerce_flag(fallback.get("has_sash")) or ("faixa" in resolved_tags))
+    has_cap = _coerce_flag(raw_has_cap) if raw_has_cap is not None else (_coerce_flag(fallback.get("has_cap")) or ("capelo" in resolved_tags))
     face_front_score = _derive_face_front_score(item)
     sharpness_score = _derive_sharpness_score(item)
 
@@ -661,7 +713,7 @@ def _build_face_priority_meta(item: dict, cohesion_hint: float) -> dict:
     graduation_score = float(raw_score) if raw_score is not None else computed_graduation_score
     debug_graduation_source = "saved_fields" if has_saved_fields else str(fallback.get("source") or "none")
 
-    tags = []
+    tags = list(resolved_tags)
     if has_gown:
         tags.append("beca")
     if has_diploma:
@@ -670,6 +722,7 @@ def _build_face_priority_meta(item: dict, cohesion_hint: float) -> dict:
         tags.append("faixa")
     if has_cap:
         tags.append("capelo")
+    tags = _normalize_saved_graduation_tags(tags)
 
     x1, y1, x2, y2 = [int(v) for v in item.get("box", [0, 0, 1, 1])]
     face_area = max(1, (x2 - x1) * (y2 - y1))
@@ -835,7 +888,7 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             SELECT rowid, aluno_id, foto_path, x1, y1, x2, y2,
                    blur_status, blur_score, closed_eyes,
                    has_gown, has_diploma, has_sash, has_cap,
-                   face_front_score, graduation_score
+                   face_front_score, graduation_score, graduation_tags
             FROM ocorrencias
             WHERE x1 IS NOT NULL
               AND (
@@ -870,6 +923,7 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 "has_cap": occ["has_cap"],
                 "face_front_score": occ["face_front_score"],
                 "graduation_score": occ["graduation_score"],
+                "graduation_tags": occ["graduation_tags"],
             })
 
         if len(items) < min_cluster_size:
@@ -1023,6 +1077,182 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
         _sync_unknown_face_clusters(cur, clusters)
         conn.commit()
         return {"clusters": clusters[:limit], "threshold": threshold, "min_cluster_size": min_cluster_size}
+
+
+def _default_graduation_analysis_status(catalog: str = "") -> dict:
+    return {
+        "is_running": False,
+        "progress": 0.0,
+        "processed": 0,
+        "total": 0,
+        "status_text": "Inativo",
+        "catalog": catalog,
+        "result": None,
+        "error": "",
+        "started_at": None,
+        "finished_at": None,
+    }
+
+
+def _build_graduation_analysis_payload(photo_path: str, detected: dict) -> dict:
+    tags = _normalize_saved_graduation_tags(detected.get("graduation_tags"))
+    has_gown = _coerce_flag(detected.get("has_gown")) or ("beca" in tags)
+    has_diploma = _coerce_flag(detected.get("has_diploma")) or ("canudo" in tags)
+    has_sash = _coerce_flag(detected.get("has_sash")) or ("faixa" in tags)
+    has_cap = _coerce_flag(detected.get("has_cap")) or ("capelo" in tags)
+    score = detected.get("graduation_score")
+    if score is None:
+        score = (
+            (40.0 if has_gown else 0.0) +
+            (30.0 if has_diploma else 0.0) +
+            (25.0 if has_sash else 0.0) +
+            (20.0 if has_cap else 0.0)
+        )
+    return {
+        "has_gown": 1 if has_gown else 0,
+        "has_diploma": 1 if has_diploma else 0,
+        "has_sash": 1 if has_sash else 0,
+        "has_cap": 1 if has_cap else 0,
+        "graduation_tags": json.dumps(tags, ensure_ascii=False),
+        "graduation_score": float(score or 0.0),
+        "source": str(detected.get("source") or "none"),
+        "photo_path": photo_path,
+    }
+
+
+def start_graduation_analysis(req: GraduationAnalysisRequest):
+    graduation_analysis_state = _value("graduation_analysis_state")
+    get_db = _get("get_db")
+    backup_catalog_db = _get("backup_catalog_db")
+    catalog = _sanitize_catalog_name(req.catalog or _current_catalog())
+    if not catalog:
+        raise HTTPException(status_code=400, detail="Nenhum catalogo selecionado")
+    if graduation_analysis_state.get("is_running"):
+        raise HTTPException(status_code=400, detail="Análise de itens de formatura já está em andamento.")
+
+    graduation_analysis_state.update({
+        "is_running": True,
+        "progress": 0.0,
+        "processed": 0,
+        "total": 0,
+        "status_text": "Preparando análise de itens de formatura...",
+        "catalog": catalog,
+        "result": None,
+        "error": "",
+        "started_at": time.time(),
+        "finished_at": None,
+    })
+
+    def worker():
+        updated_faces = 0
+        try:
+            if callable(backup_catalog_db):
+                backup_catalog_db(catalog, "antes_analise_itens_formatura")
+            with get_db(catalog) as conn:
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    SELECT DISTINCT foto_path
+                    FROM ocorrencias
+                    WHERE foto_path IS NOT NULL
+                      AND x1 IS NOT NULL
+                    ORDER BY foto_path ASC
+                    """
+                )
+                photo_paths = [str(row["foto_path"]) for row in cur.fetchall() if row["foto_path"]]
+                total = len(photo_paths)
+                graduation_analysis_state.update({
+                    "total": total,
+                    "status_text": "Nenhuma foto facial encontrada para análise." if total == 0 else f"Analisando 0 de {total} fotos...",
+                })
+
+                if total == 0:
+                    graduation_analysis_state.update({
+                        "is_running": False,
+                        "progress": 1.0,
+                        "processed": 0,
+                        "result": {
+                            "catalog": catalog,
+                            "processed_files": 0,
+                            "updated_faces": 0,
+                            "source": "mock",
+                        },
+                        "finished_at": time.time(),
+                    })
+                    return
+
+                for idx, photo_path in enumerate(photo_paths, start=1):
+                    detected = analyze_graduation_items({"foto_path": photo_path})
+                    payload = _build_graduation_analysis_payload(photo_path, detected)
+                    cur.execute(
+                        """
+                        UPDATE ocorrencias
+                        SET has_gown = ?,
+                            has_diploma = ?,
+                            has_sash = ?,
+                            has_cap = ?,
+                            graduation_tags = ?,
+                            graduation_score = ?
+                        WHERE foto_path = ?
+                        """,
+                        (
+                            payload["has_gown"],
+                            payload["has_diploma"],
+                            payload["has_sash"],
+                            payload["has_cap"],
+                            payload["graduation_tags"],
+                            payload["graduation_score"],
+                            payload["photo_path"],
+                        ),
+                    )
+                    updated_faces += int(cur.rowcount or 0)
+                    if idx % 25 == 0 or idx == total:
+                        conn.commit()
+                    graduation_analysis_state.update({
+                        "processed": idx,
+                        "total": total,
+                        "progress": idx / total,
+                        "status_text": f"Analisando {idx} de {total} fotos...",
+                    })
+
+                conn.commit()
+            graduation_analysis_state.update({
+                "is_running": False,
+                "progress": 1.0,
+                "status_text": "Análise de itens de formatura concluída.",
+                "result": {
+                    "catalog": catalog,
+                    "processed_files": total,
+                    "updated_faces": updated_faces,
+                    "source": "mock",
+                },
+                "error": "",
+                "finished_at": time.time(),
+            })
+        except Exception as e:
+            logger.exception("[graduation_analysis] erro")
+            graduation_analysis_state.update({
+                "is_running": False,
+                "status_text": "Erro na análise de itens de formatura.",
+                "error": str(e),
+                "finished_at": time.time(),
+            })
+
+    threading.Thread(target=worker, daemon=True).start()
+    return {"status": "started", "catalog": catalog}
+
+
+def get_graduation_analysis_status(catalog: str = ""):
+    graduation_analysis_state = _value("graduation_analysis_state")
+    requested_catalog = _sanitize_catalog_name(catalog or _current_catalog()) if (catalog or _current_catalog()) else ""
+    state = dict(graduation_analysis_state or {})
+    if not state:
+        return _default_graduation_analysis_status(requested_catalog)
+    if requested_catalog and not state.get("catalog") and not state.get("is_running"):
+        return _default_graduation_analysis_status(requested_catalog)
+    if requested_catalog and state.get("catalog") not in ("", requested_catalog) and not state.get("is_running"):
+        return _default_graduation_analysis_status(requested_catalog)
+    return state
 
 
 class MergePeopleReq(BaseModel):
