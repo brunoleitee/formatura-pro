@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { Component, type ErrorInfo, type ReactNode, useState, useEffect, useCallback } from 'react';
 import { Download, FolderOpen, RefreshCw, Check, Users } from 'lucide-react';
 import { api, type Person, type ExportStatus } from '../services/api';
 import { useApp } from '../context/AppContext';
@@ -6,7 +6,45 @@ import { useApp } from '../context/AppContext';
 type ExportMode = 'copy' | 'move';
 type ConflictStrategy = 'copy' | 'skip' | 'overwrite';
 
+class ExportViewBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[ExportViewBoundary] render crash:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="view-container">
+          <div className="view-header">
+            <div>
+              <h1>Exportar Fotos</h1>
+              <div className="view-subtitle">A aba de exportação encontrou um erro e foi recarregada em modo seguro.</div>
+            </div>
+          </div>
+          <div className="error-msg">Reabra a aba Exportar ou atualize a tela para tentar novamente.</div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export default function ExportView() {
+  return (
+    <ExportViewBoundary>
+      <ExportViewContent />
+    </ExportViewBoundary>
+  );
+}
+
+function ExportViewContent() {
   const { currentCatalog } = useApp();
   const [people, setPeople] = useState<Person[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -32,6 +70,14 @@ export default function ExportView() {
   }, [currentCatalog]);
 
   useEffect(() => { loadPeople(); }, [loadPeople]);
+
+  useEffect(() => {
+    setSelected(new Set());
+    setStatus(null);
+    setPolling(false);
+    setSearch('');
+    setError('');
+  }, [currentCatalog]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -89,11 +135,11 @@ export default function ExportView() {
       <div className="view-header">
         <div>
           <h1>Exportar Fotos</h1>
-          <p className="view-subtitle">Organize as fotos por formando em pastas</p>
+          <div className="view-subtitle">Organize as fotos por formando em pastas</div>
         </div>
       </div>
 
-      {error && <p className="error-msg">{error}</p>}
+      {error && <div className="error-msg">{error}</div>}
 
       {!!status?.export_summary && !isExporting && (
         <div className="export-summary">
@@ -154,9 +200,9 @@ export default function ExportView() {
               ))}
             </div>
           )}
-          <p className="export-selection-count">
+          <div className="export-selection-count">
             {selected.size} de {people.length} selecionado{selected.size !== 1 ? 's' : ''}
-          </p>
+          </div>
         </div>
 
         <div className="export-config-panel">
