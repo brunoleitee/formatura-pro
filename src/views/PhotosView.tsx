@@ -5,6 +5,45 @@ import { useApp } from '../context/AppContext';
 
 type PhotoFilter = 'all' | 'mapped' | 'unmapped';
 
+function PhotoThumb({ photo }: { photo: Photo }) {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  return (
+    <div className="photo-img-placeholder">
+      {!hasError && (
+        <img
+          src={api.thumbUrl(photo.path, 300)}
+          alt={photo.name}
+          loading="lazy"
+          decoding="async"
+          style={{ opacity: isLoaded ? 1 : 0 }}
+          onLoad={() => {
+            console.log('[thumb-load]', photo.name);
+            setIsLoaded(true);
+          }}
+          onError={() => {
+            console.log('[thumb-error]', photo.name);
+            setHasError(true);
+          }}
+        />
+      )}
+      {!isLoaded && !hasError && <div className="photo-skeleton" />}
+      {hasError && (
+        <div className="photo-error-fallback">
+          <ImageIcon size={24} opacity={0.4} />
+          <span>Erro</span>
+        </div>
+      )}
+      {photo.blur_label && photo.blur_label !== 'ok' && (
+        <div className={`blur-badge blur-${photo.blur_label}`}>
+          {photo.blur_label === 'blurry' ? 'Desfocada' : 'Atenção'}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PhotosView() {
   const { currentCatalog, refreshKey } = useApp();
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -14,6 +53,7 @@ export default function PhotosView() {
 
   const loadPhotos = useCallback(async () => {
     if (!currentCatalog) return;
+    setPhotos([]);
     setLoading(true);
     try {
       const arr = await api.getAllPhotos(currentCatalog);
@@ -90,21 +130,7 @@ export default function PhotosView() {
                     className={`photo-card ${selected?.path === photo.path ? 'selected' : ''}`}
                     onClick={() => setSelected(selected?.path === photo.path ? null : photo)}
                   >
-                    <div className="photo-img-placeholder">
-                      <img
-                        src={api.thumbUrl(photo.path, 300)}
-                        alt={photo.name}
-                        loading="lazy"
-                        onError={e => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                      {photo.blur_label && photo.blur_label !== 'ok' && (
-                        <div className={`blur-badge blur-${photo.blur_label}`}>
-                          {photo.blur_label === 'blurry' ? 'Desfocada' : 'Atenção'}
-                        </div>
-                      )}
-                    </div>
+                    <PhotoThumb photo={photo} />
                     <div className="photo-info">
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div style={{ overflow: 'hidden', flex: 1 }}>

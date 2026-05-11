@@ -378,6 +378,7 @@
 .photo-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-auto-rows: 260px;
   gap: 16px;
   overflow-y: auto;
   padding-bottom: 20px;
@@ -385,6 +386,7 @@
   min-height: 0;
   align-content: start;
 }
+.photo-grid:empty { display: none; }
 
 .photo-card {
   background-color: var(--bg-secondary);
@@ -395,6 +397,9 @@
   cursor: pointer;
   width: 100%;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 .photo-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
 .photo-card.selected { border-color: var(--accent-color); box-shadow: 0 0 0 2px rgba(59,130,246,0.3); }
@@ -402,7 +407,8 @@
 
 .photo-img-placeholder {
   width: 100%;
-  aspect-ratio: 1 / 1;
+  flex: 1;
+  min-height: 0;
   background-color: var(--bg-tertiary);
   position: relative;
   overflow: hidden;
@@ -413,7 +419,40 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
+  transition: opacity 0.3s ease;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.photo-img-placeholder .photo-skeleton {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    var(--bg-tertiary) 25%,
+    rgba(255, 255, 255, 0.04) 50%,
+    var(--bg-tertiary) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  z-index: 1;
+}
+
+.photo-error-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
 }
 
 .blur-badge {
@@ -490,6 +529,7 @@
 /* ── Empty State ── */
 .empty-state {
   flex: 1;
+  min-height: 300px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -498,6 +538,7 @@
   color: var(--text-secondary);
   text-align: center;
   padding: 40px;
+  background: none;
 }
 .empty-state h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-primary); }
 .empty-state p { font-size: 0.9rem; max-width: 300px; }
