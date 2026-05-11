@@ -14,6 +14,10 @@ import { extractSubfolders } from '../utils/pathUtils';
 
 export default function CatalogView() {
   const { currentCatalog, catalogSubfolder, setCatalogSubfolders, setIsLoadingCatalogPhotos } = useApp();
+  const { photos, loading, loadPhotos } = useCatalogPhotos();
+  const { filter, setFilter, filteredPhotos } = usePhotoFilters(photos, currentCatalog, catalogSubfolder);
+  const { selectedPhoto, setSelectedPhoto, handlePhotoClick } = usePhotoSelection();
+  const { viewerPhoto, setViewerPhoto } = usePhotoViewer(filteredPhotos);
 
   // Sincronizar loading com contexto
   useEffect(() => {
