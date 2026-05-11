@@ -2,9 +2,8 @@ import { memo, useState, type CSSProperties } from 'react';
 import { motion } from 'framer-motion';
 import { Check } from 'lucide-react';
 import type { RichClusterFace } from '../../services/api';
+import { API_BASE } from '../../services/api/core';
 import styles from './PhotoCard.module.css';
-
-const API_BASE = 'http://127.0.0.1:8000/api';
 
 function faceContextThumb(face: RichClusterFace, size: number) {
   if (!face.box || face.box.length < 4 || !face.path) {

@@ -1,8 +1,7 @@
 import { memo, useState } from 'react';
 import { motion } from 'framer-motion';
+import { API_BASE } from '../../services/api/core';
 import styles from './FaceCard.module.css';
-
-const API_BASE = 'http://127.0.0.1:8000/api';
 
 export function faceThumb(path: string, box: [number, number, number, number], size: number) {
   return `${API_BASE}/thumb?path=${encodeURIComponent(path)}&x1=${box[0]}&y1=${box[1]}&x2=${box[2]}&y2=${box[3]}&size=${size}&expand=0.38`;
