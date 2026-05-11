@@ -59,7 +59,7 @@ export default function CatalogView() {
     <div className="view-container">
       <div className="view-header">
         <div>
-          <h1>Catálogo do Evento</h1>
+          <h1>Evento</h1>
           <p className="view-subtitle">
             {loading && photos.length === 0 ? 'Carregando fotos...' : 
               `${filteredPhotos.length} foto${filteredPhotos.length !== 1 ? 's' : ''} encontrada${filteredPhotos.length !== 1 ? 's' : ''}` +
