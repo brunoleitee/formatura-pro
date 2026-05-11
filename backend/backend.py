@@ -387,13 +387,15 @@ manual_search_state = {
 
 graduation_analysis_state = {
     "is_running": False,
+    "running": False,
     "progress": 0.0,
     "processed": 0,
     "total": 0,
+    "updated": 0,
     "status_text": "Inativo",
     "catalog": "",
     "result": None,
-    "error": "",
+    "error": None,
     "started_at": None,
     "finished_at": None,
 }
@@ -675,6 +677,34 @@ def sanitize_catalog_name(name):
         raise HTTPException(400, "Nome de catalogo vazio ou invalido")
     return cleaned
 
+def _table_exists(conn, table_name):
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND lower(name) = lower(?) LIMIT 1",
+        (table_name,),
+    )
+    return cur.fetchone() is not None
+
+
+def _table_columns(conn, table_name):
+    cur = conn.cursor()
+    cur.execute(f"PRAGMA table_info({table_name})")
+    return [row["name"] for row in cur.fetchall()]
+
+
+def _safe_add_column(conn, table_name, column_name, definition):
+    if not _table_exists(conn, table_name):
+        return False
+    columns = _table_columns(conn, table_name)
+    if column_name in columns:
+        return False
+    try:
+        conn.cursor().execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+        return True
+    except Exception:
+        return False
+
+
 def ensure_quality_columns(conn):
     c = conn.cursor()
     c.execute("PRAGMA table_info(ocorrencias)")
@@ -719,6 +749,29 @@ def ensure_quality_columns(conn):
     if modified:
         conn.commit()
 
+
+def ensure_graduation_columns(conn):
+    modified = False
+    graduation_defs = (
+        ("has_gown", "INTEGER DEFAULT 0"),
+        ("has_diploma", "INTEGER DEFAULT 0"),
+        ("has_sash", "INTEGER DEFAULT 0"),
+        ("has_cap", "INTEGER DEFAULT 0"),
+        ("graduation_tags", "TEXT DEFAULT '[]'"),
+        ("graduation_score", "REAL DEFAULT 0"),
+        ("graduation_analyzed_at", "TEXT"),
+    )
+
+    for table_name in ("photos", "fotos", "ocorrencias"):
+        if not _table_exists(conn, table_name):
+            continue
+        for column_name, definition in graduation_defs:
+            if _safe_add_column(conn, table_name, column_name, definition):
+                modified = True
+
+    if modified:
+        conn.commit()
+
 class DbConnection:
     def __init__(self, cat=None):
         self.cat = cat
@@ -756,10 +809,12 @@ class DbConnection:
                 has_cap INTEGER,
                 face_front_score REAL,
                 graduation_score REAL,
-                graduation_tags TEXT
+                graduation_tags TEXT DEFAULT '[]',
+                graduation_analyzed_at TEXT
             )
         """)
         ensure_quality_columns(self.conn)
+        ensure_graduation_columns(self.conn)
         c.execute("""
             CREATE TABLE IF NOT EXISTS alunos (
                 aluno_id TEXT PRIMARY KEY,
