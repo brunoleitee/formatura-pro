@@ -1,12 +1,12 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Check, SkipForward, Grid2x2, LayoutGrid, Users } from 'lucide-react';
-import type { RichCluster } from '../../services/api';
-import { api } from '../../services/api';
-import { FaceCard, faceThumb } from './FaceCard';
+import { useState, useMemo, useCallback } from 'react';
+import { motion } from 'framer-motion';
+import type { RichCluster, RichClusterFace } from '../../services/api';
+import ClusterHero from './ClusterHero';
+import ClusterStatsPanel from './ClusterStatsPanel';
+import ClusterToolbar from './ClusterToolbar';
+import type { FilterOption, SortOption, ViewMode } from './ClusterToolbar';
+import { PhotoCard } from './PhotoCard';
 import styles from './ClusterDetail.module.css';
-
-type ViewMode = 'gallery' | 'grid';
 
 interface ClusterDetailProps {
   cluster: RichCluster;
@@ -15,220 +15,134 @@ interface ClusterDetailProps {
   onSkip: () => void;
 }
 
+function filterFaces(faces: RichClusterFace[], filter: FilterOption): RichClusterFace[] {
+  switch (filter) {
+    case 'best': return faces.filter(f => f.is_representative || f.blur_status === 'sharp');
+    case 'sharp': return faces.filter(f => f.blur_status === 'sharp');
+    default: return faces;
+  }
+}
+
+function sortFaces(faces: RichClusterFace[], sort: SortOption): RichClusterFace[] {
+  const copy = [...faces];
+  switch (sort) {
+    case 'best_match':
+      return copy.sort((a, b) => (b.is_representative ? 1 : 0) - (a.is_representative ? 1 : 0));
+    case 'sharpest': {
+      const order = { sharp: 0, attention: 1, blurry: 2 };
+      return copy.sort((a, b) =>
+        (order[a.blur_status as keyof typeof order] ?? 3) -
+        (order[b.blur_status as keyof typeof order] ?? 3)
+      );
+    }
+    default: return copy.sort((a, b) => a.rowid - b.rowid);
+  }
+}
+
 export default function ClusterDetail({
   cluster,
   catalog,
   onAssigned,
   onSkip,
 }: ClusterDetailProps) {
-  const [mode, setMode] = useState<ViewMode>('gallery');
-  const [nameInput, setNameInput] = useState('');
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [filter, setFilter] = useState<FilterOption>('all');
+  const [sort, setSort] = useState<SortOption>('best_match');
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [zoom, setZoom] = useState(200);
 
-  // Sugestões com debounce
-  const loadSuggestions = useCallback(async (q: string) => {
-    if (q.length < 2) { setSuggestions([]); return; }
-    try {
-      const res = await api.globalSearch(q);
-      setSuggestions(
-        res.map((r: { name: string }) => r.name)
-           .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i)
-           .slice(0, 6)
-      );
-    } catch { /* ignore */ }
+  // Reset ao mudar cluster
+  useState(() => {
+    setSelected(new Set());
+    setFilter('all');
+    setSort('best_match');
+  });
+
+  const visibleFaces = useMemo(() =>
+    sortFaces(filterFaces(cluster.faces, filter), sort),
+    [cluster.faces, filter, sort]
+  );
+
+  const toggleSelect = useCallback((rowid: number) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(rowid)) next.delete(rowid);
+      else next.add(rowid);
+      return next;
+    });
   }, []);
 
-  useEffect(() => {
-    const t = setTimeout(() => loadSuggestions(nameInput), 200);
-    return () => clearTimeout(t);
-  }, [nameInput, loadSuggestions]);
+  const handleSelectBest = useCallback(() => {
+    const best = cluster.faces
+      .filter(f => f.is_representative || f.blur_status === 'sharp')
+      .map(f => f.rowid);
+    setSelected(new Set(best.length > 0 ? best : cluster.faces.map(f => f.rowid)));
+  }, [cluster.faces]);
 
-  // Resetar ao mudar cluster
-  useEffect(() => {
-    setNameInput('');
-    setSuggestions([]);
-    setMsg('');
-    inputRef.current?.focus();
-  }, [cluster.cluster_id]);
-
-  const handleAssign = async () => {
-    const name = nameInput.trim();
-    if (!name || saving) return;
-    setSaving(true);
-    setMsg('');
-    try {
-      const rowids = cluster.faces.map(f => f.rowid);
-      await api.assignCluster(catalog, cluster.cluster_id, name, rowids);
-      setMsg(`${cluster.face_count} foto${cluster.face_count !== 1 ? 's' : ''} identificada${cluster.face_count !== 1 ? 's' : ''} como "${name}"`);
-      setNameInput('');
-      setSuggestions([]);
-      setTimeout(() => onAssigned(cluster.cluster_id), 1000);
-    } catch {
-      setMsg('Erro ao salvar. Tente novamente.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const pct = Math.round(cluster.cohesion_score * 100);
-  const rep = cluster.representative;
+  const thumbSize = zoom > 220 ? 600 : 400;
 
   return (
     <motion.div
       className={styles.root}
       key={cluster.cluster_id}
-      initial={{ opacity: 0, y: 6 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
-      transition={{ duration: 0.22 }}
+      exit={{ opacity: 0, y: -8 }}
+      transition={{ duration: 0.22, ease: 'easeOut' }}
     >
-      {/* ── Top bar ── */}
-      <div className={styles.topBar}>
-        <div className={styles.topBarInfo}>
-          <div className={styles.topBarTitle}>Pessoa desconhecida</div>
-          <div className={styles.topBarMeta}>
-            <span className={styles.metaItem}>
-              <Users size={12} />
-              {cluster.face_count} foto{cluster.face_count !== 1 ? 's' : ''}
-            </span>
-            <span className={styles.metaDot}>·</span>
-            <span className={styles.metaConf}>{pct}% coesão</span>
-            <span className={styles.metaBadge}>DESCONHECIDO</span>
-          </div>
-        </div>
-
-        <div className={styles.topBarActions}>
-          <button
-            className={`${styles.modeBtn} ${mode === 'gallery' ? styles.modeBtnActive : ''}`}
-            onClick={() => setMode('gallery')}
-            title="Modo galeria"
-          >
-            <LayoutGrid size={15} />
-          </button>
-          <button
-            className={`${styles.modeBtn} ${mode === 'grid' ? styles.modeBtnActive : ''}`}
-            onClick={() => setMode('grid')}
-            title="Modo grid compacto"
-          >
-            <Grid2x2 size={15} />
-          </button>
-        </div>
+      {/* ── Seção superior: hero + stats ── */}
+      <div className={styles.topSection}>
+        <ClusterHero
+          cluster={cluster}
+          catalog={catalog}
+          onAssigned={onAssigned}
+          onSkip={onSkip}
+        />
+        <ClusterStatsPanel
+          cluster={cluster}
+          selectedCount={selected.size}
+        />
       </div>
 
-      {/* ── Hero face (apenas em gallery) ── */}
-      <AnimatePresence>
-        {mode === 'gallery' && rep && (
-          <motion.div
-            className={styles.hero}
-            initial={{ opacity: 0, scale: 0.97 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.97 }}
-            transition={{ duration: 0.25 }}
-          >
-            <img
-              src={faceThumb(rep.path, rep.box, 500)}
-              alt="Rosto representante"
-              className={styles.heroImg}
-              loading="eager"
+      {/* ── Toolbar ── */}
+      <ClusterToolbar
+        filter={filter}
+        sort={sort}
+        viewMode={viewMode}
+        zoom={zoom}
+        totalVisible={visibleFaces.length}
+        totalAll={cluster.faces.length}
+        onFilter={setFilter}
+        onSort={setSort}
+        onViewMode={setViewMode}
+        onZoom={setZoom}
+        onSelectBest={handleSelectBest}
+      />
+
+      {/* ── Grid de fotos ── */}
+      <div className={styles.gridScroll}>
+        <div
+          className={styles.grid}
+          style={{
+            gridTemplateColumns: `repeat(auto-fill, minmax(${zoom}px, 1fr))`,
+          }}
+        >
+          {visibleFaces.map(face => (
+            <PhotoCard
+              key={face.rowid}
+              face={face}
+              selected={selected.has(face.rowid)}
+              onToggle={() => toggleSelect(face.rowid)}
+              thumbSize={thumbSize}
             />
-            <div className={styles.heroGradient} />
-            <div className={styles.heroLabel}>
-              <span className={styles.heroLabelMain}>Melhor representante</span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Grid de faces ── */}
-      <div className={`${styles.grid} ${mode === 'gallery' ? styles.galleryMode : styles.gridMode}`}>
-        {cluster.faces.map(face => (
-          <FaceCard
-            key={face.rowid}
-            path={face.path}
-            box={face.box}
-            variant={mode === 'gallery' ? 'lg' : 'sm'}
-          />
-        ))}
-      </div>
-
-      {/* ── Feedback ── */}
-      <AnimatePresence>
-        {msg && (
-          <motion.div
-            className={styles.feedback}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.2 }}
-          >
-            {msg}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Painel de identificação ── */}
-      <div className={styles.identifyPanel}>
-        <div className={styles.identifyRow}>
-          <div className={styles.inputWrap}>
-            <input
-              ref={inputRef}
-              className={styles.nameInput}
-              placeholder="Nome do formando..."
-              value={nameInput}
-              onChange={e => setNameInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') handleAssign();
-                if (e.key === 'Escape') { setNameInput(''); setSuggestions([]); }
-              }}
-            />
-            <AnimatePresence>
-              {suggestions.length > 0 && nameInput.length >= 2 && (
-                <motion.div
-                  className={styles.suggestions}
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.15 }}
-                >
-                  {suggestions.map(s => (
-                    <button
-                      key={s}
-                      className={styles.suggestion}
-                      onMouseDown={e => {
-                        e.preventDefault();
-                        setNameInput(s);
-                        setSuggestions([]);
-                        inputRef.current?.focus();
-                      }}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          <button
-            className={styles.btnIdentify}
-            onClick={handleAssign}
-            disabled={saving || !nameInput.trim()}
-          >
-            <Check size={15} />
-            {saving ? 'Salvando...' : 'Identificar'}
-          </button>
-
-          <button
-            className={styles.btnSkip}
-            onClick={onSkip}
-            title="Pular grupo"
-          >
-            <SkipForward size={15} />
-          </button>
+          ))}
         </div>
+
+        {visibleFaces.length === 0 && (
+          <div className={styles.emptyFilter}>
+            Nenhuma foto com o filtro atual.
+          </div>
+        )}
       </div>
     </motion.div>
   );
