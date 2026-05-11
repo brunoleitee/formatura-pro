@@ -1,0 +1,202 @@
+/* ClusterStatsPanel — painel de estatísticas da direita */
+
+.panel {
+  width: 280px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Tabs ── */
+.tabs {
+  display: flex;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+}
+
+.tab {
+  flex: 1;
+  padding: 11px 8px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #475569;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  position: relative;
+  transition: color 0.15s;
+}
+
+.tab:hover {
+  color: #94a3b8;
+}
+
+.tabActive {
+  color: #3b82f6;
+}
+
+.tabActive::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 16%;
+  right: 16%;
+  height: 2px;
+  background: #3b82f6;
+  border-radius: 2px 2px 0 0;
+}
+
+/* ── Body ── */
+.body {
+  flex: 1;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── Stat grid 2x2 ── */
+.statsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.statCard {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.statValue {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.white  { color: #f1f5f9; }
+.green  { color: #10b981; }
+.yellow { color: #f59e0b; }
+.red    { color: #ef4444; }
+
+.statLabel {
+  font-size: 0.7rem;
+  color: #475569;
+  line-height: 1.2;
+}
+
+/* ── Confidence bar ── */
+.confidence {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.confHeader {}
+
+.confRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.confPct {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #3b82f6;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.confLabel {
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.confHelp {
+  color: #334155;
+  cursor: help;
+}
+
+.confBarWrap {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.confBar {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #3b82f6);
+  border-radius: 10px;
+  transition: width 0.6s ease;
+}
+
+/* ── Analysis tab ── */
+.analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.analysisTitle {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+.qualityBars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.qualityRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.qualityMeta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.qualityLabel {
+  font-size: 0.76rem;
+  color: #94a3b8;
+}
+
+.qualityCount {
+  font-size: 0.76rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.qualityBarWrap {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.qualityBar {
+  height: 100%;
+  border-radius: 10px;
+  transition: width 0.5s ease;
+  min-width: 2px;
+}
