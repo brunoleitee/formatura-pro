@@ -14,7 +14,7 @@ interface Point {
 }
 
 export function useDragSelection<T extends { rowid: number }>(
-  containerRef: React.RefObject<HTMLElement>,
+  containerRef: React.RefObject<HTMLElement | null>,
   getItemId: (item: T) => number,
   selected: Set<number>,
   setSelected: (selected: Set<number>) => void,
@@ -25,6 +25,8 @@ export function useDragSelection<T extends { rowid: number }>(
   const initialSelectedRef = useRef<Set<number>>(new Set());
   const isShiftRef = useRef(false);
   const isCtrlRef = useRef(false);
+  const wasDraggingRef = useRef(false);
+  const dragTimeoutRef = useRef<number | null>(null);
   const minDragPixels = 6;
 
   const getItemElement = useCallback((itemId: number): HTMLElement | null => {
@@ -53,7 +55,9 @@ export function useDragSelection<T extends { rowid: number }>(
   }, [containerRef]);
 
   const calculateSelectedItems = useCallback((box: SelectionBox): Set<number> => {
-    const newSelected = new Set(initialSelectedRef.current);
+    const newSelected = (isShiftRef.current || isCtrlRef.current)
+      ? new Set(initialSelectedRef.current)
+      : new Set<number>();
 
     for (const item of items) {
       const itemId = getItemId(item);
@@ -62,18 +66,16 @@ export function useDragSelection<T extends { rowid: number }>(
 
       const intersects = elementIntersectsBox(element, box);
 
-      if (isCtrlRef.current) {
-        // Ctrl/Cmd: toggle
-        if (intersects) {
+      if (intersects) {
+        if (isCtrlRef.current) {
+          // Ctrl/Cmd: toggle
           if (initialSelectedRef.current.has(itemId)) {
             newSelected.delete(itemId);
           } else {
             newSelected.add(itemId);
           }
-        }
-      } else {
-        // Normal: add to selection
-        if (intersects) {
+        } else {
+          // Normal/Shift: add to selection
           newSelected.add(itemId);
         }
       }
@@ -90,12 +92,17 @@ export function useDragSelection<T extends { rowid: number }>(
     if (
       target.tagName === 'BUTTON' ||
       target.tagName === 'INPUT' ||
+      target.tagName === 'IMG' ||
       target.closest('button') ||
       target.closest('input') ||
+      target.closest('img') ||
       target.closest('[data-interactive]')
     ) {
       return;
     }
+
+    // Only allow left click
+    if (e.button !== 0) return;
 
     const containerRect = containerRef.current.getBoundingClientRect();
     const point: Point = {
@@ -107,6 +114,11 @@ export function useDragSelection<T extends { rowid: number }>(
     isShiftRef.current = e.shiftKey;
     isCtrlRef.current = e.ctrlKey || e.metaKey;
     initialSelectedRef.current = new Set(selected);
+    wasDraggingRef.current = false;
+    if (dragTimeoutRef.current) {
+      clearTimeout(dragTimeoutRef.current);
+      dragTimeoutRef.current = null;
+    }
   }, [containerRef, selected]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
@@ -122,8 +134,12 @@ export function useDragSelection<T extends { rowid: number }>(
     const deltaY = currentPoint.y - startPointRef.current.y;
     const dragDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
+    if (dragDistance >= minDragPixels) {
+      wasDraggingRef.current = true;
+    }
+
     // Only show selection box if dragging more than minimum pixels
-    if (dragDistance < minDragPixels) {
+    if (!wasDraggingRef.current) {
       setSelectionBox(null);
       return;
     }
@@ -145,6 +161,15 @@ export function useDragSelection<T extends { rowid: number }>(
   const handleMouseUp = useCallback(() => {
     setSelectionBox(null);
     startPointRef.current = null;
+    
+    if (wasDraggingRef.current) {
+      // Start a timeout to reset wasDraggingRef if click doesn't fire
+      if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
+      dragTimeoutRef.current = window.setTimeout(() => {
+        wasDraggingRef.current = false;
+        dragTimeoutRef.current = null;
+      }, 50);
+    }
   }, []);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -152,6 +177,7 @@ export function useDragSelection<T extends { rowid: number }>(
       e.preventDefault();
       setSelectionBox(null);
       startPointRef.current = null;
+      wasDraggingRef.current = false;
       // Reset to initial selection
       setSelected(new Set(initialSelectedRef.current));
     }
@@ -162,15 +188,30 @@ export function useDragSelection<T extends { rowid: number }>(
     document.addEventListener('mouseup', handleMouseUp);
     document.addEventListener('keydown', handleKeyDown);
 
+    // Capture click to prevent default behavior immediately after dragging
+    const handleCaptureClick = (e: MouseEvent) => {
+      if (wasDraggingRef.current) {
+        e.stopPropagation();
+        e.preventDefault();
+        wasDraggingRef.current = false;
+        if (dragTimeoutRef.current) {
+          clearTimeout(dragTimeoutRef.current);
+          dragTimeoutRef.current = null;
+        }
+      }
+    };
+    document.addEventListener('click', handleCaptureClick, true);
+
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('click', handleCaptureClick, true);
     };
   }, [handleMouseMove, handleMouseUp, handleKeyDown]);
 
   return {
-    isSelecting,
+    isSelecting: selectionBox !== null,
     selectionBox,
     handleMouseDown,
   };

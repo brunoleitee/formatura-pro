@@ -109,7 +109,7 @@ export default function ClusterDetail({
     [cluster.faces, filter, sort]
   );
 
-  const { isSelecting, selectionBox, handleMouseDown } = useDragSelection(
+  const { selectionBox, handleMouseDown } = useDragSelection(
     gridRef,
     (face: RichClusterFace) => face.rowid,
     selected,
@@ -188,7 +188,7 @@ export default function ClusterDetail({
       <div className={styles.gridScroll}>
         <div
           ref={gridRef}
-          className={`${styles.gridHost} ${viewMode === 'photo' ? styles.clusterGridPhoto : styles.clusterGridFace}`}
+          className={`${styles.gridSelectionHost} ${viewMode === 'photo' ? styles.clusterGridPhoto : styles.clusterGridFace}`}
           style={{
             '--grid-item-size': `${zoom}px`,
             '--photo-img-h': `${photoImgH}px`,
