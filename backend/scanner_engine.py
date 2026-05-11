@@ -422,9 +422,14 @@ def run_scanner_worker(req):
                             else:
                                 nome = find_or_create_cluster(emb)
                                 scan_state["total_clusters"] = len(_cfg["cluster_names"])
+                            
+                            blur_info = _cfg["get_blur_info"](p, img) if _cfg.get("get_blur_info") else {}
+                            b_score = blur_info.get("blur_score")
+                            b_status = blur_info.get("blur_status")
+                            
                             cur.execute(
-                                "INSERT OR IGNORE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2, photo_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                (nome, p, x1, y1, x2, y2, photo_hash),
+                                "INSERT OR IGNORE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                (nome, p, x1, y1, x2, y2, photo_hash, b_score, b_status),
                             )
                             cur.execute("INSERT OR IGNORE INTO alunos VALUES (?, ?)", (nome, "n/a"))
                             current_time = time.time()
