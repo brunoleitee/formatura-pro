@@ -1,5 +1,4 @@
 import { useState, memo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw, Search, X } from 'lucide-react';
 import type { RichCluster } from '../../services/api';
 import { faceThumb } from './FaceCard';
@@ -18,12 +17,10 @@ interface ReviewSidebarProps {
 
 const ClusterItem = memo(function ClusterItem({
   cluster,
-  index,
   isSelected,
   onClick,
 }: {
   cluster: RichCluster;
-  index: number;
   isSelected: boolean;
   onClick: () => void;
 }) {
@@ -37,15 +34,16 @@ const ClusterItem = memo(function ClusterItem({
     ...(tags.includes('faixa') ? [{ id: 'faixa', label: 'Faixa', variant: 'tag' as const }] : []),
     ...(tags.includes('capelo') ? [{ id: 'capelo', label: 'Capelo', variant: 'tag' as const }] : []),
   ];
+  const photoCount = cluster.total_photos ?? cluster.photo_count ?? cluster.face_count;
+  const photoCountLabel = `${photoCount} foto${photoCount !== 1 ? 's' : ''}`;
+  const confidenceLabel = `${pct}%`;
 
   return (
-    <motion.button
+    <button
       className={`${styles.item} ${isSelected ? styles.itemActive : ''}`}
       onClick={onClick}
-      initial={{ opacity: 0, x: -8 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: Math.min(index * 0.03, 0.5), duration: 0.25 }}
-      whileHover={{ x: 3 }}
+      type="button"
+      translate="no"
     >
       <div className={styles.avatar}>
         {rep ? (
@@ -68,9 +66,9 @@ const ClusterItem = memo(function ClusterItem({
       <div className={styles.itemInfo}>
         <span className={styles.itemName}>Pessoa desconhecida</span>
         <span className={styles.itemMeta}>
-          {(cluster.total_photos ?? cluster.photo_count ?? cluster.face_count)} foto{(cluster.total_photos ?? cluster.photo_count ?? cluster.face_count) !== 1 ? 's' : ''}
+          <span>{photoCountLabel}</span>
           <span className={styles.dot}>·</span>
-          <span className={styles.confidence}>{pct}%</span>
+          <span className={styles.confidence}>{confidenceLabel}</span>
         </span>
         <span className={styles.badgeRow}>
           {badgeLabels.map((badge) => (
@@ -83,7 +81,7 @@ const ClusterItem = memo(function ClusterItem({
           ))}
         </span>
       </div>
-    </motion.button>
+    </button>
   );
 });
 
@@ -97,6 +95,10 @@ export default function ReviewSidebar({
 }: ReviewSidebarProps) {
   const [search, setSearch] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
+  const titleCountLabel = loading ? '...' : String(clusters.length);
+  const headerSubLabel = loading ? 'Calculando...' : clusters.length === 0
+    ? 'Nenhum grupo pendente'
+    : `${clusters.length} grupo${clusters.length !== 1 ? 's' : ''} aguardando identificação`;
   const hasGraduationAnalysis = clusters.some((cluster) =>
     Boolean(
       cluster.has_gown ||
@@ -145,29 +147,24 @@ export default function ReviewSidebar({
     (graduationAnalysisRan || hasGraduationAnalysis);
 
   return (
-    <aside className={styles.sidebar}>
+    <aside className={`${styles.sidebar} notranslate`} translate="no">
       {/* Header */}
       <div className={styles.header}>
         <div className={styles.headerRow}>
           <div className={styles.headerTitle}>
             <span className={styles.titleText}>Descobertos pela IA</span>
-            <span className={styles.titleCount}>
-              {loading ? '...' : clusters.length}
-            </span>
+            <span className={styles.titleCount}>{titleCountLabel}</span>
           </div>
           <button
             className={styles.refreshBtn}
             onClick={onRefresh}
             title="Recarregar clusters"
+            type="button"
           >
             <RefreshCw size={13} className={loading ? styles.spin : ''} />
           </button>
         </div>
-        <p className={styles.headerSub}>
-          {loading ? 'Calculando...' : clusters.length === 0
-            ? 'Nenhum grupo pendente'
-            : `${clusters.length} grupo${clusters.length !== 1 ? 's' : ''} aguardando identificação`}
-        </p>
+        <p className={styles.headerSub}><span>{headerSubLabel}</span></p>
       </div>
 
       {/* Divider */}
@@ -183,7 +180,7 @@ export default function ReviewSidebar({
           onChange={e => setSearch(e.target.value)}
         />
         {search && (
-          <button className={styles.searchClear} onClick={() => setSearch('')}>
+          <button className={styles.searchClear} onClick={() => setSearch('')} type="button">
             <X size={11} />
           </button>
         )}
@@ -224,17 +221,16 @@ export default function ReviewSidebar({
             </span>
           </div>
         ) : (
-          <AnimatePresence mode="popLayout">
-            {visible.map((cluster, i) => (
+          <>
+            {visible.map((cluster) => (
               <ClusterItem
                 key={cluster.cluster_id}
                 cluster={cluster}
-                index={i}
                 isSelected={cluster.cluster_id === selectedId}
                 onClick={() => onSelect(cluster)}
               />
             ))}
-          </AnimatePresence>
+          </>
         )}
       </div>
     </aside>

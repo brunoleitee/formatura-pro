@@ -1,5 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import type { RichCluster, RichClusterFace } from '../../services/api';
 import ClusterHero from './ClusterHero';
 import ClusterStatsPanel from './ClusterStatsPanel';
@@ -52,11 +51,11 @@ export default function ClusterDetail({
   const [zoom, setZoom] = useState(200); // altura dos cards em px
 
   // Reset ao mudar cluster
-  useState(() => {
+  useEffect(() => {
     setSelected(new Set());
     setFilter('all');
     setSort('best_match');
-  });
+  }, [cluster.cluster_id]);
 
   const visibleFaces = useMemo(() =>
     sortFaces(filterFaces(cluster.faces, filter), sort),
@@ -84,14 +83,7 @@ export default function ClusterDetail({
   const thumbSize = zoom > 200 ? 600 : 400;
 
   return (
-    <motion.div
-      className={styles.root}
-      key={cluster.cluster_id}
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -8 }}
-      transition={{ duration: 0.22, ease: 'easeOut' }}
-    >
+    <div className={styles.root} key={cluster.cluster_id} translate="no">
       {/* ── Seção superior: hero + stats ── */}
       <div className={styles.topSection}>
         <ClusterHero
@@ -143,10 +135,10 @@ export default function ClusterDetail({
 
         {visibleFaces.length === 0 && (
           <div className={styles.emptyFilter}>
-            Nenhuma foto com o filtro atual.
+            <span>Nenhuma foto com o filtro atual.</span>
           </div>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }

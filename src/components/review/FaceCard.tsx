@@ -1,5 +1,4 @@
 import { memo, useState } from 'react';
-import { motion } from 'framer-motion';
 import { API_BASE } from '../../services/api/core';
 import styles from './FaceCard.module.css';
 
@@ -26,12 +25,11 @@ export const FaceCard = memo(function FaceCard({
   const px = variant === 'lg' ? 360 : 180;
 
   return (
-    <motion.button
+    <button
       className={`${styles.card} ${styles[variant]} ${selected ? styles.selected : ''}`}
       onClick={onClick}
-      whileHover={{ scale: 1.04, zIndex: 2 }}
-      whileTap={{ scale: 0.98 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+      type="button"
+      translate="no"
     >
       <div className={styles.imgWrap}>
         <img
@@ -48,6 +46,6 @@ export const FaceCard = memo(function FaceCard({
         {!loaded && <div className={styles.skeleton} />}
       </div>
       {selected && <div className={styles.selectedRing} />}
-    </motion.button>
+    </button>
   );
 });

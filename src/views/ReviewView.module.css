@@ -8,6 +8,10 @@
   background: #0d0f1a;
 }
 
+.reviewView {
+  isolation: isolate;
+}
+
 /* Área principal (direita do sidebar) */
 .main {
   flex: 1;
@@ -126,6 +130,30 @@
   font-size: 0.78rem;
 }
 
+.blockHidden {
+  display: none;
+}
+
+.blockVisible {
+  display: flex;
+}
+
+.inlineHidden {
+  display: none;
+}
+
+.inlineVisible {
+  display: inline-flex;
+}
+
+.inlineFlexHidden {
+  display: none;
+}
+
+.inlineFlexVisible {
+  display: inline-flex;
+}
+
 /* ── Sem catálogo ── */
 .noCatalog {
   flex: 1;
@@ -189,6 +217,7 @@
   color: rgba(59, 130, 246, 0.5);
   margin-top: 4px;
   letter-spacing: 0.02em;
+  justify-content: center;
 }
 
 .welcomeRefresh {

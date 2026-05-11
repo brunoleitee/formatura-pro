@@ -153,6 +153,22 @@
   flex-wrap: wrap;
 }
 
+.blockHidden {
+  display: none;
+}
+
+.blockVisible {
+  display: flex;
+}
+
+.inlineHidden {
+  display: none;
+}
+
+.inlineVisible {
+  display: inline-flex;
+}
+
 .btnPrimary {
   display: flex;
   align-items: center;
@@ -267,6 +283,10 @@
   z-index: 100;
   overflow: hidden;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.suggestionsVisible {
+  display: block;
 }
 
 .suggestion {

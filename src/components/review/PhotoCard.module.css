@@ -70,6 +70,14 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
+.badgeHidden {
+  display: none;
+}
+
+.badgeVisible {
+  display: block;
+}
+
 /* ── Checkmark de seleção (topo direito) ── */
 .checkArea {
   position: absolute;
@@ -93,6 +101,14 @@
   color: #fff;
 }
 
+.checkHidden {
+  display: none;
+}
+
+.checkVisible {
+  display: inline-flex;
+}
+
 /* ── Badges de qualidade (rodapé) ── */
 .badgesRow {
   position: absolute;
@@ -103,6 +119,14 @@
   flex-wrap: wrap;
   gap: 4px;
   pointer-events: none;
+}
+
+.badgesHidden {
+  display: none;
+}
+
+.badgesVisible {
+  display: flex;
 }
 
 .badge {

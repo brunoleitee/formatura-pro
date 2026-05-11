@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { UserPlus, EyeOff, MoreHorizontal, Check, X, Sparkles } from 'lucide-react';
 import type { RichCluster, SearchResult } from '../../services/api';
 import { api } from '../../services/api';
@@ -43,6 +42,10 @@ export default function ClusterHero({
   const rep = cluster.representative;
   const pct = Math.round(cluster.cohesion_score * 100);
   const dateStr = formatDate(cluster.discovered_at);
+  const showSuggestions = suggestions.length > 0 && nameInput.length >= 2;
+  const faceCountLabel = `${cluster.face_count} foto${cluster.face_count !== 1 ? 's' : ''}`;
+  const cohesionLabel = `${pct}% coesão`;
+  const descriptionLabel = 'Grupo descoberto automaticamente pela IA. Selecione as melhores fotos e identifique.';
 
   const loadSuggestions = useCallback(async (q: string) => {
     if (q.length < 2) { setSuggestions([]); return; }
@@ -102,7 +105,7 @@ export default function ClusterHero({
   const canAssign = Boolean(selectedStudent?.id || nameInput.trim());
 
   return (
-    <div className={styles.hero}>
+    <div className={`${styles.hero} notranslate`} translate="no">
       {/* Avatar circular */}
       <div className={styles.avatar}>
         {rep ? (
@@ -125,147 +128,117 @@ export default function ClusterHero({
           <span className={styles.clusterBadge}>#{cluster.cluster_number}</span>
           <span className={styles.iaBadge}>
             <Sparkles size={10} />
-            IA {pct}%
+            <span>IA {pct}%</span>
           </span>
         </div>
 
         {/* Meta */}
         <div className={styles.meta}>
           <span className={styles.metaItem}>
-            {cluster.face_count} foto{cluster.face_count !== 1 ? 's' : ''}
+            <span>{faceCountLabel}</span>
           </span>
           <span className={styles.metaDot}>·</span>
-          <span className={styles.metaConf}>{pct}% coesão</span>
-          {dateStr && (
-            <>
-              <span className={styles.metaDot}>·</span>
-              <span className={styles.metaDate}>Grupo criado em {dateStr}</span>
-            </>
-          )}
+          <span className={styles.metaConf}>{cohesionLabel}</span>
+          <span className={`${styles.metaDot} ${dateStr ? styles.inlineVisible : styles.inlineHidden}`}>·</span>
+          <span className={`${styles.metaDate} ${dateStr ? styles.inlineVisible : styles.inlineHidden}`}>Grupo criado em {dateStr}</span>
         </div>
 
         {/* Descrição */}
         <p className={styles.description}>
           <Sparkles size={11} className={styles.descIcon} />
-          Grupo descoberto automaticamente pela IA. Selecione as melhores fotos e identifique.
+          <span>{descriptionLabel}</span>
         </p>
 
         {/* Ações ou identify inline */}
-        <AnimatePresence mode="wait">
-          {!identifying ? (
-            <motion.div
-              key="actions"
-              className={styles.actions}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.15 }}
-            >
-              <button
-                className={styles.btnPrimary}
-                onClick={() => setIdentifying(true)}
-              >
-                <UserPlus size={14} />
-                Identificar pessoa
-              </button>
-              <button className={styles.btnSecondary} onClick={onSkip}>
-                <EyeOff size={14} />
-                Ignorar grupo
-              </button>
-              <button className={styles.btnIcon} title="Mais ações">
-                <MoreHorizontal size={15} />
-                Mais ações
-              </button>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="identify"
-              className={styles.identifyInline}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.15 }}
-            >
-              <div className={styles.inputWrap}>
-                <input
-                  ref={inputRef}
-                  className={styles.nameInput}
-                  placeholder="Digite o nome do formando..."
-                  value={nameInput}
-                  onChange={e => {
-                    const nextValue = e.target.value;
-                    setNameInput(nextValue);
-                    if (selectedStudent && nextValue.trim() !== selectedStudent.name) {
-                      setSelectedStudent(null);
-                    }
-                  }}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') handleAssign();
-                    if (e.key === 'Escape') {
-                      setIdentifying(false);
-                      setNameInput('');
-                      setSelectedStudent(null);
-                      setSuggestions([]);
-                      setSaveError(null);
-                    }
-                  }}
-                />
-                <AnimatePresence>
-                  {suggestions.length > 0 && nameInput.length >= 2 && (
-                    <motion.div
-                      className={styles.suggestions}
-                      initial={{ opacity: 0, y: -6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -6 }}
-                      transition={{ duration: 0.12 }}
-                    >
-                      {suggestions.map(s => (
-                        <button
-                          key={s.id}
-                          className={styles.suggestion}
-                          onMouseDown={e => {
-                            e.preventDefault();
-                            setNameInput(s.name);
-                            setSelectedStudent(s);
-                            setSuggestions([]);
-                            inputRef.current?.focus();
-                          }}
-                        >
-                          {s.name}
-                        </button>
-                      ))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+        <div className={`${styles.actions} ${identifying ? styles.blockHidden : styles.blockVisible}`}>
+          <button
+            className={styles.btnPrimary}
+            onClick={() => setIdentifying(true)}
+            type="button"
+          >
+            <UserPlus size={14} />
+            <span>Identificar pessoa</span>
+          </button>
+          <button className={styles.btnSecondary} onClick={onSkip} type="button">
+            <EyeOff size={14} />
+            <span>Ignorar grupo</span>
+          </button>
+          <button className={styles.btnIcon} title="Mais ações" type="button">
+            <MoreHorizontal size={15} />
+            <span>Mais ações</span>
+          </button>
+        </div>
 
-              <button
-                className={styles.btnConfirm}
-                onClick={handleAssign}
-                disabled={isAssigning || !canAssign}
-              >
-                <Check size={14} />
-                {isAssigning ? 'Salvando...' : 'Confirmar'}
-              </button>
-              <button
-                className={styles.btnCancel}
-                onClick={() => {
+        <div className={`${styles.identifyInline} ${identifying ? styles.blockVisible : styles.blockHidden}`}>
+          <div className={styles.inputWrap}>
+            <input
+              ref={inputRef}
+              className={styles.nameInput}
+              placeholder="Digite o nome do formando..."
+              value={nameInput}
+              onChange={e => {
+                const nextValue = e.target.value;
+                setNameInput(nextValue);
+                if (selectedStudent && nextValue.trim() !== selectedStudent.name) {
+                  setSelectedStudent(null);
+                }
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleAssign();
+                if (e.key === 'Escape') {
                   setIdentifying(false);
                   setNameInput('');
                   setSelectedStudent(null);
                   setSuggestions([]);
                   setSaveError(null);
-                }}
-              >
-                <X size={14} />
-              </button>
+                }
+              }}
+            />
+            <div className={`${styles.suggestions} ${showSuggestions ? styles.suggestionsVisible : styles.blockHidden}`}>
+              {suggestions.map(s => (
+                <button
+                  key={s.id}
+                  className={styles.suggestion}
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    setNameInput(s.name);
+                    setSelectedStudent(s);
+                    setSuggestions([]);
+                    inputRef.current?.focus();
+                  }}
+                  type="button"
+                >
+                  <span>{s.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
 
-              {saveError && (
-                <span className={styles.saveError}>{saveError}</span>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
+          <button
+            className={styles.btnConfirm}
+            onClick={handleAssign}
+            disabled={isAssigning || !canAssign}
+            type="button"
+          >
+            <Check size={14} />
+            <span>{isAssigning ? 'Salvando...' : 'Confirmar'}</span>
+          </button>
+          <button
+            className={styles.btnCancel}
+            onClick={() => {
+              setIdentifying(false);
+              setNameInput('');
+              setSelectedStudent(null);
+              setSuggestions([]);
+              setSaveError(null);
+            }}
+            type="button"
+          >
+            <X size={14} />
+          </button>
+
+          <span className={`${styles.saveError} ${saveError ? styles.inlineVisible : styles.inlineHidden}`}>{saveError ?? ''}</span>
+        </div>
       </div>
     </div>
   );

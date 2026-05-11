@@ -1,5 +1,4 @@
 import { memo, useState, type CSSProperties } from 'react';
-import { motion } from 'framer-motion';
 import { Check } from 'lucide-react';
 import type { RichClusterFace } from '../../services/api';
 import { API_BASE } from '../../services/api/core';
@@ -47,12 +46,11 @@ export const PhotoCard = memo(function PhotoCard({
   const badges = getBadges(face);
 
   return (
-    <motion.div
+    <div
       className={`${styles.card} ${selected ? styles.selected : ''}`}
       style={{ '--card-h': `${cardHeight}px` } as CSSProperties}
-      whileHover={{ scale: 1.02 }}
-      transition={{ type: 'spring', stiffness: 380, damping: 32 }}
       onClick={onToggle}
+      translate="no"
     >
       {/* Foto completa com face centering */}
       <div className={styles.imgWrap}>
@@ -72,27 +70,25 @@ export const PhotoCard = memo(function PhotoCard({
       </div>
 
       {/* Badge "Melhor match" (topo esquerdo) */}
-      {face.is_representative && (
-        <div className={styles.badgeBestMatch}>
-          Melhor match
-        </div>
-      )}
+      <div className={`${styles.badgeBestMatch} ${face.is_representative ? styles.badgeVisible : styles.badgeHidden}`}>
+        <span>Melhor match</span>
+      </div>
 
       {/* Checkmark de seleção (topo direito) */}
       <div className={`${styles.checkArea} ${selected ? styles.checkAreaSelected : ''}`}>
-        {selected && <Check size={12} strokeWidth={3} />}
+        <span className={selected ? styles.checkVisible : styles.checkHidden}>
+          <Check size={12} strokeWidth={3} />
+        </span>
       </div>
 
       {/* Badges de qualidade (rodapé) */}
-      {badges.length > 0 && (
-        <div className={styles.badgesRow}>
-          {badges.map(b => (
-            <span key={b.label} className={`${styles.badge} ${styles[b.variant]}`}>
-              {b.label}
-            </span>
-          ))}
-        </div>
-      )}
-    </motion.div>
+      <div className={`${styles.badgesRow} ${badges.length > 0 ? styles.badgesVisible : styles.badgesHidden}`}>
+        {badges.map(b => (
+          <span key={b.label} className={`${styles.badge} ${styles[b.variant]}`}>
+            {b.label}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 });

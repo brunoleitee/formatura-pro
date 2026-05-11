@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Component, type ErrorInfo, type ReactNode, useState, useEffect, useCallback, useRef } from 'react';
 import { UserCheck, RefreshCw, Sparkles } from 'lucide-react';
 import { api } from '../services/api';
 import type { GraduationAnalysisStatus, RichCluster } from '../services/api';
@@ -8,7 +7,43 @@ import ReviewSidebar from '../components/review/ReviewSidebar';
 import ClusterDetail from '../components/review/ClusterDetail';
 import styles from './ReviewView.module.css';
 
+class ReviewViewBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[ReviewViewBoundary] render crash:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className={`${styles.root} ${styles.reviewView} notranslate`} translate="no">
+          <div className={styles.main}>
+            <div className={styles.noCatalog}>
+              <UserCheck size={40} strokeWidth={1.5} style={{ opacity: 0.25 }} />
+              <p>Reabra a Revisão IA ou atualize a tela para tentar novamente.</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function ReviewView() {
+  return (
+    <ReviewViewBoundary>
+      <ReviewViewContent />
+    </ReviewViewBoundary>
+  );
+}
+
+function ReviewViewContent() {
   const { currentCatalog } = useApp();
   const [clusters, setClusters] = useState<RichCluster[]>([]);
   const [loading, setLoading] = useState(false);
@@ -22,7 +57,6 @@ export default function ReviewView() {
     setLoading(true);
     try {
       const data = await api.getUnknownClustersV2(currentCatalog);
-      console.log('[unknown-clusters] sample', (data?.clusters ?? []).slice(0, 5));
       setClusters(data?.clusters ?? []);
     } catch {
       setClusters([]);
@@ -101,7 +135,7 @@ export default function ReviewView() {
 
   if (!currentCatalog) {
     return (
-      <div className={styles.root}>
+      <div className={`${styles.root} ${styles.reviewView} notranslate`} translate="no">
         <div className={styles.noCatalog}>
           <UserCheck size={40} strokeWidth={1.5} style={{ opacity: 0.25 }} />
           <p>Selecione um evento para começar a revisão.</p>
@@ -111,7 +145,7 @@ export default function ReviewView() {
   }
 
   return (
-    <div className={styles.root}>
+    <div className={`${styles.root} ${styles.reviewView} notranslate`} translate="no">
       {/* Sidebar esquerda de clusters */}
       <ReviewSidebar
         clusters={clusters}
@@ -123,30 +157,28 @@ export default function ReviewView() {
       />
 
       {/* Área principal */}
-      <div className={styles.main}>
+      <div className={`${styles.main} notranslate`} translate="no">
         <GraduationAnalysisPanel
           status={graduationStatus}
           isStarting={isStartingGraduationAnalysis}
           onStart={handleStartGraduationAnalysis}
         />
-        <AnimatePresence mode="wait">
-          {selected ? (
-            <ClusterDetail
-              key={selected.cluster_id}
-              cluster={selected}
-              catalog={currentCatalog}
-              onAssigned={handleAssigned}
-              onSkip={handleSkip}
-            />
-          ) : (
-            <WelcomeState
-              key="welcome"
-              count={clusters.length}
-              loading={loading}
-              onRefresh={load}
-            />
-          )}
-        </AnimatePresence>
+        {selected ? (
+          <ClusterDetail
+            key={selected.cluster_id}
+            cluster={selected}
+            catalog={currentCatalog}
+            onAssigned={handleAssigned}
+            onSkip={handleSkip}
+          />
+        ) : (
+          <WelcomeState
+            key="welcome"
+            count={clusters.length}
+            loading={loading}
+            onRefresh={load}
+          />
+        )}
       </div>
     </div>
   );
@@ -164,9 +196,17 @@ function GraduationAnalysisPanel({
   const isRunning = Boolean(status?.is_running);
   const progress = Math.max(0, Math.min(100, (status?.progress ?? 0) * 100));
   const hasResult = Boolean(status?.result);
+  const showProgress = isRunning || hasResult;
+  const statusLabel = status?.error
+    ? status.error
+    : status?.status_text || 'Pronto para rodar a análise visual em segundo plano.';
+  const buttonLabel = isRunning || isStarting ? 'Analisando...' : 'Analisar itens de formatura';
+  const resultLabel = status?.result
+    ? `${status.result.processed_files} foto${status.result.processed_files !== 1 ? 's' : ''} analisada${status.result.processed_files !== 1 ? 's' : ''} · ${status.result.updated_faces} registro${status.result.updated_faces !== 1 ? 's' : ''} atualizado${status.result.updated_faces !== 1 ? 's' : ''}`
+    : '';
 
   return (
-    <div className={styles.analysisPanel}>
+    <div className={styles.analysisPanel} translate="no">
       <div className={styles.analysisHeader}>
         <div className={styles.analysisEyebrow}>
           <Sparkles size={13} />
@@ -178,40 +218,31 @@ function GraduationAnalysisPanel({
           onClick={onStart}
           disabled={isRunning || isStarting}
         >
-          {isRunning || isStarting ? (
-            <>
-              <RefreshCw size={13} className={styles.spin} />
-              Analisando...
-            </>
-          ) : (
-            'Analisar itens de formatura'
-          )}
+          <RefreshCw
+            size={13}
+            className={`${styles.spin} ${isRunning || isStarting ? styles.inlineVisible : styles.inlineHidden}`}
+          />
+          <span>{buttonLabel}</span>
         </button>
       </div>
 
       <p className={styles.analysisStatus}>
-        {status?.error
-          ? status.error
-          : status?.status_text || 'Pronto para rodar a análise visual em segundo plano.'}
+        <span>{statusLabel}</span>
       </p>
 
-      {(isRunning || hasResult) && (
-        <div className={styles.analysisProgressWrap}>
-          <div className={styles.analysisProgressMeta}>
-            <span>{status?.processed ?? 0} / {status?.total ?? 0} fotos</span>
-            <span>{Math.round(progress)}%</span>
-          </div>
-          <div className={styles.analysisProgressTrack}>
-            <div className={styles.analysisProgressFill} style={{ width: `${progress}%` }} />
-          </div>
+      <div className={`${styles.analysisProgressWrap} ${showProgress ? styles.blockVisible : styles.blockHidden}`}>
+        <div className={styles.analysisProgressMeta}>
+          <span>{status?.processed ?? 0} / {status?.total ?? 0} fotos</span>
+          <span>{Math.round(progress)}%</span>
         </div>
-      )}
+        <div className={styles.analysisProgressTrack}>
+          <div className={styles.analysisProgressFill} style={{ width: `${progress}%` }} />
+        </div>
+      </div>
 
-      {!isRunning && status?.result && (
-        <div className={styles.analysisResult}>
-          {status.result.processed_files} foto{status.result.processed_files !== 1 ? 's' : ''} analisada{status.result.processed_files !== 1 ? 's' : ''} · {status.result.updated_faces} registro{status.result.updated_faces !== 1 ? 's' : ''} atualizado{status.result.updated_faces !== 1 ? 's' : ''}
-        </div>
-      )}
+      <div className={`${styles.analysisResult} ${!isRunning && status?.result ? styles.blockVisible : styles.blockHidden}`}>
+        <span>{resultLabel}</span>
+      </div>
     </div>
   );
 }
@@ -225,50 +256,45 @@ function WelcomeState({
   loading: boolean;
   onRefresh: () => void;
 }) {
+  const titleLabel = loading ? 'Calculando agrupamentos...' : count === 0 ? 'Tudo identificado!' : 'Revisão IA';
+  const subtitleLabel = loading
+    ? 'A IA está analisando as faces similares...'
+    : count === 0
+    ? 'Nenhuma face desconhecida pendente neste evento.'
+    : `${count} grupo${count !== 1 ? 's' : ''} aguardando identificação. Selecione um grupo na barra lateral para começar.`;
+
   return (
-    <motion.div
-      className={styles.welcome}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-    >
+    <div className={styles.welcome} translate="no">
       <div className={styles.welcomeInner}>
         <div className={styles.welcomeOrb}>
           {loading ? (
             <RefreshCw size={32} strokeWidth={1.5} className={styles.spin} />
-          ) : count === 0 ? (
-            <UserCheck size={32} strokeWidth={1.5} />
           ) : (
             <UserCheck size={32} strokeWidth={1.5} />
           )}
         </div>
 
         <h2 className={styles.welcomeTitle}>
-          {loading ? 'Calculando agrupamentos...' : count === 0 ? 'Tudo identificado!' : 'Revisão IA'}
+          <span>{titleLabel}</span>
         </h2>
 
         <p className={styles.welcomeSubtitle}>
-          {loading
-            ? 'A IA está analisando as faces similares...'
-            : count === 0
-            ? 'Nenhuma face desconhecida pendente neste evento.'
-            : `${count} grupo${count !== 1 ? 's' : ''} aguardando identificação. Selecione um grupo na barra lateral para começar.`}
+          <span>{subtitleLabel}</span>
         </p>
 
-        {!loading && count > 0 && (
-          <div className={styles.welcomeHint}>
-            ← Selecione um grupo para revisar
-          </div>
-        )}
+        <div className={`${styles.welcomeHint} ${!loading && count > 0 ? styles.blockVisible : styles.blockHidden}`}>
+          <span>← Selecione um grupo para revisar</span>
+        </div>
 
-        {!loading && count === 0 && (
-          <button className={styles.welcomeRefresh} onClick={onRefresh}>
-            <RefreshCw size={14} />
-            Recarregar
-          </button>
-        )}
+        <button
+          className={`${styles.welcomeRefresh} ${!loading && count === 0 ? styles.inlineFlexVisible : styles.inlineFlexHidden}`}
+          onClick={onRefresh}
+          disabled={loading || count > 0}
+        >
+          <RefreshCw size={14} />
+          <span>Recarregar</span>
+        </button>
       </div>
-    </motion.div>
+    </div>
   );
 }
