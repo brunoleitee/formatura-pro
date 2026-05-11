@@ -55,12 +55,6 @@ UNKNOWN_ALUNO_IDS = (
     "__unknown__",
 )
 GRADUATION_TAG_ORDER = ("beca", "canudo", "faixa", "capelo")
-GRADUATION_KEYWORDS = {
-    "beca": ("beca", "gown", "robe"),
-    "canudo": ("canudo", "diploma", "certificate", "certificado"),
-    "faixa": ("faixa", "sash", "stole"),
-    "capelo": ("capelo", "cap", "mortarboard", "chapeu"),
-}
 
 
 def configure(**kwargs):
@@ -581,17 +575,6 @@ def _ensure_action_logs_table(cur):
         )
 
 
-def _normalize_search_text(value: str) -> str:
-    text = unicodedata.normalize("NFKD", str(value or ""))
-    text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    return text.casefold()
-
-
-def _path_keyword_match(path: str, tag: str) -> bool:
-    normalized_path = _normalize_search_text(os.path.basename(path or ""))
-    return any(keyword in normalized_path for keyword in GRADUATION_KEYWORDS[tag])
-
-
 def _coerce_flag(value) -> bool:
     if isinstance(value, str):
         value = value.strip().lower()
@@ -637,11 +620,33 @@ def _derive_sharpness_score(item: dict) -> float:
     return _clamp01(base + blur_boost)
 
 
+def analyze_graduation_items(photo: dict | None = None) -> dict:
+    return {
+        "has_gown": False,
+        "has_diploma": False,
+        "has_sash": False,
+        "has_cap": False,
+        "source": "none",
+    }
+
+
 def _build_face_priority_meta(item: dict, cohesion_hint: float) -> dict:
-    has_gown = _coerce_flag(item.get("has_gown")) or _path_keyword_match(item.get("foto_path", ""), "beca")
-    has_diploma = _coerce_flag(item.get("has_diploma")) or _path_keyword_match(item.get("foto_path", ""), "canudo")
-    has_sash = _coerce_flag(item.get("has_sash")) or _path_keyword_match(item.get("foto_path", ""), "faixa")
-    has_cap = _coerce_flag(item.get("has_cap")) or _path_keyword_match(item.get("foto_path", ""), "capelo")
+    fallback = analyze_graduation_items(item)
+    raw_has_gown = item.get("has_gown")
+    raw_has_diploma = item.get("has_diploma")
+    raw_has_sash = item.get("has_sash")
+    raw_has_cap = item.get("has_cap")
+    raw_score = item.get("graduation_score")
+
+    has_saved_fields = any(
+        value is not None
+        for value in (raw_has_gown, raw_has_diploma, raw_has_sash, raw_has_cap, raw_score)
+    )
+
+    has_gown = _coerce_flag(raw_has_gown) if raw_has_gown is not None else _coerce_flag(fallback.get("has_gown"))
+    has_diploma = _coerce_flag(raw_has_diploma) if raw_has_diploma is not None else _coerce_flag(fallback.get("has_diploma"))
+    has_sash = _coerce_flag(raw_has_sash) if raw_has_sash is not None else _coerce_flag(fallback.get("has_sash"))
+    has_cap = _coerce_flag(raw_has_cap) if raw_has_cap is not None else _coerce_flag(fallback.get("has_cap"))
     face_front_score = _derive_face_front_score(item)
     sharpness_score = _derive_sharpness_score(item)
 
@@ -653,8 +658,8 @@ def _build_face_priority_meta(item: dict, cohesion_hint: float) -> dict:
         face_front_score * 15.0 +
         sharpness_score * 10.0
     )
-    raw_score = item.get("graduation_score")
-    graduation_score = max(computed_graduation_score, float(raw_score)) if raw_score is not None else computed_graduation_score
+    graduation_score = float(raw_score) if raw_score is not None else computed_graduation_score
+    debug_graduation_source = "saved_fields" if has_saved_fields else str(fallback.get("source") or "none")
 
     tags = []
     if has_gown:
@@ -681,6 +686,7 @@ def _build_face_priority_meta(item: dict, cohesion_hint: float) -> dict:
         "face_area": face_area,
         "cohesion_hint": float(cohesion_hint or 0.0),
         "has_graduation_signal": bool(tags) or raw_score is not None,
+        "debug_graduation_source": debug_graduation_source,
     }
 
 
@@ -708,6 +714,13 @@ def _pick_cluster_cover_item(comp_items: list[dict], priority_meta: list[dict]) 
 def _ordered_cluster_tags(priority_meta: list[dict]) -> list[str]:
     present = {tag for meta in priority_meta for tag in meta["tags"]}
     return [tag for tag in GRADUATION_TAG_ORDER if tag in present]
+
+
+def _resolve_cluster_graduation_source(priority_meta: list[dict]) -> str:
+    for source in (meta.get("debug_graduation_source") for meta in priority_meta):
+        if source and source != "none":
+            return str(source)
+    return "none"
 
 
 def assign_cluster(req: AssignUnknownClusterRequest):
@@ -927,21 +940,24 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 _build_face_priority_meta(item, float(rep_scores[local_idx]) if local_idx < len(rep_scores) else 0.0)
                 for local_idx, item in enumerate(comp_items)
             ]
-            max_graduation_score = max((meta["graduation_score"] for meta in priority_meta), default=0.0)
-            avg_graduation_score = float(np.mean([meta["graduation_score"] for meta in priority_meta])) if priority_meta else 0.0
             photo_count = len(unique_paths)
-            if priority_meta:
-                priority_score = (
-                    max_graduation_score +
-                    avg_graduation_score * 0.3 +
-                    cohesion_score * 0.2 +
-                    math.log(photo_count + 1) * 5.0
-                )
-            else:
-                priority_score = cohesion_score + photo_count * 0.01
+            cluster_has_gown = any(meta["has_gown"] for meta in priority_meta)
+            cluster_has_diploma = any(meta["has_diploma"] for meta in priority_meta)
+            cluster_has_sash = any(meta["has_sash"] for meta in priority_meta)
+            cluster_has_cap = any(meta["has_cap"] for meta in priority_meta)
+            priority_score = cohesion_score * 100.0 + math.log(photo_count + 1) * 5.0
+            if cluster_has_gown:
+                priority_score += 40.0
+            if cluster_has_diploma:
+                priority_score += 30.0
+            if cluster_has_sash:
+                priority_score += 25.0
+            if cluster_has_cap:
+                priority_score += 20.0
             rep_item = _pick_cluster_cover_item(comp_items, priority_meta)
             rep_item_meta = priority_meta[comp_items.index(rep_item)]
             graduation_tags = _ordered_cluster_tags(priority_meta)
+            debug_graduation_source = _resolve_cluster_graduation_source(priority_meta)
             cluster_num = len(clusters) + 1
             clusters.append({
                 "cluster_id": f"cluster_{cluster_num}",
@@ -953,6 +969,11 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 "cohesion": round(cohesion_score, 4),
                 "priority_score": round(float(priority_score), 4),
                 "graduation_tags": graduation_tags,
+                "has_gown": cluster_has_gown,
+                "has_diploma": cluster_has_diploma,
+                "has_sash": cluster_has_sash,
+                "has_cap": cluster_has_cap,
+                "debug_graduation_source": debug_graduation_source,
                 "preview_image": rep_item["foto_path"],
                 "discovered_at": now_iso,
                 "representative": {

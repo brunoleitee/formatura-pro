@@ -19,6 +19,7 @@ export default function ReviewView() {
     setLoading(true);
     try {
       const data = await api.getUnknownClustersV2(currentCatalog);
+      console.log('[unknown-clusters] sample', (data?.clusters ?? []).slice(0, 5));
       setClusters(data?.clusters ?? []);
     } catch {
       setClusters([]);

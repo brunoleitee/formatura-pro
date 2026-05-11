@@ -111,6 +111,11 @@ export interface RichCluster {
   cohesion?: number;
   priority_score?: number;
   graduation_tags?: string[];
+  has_gown?: boolean;
+  has_diploma?: boolean;
+  has_sash?: boolean;
+  has_cap?: boolean;
+  debug_graduation_source?: string;
   preview_image?: string;
   discovered_at?: string;
   representative: RichClusterFace;

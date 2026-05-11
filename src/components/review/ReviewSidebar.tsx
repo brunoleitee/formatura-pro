@@ -5,7 +5,7 @@ import type { RichCluster } from '../../services/api';
 import { faceThumb } from './FaceCard';
 import styles from './ReviewSidebar.module.css';
 
-type PriorityFilter = 'all' | 'gown' | 'diploma' | 'sash' | 'high_priority';
+type PriorityFilter = 'all' | 'gown' | 'diploma' | 'sash' | 'cap' | 'high_priority';
 
 interface ReviewSidebarProps {
   clusters: RichCluster[];
@@ -95,16 +95,27 @@ export default function ReviewSidebar({
 }: ReviewSidebarProps) {
   const [search, setSearch] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
+  const hasGraduationAnalysis = clusters.some((cluster) =>
+    Boolean(
+      cluster.has_gown ||
+      cluster.has_diploma ||
+      cluster.has_sash ||
+      cluster.has_cap ||
+      (cluster.graduation_tags?.length ?? 0) > 0
+    )
+  );
 
   const filteredByPriority = clusters.filter((cluster) => {
     const tags = cluster.graduation_tags ?? [];
     switch (priorityFilter) {
       case 'gown':
-        return tags.includes('beca');
+        return tags.includes('beca') || Boolean(cluster.has_gown);
       case 'diploma':
-        return tags.includes('canudo');
+        return tags.includes('canudo') || tags.includes('diploma') || Boolean(cluster.has_diploma);
       case 'sash':
-        return tags.includes('faixa');
+        return tags.includes('faixa') || Boolean(cluster.has_sash);
+      case 'cap':
+        return tags.includes('capelo') || Boolean(cluster.has_cap);
       case 'high_priority':
         return (cluster.priority_score ?? 0) >= 25;
       default:
@@ -119,6 +130,11 @@ export default function ReviewSidebar({
         (cluster.graduation_tags ?? []).some(tag => tag.includes(search.toLowerCase()))
       )
     : filteredByPriority;
+  const showMissingGraduationAnalysis =
+    !search &&
+    visible.length === 0 &&
+    (priorityFilter === 'gown' || priorityFilter === 'diploma' || priorityFilter === 'sash' || priorityFilter === 'cap') &&
+    !hasGraduationAnalysis;
 
   return (
     <aside className={styles.sidebar}>
@@ -175,6 +191,7 @@ export default function ReviewSidebar({
           <option value="gown">Com beca</option>
           <option value="diploma">Com canudo</option>
           <option value="sash">Com faixa</option>
+          <option value="cap">Com capelo</option>
           <option value="high_priority">Alta prioridade IA</option>
         </select>
       </div>
@@ -188,7 +205,13 @@ export default function ReviewSidebar({
           </div>
         ) : visible.length === 0 ? (
           <div className={styles.listState}>
-            <span>{search ? 'Sem resultados' : 'Tudo identificado!'}</span>
+            <span>
+              {search
+                ? 'Sem resultados'
+                : showMissingGraduationAnalysis
+                ? 'A IA ainda não analisou beca/canudo/faixa neste catálogo.'
+                : 'Tudo identificado!'}
+            </span>
           </div>
         ) : (
           <AnimatePresence mode="popLayout">
