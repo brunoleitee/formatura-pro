@@ -15,6 +15,7 @@ import { TopBar } from './TopBar';
 
 export function AppShell() {
   const { currentCatalog, catalogs, activeView, refreshCatalogs, bumpRefresh, navigate } = useApp();
+  const showGlobalActions = activeView !== 'review';
 
   const [showCatalogModal, setShowCatalogModal] = useState(false);
   const [showScanModal, setShowScanModal] = useState(false);
@@ -120,6 +121,7 @@ export function AppShell() {
           scanStatus={scanStatus}
           setShowScanModal={setShowScanModal}
           setShowCatalogModal={setShowCatalogModal}
+          showGlobalActions={showGlobalActions}
         />
         <div className="view-area">
           {renderView()}

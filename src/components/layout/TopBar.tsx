@@ -15,6 +15,7 @@ interface TopBarProps {
   scanStatus: ScanStatus | null;
   setShowScanModal: (s: boolean) => void;
   setShowCatalogModal: (s: boolean) => void;
+  showGlobalActions?: boolean;
 }
 
 export function TopBar({
@@ -29,7 +30,8 @@ export function TopBar({
   scanMsg,
   scanStatus,
   setShowScanModal,
-  setShowCatalogModal
+  setShowCatalogModal,
+  showGlobalActions = true,
 }: TopBarProps) {
   const { currentCatalog, navigate } = useApp();
 
@@ -68,33 +70,37 @@ export function TopBar({
       </div>
 
       <div className="actions">
-        <div className="scan-status-wrap" style={{ visibility: isScanning || scanMsg ? 'visible' : 'hidden' }}>
-          <div className="scan-progress-mini" style={{ opacity: isScanning && scanStatus ? 1 : 0 }}>
-            <div
-              className="scan-progress-fill"
-              style={{ width: `${scanStatus?.progress ?? 0}%` }}
-            />
-          </div>
-          <span className="scan-msg">{scanMsg}</span>
-        </div>
+        {showGlobalActions && (
+          <>
+            <div className="scan-status-wrap" style={{ visibility: isScanning || scanMsg ? 'visible' : 'hidden' }}>
+              <div className="scan-progress-mini" style={{ opacity: isScanning && scanStatus ? 1 : 0 }}>
+                <div
+                  className="scan-progress-fill"
+                  style={{ width: `${scanStatus?.progress ?? 0}%` }}
+                />
+              </div>
+              <span className="scan-msg">{scanMsg}</span>
+            </div>
 
-        <button
-          className="btn-primary"
-          style={{ opacity: isScanning ? 0.7 : 1 }}
-          onClick={() => { if (!currentCatalog) { setShowCatalogModal(true); return; } setShowScanModal(true); }}
-          disabled={isScanning}
-        >
-          <span style={{ display: 'flex', alignItems: 'center' }}>
-            <Loader size={16} className="spin" style={{ display: isScanning ? 'block' : 'none' }} />
-            <Scan size={16} style={{ display: isScanning ? 'none' : 'block' }} />
-          </span>
-          Escanear
-        </button>
+            <button
+              className="btn-primary"
+              style={{ opacity: isScanning ? 0.7 : 1 }}
+              onClick={() => { if (!currentCatalog) { setShowCatalogModal(true); return; } setShowScanModal(true); }}
+              disabled={isScanning}
+            >
+              <span style={{ display: 'flex', alignItems: 'center' }}>
+                <Loader size={16} className="spin" style={{ display: isScanning ? 'block' : 'none' }} />
+                <Scan size={16} style={{ display: isScanning ? 'none' : 'block' }} />
+              </span>
+              Escanear
+            </button>
 
-        <button className="btn-primary" onClick={() => navigate('export')}>
-          <Download size={16} />
-          Exportar
-        </button>
+            <button className="btn-primary" onClick={() => navigate('export')}>
+              <Download size={16} />
+              Exportar
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
