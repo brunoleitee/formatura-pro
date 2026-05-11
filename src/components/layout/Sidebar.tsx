@@ -1,4 +1,5 @@
-import { FolderOpen, ChevronDown, Trash2, Image as ImageIcon, Users, UserCheck, Download, Settings } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { FolderOpen, ChevronDown, Trash2, Image as ImageIcon, Users, UserCheck, Download, Settings, Search, ScanLine, Loader, Users as UsersIcon } from 'lucide-react';
 import { useApp, type ViewName } from '../../context/AppContext';
 import { api } from '../../services/api';
 
@@ -6,29 +7,69 @@ interface SidebarProps {
   showCatalogDropdown: boolean;
   setShowCatalogDropdown: React.Dispatch<React.SetStateAction<boolean>>;
   setShowCatalogModal: React.Dispatch<React.SetStateAction<boolean>>;
+  onScanClick: () => void;
+  isScanning: boolean;
+  scanMsg: string;
+  scanProgress: number;
 }
 
-export function Sidebar({ showCatalogDropdown, setShowCatalogDropdown, setShowCatalogModal }: SidebarProps) {
+export function Sidebar({
+  showCatalogDropdown,
+  setShowCatalogDropdown,
+  setShowCatalogModal,
+  onScanClick,
+  isScanning,
+  scanMsg,
+  scanProgress,
+}: SidebarProps) {
   const { currentCatalog, catalogs, activeView, navigate, setCatalog, refreshCatalogs } = useApp();
 
+  // Busca global — estado local na sidebar
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<{ name: string; catalog: string }[]>([]);
+  const [showSearch, setShowSearch] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowSearch(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const handleSearch = async (q: string) => {
+    setSearchQuery(q);
+    if (q.length < 2) { setSearchResults([]); setShowSearch(false); return; }
+    try {
+      const res = await api.globalSearch(q);
+      setSearchResults(res);
+      setShowSearch(res.length > 0);
+    } catch { /* ignore */ }
+  };
+
   const navItems: { view: ViewName; icon: React.ReactNode; label: string }[] = [
-    { view: 'photos', icon: <ImageIcon size={18} />, label: 'Catálogo' },
-    { view: 'people', icon: <Users size={18} />, label: 'Identificados' },
-    { view: 'review', icon: <UserCheck size={18} />, label: 'Revisão IA' },
+    { view: 'photos',  icon: <ImageIcon size={17} />, label: 'Catálogo' },
+    { view: 'people',  icon: <Users size={17} />,     label: 'Identificados' },
+    { view: 'review',  icon: <UserCheck size={17} />, label: 'Revisão IA' },
   ];
 
   const toolItems: { view: ViewName; icon: React.ReactNode; label: string }[] = [
-    { view: 'export', icon: <Download size={18} />, label: 'Exportador' },
-    { view: 'settings', icon: <Settings size={18} />, label: 'Configurações' },
+    { view: 'export',   icon: <Download size={17} />,  label: 'Exportador' },
+    { view: 'settings', icon: <Settings size={17} />,  label: 'Configurações' },
   ];
 
   return (
     <div className="sidebar">
+      {/* Logo */}
       <div className="sidebar-header">
         <div className="logo-icon">FP</div>
         <h2 style={{ fontSize: '1rem', fontWeight: 700 }}>Formatura PRO</h2>
       </div>
 
+      {/* Seletor de catálogo */}
       <div className="catalog-selector-wrap">
         <div className="catalog-selector" onClick={() => setShowCatalogDropdown(v => !v)}>
           <FolderOpen size={15} />
@@ -41,10 +82,7 @@ export function Sidebar({ showCatalogDropdown, setShowCatalogDropdown, setShowCa
               <div key={cat} className={`catalog-dropdown-row ${cat === currentCatalog ? 'active' : ''}`}>
                 <button
                   className="catalog-dropdown-label"
-                  onClick={async () => {
-                    await setCatalog(cat);
-                    setShowCatalogDropdown(false);
-                  }}
+                  onClick={async () => { await setCatalog(cat); setShowCatalogDropdown(false); }}
                 >
                   {cat}
                 </button>
@@ -55,10 +93,7 @@ export function Sidebar({ showCatalogDropdown, setShowCatalogDropdown, setShowCa
                   onClick={async (e) => {
                     e.stopPropagation();
                     if (!window.confirm(`Excluir o evento "${cat}"? Esta ação não pode ser desfeita.`)) return;
-                    try {
-                      await api.deleteCatalog(cat);
-                      await refreshCatalogs();
-                    } catch { /* ignore */ }
+                    try { await api.deleteCatalog(cat); await refreshCatalogs(); } catch { /* ignore */ }
                   }}
                 >
                   <Trash2 size={13} />
@@ -75,6 +110,40 @@ export function Sidebar({ showCatalogDropdown, setShowCatalogDropdown, setShowCa
         )}
       </div>
 
+      {/* Busca global */}
+      <div className="sidebar-search-wrap" ref={searchRef}>
+        <div className="sidebar-search">
+          <Search size={13} />
+          <input
+            type="text"
+            placeholder="Buscar formando..."
+            value={searchQuery}
+            onChange={e => handleSearch(e.target.value)}
+            onFocus={() => searchResults.length > 0 && setShowSearch(true)}
+          />
+        </div>
+        {showSearch && (
+          <div className="sidebar-search-results">
+            {searchResults.map((r, i) => (
+              <button
+                key={i}
+                className="sidebar-search-result"
+                onClick={() => {
+                  setSearchQuery('');
+                  setShowSearch(false);
+                  navigate('person-detail', r.name);
+                }}
+              >
+                <UsersIcon size={13} />
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+                <span style={{ fontSize: '0.7rem', opacity: 0.5, flexShrink: 0 }}>{r.catalog}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Navegação */}
       <div className="sidebar-nav">
         <div className="nav-section">
           <div className="nav-section-title">Biblioteca</div>
@@ -89,8 +158,25 @@ export function Sidebar({ showCatalogDropdown, setShowCatalogDropdown, setShowCa
             </div>
           ))}
         </div>
+
         <div className="nav-section">
           <div className="nav-section-title">Ferramentas</div>
+
+          {/* Escanear — ação direta, não navega */}
+          <div
+            className={`nav-item ${isScanning ? 'sidebar-scanning' : ''}`}
+            onClick={() => { if (!isScanning && currentCatalog) onScanClick(); }}
+            style={{ opacity: !currentCatalog ? 0.4 : 1, cursor: !currentCatalog ? 'default' : 'pointer' }}
+            title={!currentCatalog ? 'Selecione um evento primeiro' : isScanning ? 'Escaneando...' : 'Escanear fotos'}
+          >
+            {isScanning
+              ? <Loader size={17} className="spin" />
+              : <ScanLine size={17} />
+            }
+            <span>Escanear</span>
+            {isScanning && <span className="sidebar-scan-badge">em andamento</span>}
+          </div>
+
           {toolItems.map(item => (
             <div
               key={item.view}
@@ -103,6 +189,16 @@ export function Sidebar({ showCatalogDropdown, setShowCatalogDropdown, setShowCa
           ))}
         </div>
       </div>
+
+      {/* Progresso do scan (rodapé da sidebar) */}
+      {isScanning && (
+        <div className="sidebar-scan-footer">
+          <div className="sidebar-scan-progress">
+            <div className="sidebar-scan-progress-fill" style={{ width: `${scanProgress}%` }} />
+          </div>
+          {scanMsg && <span className="sidebar-scan-msg">{scanMsg}</span>}
+        </div>
+      )}
     </div>
   );
 }

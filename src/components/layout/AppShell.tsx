@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { api } from '../../services/api';
 import type { ScanStatus } from '../../services/api';
@@ -11,11 +11,9 @@ import ReviewView from '../../views/ReviewView';
 import ExportView from '../../views/ExportView';
 import SettingsView from '../../views/SettingsView';
 import { Sidebar } from './Sidebar';
-import { TopBar } from './TopBar';
 
 export function AppShell() {
   const { currentCatalog, catalogs, activeView, refreshCatalogs, bumpRefresh, navigate } = useApp();
-  const showGlobalActions = activeView !== 'review';
 
   const [showCatalogModal, setShowCatalogModal] = useState(false);
   const [showScanModal, setShowScanModal] = useState(false);
@@ -23,10 +21,6 @@ export function AppShell() {
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanMsg, setScanMsg] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<{ name: string; catalog: string }[]>([]);
-  const [showSearch, setShowSearch] = useState(false);
-  const searchRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
 
   useEffect(() => {
     refreshCatalogs();
@@ -62,41 +56,25 @@ export function AppShell() {
     return () => clearInterval(interval);
   }, [isScanning, bumpRefresh, navigate]);
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setShowSearch(false);
-        setSearchResults([]);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
   const handleScanStarted = () => {
     setIsScanning(true);
     setScanMsg('Escaneamento iniciado...');
   };
 
-  const handleSearch = async (q: string) => {
-    setSearchQuery(q);
-    if (q.length < 2) { setSearchResults([]); setShowSearch(false); return; }
-    try {
-      const res = await api.globalSearch(q);
-      setSearchResults(res);
-      setShowSearch(res.length > 0);
-    } catch { /* ignore */ }
+  const handleScanClick = () => {
+    if (!currentCatalog) { setShowCatalogModal(true); return; }
+    setShowScanModal(true);
   };
 
   const renderView = () => {
     switch (activeView) {
-      case 'photos': return <CatalogView />;
-      case 'people': return <PeopleView />;
+      case 'photos':        return <CatalogView />;
+      case 'people':        return <PeopleView />;
       case 'person-detail': return <PersonDetailView />;
-      case 'review': return <ReviewView />;
-      case 'export': return <ExportView />;
-      case 'settings': return <SettingsView />;
-      default: return <CatalogView />;
+      case 'review':        return <ReviewView />;
+      case 'export':        return <ExportView />;
+      case 'settings':      return <SettingsView />;
+      default:              return <CatalogView />;
     }
   };
 
@@ -106,23 +84,12 @@ export function AppShell() {
         showCatalogDropdown={showCatalogDropdown}
         setShowCatalogDropdown={setShowCatalogDropdown}
         setShowCatalogModal={setShowCatalogModal}
+        onScanClick={handleScanClick}
+        isScanning={isScanning}
+        scanMsg={scanMsg}
+        scanProgress={scanStatus?.progress ?? 0}
       />
       <div className="main-content">
-        <TopBar
-          searchRef={searchRef}
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          handleSearch={handleSearch}
-          showSearch={showSearch}
-          setShowSearch={setShowSearch}
-          searchResults={searchResults}
-          isScanning={isScanning}
-          scanMsg={scanMsg}
-          scanStatus={scanStatus}
-          setShowScanModal={setShowScanModal}
-          setShowCatalogModal={setShowCatalogModal}
-          showGlobalActions={showGlobalActions}
-        />
         <div className="view-area">
           {renderView()}
         </div>
