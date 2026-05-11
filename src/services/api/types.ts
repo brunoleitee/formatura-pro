@@ -84,6 +84,28 @@ export interface ClusterFace {
   aluno_id: string;
 }
 
+export interface RichClusterFace {
+  rowid: number;
+  path: string;
+  box: [number, number, number, number];
+  aluno_id: string;
+}
+
+export interface RichCluster {
+  cluster_id: string;
+  face_count: number;
+  photo_count: number;
+  cohesion_score: number;
+  representative: RichClusterFace;
+  faces: RichClusterFace[];
+}
+
+export interface UnknownClustersResponse {
+  clusters: RichCluster[];
+  threshold: number;
+  min_cluster_size: number;
+}
+
 export interface Stats {
   total_photos: number;
   total_people: number;
