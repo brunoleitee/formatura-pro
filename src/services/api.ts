@@ -155,6 +155,12 @@ export const api = {
   clearScanSummary: () =>
     post(`${API_BASE}/scan/clear_summary`, {}),
 
+  // Quality Audit
+  startQualityAudit: (catalog = '') =>
+    post(`${API_BASE}/scan/start_quality_audit`, { catalog }),
+  getQualityAuditStatus: () =>
+    fetchJSON<{ is_auditing: boolean; progress: number; status_text: string; total: number; processed: number }>(`${API_BASE}/scan/quality_audit_status`),
+
   // Review
   getUnknownClusters: (catalog: string, min_score = 0.58, min_cluster_size = 2, limit = 80) =>
     fetchJSON<UnknownCluster[]>(

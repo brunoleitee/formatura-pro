@@ -101,6 +101,27 @@ export default function PhotosView() {
   const [viewerPhoto, setViewerPhoto] = useState<Photo | null>(null);
   const lastClickTime = useRef<number>(0);
   const lastClickPhoto = useRef<string>('');
+  const [auditStatus, setAuditStatus] = useState<{ is_auditing: boolean; status_text: string; progress: number } | null>(null);
+
+  const startQualityAudit = useCallback(async () => {
+    try {
+      await api.startQualityAudit(currentCatalog);
+      setAuditStatus({ is_auditing: true, status_text: 'Iniciando...', progress: 0 });
+    } catch (e) { console.error(e); }
+  }, [currentCatalog]);
+
+  useEffect(() => {
+    if (!currentCatalog) return;
+    const checkAudit = async () => {
+      try {
+        const st = await api.getQualityAuditStatus();
+        setAuditStatus(st);
+      } catch {}
+    };
+    checkAudit();
+    const interval = setInterval(checkAudit, 2000);
+    return () => clearInterval(interval);
+  }, [currentCatalog]);
 
   const subfolders = useMemo(() => extractSubfolders(photos, currentCatalog), [photos, currentCatalog]);
 
@@ -207,6 +228,15 @@ export default function PhotosView() {
           <button className="icon-btn" title="Atualizar" onClick={loadPhotos}>
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
           </button>
+          {auditStatus?.is_auditing ? (
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginLeft: 8 }}>
+              {auditStatus.status_text} ({Math.round(auditStatus.progress * 100)}%)
+            </span>
+          ) : (
+            <button className="icon-btn" title="Auditar qualidade das fotos" onClick={startQualityAudit} style={{ marginLeft: 4 }}>
+              <span style={{ fontSize: '0.7rem' }}>QA</span>
+            </button>
+          )}
         </div>
       </div>
 
