@@ -1,0 +1,133 @@
+/* PhotoCard — foto completa estilo Narrative Select */
+
+.card {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  background: #151720;
+  height: var(--card-h, 200px);
+  user-select: none;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  transition: outline-color 0.15s;
+}
+
+.card:hover {
+  outline-color: rgba(255, 255, 255, 0.15);
+}
+
+.selected {
+  outline-color: #3b82f6 !important;
+}
+
+/* ── Imagem ── */
+.imgWrap {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.skeleton {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, #151720 0%, #1e2235 50%, #151720 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.visible {
+  opacity: 1;
+}
+
+/* ── Badge Melhor Match (topo esquerdo) ── */
+.badgeBestMatch {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: #16a34a;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 3px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Checkmark de seleção (topo direito) ── */
+.checkArea {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+  pointer-events: none;
+}
+
+.checkAreaSelected {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: #fff;
+}
+
+/* ── Badges de qualidade (rodapé) ── */
+.badgesRow {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.badge {
+  font-size: 0.62rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(4px);
+}
+
+.info {
+  background: rgba(15, 23, 42, 0.72);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.warning {
+  background: rgba(15, 23, 42, 0.72);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+}
+
+.success {
+  background: rgba(22, 163, 74, 0.25);
+  color: #86efac;
+  border: 1px solid rgba(22, 163, 74, 0.3);
+}

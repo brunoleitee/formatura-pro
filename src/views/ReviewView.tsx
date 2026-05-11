@@ -1,208 +1,274 @@
-import { useState, useEffect, useCallback } from 'react';
-import { UserCheck, RefreshCw, Check, X, ChevronLeft, ChevronRight } from 'lucide-react';
-import { api, type UnknownCluster, type ClusterFace } from '../services/api';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { UserCheck, RefreshCw, Sparkles } from 'lucide-react';
+import { api } from '../services/api';
+import type { GraduationAnalysisStatus, RichCluster } from '../services/api';
 import { useApp } from '../context/AppContext';
+import ReviewSidebar from '../components/review/ReviewSidebar';
+import ClusterDetail from '../components/review/ClusterDetail';
+import styles from './ReviewView.module.css';
 
 export default function ReviewView() {
   const { currentCatalog } = useApp();
-  const [clusters, setClusters] = useState<UnknownCluster[]>([]);
+  const [clusters, setClusters] = useState<RichCluster[]>([]);
   const [loading, setLoading] = useState(false);
-  const [clusterIdx, setClusterIdx] = useState(0);
-  const [nameInput, setNameInput] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState('');
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [selected, setSelected] = useState<RichCluster | null>(null);
+  const [graduationStatus, setGraduationStatus] = useState<GraduationAnalysisStatus | null>(null);
+  const [isStartingGraduationAnalysis, setIsStartingGraduationAnalysis] = useState(false);
+  const wasGraduationRunningRef = useRef(false);
 
   const load = useCallback(async () => {
     if (!currentCatalog) return;
     setLoading(true);
     try {
-      const data = await api.getUnknownClusters(currentCatalog);
-      setClusters(Array.isArray(data) ? data : []);
-      setClusterIdx(0);
-    } catch (e) {
-      console.error(e);
+      const data = await api.getUnknownClustersV2(currentCatalog);
+      console.log('[unknown-clusters] sample', (data?.clusters ?? []).slice(0, 5));
+      setClusters(data?.clusters ?? []);
+    } catch {
+      setClusters([]);
     } finally {
       setLoading(false);
     }
   }, [currentCatalog]);
 
-  useEffect(() => { Promise.resolve().then(load); }, [load]);
-
-  const loadSuggestions = useCallback(async (q: string) => {
-    if (q.length < 2) { setSuggestions([]); return; }
+  const refreshGraduationStatus = useCallback(async () => {
+    if (!currentCatalog) {
+      setGraduationStatus(null);
+      return;
+    }
     try {
-      const res = await api.globalSearch(q);
-      setSuggestions(res.map(r => r.name).filter((v, i, a) => a.indexOf(v) === i).slice(0, 8));
-    } catch { /* ignore */ }
+      const status = await api.getGraduationAnalysisStatus(currentCatalog);
+      setGraduationStatus(status);
+    } catch {
+      setGraduationStatus(null);
+    }
+  }, [currentCatalog]);
+
+  useEffect(() => {
+    setSelected(null);
+    load();
+    refreshGraduationStatus();
+  }, [load, refreshGraduationStatus]);
+
+  useEffect(() => {
+    if (!currentCatalog || !graduationStatus?.is_running) return;
+    const timer = window.setInterval(() => {
+      refreshGraduationStatus();
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [currentCatalog, graduationStatus?.is_running, refreshGraduationStatus]);
+
+  useEffect(() => {
+    const wasRunning = wasGraduationRunningRef.current;
+    const isRunning = Boolean(graduationStatus?.is_running);
+    if (
+      wasRunning &&
+      !isRunning &&
+      graduationStatus?.result &&
+      graduationStatus.catalog === currentCatalog
+    ) {
+      load();
+    }
+    wasGraduationRunningRef.current = isRunning;
+  }, [currentCatalog, graduationStatus, load]);
+
+  const handleAssigned = useCallback((clusterId: string) => {
+    setClusters(prev => {
+      const next = prev.filter(c => c.cluster_id !== clusterId);
+      // Auto-avança para o próximo cluster
+      const idx = prev.findIndex(c => c.cluster_id === clusterId);
+      setSelected(next[idx] ?? next[idx - 1] ?? null);
+      return next;
+    });
   }, []);
 
-  useEffect(() => { Promise.resolve().then(() => loadSuggestions(nameInput)); }, [nameInput, loadSuggestions]);
+  const handleSkip = useCallback(() => {
+    if (!selected) return;
+    const idx = clusters.findIndex(c => c.cluster_id === selected.cluster_id);
+    setSelected(clusters[idx + 1] ?? clusters[idx - 1] ?? null);
+  }, [selected, clusters]);
 
-  const cluster = clusters[clusterIdx] ?? null;
-
-  const handleIdentify = async () => {
-    if (!cluster || !nameInput.trim()) return;
-    setSaving(true);
-    setMsg('');
-    let success = 0;
-    for (const face of cluster.faces) {
-      try {
-        await api.manualIdentify(face.foto_path, currentCatalog, [face.x1, face.y1, face.x2, face.y2], nameInput.trim());
-        success++;
-      } catch { /* continue */ }
+  const handleStartGraduationAnalysis = useCallback(async () => {
+    if (!currentCatalog || graduationStatus?.is_running || isStartingGraduationAnalysis) return;
+    setIsStartingGraduationAnalysis(true);
+    try {
+      await api.startGraduationAnalysis(currentCatalog);
+      await refreshGraduationStatus();
+    } finally {
+      setIsStartingGraduationAnalysis(false);
     }
-    setMsg(`${success}/${cluster.faces.length} face(s) identificada(s) como "${nameInput.trim()}"`);
-    setSaving(false);
-    setNameInput('');
-    // Remove cluster from list
-    const newClusters = clusters.filter((_, i) => i !== clusterIdx);
-    setClusters(newClusters);
-    setClusterIdx(Math.min(clusterIdx, newClusters.length - 1));
-  };
-
-  const handleSkip = () => {
-    if (clusterIdx < clusters.length - 1) setClusterIdx(i => i + 1);
-  };
+  }, [currentCatalog, graduationStatus?.is_running, isStartingGraduationAnalysis, refreshGraduationStatus]);
 
   if (!currentCatalog) {
     return (
-      <div className="view-container">
-        <div className="empty-state">
-          <p>Selecione um evento para revisar.</p>
+      <div className={styles.root}>
+        <div className={styles.noCatalog}>
+          <UserCheck size={40} strokeWidth={1.5} style={{ opacity: 0.25 }} />
+          <p>Selecione um evento para começar a revisão.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="view-container">
-      <div className="view-header">
-        <div>
-          <h1>Revisão de Faces</h1>
-          <p className="view-subtitle">{clusters.length} grupo{clusters.length !== 1 ? 's' : ''} pendente{clusters.length !== 1 ? 's' : ''}</p>
+    <div className={styles.root}>
+      {/* Sidebar esquerda de clusters */}
+      <ReviewSidebar
+        clusters={clusters}
+        loading={loading}
+        selectedId={selected?.cluster_id ?? null}
+        graduationAnalysisRan={Boolean(graduationStatus?.result || graduationStatus?.finished_at)}
+        onSelect={setSelected}
+        onRefresh={load}
+      />
+
+      {/* Área principal */}
+      <div className={styles.main}>
+        <GraduationAnalysisPanel
+          status={graduationStatus}
+          isStarting={isStartingGraduationAnalysis}
+          onStart={handleStartGraduationAnalysis}
+        />
+        <AnimatePresence mode="wait">
+          {selected ? (
+            <ClusterDetail
+              key={selected.cluster_id}
+              cluster={selected}
+              catalog={currentCatalog}
+              onAssigned={handleAssigned}
+              onSkip={handleSkip}
+            />
+          ) : (
+            <WelcomeState
+              key="welcome"
+              count={clusters.length}
+              loading={loading}
+              onRefresh={load}
+            />
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+function GraduationAnalysisPanel({
+  status,
+  isStarting,
+  onStart,
+}: {
+  status: GraduationAnalysisStatus | null;
+  isStarting: boolean;
+  onStart: () => void;
+}) {
+  const isRunning = Boolean(status?.is_running);
+  const progress = Math.max(0, Math.min(100, (status?.progress ?? 0) * 100));
+  const hasResult = Boolean(status?.result);
+
+  return (
+    <div className={styles.analysisPanel}>
+      <div className={styles.analysisHeader}>
+        <div className={styles.analysisEyebrow}>
+          <Sparkles size={13} />
+          <span>Itens de formatura</span>
         </div>
-        <button className="icon-btn" onClick={load}>
-          <RefreshCw size={16} className={loading ? 'spin' : ''} />
+        <button
+          type="button"
+          className={styles.analysisButton}
+          onClick={onStart}
+          disabled={isRunning || isStarting}
+        >
+          {isRunning || isStarting ? (
+            <>
+              <RefreshCw size={13} className={styles.spin} />
+              Analisando...
+            </>
+          ) : (
+            'Analisar itens de formatura'
+          )}
         </button>
       </div>
 
-      {loading && clusters.length === 0 ? (
-        <div className="empty-state">
-          <RefreshCw size={32} className="spin" />
-          <p>Carregando grupos...</p>
-        </div>
-      ) : clusters.length === 0 ? (
-        <div className="empty-state">
-          <UserCheck size={48} opacity={0.3} />
-          <h3>Tudo identificado!</h3>
-          <p>Não há faces desconhecidas pendentes de revisão.</p>
-        </div>
-      ) : (
-        <div className="review-layout">
-          <div className="review-main">
-            {msg && <div className="review-msg">{msg}</div>}
+      <p className={styles.analysisStatus}>
+        {status?.error
+          ? status.error
+          : status?.status_text || 'Pronto para rodar a análise visual em segundo plano.'}
+      </p>
 
-            {cluster && (
-              <>
-                <div className="review-cluster-header">
-                  <button
-                    className="icon-btn"
-                    disabled={clusterIdx === 0}
-                    onClick={() => setClusterIdx(i => i - 1)}
-                  >
-                    <ChevronLeft size={18} />
-                  </button>
-                  <span>Grupo {clusterIdx + 1} de {clusters.length} — {cluster.faces.length} foto{cluster.faces.length !== 1 ? 's' : ''}</span>
-                  <button
-                    className="icon-btn"
-                    disabled={clusterIdx >= clusters.length - 1}
-                    onClick={() => setClusterIdx(i => i + 1)}
-                  >
-                    <ChevronRight size={18} />
-                  </button>
-                </div>
-
-                <div className="review-faces-grid">
-                  {cluster.faces.map((face: ClusterFace, i: number) => (
-                    <div key={i} className="review-face-card">
-                      <img
-                        src={api.faceThumbUrl(face.foto_path, face.x1, face.y1, face.x2, face.y2, 160)}
-                        alt={`face-${i}`}
-                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                <div className="review-identify">
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      className="review-name-input"
-                      placeholder="Nome do formando..."
-                      value={nameInput}
-                      onChange={e => setNameInput(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleIdentify()}
-                    />
-                    {suggestions.length > 0 && nameInput.length >= 2 && (
-                      <div className="suggestions-dropdown">
-                        {suggestions.map(s => (
-                          <button
-                            key={s}
-                            className="suggestion-item"
-                            onClick={() => { setNameInput(s); setSuggestions([]); }}
-                          >
-                            {s}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="review-actions">
-                    <button
-                      className="btn-primary"
-                      onClick={handleIdentify}
-                      disabled={saving || !nameInput.trim()}
-                    >
-                      <Check size={16} />
-                      {saving ? 'Salvando...' : 'Identificar'}
-                    </button>
-                    <button className="btn-secondary" onClick={handleSkip}>
-                      <X size={16} />
-                      Pular
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
+      {(isRunning || hasResult) && (
+        <div className={styles.analysisProgressWrap}>
+          <div className={styles.analysisProgressMeta}>
+            <span>{status?.processed ?? 0} / {status?.total ?? 0} fotos</span>
+            <span>{Math.round(progress)}%</span>
           </div>
-
-          <div className="review-sidebar">
-            <h3>Grupos Pendentes</h3>
-            <div className="review-cluster-list">
-              {clusters.map((c, i) => (
-                <button
-                  key={i}
-                  className={`review-cluster-btn ${i === clusterIdx ? 'active' : ''}`}
-                  onClick={() => setClusterIdx(i)}
-                >
-                  <div className="cluster-preview">
-                    {c.faces.slice(0, 3).map((f, fi) => (
-                      <img
-                        key={fi}
-                        src={api.faceThumbUrl(f.foto_path, f.x1, f.y1, f.x2, f.y2, 40)}
-                        alt=""
-                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                      />
-                    ))}
-                  </div>
-                  <span>{c.faces.length} foto{c.faces.length !== 1 ? 's' : ''}</span>
-                </button>
-              ))}
-            </div>
+          <div className={styles.analysisProgressTrack}>
+            <div className={styles.analysisProgressFill} style={{ width: `${progress}%` }} />
           </div>
         </div>
       )}
+
+      {!isRunning && status?.result && (
+        <div className={styles.analysisResult}>
+          {status.result.processed_files} foto{status.result.processed_files !== 1 ? 's' : ''} analisada{status.result.processed_files !== 1 ? 's' : ''} · {status.result.updated_faces} registro{status.result.updated_faces !== 1 ? 's' : ''} atualizado{status.result.updated_faces !== 1 ? 's' : ''}
+        </div>
+      )}
     </div>
+  );
+}
+
+function WelcomeState({
+  count,
+  loading,
+  onRefresh,
+}: {
+  count: number;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <motion.div
+      className={styles.welcome}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+    >
+      <div className={styles.welcomeInner}>
+        <div className={styles.welcomeOrb}>
+          {loading ? (
+            <RefreshCw size={32} strokeWidth={1.5} className={styles.spin} />
+          ) : count === 0 ? (
+            <UserCheck size={32} strokeWidth={1.5} />
+          ) : (
+            <UserCheck size={32} strokeWidth={1.5} />
+          )}
+        </div>
+
+        <h2 className={styles.welcomeTitle}>
+          {loading ? 'Calculando agrupamentos...' : count === 0 ? 'Tudo identificado!' : 'Revisão IA'}
+        </h2>
+
+        <p className={styles.welcomeSubtitle}>
+          {loading
+            ? 'A IA está analisando as faces similares...'
+            : count === 0
+            ? 'Nenhuma face desconhecida pendente neste evento.'
+            : `${count} grupo${count !== 1 ? 's' : ''} aguardando identificação. Selecione um grupo na barra lateral para começar.`}
+        </p>
+
+        {!loading && count > 0 && (
+          <div className={styles.welcomeHint}>
+            ← Selecione um grupo para revisar
+          </div>
+        )}
+
+        {!loading && count === 0 && (
+          <button className={styles.welcomeRefresh} onClick={onRefresh}>
+            <RefreshCw size={14} />
+            Recarregar
+          </button>
+        )}
+      </div>
+    </motion.div>
   );
 }

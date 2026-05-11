@@ -1,0 +1,181 @@
+/* ClusterToolbar — barra de controle entre hero e grid */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.01);
+  flex-wrap: wrap;
+}
+
+/* ── Select wrapper ── */
+.selectWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.sortPrefix {
+  font-size: 0.78rem;
+  color: #475569;
+  margin-right: 5px;
+  white-space: nowrap;
+}
+
+.select {
+  appearance: none;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  padding: 6px 28px 6px 10px;
+  cursor: pointer;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.select:hover,
+.select:focus {
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #e2e8f0;
+}
+
+.selectSort {
+  padding-left: 6px;
+}
+
+.selectIcon {
+  position: absolute;
+  right: 8px;
+  color: #475569;
+  pointer-events: none;
+}
+
+/* ── Selecionar melhores ── */
+.btnSelectBest {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #94a3b8;
+  font-size: 0.78rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+
+.btnSelectBest:hover {
+  color: #e2e8f0;
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ── Separator ── */
+.sep {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+/* ── View toggle ── */
+.viewToggle {
+  display: flex;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.viewBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.viewBtn:hover {
+  color: #94a3b8;
+}
+
+.viewBtnActive {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+
+/* ── Zoom slider ── */
+.zoomWrap {
+  display: flex;
+  align-items: center;
+}
+
+.zoomSlider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 80px;
+  height: 4px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  outline: none;
+  cursor: pointer;
+}
+
+.zoomSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.zoomSlider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* ── Generic icon button ── */
+.iconBtn {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  color: #475569;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.iconBtn:hover {
+  color: #94a3b8;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Counter (direita) ── */
+.counter {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: #475569;
+  white-space: nowrap;
+}

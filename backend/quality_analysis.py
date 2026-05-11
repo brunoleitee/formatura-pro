@@ -84,12 +84,12 @@ def update_blur_cache(key, value):
 
 def get_blur_label(score, settings):
     if score is None:
-        return "Não analisada"
+        return None
     if score < settings["blur_blurry_threshold"]:
-        return "Possivelmente desfocada"
+        return "blurry"
     if score < settings["blur_attention_threshold"]:
-        return "Atenção"
-    return "Nítida"
+        return "attention"
+    return "ok"
 
 
 def get_blur_info(path, img_np=None):
@@ -116,16 +116,16 @@ def get_blur_info(path, img_np=None):
         settings = _load_quality_settings()
         if score < settings["blur_blurry_threshold"]:
             status = "blurry"
-            label = "Possivelmente desfocada"
+            label = "blurry"
         elif score < settings["blur_attention_threshold"]:
             status = "attention"
-            label = "Atenção"
+            label = "attention"
         else:
             status = "sharp"
-            label = "Nítida"
+            label = "ok"
         result = {"blur_score": round(score, 1), "blur_status": status, "blur_label": label}
         update_blur_cache(key, result)
         return result
     except Exception:
-        return {"blur_score": None, "blur_status": "unknown", "blur_label": "Não analisada"}
+        return {"blur_score": None, "blur_status": "unknown", "blur_label": None}
 

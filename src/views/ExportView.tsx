@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { Component, type ErrorInfo, type ReactNode, useState, useEffect, useCallback } from 'react';
 import { Download, FolderOpen, RefreshCw, Check, Users } from 'lucide-react';
 import { api, type Person, type ExportStatus } from '../services/api';
 import { useApp } from '../context/AppContext';
@@ -6,7 +6,45 @@ import { useApp } from '../context/AppContext';
 type ExportMode = 'copy' | 'move';
 type ConflictStrategy = 'copy' | 'skip' | 'overwrite';
 
+class ExportViewBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[ExportViewBoundary] render crash:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="view-container">
+          <div className="view-header">
+            <div>
+              <h1>Exportar Fotos</h1>
+              <div className="view-subtitle">A aba de exportação encontrou um erro e foi recarregada em modo seguro.</div>
+            </div>
+          </div>
+          <div className="error-msg">Reabra a aba Exportar ou atualize a tela para tentar novamente.</div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export default function ExportView() {
+  return (
+    <ExportViewBoundary>
+      <ExportViewContent />
+    </ExportViewBoundary>
+  );
+}
+
+function ExportViewContent() {
   const { currentCatalog } = useApp();
   const [people, setPeople] = useState<Person[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -32,6 +70,14 @@ export default function ExportView() {
   }, [currentCatalog]);
 
   useEffect(() => { loadPeople(); }, [loadPeople]);
+
+  useEffect(() => {
+    setSelected(new Set());
+    setStatus(null);
+    setPolling(false);
+    setSearch('');
+    setError('');
+  }, [currentCatalog]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -63,7 +109,40 @@ export default function ExportView() {
     });
   };
 
-  const selectAll = () => setSelected(new Set(filtered.map(p => p.id)));
+  const getPersonId = (person: Person) => person.id || person.name || 'Sem_Nome';
+  const getPersonLabel = (person: Person) => person.name || person.id || 'Sem nome';
+  const initialsFromName = (name: string) => {
+    const parts = name
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2);
+    if (parts.length === 0) return '';
+    return parts.map((part) => part.charAt(0).toUpperCase()).join('');
+  };
+  const getAvatarLabel = (person: Person, index: number) => {
+    if (person.name) {
+      const initials = initialsFromName(person.name);
+      if (initials) return initials;
+    }
+    return String(index + 1).padStart(2, '0');
+  };
+  const getAvatarSrc = (person: Person) => {
+    if (!person.cover_path) return null;
+    if (person.cover_box) {
+      return api.faceThumbUrl(
+        person.cover_path,
+        person.cover_box[0],
+        person.cover_box[1],
+        person.cover_box[2],
+        person.cover_box[3],
+        96
+      );
+    }
+    return api.thumbUrl(person.cover_path, 96);
+  };
+
+  const selectAll = () => setSelected(new Set(filtered.map(getPersonId)));
   const clearAll = () => setSelected(new Set());
 
   const handleExport = async () => {
@@ -83,22 +162,82 @@ export default function ExportView() {
   );
 
   const isExporting = status?.is_exporting ?? false;
+  const selectionSummary = `${selected.size} de ${people.length} selecionado${selected.size !== 1 ? 's' : ''}`;
+  const exportButtonLabel = isExporting ? 'Exportando...' : `Exportar${selected.size > 0 ? ` (${selected.size})` : ''}`;
+  const exportSuccessLabel = 'Exportação concluída com sucesso!';
+
+  const getRowStyle = (isSelected: boolean) => ({
+    width: '100%',
+    minHeight: 56,
+    borderRadius: 12,
+    border: isSelected ? '1px solid rgba(96, 165, 250, 0.85)' : '1px solid rgba(255,255,255,0.04)',
+    background: isSelected
+      ? 'linear-gradient(180deg, rgba(37,99,235,0.18), rgba(37,99,235,0.10))'
+      : 'transparent',
+    boxShadow: isSelected
+      ? '0 0 0 1px rgba(59,130,246,0.18) inset, 0 10px 24px rgba(37,99,235,0.14)'
+      : 'none',
+    padding: '10px 12px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    textAlign: 'left' as const,
+    cursor: 'pointer',
+    transition: 'background 140ms ease, border-color 140ms ease, box-shadow 140ms ease',
+    outline: 'none',
+  });
+
+  const getAvatarStyle = (isSelected: boolean) => ({
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    background: isSelected
+      ? 'linear-gradient(180deg, rgba(96,165,250,0.26), rgba(59,130,246,0.16))'
+      : 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))',
+    border: isSelected ? '1px solid rgba(96,165,250,0.32)' : '1px solid rgba(255,255,255,0.06)',
+    color: isSelected ? '#dbeafe' : 'rgba(255,255,255,0.88)',
+    fontSize: '0.78rem',
+    fontWeight: 700,
+    letterSpacing: '0.02em',
+  });
+
+  const getCheckStyle = (isSelected: boolean) => ({
+    width: 18,
+    height: 18,
+    borderRadius: 6,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    border: isSelected ? '1px solid rgba(96,165,250,0.44)' : '1px solid rgba(255,255,255,0.06)',
+    background: isSelected ? 'rgba(59,130,246,0.18)' : 'rgba(255,255,255,0.02)',
+    color: isSelected ? '#bfdbfe' : 'transparent',
+    boxShadow: isSelected ? '0 0 14px rgba(59,130,246,0.16)' : 'none',
+    transition: 'all 140ms ease',
+  });
 
   return (
-    <div className="view-container">
+    <div className="view-container notranslate" translate="no">
       <div className="view-header">
         <div>
           <h1>Exportar Fotos</h1>
-          <p className="view-subtitle">Organize as fotos por formando em pastas</p>
+          <div className="view-subtitle">
+            <span>Organize as fotos por formando em pastas</span>
+          </div>
         </div>
       </div>
 
-      {error && <p className="error-msg">{error}</p>}
+      {error && <div className="error-msg"><span>{error}</span></div>}
 
       {!!status?.export_summary && !isExporting && (
         <div className="export-summary">
           <Check size={20} color="var(--success-color)" />
-          <span>Exportação concluída com sucesso!</span>
+          <span>{exportSuccessLabel}</span>
           <button className="icon-btn" onClick={async () => {
             await api.clearExportSummary();
             setStatus(null);
@@ -109,7 +248,7 @@ export default function ExportView() {
       {isExporting && status && (
         <div className="export-progress-bar-wrap">
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-            <span style={{ fontSize: '0.85rem' }}>{status.status_text}</span>
+            <span style={{ fontSize: '0.85rem' }}>{String(status.status_text || '')}</span>
             <span style={{ fontSize: '0.85rem' }}>{Math.round(status.progress)}%</span>
           </div>
           <div className="progress-track">
@@ -128,10 +267,11 @@ export default function ExportView() {
               onChange={e => setSearch(e.target.value)}
             />
             <button className="btn-secondary" onClick={selectAll} style={{ whiteSpace: 'nowrap' }}>
-              <Users size={14} /> Todos
+              <Users size={14} />
+              <span>Todos</span>
             </button>
             <button className="btn-secondary" onClick={clearAll} style={{ whiteSpace: 'nowrap' }}>
-              Limpar
+              <span>Limpar</span>
             </button>
           </div>
 
@@ -140,23 +280,79 @@ export default function ExportView() {
               <RefreshCw size={24} className="spin" />
             </div>
           ) : (
-            <div className="export-person-list">
-              {filtered.map(p => (
-                <label key={p.id} className={`export-person-row ${selected.has(p.id) ? 'selected' : ''}`}>
-                  <input
-                    type="checkbox"
-                    checked={selected.has(p.id)}
-                    onChange={() => toggleSelect(p.id)}
-                  />
-                  <span className="person-name">{p.name}</span>
-                  <span className="person-count">{p.total_photos} fotos</span>
-                </label>
-              ))}
+            <div className="export-person-list" style={{ gap: 8, paddingRight: 4 }}>
+              {filtered.map((p, index) => {
+                const personId = getPersonId(p);
+                const isSelected = selected.has(personId);
+                const photoCountLabel = `${p.total_photos} fotos`;
+                const avatarSrc = getAvatarSrc(p);
+                const avatarLabel = getAvatarLabel(p, index);
+
+                return (
+                  <button
+                    type="button"
+                    key={personId}
+                    className={`export-person-row ${isSelected ? 'selected' : ''}`}
+                    onClick={() => toggleSelect(personId)}
+                    aria-pressed={isSelected}
+                    style={getRowStyle(isSelected)}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
+                      <span aria-hidden="true" style={{ ...getAvatarStyle(isSelected), overflow: 'hidden' }}>
+                        {avatarSrc ? (
+                          <img
+                            src={avatarSrc}
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                              display: 'block',
+                            }}
+                          />
+                        ) : (
+                          avatarLabel
+                        )}
+                      </span>
+                      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
+                        <span
+                          className="person-name"
+                          style={{
+                            fontSize: '0.9rem',
+                            fontWeight: 600,
+                            color: 'var(--text-primary)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          <span>{getPersonLabel(p)}</span>
+                        </span>
+                        <span
+                          className="person-count"
+                          style={{
+                            fontSize: '0.74rem',
+                            color: isSelected ? 'rgba(191,219,254,0.88)' : 'var(--text-secondary)',
+                            letterSpacing: '0.01em',
+                          }}
+                        >
+                          <span>{photoCountLabel}</span>
+                        </span>
+                      </span>
+                    </span>
+                    <span aria-hidden="true" style={getCheckStyle(isSelected)}>
+                      <Check size={12} strokeWidth={2.4} />
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
-          <p className="export-selection-count">
-            {selected.size} de {people.length} selecionado{selected.size !== 1 ? 's' : ''}
-          </p>
+          <div className="export-selection-count">
+            <span>{selectionSummary}</span>
+          </div>
         </div>
 
         <div className="export-config-panel">
@@ -237,7 +433,7 @@ export default function ExportView() {
               <RefreshCw size={16} className="spin" style={{ display: isExporting ? 'block' : 'none' }} />
               <Download size={16} style={{ display: isExporting ? 'none' : 'block' }} />
             </span>
-            {isExporting ? 'Exportando...' : `Exportar${selected.size > 0 ? ` (${selected.size})` : ''}`}
+            <span>{exportButtonLabel}</span>
           </button>
         </div>
       </div>

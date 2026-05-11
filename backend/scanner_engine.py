@@ -404,29 +404,42 @@ def run_scanner_worker(req):
                                 continue
                             valid_faces.append((face, x1, y1, x2, y2, area))
 
-                        largest_face_area = max((face_data[5] for face_data in valid_faces), default=0)
-                        for face, x1, y1, x2, y2, area in valid_faces:
-                            if is_background_face(x1, y1, x2, y2, largest_face_area, img.shape, len(valid_faces)):
-                                scan_state["skipped_background_faces"] += 1
-                                continue
-                            total_faces_found += 1
-                            emb = face.embedding.astype("float32")
-                            norm = np.linalg.norm(emb)
-                            if norm == 0:
-                                continue
-                            emb = emb / norm
-                            ref_name, ref_sim = find_best_reference(emb)
-                            if ref_name is not None and ref_sim >= _cfg["ref_match_threshold"]:
-                                nome = ref_name
-                                scan_state["total_matches"] += 1
-                            else:
-                                nome = find_or_create_cluster(emb)
-                                scan_state["total_clusters"] = len(_cfg["cluster_names"])
+                        # Calcular blur uma vez por foto
+                        blur_info = _cfg["get_blur_info"](p, img) if _cfg.get("get_blur_info") else {}
+                        b_score = blur_info.get("blur_score")
+                        b_status = blur_info.get("blur_status")
+
+                        if not valid_faces:
+                            # Inserir entrada dummy para rastrear a foto mesmo sem faces
                             cur.execute(
-                                "INSERT OR IGNORE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2, photo_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                (nome, p, x1, y1, x2, y2, photo_hash),
+                                "INSERT OR IGNORE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                ("Sem Rostos", p, None, None, None, None, photo_hash, b_score, b_status),
                             )
-                            cur.execute("INSERT OR IGNORE INTO alunos VALUES (?, ?)", (nome, "n/a"))
+                        else:
+                            largest_face_area = max((face_data[5] for face_data in valid_faces), default=0)
+                            for face, x1, y1, x2, y2, area in valid_faces:
+                                if is_background_face(x1, y1, x2, y2, largest_face_area, img.shape, len(valid_faces)):
+                                    scan_state["skipped_background_faces"] += 1
+                                    continue
+                                total_faces_found += 1
+                                emb = face.embedding.astype("float32")
+                                norm = np.linalg.norm(emb)
+                                if norm == 0:
+                                    continue
+                                emb = emb / norm
+                                ref_name, ref_sim = find_best_reference(emb)
+                                if ref_name is not None and ref_sim >= _cfg["ref_match_threshold"]:
+                                    nome = ref_name
+                                    scan_state["total_matches"] += 1
+                                else:
+                                    nome = find_or_create_cluster(emb)
+                                    scan_state["total_clusters"] = len(_cfg["cluster_names"])
+                                
+                                cur.execute(
+                                    "INSERT OR IGNORE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                    (nome, p, x1, y1, x2, y2, photo_hash, b_score, b_status),
+                                )
+                                cur.execute("INSERT OR IGNORE INTO alunos VALUES (?, ?)", (nome, "n/a"))
                             current_time = time.time()
                             if current_time - last_face_update_time > 0.5:
                                 new_face = {"name": nome, "path": p, "box": [x1, y1, x2, y2]}

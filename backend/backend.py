@@ -211,6 +211,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Handler global de exceções: garante que erros 500 saiam como JSONResponse
+# e não como connection-reset, o que faz o browser bloquear por CORS.
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logging.error(f"[global_exception_handler] {request.method} {request.url.path} → {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"ok": False, "error": str(exc), "detail": "Erro interno no servidor"},
+    )
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RUNTIME_DIR = getattr(sys, "_MEIPASS", BASE_DIR)
 DATA_DIR = get_writable_app_dir()
@@ -395,6 +405,21 @@ manual_search_state = {
     "cancel_requested": False
 }
 
+graduation_analysis_state = {
+    "is_running": False,
+    "running": False,
+    "progress": 0.0,
+    "processed": 0,
+    "total": 0,
+    "updated": 0,
+    "status_text": "Inativo",
+    "catalog": "",
+    "result": None,
+    "error": None,
+    "started_at": None,
+    "finished_at": None,
+}
+
 quality_audit_state = {
     "is_auditing": False,
     "progress": 0.0,
@@ -483,6 +508,7 @@ def configure_modules():
         backup_catalog_db=backup_catalog_db,
         get_db=get_db,
         get_current_catalog=lambda: AppState.current_catalog,
+        sanitize_catalog_name=sanitize_catalog_name,
         face_box_area=se.face_box_area,
         ensure_face_engine=se.ensure_face_engine,
         imread_unicode=se.imread_unicode,
@@ -498,6 +524,8 @@ def configure_modules():
         clear_embedding_cache=clear_embedding_cache,
         thumb_cache_dir=THUMB_CACHE_DIR,
         manual_search_state=lambda: manual_search_state,
+        graduation_analysis_state=lambda: graduation_analysis_state,
+        log_info=log_info,
     )
 
     am.configure(
@@ -669,6 +697,34 @@ def sanitize_catalog_name(name):
         raise HTTPException(400, "Nome de catalogo vazio ou invalido")
     return cleaned
 
+def _table_exists(conn, table_name):
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND lower(name) = lower(?) LIMIT 1",
+        (table_name,),
+    )
+    return cur.fetchone() is not None
+
+
+def _table_columns(conn, table_name):
+    cur = conn.cursor()
+    cur.execute(f"PRAGMA table_info({table_name})")
+    return [row["name"] for row in cur.fetchall()]
+
+
+def _safe_add_column(conn, table_name, column_name, definition):
+    if not _table_exists(conn, table_name):
+        return False
+    columns = _table_columns(conn, table_name)
+    if column_name in columns:
+        return False
+    try:
+        conn.cursor().execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+        return True
+    except Exception:
+        return False
+
+
 def ensure_quality_columns(conn):
     c = conn.cursor()
     c.execute("PRAGMA table_info(ocorrencias)")
@@ -689,6 +745,50 @@ def ensure_quality_columns(conn):
     if 'photo_hash' not in columns:
         c.execute("ALTER TABLE ocorrencias ADD COLUMN photo_hash TEXT")
         modified = True
+    if 'has_gown' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN has_gown INTEGER")
+        modified = True
+    if 'has_diploma' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN has_diploma INTEGER")
+        modified = True
+    if 'has_sash' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN has_sash INTEGER")
+        modified = True
+    if 'has_cap' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN has_cap INTEGER")
+        modified = True
+    if 'face_front_score' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN face_front_score REAL")
+        modified = True
+    if 'graduation_score' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN graduation_score REAL")
+        modified = True
+    if 'graduation_tags' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN graduation_tags TEXT")
+        modified = True
+    if modified:
+        conn.commit()
+
+
+def ensure_graduation_columns(conn):
+    modified = False
+    graduation_defs = (
+        ("has_gown", "INTEGER DEFAULT 0"),
+        ("has_diploma", "INTEGER DEFAULT 0"),
+        ("has_sash", "INTEGER DEFAULT 0"),
+        ("has_cap", "INTEGER DEFAULT 0"),
+        ("graduation_tags", "TEXT DEFAULT '[]'"),
+        ("graduation_score", "REAL DEFAULT 0"),
+        ("graduation_analyzed_at", "TEXT"),
+    )
+
+    for table_name in ("photos", "fotos", "ocorrencias"):
+        if not _table_exists(conn, table_name):
+            continue
+        for column_name, definition in graduation_defs:
+            if _safe_add_column(conn, table_name, column_name, definition):
+                modified = True
+
     if modified:
         conn.commit()
 
@@ -722,10 +822,19 @@ class DbConnection:
                 y2 INTEGER,
                 blur_score REAL,
                 blur_status TEXT,
-                closed_eyes INTEGER
+                closed_eyes INTEGER,
+                has_gown INTEGER,
+                has_diploma INTEGER,
+                has_sash INTEGER,
+                has_cap INTEGER,
+                face_front_score REAL,
+                graduation_score REAL,
+                graduation_tags TEXT DEFAULT '[]',
+                graduation_analyzed_at TEXT
             )
         """)
         ensure_quality_columns(self.conn)
+        ensure_graduation_columns(self.conn)
         c.execute("""
             CREATE TABLE IF NOT EXISTS alunos (
                 aluno_id TEXT PRIMARY KEY,
@@ -778,6 +887,19 @@ class DbConnection:
             )
         """)
         c.execute("CREATE INDEX IF NOT EXISTS idx_face_embeddings_path ON face_embeddings(foto_path)")
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS unknown_face_clusters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cluster_id TEXT NOT NULL,
+                face_id INTEGER,
+                original_path TEXT,
+                confidence REAL,
+                created_at REAL DEFAULT (strftime('%s','now')),
+                updated_at REAL DEFAULT (strftime('%s','now'))
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ufc_cluster_id ON unknown_face_clusters(cluster_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ufc_original_path ON unknown_face_clusters(original_path)")
         try:
             c.execute("""
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_ocor_unique
@@ -962,6 +1084,78 @@ def get_unknown_clusters(
     limit: int = 80
 ):
     return rm.get_unknown_clusters(catalog, min_score, min_cluster_size, limit)
+
+@app.get("/api/review/unknown-clusters")
+def get_review_unknown_clusters(
+    catalog: str = "",
+    min_score: float = 0.58,
+    min_cluster_size: int = 2,
+    limit: int = 100
+):
+    return rm.get_unknown_clusters(catalog, min_score, min_cluster_size, limit)
+
+AssignUnknownClusterRequest = rm.AssignUnknownClusterRequest
+GraduationAnalysisRequest = rm.GraduationAnalysisRequest
+
+@app.post("/api/review/unknown-clusters/assign")
+def assign_cluster(req: AssignUnknownClusterRequest):
+    payload = req.model_dump() if hasattr(req, "model_dump") else req.dict()
+    print("[assign_unknown_cluster] payload:", payload, flush=True)
+    try:
+        return rm.assign_cluster(req)
+    except HTTPException as e:
+        return JSONResponse(
+            status_code=e.status_code,
+            content={
+                "ok": False,
+                "error": "assign_unknown_cluster_http_error",
+                "detail": str(e.detail),
+            },
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        logging.getLogger(__name__).exception("[assign_unknown_cluster] erro")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "ok": False,
+                "error": "assign_unknown_cluster_failed",
+                "detail": str(e),
+            },
+        )
+
+@app.post("/api/review/graduation-analysis/start")
+def start_graduation_analysis(req: GraduationAnalysisRequest):
+    try:
+        return rm.start_graduation_analysis(req)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.getLogger(__name__).exception("[graduation_analysis_start] erro")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "ok": False,
+                "error": "graduation_analysis_start_failed",
+                "detail": str(e),
+            },
+        )
+
+@app.get("/api/review/graduation-analysis/status")
+def get_graduation_analysis_status(catalog: str = ""):
+    try:
+        return rm.get_graduation_analysis_status(catalog)
+    except Exception as e:
+        logging.getLogger(__name__).exception("[graduation_analysis_status] erro")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "ok": False,
+                "error": "graduation_analysis_status_failed",
+                "detail": str(e),
+            },
+        )
 
 @app.get("/api/culling/analyze/{aluno_id}")
 def analyze_culling(aluno_id: str, catalog: str = ""):
