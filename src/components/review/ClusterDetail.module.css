@@ -46,10 +46,22 @@
   border-radius: 6px;
 }
 
-/* ── Grid de fotos ── */
-.grid {
+/* ── MODO FOTO: Lightroom Review Style ── */
+/* --grid-item-size e --photo-img-h são injetados via style inline em ClusterDetail */
+.clusterGridPhoto {
   display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--grid-item-size, 240px), 1fr));
+  gap: 12px;
+  align-items: start;
+  align-content: start;
+}
+
+/* ── MODO ROSTO: Tonfotos Dense Grid ── */
+.clusterGridFace {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--grid-item-size, 170px), 1fr));
   gap: 10px;
+  align-items: start;
   align-content: start;
 }
 

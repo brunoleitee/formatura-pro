@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef, type CSSProperties } from 'react';
 import type { RichCluster, RichClusterFace } from '../../services/api';
 import ClusterHero, { type ClusterHeroHandle } from './ClusterHero';
 import ClusterStatsPanel from './ClusterStatsPanel';
@@ -8,7 +8,8 @@ import { PhotoCard } from './PhotoCard';
 import { GraduationActions, type GraduationActionsHandle, type GraduationItem } from './GraduationActions';
 import styles from './ClusterDetail.module.css';
 
-const ZOOM_DEFAULT = 200;
+const ZOOM_FACE_DEFAULT = 170;
+const ZOOM_PHOTO_DEFAULT = 240;
 
 interface ClusterDetailProps {
   cluster: RichCluster;
@@ -53,7 +54,7 @@ export default function ClusterDetail({
   const [filter, setFilter] = useState<FilterOption>('all');
   const [sort, setSort] = useState<SortOption>('best_match');
   const [viewMode, setViewMode] = useState<ViewMode>('face');
-  const [zoom, setZoom] = useState(ZOOM_DEFAULT); // altura dos cards em px
+  const [zoom, setZoom] = useState(ZOOM_FACE_DEFAULT);
   const [collapsed, setCollapsed] = useState(false);
   const heroRef = useRef<ClusterHeroHandle>(null);
   const graduationRef = useRef<GraduationActionsHandle>(null);
@@ -64,6 +65,11 @@ export default function ClusterDetail({
     setFilter('all');
     setSort('best_match');
   }, [cluster.cluster_id]);
+
+  // Resetar zoom ao trocar modo: cada modo tem seu default próprio
+  useEffect(() => {
+    setZoom(viewMode === 'photo' ? ZOOM_PHOTO_DEFAULT : ZOOM_FACE_DEFAULT);
+  }, [viewMode]);
 
   useEffect(() => {
     function isTypingInField(target: EventTarget | null): boolean {
@@ -117,9 +123,10 @@ export default function ClusterDetail({
     setSelected(new Set(best.length > 0 ? best : cluster.faces.map(f => f.rowid)));
   }, [cluster.faces]);
 
-  const cardHeight = zoom;
-  const colWidth = Math.round(zoom * 1.33);
-  const thumbSize = zoom > 200 ? 600 : 400;
+  // thumbSize baseado no zoom (qualidade da thumbnail)
+  const thumbSize = zoom >= 240 ? 600 : 400;
+  // Altura da imagem em modo FOTO: proporcional ao tamanho da coluna (~85%)
+  const photoImgH = Math.round(zoom * 0.85);
 
   return (
     <div className={styles.root} key={cluster.cluster_id} translate="no">
@@ -170,10 +177,11 @@ export default function ClusterDetail({
       {/* ── Grid de fotos (prioridade visual) ── */}
       <div className={styles.gridScroll}>
         <div
-          className={styles.grid}
+          className={viewMode === 'photo' ? styles.clusterGridPhoto : styles.clusterGridFace}
           style={{
-            gridTemplateColumns: `repeat(auto-fill, minmax(${colWidth}px, 1fr))`,
-          }}
+            '--grid-item-size': `${zoom}px`,
+            '--photo-img-h': `${photoImgH}px`,
+          } as CSSProperties}
         >
           {visibleFaces.map(face => (
             <PhotoCard
@@ -182,7 +190,6 @@ export default function ClusterDetail({
               selected={selected.has(face.rowid)}
               onToggle={() => toggleSelect(face.rowid)}
               thumbSize={thumbSize}
-              cardHeight={cardHeight}
               viewMode={viewMode}
             />
           ))}

@@ -1,4 +1,4 @@
-import { memo, useState, type CSSProperties } from 'react';
+import { memo, useState } from 'react';
 import { Check } from 'lucide-react';
 import type { RichClusterFace } from '../../services/api';
 import { API_BASE } from '../../services/api/core';
@@ -34,7 +34,6 @@ interface PhotoCardProps {
   selected: boolean;
   onToggle: () => void;
   thumbSize?: number;
-  cardHeight?: number;
   viewMode?: 'photo' | 'face';
 }
 
@@ -43,28 +42,27 @@ export const PhotoCard = memo(function PhotoCard({
   selected,
   onToggle,
   thumbSize = 400,
-  cardHeight = 200,
   viewMode = 'face',
 }: PhotoCardProps) {
   const [loaded, setLoaded] = useState(false);
   const badges = getBadges(face);
+  const modeClass = viewMode === 'photo' ? styles.photoCardPhotoMode : styles.photoCardFaceMode;
 
   return (
     <div
-      className={`${styles.card} ${selected ? styles.selected : ''} ${viewMode === 'photo' ? styles.modePhoto : styles.modeFace}`}
-      style={{ '--card-h': `${cardHeight}px` } as CSSProperties}
+      className={`${styles.photoCard} ${modeClass} ${selected ? styles.selected : ''}`}
       onClick={onToggle}
       translate="no"
     >
-      {/* Foto completa com face centering */}
-      <div className={styles.imgWrap}>
+      {/* Wrapper da imagem — define altura/aspecto por modo */}
+      <div className={styles.photoCardImageWrap}>
         {!loaded && <div className={styles.skeleton} />}
         <img
           src={thumbUrl(face, thumbSize, viewMode)}
           alt=""
           loading="lazy"
           decoding="async"
-          className={`${styles.img} ${loaded ? styles.visible : ''}`}
+          className={`${styles.photoCardImage} ${loaded ? styles.visible : ''}`}
           onLoad={() => setLoaded(true)}
           onError={e => {
             (e.currentTarget as HTMLImageElement).style.opacity = '0';
@@ -73,19 +71,19 @@ export const PhotoCard = memo(function PhotoCard({
         />
       </div>
 
-      {/* Badge "Melhor match" (topo esquerdo) */}
+      {/* Badge "Melhor match" */}
       <div className={`${styles.badgeBestMatch} ${face.is_representative ? styles.badgeVisible : styles.badgeHidden}`}>
         <span>Melhor match</span>
       </div>
 
-      {/* Checkmark de seleção (topo direito) */}
+      {/* Checkmark de seleção */}
       <div className={`${styles.checkArea} ${selected ? styles.checkAreaSelected : ''}`}>
         <span className={selected ? styles.checkVisible : styles.checkHidden}>
-          <Check size={12} strokeWidth={3} />
+          <Check size={11} strokeWidth={3} />
         </span>
       </div>
 
-      {/* Badges de qualidade (rodapé) */}
+      {/* Badges de qualidade */}
       <div className={`${styles.badgesRow} ${badges.length > 0 ? styles.badgesVisible : styles.badgesHidden}`}>
         {badges.map(b => (
           <span key={b.label} className={`${styles.badge} ${styles[b.variant]}`}>

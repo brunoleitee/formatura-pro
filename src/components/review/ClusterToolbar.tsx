@@ -44,6 +44,10 @@ export default function ClusterToolbar({
   onZoom,
   onSelectBest,
 }: ClusterToolbarProps) {
+  // Ranges por modo: FOTO controla largura da coluna (240-380px), ROSTO controla tamanho do quadrado (130-280px)
+  const zoomMin = viewMode === 'photo' ? 180 : 120;
+  const zoomMax = viewMode === 'photo' ? 380 : 280;
+  const zoomStep = viewMode === 'photo' ? 20 : 10;
   return (
     <div className={styles.toolbar}>
       {/* Filtro */}
@@ -108,10 +112,10 @@ export default function ClusterToolbar({
       <div className={styles.zoomWrap}>
         <input
           type="range"
-          min={140}
-          max={280}
-          step={20}
-          value={zoom}
+          min={zoomMin}
+          max={zoomMax}
+          step={zoomStep}
+          value={Math.max(zoomMin, Math.min(zoomMax, zoom))}
           onChange={e => onZoom(Number(e.target.value))}
           className={styles.zoomSlider}
           title={`Altura: ${zoom}px`}
