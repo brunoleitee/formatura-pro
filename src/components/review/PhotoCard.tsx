@@ -58,6 +58,8 @@ export const PhotoCard = memo(function PhotoCard({
       className={`${styles.photoCard} ${modeClass} ${selected ? styles.selected : ''}`}
       onClick={onToggle}
       translate="no"
+      data-selectable-card="true"
+      data-rowid={face.rowid}
     >
       {/* Wrapper da imagem — define altura/aspecto por modo */}
       <div className={styles.photoCardImageWrap}>
@@ -77,19 +79,19 @@ export const PhotoCard = memo(function PhotoCard({
       </div>
 
       {/* Badge "Melhor match" */}
-      <div className={`${styles.badgeBestMatch} ${face.is_representative ? styles.badgeVisible : styles.badgeHidden}`}>
+      <div className={`${styles.badgeBestMatch} ${face.is_representative ? styles.badgeVisible : styles.badgeHidden}`} data-interactive="true">
         <span>Melhor match</span>
       </div>
 
       {/* Checkmark de seleção */}
-      <div className={`${styles.checkArea} ${selected ? styles.checkAreaSelected : ''}`}>
+      <div className={`${styles.checkArea} ${selected ? styles.checkAreaSelected : ''}`} data-interactive="true">
         <span className={selected ? styles.checkVisible : styles.checkHidden}>
           <Check size={11} strokeWidth={3} />
         </span>
       </div>
 
       {/* Badges de qualidade */}
-      <div className={`${styles.badgesRow} ${badges.length > 0 ? styles.badgesVisible : styles.badgesHidden}`}>
+      <div className={`${styles.badgesRow} ${badges.length > 0 ? styles.badgesVisible : styles.badgesHidden}`} data-interactive="true">
         {badges.map(b => (
           <span key={b.label} className={`${styles.badge} ${styles[b.variant]}`}>
             {b.label}

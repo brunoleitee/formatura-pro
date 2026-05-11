@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef, type CSSProperties } from 'react';
 import type { RichCluster, RichClusterFace } from '../../services/api';
+import { useDragSelection } from '../../hooks/useDragSelection';
 import ClusterHero, { type ClusterHeroHandle } from './ClusterHero';
 import ClusterStatsPanel from './ClusterStatsPanel';
 import ClusterToolbar from './ClusterToolbar';
@@ -58,6 +59,7 @@ export default function ClusterDetail({
   const [collapsed, setCollapsed] = useState(false);
   const heroRef = useRef<ClusterHeroHandle>(null);
   const graduationRef = useRef<GraduationActionsHandle>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   // Reset ao mudar cluster
   useEffect(() => {
@@ -105,6 +107,14 @@ export default function ClusterDetail({
   const visibleFaces = useMemo(() =>
     sortFaces(filterFaces(cluster.faces, filter), sort),
     [cluster.faces, filter, sort]
+  );
+
+  const { isSelecting, selectionBox, handleMouseDown } = useDragSelection(
+    gridRef,
+    (face: RichClusterFace) => face.rowid,
+    selected,
+    setSelected,
+    visibleFaces
   );
 
   const toggleSelect = useCallback((rowid: number) => {
@@ -177,11 +187,13 @@ export default function ClusterDetail({
       {/* ── Grid de fotos (prioridade visual) ── */}
       <div className={styles.gridScroll}>
         <div
-          className={viewMode === 'photo' ? styles.clusterGridPhoto : styles.clusterGridFace}
+          ref={gridRef}
+          className={`${styles.gridHost} ${viewMode === 'photo' ? styles.clusterGridPhoto : styles.clusterGridFace}`}
           style={{
             '--grid-item-size': `${zoom}px`,
             '--photo-img-h': `${photoImgH}px`,
           } as CSSProperties}
+          onMouseDown={handleMouseDown}
         >
           {visibleFaces.map(face => (
             <PhotoCard
@@ -193,6 +205,19 @@ export default function ClusterDetail({
               viewMode={viewMode}
             />
           ))}
+
+          {/* ── Selection Box Overlay ── */}
+          {selectionBox && (
+            <div
+              className={styles.selectionBox}
+              style={{
+                left: `${selectionBox.x}px`,
+                top: `${selectionBox.y}px`,
+                width: `${selectionBox.width}px`,
+                height: `${selectionBox.height}px`,
+              }}
+            />
+          )}
         </div>
 
         {visibleFaces.length === 0 && (
