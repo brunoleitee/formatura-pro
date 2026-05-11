@@ -30,6 +30,13 @@ function PhotoThumb({ photo }: { photo: Photo }) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
 
+  console.log('[quality-debug]', photo.name, {
+    blur_label: photo.blur_label,
+    blur_status: photo.blur_status,
+    blur_score: photo.blur_score,
+    closed_eyes: photo.closed_eyes
+  });
+
   return (
     <div className="photo-img-placeholder">
       {!hasError && (
@@ -212,6 +219,15 @@ export default function PhotosView() {
           ) : (
             <div className="photo-grid">
               {filtered.map((photo, i) => {
+                if (i === 0) {
+                  console.log('[quality-debug] sample photos:', filtered.slice(0, 3).map(p => ({
+                    name: p.name,
+                    blur_label: p.blur_label,
+                    blur_status: p.blur_status,
+                    blur_score: p.blur_score,
+                    closed_eyes: p.closed_eyes
+                  })));
+                }
                 const isMapped = isPhotoMapped(photo);
                 const knownNames = (photo.faces ?? []).filter(isKnownFace).map(f => f.aluno_id).filter((v, idx, a) => a.indexOf(v) === idx);
                 const firstName = knownNames.length > 0 ? knownNames.join(', ') : 'Não mapeada';
