@@ -3,6 +3,8 @@ import { Users, RefreshCw, Edit2, Trash2, ChevronRight, Check, X } from 'lucide-
 import { api, type Person } from '../services/api';
 import { useApp } from '../context/AppContext';
 
+type FilterType = 'identified' | 'unknown' | 'all';
+
 export default function PeopleView() {
   const { currentCatalog, navigate, refreshKey } = useApp();
   const [people, setPeople] = useState<Person[]>([]);
@@ -11,19 +13,33 @@ export default function PeopleView() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [error, setError] = useState('');
+  const [filterType, setFilterType] = useState<FilterType>('identified');
 
   const load = useCallback(async () => {
     if (!currentCatalog) return;
     setLoading(true);
     try {
-      const data = await api.getPeople(false);
-      setPeople(data);
+      if (filterType === 'identified') {
+        const data = await api.getPeople(false, currentCatalog);
+        setPeople(data);
+      } else if (filterType === 'unknown') {
+        const data = await api.getPeople(true, currentCatalog);
+        setPeople(data);
+      } else {
+        const [idData, unkData] = await Promise.all([
+          api.getPeople(false, currentCatalog),
+          api.getPeople(true, currentCatalog)
+        ]);
+        const combined = [...idData, ...unkData];
+        const unique = combined.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
+        setPeople(unique);
+      }
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [currentCatalog, refreshKey]);
+  }, [currentCatalog, refreshKey, filterType]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -36,10 +52,10 @@ export default function PeopleView() {
     if (!trimmed || trimmed === old_id) { setRenamingId(null); return; }
     setError('');
     try {
-      await api.renamePerson(old_id, trimmed);
+      await api.renamePerson(old_id, trimmed, currentCatalog || "");
       await load();
-    } catch {
-      setError('Erro ao renomear.');
+    } catch (e: any) {
+      setError(e.message || 'Erro ao renomear.');
     }
     setRenamingId(null);
   };
@@ -47,10 +63,10 @@ export default function PeopleView() {
   const handleDelete = async (person: Person) => {
     if (!window.confirm(`Excluir "${person.name}" e todas as suas ocorrências?`)) return;
     try {
-      await api.deletePerson(person.id);
+      await api.deletePerson(person.id, currentCatalog || "");
       await load();
-    } catch {
-      setError('Erro ao excluir.');
+    } catch (e: any) {
+      setError(e.message || 'Erro ao excluir.');
     }
   };
 
@@ -58,13 +74,33 @@ export default function PeopleView() {
     <div className="view-container">
       <div className="view-header">
         <div>
-          <h1>Formandos Identificados</h1>
+          <h1>Pessoas</h1>
           <p className="view-subtitle">
             {currentCatalog && <><strong>{currentCatalog}</strong> · </>}
             {filtered.length === 1 ? '1 pessoa' : `${filtered.length} pessoas`}
           </p>
         </div>
         <div className="view-header-actions">
+          <div className="tab-group" style={{ marginRight: '8px' }}>
+            <button
+              className={`tab-btn ${filterType === 'identified' ? 'active' : ''}`}
+              onClick={() => setFilterType('identified')}
+            >
+              Identificados
+            </button>
+            <button
+              className={`tab-btn ${filterType === 'unknown' ? 'active' : ''}`}
+              onClick={() => setFilterType('unknown')}
+            >
+              Sem referência
+            </button>
+            <button
+              className={`tab-btn ${filterType === 'all' ? 'active' : ''}`}
+              onClick={() => setFilterType('all')}
+            >
+              Todos
+            </button>
+          </div>
           <input
             className="search-inline"
             placeholder="Filtrar por nome..."
@@ -87,8 +123,8 @@ export default function PeopleView() {
       ) : filtered.length === 0 ? (
         <div className="empty-state">
           <Users size={48} opacity={0.3} />
-          <h3>Nenhum formando identificado</h3>
-          <p>Escaneie uma pasta para identificar as pessoas nas fotos.</p>
+          <h3>Nenhuma pessoa encontrada</h3>
+          <p>Tente ajustar os filtros ou escaneie uma pasta.</p>
         </div>
       ) : (
         <div className="people-grid">

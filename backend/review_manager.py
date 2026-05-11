@@ -312,10 +312,12 @@ class ManualSearchReq(BaseModel):
 class RenameReq(BaseModel):
     old_id: str
     new_id: str
+    catalog: str = ""
 
 
 class DeletePersonReq(BaseModel):
     aluno_id: str
+    catalog: str = ""
 
 
 class DeletePhotoReq(BaseModel):
@@ -1013,43 +1015,74 @@ def get_suggestions(aluno_id: str):
 
 
 def rename_person(req: RenameReq):
-    backup_catalog_db = _get("backup_catalog_db")
-    get_db = _get("get_db")
-    current_catalog = _value("get_current_catalog")
-    backup_catalog_db(current_catalog, "antes_renomear")
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT face_cache_path FROM alunos WHERE aluno_id = ?", (req.old_id,))
-        old_row = cur.fetchone()
-        old_ref_path = str(old_row["face_cache_path"]) if old_row and old_row["face_cache_path"] else ""
-        cur.execute("INSERT OR IGNORE INTO alunos VALUES (?, ?)", (req.new_id, "n/a"))
-        cur.execute("UPDATE ocorrencias SET aluno_id = ? WHERE aluno_id = ?", (req.new_id, req.old_id))
-        cur.execute("DELETE FROM alunos WHERE aluno_id = ?", (req.old_id,))
-        conn.commit()
-        if old_ref_path and os.path.exists(old_ref_path):
-            try:
-                os.remove(old_ref_path)
-            except Exception:
-                pass
-        _ensure_person_reference(conn, current_catalog, req.new_id)
-    return {"status": "ok"}
+    try:
+        backup_catalog_db = _get("backup_catalog_db")
+        get_db = _get("get_db")
+        current_catalog = req.catalog or _value("get_current_catalog")
+        
+        if not current_catalog:
+            raise HTTPException(400, "Catálogo não informado.")
+
+        if backup_catalog_db:
+            backup_catalog_db(current_catalog, "antes_renomear")
+            
+        with get_db(current_catalog) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT face_cache_path FROM alunos WHERE aluno_id = ?", (req.old_id,))
+            old_row = cur.fetchone()
+            old_ref_path = str(old_row["face_cache_path"]) if old_row and old_row["face_cache_path"] else ""
+            
+            cur.execute("INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path) VALUES (?, ?)", (req.new_id, "n/a"))
+            cur.execute("UPDATE ocorrencias SET aluno_id = ? WHERE aluno_id = ?", (req.new_id, req.old_id))
+            cur.execute("DELETE FROM alunos WHERE aluno_id = ?", (req.old_id,))
+            conn.commit()
+            
+            if old_ref_path and os.path.exists(old_ref_path):
+                try:
+                    os.remove(old_ref_path)
+                except Exception:
+                    pass
+            
+            _ensure_person_reference(conn, current_catalog, req.new_id)
+            
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Erro em rename_person: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"Erro interno ao renomear: {str(e)}")
 
 
 def delete_person(req: DeletePersonReq):
-    backup_catalog_db = _get("backup_catalog_db")
-    get_db = _get("get_db")
-    current_catalog = _value("get_current_catalog")
     try:
-        backup_catalog_db(current_catalog, "antes_excluir_pessoa")
+        backup_catalog_db = _get("backup_catalog_db")
+        get_db = _get("get_db")
+        current_catalog = req.catalog or _value("get_current_catalog")
+        
+        if not current_catalog:
+            raise HTTPException(400, "Catálogo não informado.")
+
+        if backup_catalog_db:
+            try:
+                backup_catalog_db(current_catalog, "antes_excluir_pessoa")
+            except Exception as e:
+                print(f"Aviso: backup falhou antes de excluir pessoa: {e}")
+                
+        with get_db(current_catalog) as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM ocorrencias WHERE aluno_id = ?", (req.aluno_id,))
+            _remove_person_reference(conn, current_catalog, req.aluno_id)
+            cur.execute("DELETE FROM alunos WHERE aluno_id = ?", (req.aluno_id,))
+            conn.commit()
+            
+        return {"status": "ok"}
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Aviso: backup falhou antes de excluir pessoa: {e}")
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM ocorrencias WHERE aluno_id = ?", (req.aluno_id,))
-        _remove_person_reference(conn, current_catalog, req.aluno_id)
-        cur.execute("DELETE FROM alunos WHERE aluno_id = ?", (req.aluno_id,))
-        conn.commit()
-    return {"status": "ok"}
+        print(f"Erro em delete_person: {e}")
+        raise HTTPException(500, f"Erro interno ao excluir: {str(e)}")
 
 
 def delete_photo(req: DeletePhotoReq):
