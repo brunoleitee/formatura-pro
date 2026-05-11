@@ -1,4 +1,4 @@
-import { useState, memo } from 'react';
+import { useMemo, useState, memo } from 'react';
 import { RefreshCw, Search, X } from 'lucide-react';
 import type { RichCluster } from '../../services/api';
 import { faceThumb } from './FaceCard';
@@ -94,7 +94,7 @@ export default function ReviewSidebar({
   onRefresh,
 }: ReviewSidebarProps) {
   const [search, setSearch] = useState('');
-  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
+  const [graduationFilter, setGraduationFilter] = useState<PriorityFilter>('all');
   const titleCountLabel = loading ? '...' : String(clusters.length);
   const headerSubLabel = loading ? 'Calculando...' : clusters.length === 0
     ? 'Nenhum grupo pendente'
@@ -109,41 +109,70 @@ export default function ReviewSidebar({
     )
   );
 
-  const filteredByPriority = clusters.filter((cluster) => {
-    const tags = cluster.graduation_tags ?? [];
-    switch (priorityFilter) {
-      case 'gown':
-        return tags.includes('beca') || Boolean(cluster.has_gown);
-      case 'diploma':
-        return tags.includes('canudo') || tags.includes('diploma') || Boolean(cluster.has_diploma);
-      case 'sash':
-        return tags.includes('faixa') || Boolean(cluster.has_sash);
-      case 'cap':
-        return tags.includes('capelo') || Boolean(cluster.has_cap);
-      case 'high_priority':
-        return (cluster.priority_score ?? 0) >= 25;
-      default:
-        return true;
-    }
-  });
+  const filteredClusters = useMemo(() => {
+    if (graduationFilter === 'all') return clusters;
 
-  const visible = search.trim()
-    ? filteredByPriority.filter((cluster, i) =>
+    return clusters.filter((cluster) => {
+      const tags = Array.isArray(cluster.graduation_tags)
+        ? cluster.graduation_tags
+        : [];
+
+      if (graduationFilter === 'gown') {
+        return cluster.has_gown === true || tags.includes('beca');
+      }
+
+      if (graduationFilter === 'diploma') {
+        return cluster.has_diploma === true || tags.includes('canudo') || tags.includes('diploma');
+      }
+
+      if (graduationFilter === 'sash') {
+        return cluster.has_sash === true || tags.includes('faixa');
+      }
+
+      if (graduationFilter === 'cap') {
+        return cluster.has_cap === true || tags.includes('capelo');
+      }
+
+      if (graduationFilter === 'high_priority') {
+        return (cluster.priority_score ?? 0) >= 25;
+      }
+
+      return true;
+    });
+  }, [clusters, graduationFilter]);
+
+  const visibleClusters = search.trim()
+    ? filteredClusters.filter((cluster, i) =>
         `grupo ${i + 1}`.includes(search.toLowerCase()) ||
         String(cluster.face_count).includes(search) ||
         (cluster.graduation_tags ?? []).some(tag => tag.includes(search.toLowerCase()))
       )
-    : filteredByPriority;
+    : filteredClusters;
+
+  console.log('[graduation-filter]', {
+    filter: graduationFilter,
+    totalOriginal: clusters.length,
+    totalFiltered: filteredClusters.length,
+    sample: clusters.slice(0, 5).map(c => ({
+      id: c.cluster_id,
+      tags: c.graduation_tags,
+      has_gown: c.has_gown,
+      has_diploma: c.has_diploma,
+      has_sash: c.has_sash,
+      has_cap: c.has_cap,
+    })),
+  });
+
   const showMissingGraduationAnalysis =
     !search &&
-    visible.length === 0 &&
-    (priorityFilter === 'gown' || priorityFilter === 'diploma' || priorityFilter === 'sash' || priorityFilter === 'cap') &&
+    visibleClusters.length === 0 &&
+    (graduationFilter === 'gown' || graduationFilter === 'diploma' || graduationFilter === 'sash' || graduationFilter === 'cap') &&
     !graduationAnalysisRan &&
     !hasGraduationAnalysis;
   const showNoMatchingGraduationClusters =
     !search &&
-    visible.length === 0 &&
-    (priorityFilter === 'gown' || priorityFilter === 'diploma' || priorityFilter === 'sash' || priorityFilter === 'cap') &&
+    visibleClusters.length === 0 &&
+    (graduationFilter === 'gown' || graduationFilter === 'diploma' || graduationFilter === 'sash' || graduationFilter === 'cap') &&
     (graduationAnalysisRan || hasGraduationAnalysis);
 
   return (
@@ -189,8 +218,8 @@ export default function ReviewSidebar({
       <div className={styles.filterWrap}>
         <select
           className={styles.filterSelect}
-          value={priorityFilter}
-          onChange={(e) => setPriorityFilter(e.target.value as PriorityFilter)}
+          value={graduationFilter}
+          onChange={(e) => setGraduationFilter(e.target.value as PriorityFilter)}
         >
           <option value="all">Todos</option>
           <option value="gown">Com beca</option>
@@ -208,7 +237,7 @@ export default function ReviewSidebar({
             <RefreshCw size={18} className={styles.spin} style={{ opacity: 0.4 }} />
             <span>Calculando...</span>
           </div>
-        ) : visible.length === 0 ? (
+        ) : visibleClusters.length === 0 ? (
           <div className={styles.listState}>
             <span>
               {search
@@ -216,13 +245,13 @@ export default function ReviewSidebar({
                 : showMissingGraduationAnalysis
                 ? 'A IA ainda não analisou beca/canudo/faixa neste catálogo.'
                 : showNoMatchingGraduationClusters
-                ? 'Nenhum cluster com beca/canudo/faixa encontrado.'
+                ? 'Nenhum cluster com este item encontrado.'
                 : 'Tudo identificado!'}
             </span>
           </div>
         ) : (
           <>
-            {visible.map((cluster) => (
+            {visibleClusters.map((cluster) => (
               <ClusterItem
                 key={cluster.cluster_id}
                 cluster={cluster}
