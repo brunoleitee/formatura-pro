@@ -11,6 +11,8 @@ interface PhotoViewerModalProps {
   onClose: () => void;
   onNavigate: (photo: Photo) => void;
   onPhotoUpdate?: (photo: Photo) => void;
+  onDiscard?: (path: string) => void;
+  onRestore?: (path: string) => void;
 }
 
 interface SimilarResult {
@@ -21,7 +23,7 @@ interface SimilarResult {
   aluno_id: string | null;
 }
 
-export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhotoUpdate }: PhotoViewerModalProps) {
+export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhotoUpdate, onDiscard, onRestore }: PhotoViewerModalProps) {
   const { currentCatalog } = useApp();
   const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
   const [isLoaded, setIsLoaded] = useState(false);
@@ -53,6 +55,7 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
     try {
       await api.discardPhoto({ foto_path: photo.path, discard: true });
       showFeedback("Foto descartada");
+      onDiscard?.(photo.path);
       if (currentIndex < total - 1) onNavigate(allPhotos[currentIndex + 1]);
     } catch (err) {
       console.error("Erro ao descartar:", err);
@@ -63,6 +66,7 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
     try {
       await api.discardPhoto({ foto_path: photo.path, discard: false });
       showFeedback("Foto restaurada");
+      onRestore?.(photo.path);
     } catch (err) {
       console.error("Erro ao restaurar:", err);
     }

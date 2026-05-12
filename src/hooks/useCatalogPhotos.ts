@@ -9,7 +9,6 @@ export function useCatalogPhotos() {
 
   const loadPhotos = useCallback(async () => {
     if (!currentCatalog) return;
-    setPhotos([]);
     setLoading(true);
     try {
       const arr = await api.getAllPhotos(currentCatalog);
@@ -25,5 +24,19 @@ export function useCatalogPhotos() {
     Promise.resolve().then(loadPhotos);
   }, [loadPhotos]);
 
-  return { photos, loading, loadPhotos };
+  const updatePhotoStatus = useCallback((path: string, updates: Partial<Photo>) => {
+    setPhotos(prev => prev.map(p => 
+      p.path === path ? { ...p, ...updates } : p
+    ));
+  }, []);
+
+  const discardPhoto = useCallback((path: string) => {
+    updatePhotoStatus(path, { discarded: true });
+  }, [updatePhotoStatus]);
+
+  const restorePhoto = useCallback((path: string) => {
+    updatePhotoStatus(path, { discarded: false });
+  }, [updatePhotoStatus]);
+
+  return { photos, loading, loadPhotos, updatePhotoStatus, discardPhoto, restorePhoto };
 }

@@ -23,7 +23,7 @@ function zoomToSize(zoom: number) {
 
 export default function CatalogView() {
   const { currentCatalog, catalogSubfolder, setCatalogSubfolders, setIsLoadingCatalogPhotos } = useApp();
-  const { photos, loading, loadPhotos } = useCatalogPhotos();
+  const { photos, loading, loadPhotos, discardPhoto, restorePhoto } = useCatalogPhotos();
   const [hideDiscarded, setHideDiscarded] = useState(false);
   const [zoom, setZoom] = useState(60);
   const size = zoomToSize(zoom);
@@ -67,20 +67,30 @@ export default function CatalogView() {
 
   const handleDiscardSelected = async () => {
     if (selectedPaths.size === 0) return;
+    const paths = Array.from(selectedPaths);
+    paths.forEach(p => discardPhoto(p));
+    clearSelection();
     try {
-      await api.bulkDiscardPhotos(currentCatalog, Array.from(selectedPaths));
-      clearSelection();
+      await api.bulkDiscardPhotos(currentCatalog, paths);
       loadPhotos();
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+      console.error(e);
+      loadPhotos();
+    }
   };
 
   const handleRestoreSelected = async () => {
     if (selectedPaths.size === 0) return;
+    const paths = Array.from(selectedPaths);
+    paths.forEach(p => restorePhoto(p));
+    clearSelection();
     try {
-      await api.bulkRestorePhotos(currentCatalog, Array.from(selectedPaths));
-      clearSelection();
+      await api.bulkRestorePhotos(currentCatalog, paths);
       loadPhotos();
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+      console.error(e);
+      loadPhotos();
+    }
   };
 
   const handleRemoveIdentificationSelected = async () => {
@@ -167,6 +177,8 @@ zoom={size}
           allPhotos={filteredPhotos}
           onClose={() => setViewerPhoto(null)}
           onNavigate={setViewerPhoto}
+          onDiscard={discardPhoto}
+          onRestore={restorePhoto}
         />
       )}
 
