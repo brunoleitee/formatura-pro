@@ -116,6 +116,7 @@ export function PhotoViewerModal({
   const imageStageRef = useRef<HTMLDivElement>(null);
   const currentIndex = navigationPhotos.findIndex((p) => p.path === photo.path);
   const total = navigationPhotos.length;
+  const displayIndex = currentIndex >= 0 ? currentIndex + 1 : 1;
   const isDiscarded = photo.discarded;
 
   const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
@@ -589,6 +590,11 @@ export function PhotoViewerModal({
 
         {/* Center — image */}
         <div className={styles.centerArea} onClick={(e) => e.stopPropagation()}>
+          <div className={styles.viewerTopMeta}>
+            <span className={styles.viewerTopName}>{photo.name}</span>
+            <span className={styles.viewerTopCounter}>{displayIndex} de {Math.max(total, 1)}</span>
+          </div>
+
           {currentIndex > 0 && (
             <button className={`${styles.navBtn} ${styles.navPrev}`} onClick={handlePrev}>
               <ChevronLeft size={20} />
