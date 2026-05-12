@@ -593,20 +593,32 @@
 .similarPanel {
   background: #1e293b;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  width: 80vw;
-  max-width: 700px;
-  max-height: 75vh;
+  border-radius: 12px;
+  width: 90vw;
+  max-width: 800px;
+  max-height: 85vh;
   display: flex;
   flex-direction: column;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
 }
 
 .similarHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 18px;
+  padding: 16px 20px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.similarTitleGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.similarCount {
+  font-size: 0.7rem;
+  color: #64748b;
+  margin-top: 2px;
 }
 
 .similarClose {
@@ -614,18 +626,98 @@
   border: none;
   color: #475569;
   cursor: pointer;
-  padding: 4px;
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
 }
 
 .similarClose:hover {
+  background: rgba(255, 255, 255, 0.05);
   color: #e2e8f0;
+}
+
+.similarActions {
+  padding: 12px 20px;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.similarSelectionControls {
+  display: flex;
+  gap: 12px;
+}
+
+.textBtn {
+  background: none;
+  border: none;
+  color: #3b82f6;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s;
+}
+
+.textBtn:hover {
+  color: #60a5fa;
+  text-decoration: underline;
+}
+
+.similarApplyForm {
+  display: flex;
+  gap: 8px;
+}
+
+.similarInput {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #e2e8f0;
+  font-size: 0.82rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.similarInput:focus {
+  border-color: #3b82f6;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.applyBtn {
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 0 16px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.applyBtn:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.applyBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .similarGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-  gap: 10px;
-  padding: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+  padding: 20px;
   overflow-y: auto;
   flex: 1;
 }
@@ -633,22 +725,59 @@
 .similarItem {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 6px;
+  border-radius: 8px;
   overflow: hidden;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.similarItem:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(-2px);
+}
+
+.similarItem.selected {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 0 1px #3b82f6;
+}
+
+.similarImgWrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
 }
 
 .similarImg {
   width: 100%;
-  aspect-ratio: 1;
+  height: 100%;
   object-fit: cover;
   display: block;
 }
 
+.itemCheck {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: #3b82f6;
+  color: white;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
 .similarScore {
-  padding: 4px 6px;
-  font-size: 0.65rem;
-  color: #64748b;
+  padding: 8px;
+  font-size: 0.68rem;
+  color: #94a3b8;
   text-align: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .similarLoading {

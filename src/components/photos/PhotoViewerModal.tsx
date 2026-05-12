@@ -40,6 +40,9 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
   const [similarResults, setSimilarResults] = useState<SimilarResult[]>([]);
   const [similarLoading, setSimilarLoading] = useState(false);
   const [similarError, setSimilarError] = useState<string | null>(null);
+  const [similarName, setSimilarName] = useState('');
+  const [selectedSimilarIds, setSelectedSimilarIds] = useState<Set<number>>(new Set());
+  const [applyingSimilarName, setApplyingSimilarName] = useState(false);
   const [showManualModal, setShowManualModal] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [manualAlunoId, setManualAlunoId] = useState('');
   const [zoom, setZoom] = useState(1);
@@ -125,6 +128,8 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
     setSimilarLoading(true);
     setSimilarError(null);
     setActiveMenu(null);
+    setSimilarName('');
+    setSelectedSimilarIds(new Set());
     try {
       const results = await api.searchSimilarFaces(face.rowid ?? 0, currentCatalog, 50);
       setSimilarResults(results.results ?? []);
@@ -135,6 +140,42 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
       setSimilarResults([]);
     } finally {
       setSimilarLoading(false);
+    }
+  };
+
+  const toggleSimilarSelection = (rowid: number) => {
+    setSelectedSimilarIds(prev => {
+      const next = new Set(prev);
+      if (next.has(rowid)) next.delete(rowid);
+      else next.add(rowid);
+      return next;
+    });
+  };
+
+  const handleApplySimilarName = async () => {
+    if (!similarName.trim() || similarResults.length === 0) return;
+    
+    const rowids = selectedSimilarIds.size > 0 
+      ? Array.from(selectedSimilarIds)
+      : similarResults.map(r => r.rowid);
+
+    setApplyingSimilarName(true);
+    try {
+      await api.bulkManualIdentify(currentCatalog, similarName.trim(), rowids);
+      showFeedbackMsg(`Vínculo aplicado a ${rowids.length} faces`);
+      
+      setSimilarResults(prev => prev.map(r => 
+        rowids.includes(r.rowid) ? { ...r, aluno_id: similarName.trim() } : r
+      ));
+      
+      setSelectedSimilarIds(new Set());
+      setSimilarName('');
+      onPhotoUpdate?.({ ...photo });
+    } catch (err) {
+      console.error("Erro ao aplicar nome em lote:", err);
+      showFeedbackMsg("Erro ao aplicar nome");
+    } finally {
+      setApplyingSimilarName(false);
     }
   };
 
@@ -676,23 +717,78 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
         <div className={styles.modalOverlay} onClick={() => { setSimilarResults([]); setSimilarError(null); }}>
           <div className={styles.similarPanel} onClick={(e) => e.stopPropagation()}>
             <div className={styles.similarHeader}>
-              <h3 className={styles.modalTitle}>Faces semelhantes</h3>
+              <div className={styles.similarTitleGroup}>
+                <h3 className={styles.modalTitle}>Faces semelhantes</h3>
+                <span className={styles.similarCount}>{similarResults.length} encontradas</span>
+              </div>
               <button className={styles.similarClose} onClick={() => { setSimilarResults([]); setSimilarError(null); }}>
                 <X size={16} />
               </button>
             </div>
+
+            {!similarError && (
+              <div className={styles.similarActions}>
+                <div className={styles.similarSelectionControls}>
+                  <button 
+                    className={styles.textBtn}
+                    onClick={() => setSelectedSimilarIds(new Set(similarResults.map(r => r.rowid)))}
+                  >
+                    Selecionar todas
+                  </button>
+                  <button 
+                    className={styles.textBtn}
+                    onClick={() => setSelectedSimilarIds(new Set())}
+                  >
+                    Limpar seleção
+                  </button>
+                </div>
+                
+                <div className={styles.similarApplyForm}>
+                  <input
+                    type="text"
+                    className={styles.similarInput}
+                    placeholder="Vincular ao formando..."
+                    value={similarName}
+                    onChange={(e) => setSimilarName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleApplySimilarName()}
+                  />
+                  <button 
+                    className={styles.applyBtn}
+                    onClick={handleApplySimilarName}
+                    disabled={!similarName.trim() || applyingSimilarName}
+                  >
+                    {applyingSimilarName ? 'Aplicando...' : 'Aplicar nome'}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {similarError ? (
               <div className={styles.similarLoading}>{similarError}</div>
             ) : (
               <div className={styles.similarGrid}>
-                {similarResults.map((result) => (
-                  <div key={result.rowid} className={styles.similarItem}>
-                    <img src={getFaceThumbUrl(result)} alt="" className={styles.similarImg} />
-                    <div className={styles.similarScore}>
-                      {result.aluno_id ?? 'Desconhecido'} · {(result.score * 100).toFixed(0)}%
+                {similarResults.map((result) => {
+                  const isSelected = selectedSimilarIds.has(result.rowid);
+                  return (
+                    <div 
+                      key={result.rowid} 
+                      className={`${styles.similarItem} ${isSelected ? styles.selected : ''}`}
+                      onClick={() => toggleSimilarSelection(result.rowid)}
+                    >
+                      <div className={styles.similarImgWrap}>
+                        <img src={getFaceThumbUrl(result)} alt="" className={styles.similarImg} />
+                        {isSelected && (
+                          <div className={styles.itemCheck}>
+                            <UserCheck size={14} />
+                          </div>
+                        )}
+                      </div>
+                      <div className={styles.similarScore}>
+                        {result.aluno_id ?? 'Desconhecido'} · {(result.score * 100).toFixed(0)}%
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
