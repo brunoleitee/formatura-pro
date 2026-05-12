@@ -37,7 +37,7 @@ function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number,
   const y1 = offsetY + (face.y1 / photoHeight) * renderedH;
   const widthPx = ((face.x2 - face.x1) / photoWidth) * renderedW;
   const heightPx = ((face.y2 - face.y1) / photoHeight) * renderedH;
-  const color = isKnown ? '#22c55e' : '#9ca3af';
+  const color = isKnown ? 'rgba(34, 197, 94, 0.8)' : 'rgba(255, 255, 255, 0.4)';
 
   return (
     <div
@@ -48,11 +48,12 @@ function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number,
         top: `${y1}px`,
         width: `${widthPx}px`,
         height: `${heightPx}px`,
-        border: `2px solid ${color}`,
-        borderRadius: '4px',
+        border: `1.5px solid ${color}`,
+        borderRadius: '2px',
         pointerEvents: 'none',
         boxSizing: 'border-box',
-        zIndex: 1
+        zIndex: 1,
+        boxShadow: '0 0 0 1px rgba(0,0,0,0.2)'
       }}
     >
       {(face.is_foreground === 1 || (face.foreground_score && face.foreground_score >= 0.65)) && (
