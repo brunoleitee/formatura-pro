@@ -38,6 +38,31 @@ function buildTimelineEntry(
   };
 }
 
+function isScanCompleted(status: ScanStatus | null) {
+  if (!status || status.is_scanning) return false;
+
+  const progressPct = normalizeScanProgress(status.progress);
+  const statusText = (status.status_text || '').toLowerCase();
+  const hasProcessedWork =
+    Boolean(status.scan_summary) ||
+    (status.total_processadas ?? 0) > 0 ||
+    (status.total_files ?? 0) > 0;
+  const countsFinished =
+    (status.total_files ?? 0) > 0 &&
+    (status.total_processadas ?? 0) >= (status.total_files ?? 0);
+  const directCompletionText =
+    statusText.includes('conclu') ||
+    statusText.includes('completed') ||
+    statusText.includes('done') ||
+    statusText.includes('finished');
+  const idleAfterCompletion =
+    hasProcessedWork &&
+    (statusText.includes('idle') || statusText.includes('inativo') || statusText.includes('pronto')) &&
+    (Boolean(status.scan_summary) || countsFinished || progressPct >= 100);
+
+  return hasProcessedWork && (Boolean(status.scan_summary) || countsFinished || progressPct >= 100 || directCompletionText || idleAfterCompletion);
+}
+
 export function AppShell() {
   const { currentCatalog, catalogs, activeView, refreshCatalogs, bumpRefresh, navigate } = useApp();
 
@@ -53,6 +78,7 @@ export function AppShell() {
   const [isScanFeedPaused, setIsScanFeedPaused] = useState(false);
   const prevScanStatusRef = useRef<ScanStatus | null>(null);
   const scanCenterDismissedRef = useRef(false);
+  const scanCompleted = isScanCompleted(scanStatus);
 
   useEffect(() => {
     refreshCatalogs();
@@ -167,11 +193,10 @@ export function AppShell() {
       scanCenterDismissedRef.current = false;
       setIsScanFeedPaused(false);
       bumpRefresh();
-      navigate('people');
     }
 
     prevScanStatusRef.current = st;
-  }, [bumpRefresh, currentCatalog, navigate, syncTimelineFromStatus]);
+  }, [bumpRefresh, currentCatalog, syncTimelineFromStatus]);
 
   useEffect(() => {
     pollScanStatus();
@@ -214,9 +239,19 @@ export function AppShell() {
     scanCenterDismissedRef.current = false;
   };
 
+  const resetProcessingPanel = useCallback(() => {
+    setScanStatus(null);
+    setScanMsg('');
+    setIsScanning(false);
+    setScanTimeline([]);
+    setScanSession(null);
+    setIsScanFeedPaused(false);
+    prevScanStatusRef.current = null;
+  }, []);
+
   const handleScanClick = () => {
     if (!currentCatalog) { setShowCatalogModal(true); return; }
-    if (isScanning || scanStatus?.scan_summary) {
+    if (isScanning) {
       scanCenterDismissedRef.current = false;
       setShowScanCenter(true);
       return;
@@ -226,6 +261,7 @@ export function AppShell() {
 
   const handleCloseScanCenter = () => {
     scanCenterDismissedRef.current = true;
+    setIsScanFeedPaused(false);
     setShowScanCenter(false);
   };
 
@@ -243,9 +279,17 @@ export function AppShell() {
   };
 
   const handleOpenReview = () => {
+    setIsScanFeedPaused(false);
     setShowScanCenter(false);
     scanCenterDismissedRef.current = false;
     navigate('review');
+  };
+
+  const handleNewScan = () => {
+    resetProcessingPanel();
+    scanCenterDismissedRef.current = false;
+    setShowScanCenter(false);
+    setShowScanModal(true);
   };
 
   const canOpenReview = Boolean(scanStatus?.scan_summary) || (scanStatus?.total_clusters ?? 0) > 0;
@@ -284,10 +328,12 @@ export function AppShell() {
               timeline={scanTimeline}
               sourcePath={scanSession?.oriPath || scanStatus?.last_folder_scanned}
               isFeedPaused={isScanFeedPaused}
+              isCompleted={scanCompleted}
               onToggleFeedPaused={() => setIsScanFeedPaused(prev => !prev)}
               onCancel={handleCancelScan}
               onClose={handleCloseScanCenter}
               onOpenReview={handleOpenReview}
+              onNewScan={handleNewScan}
               canOpenReview={canOpenReview}
             />
           ) : (

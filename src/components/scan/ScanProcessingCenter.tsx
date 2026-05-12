@@ -33,10 +33,12 @@ interface ScanProcessingCenterProps {
   timeline: ScanTimelineEntry[];
   sourcePath?: string | null;
   isFeedPaused: boolean;
+  isCompleted: boolean;
   onToggleFeedPaused: () => void;
   onCancel: () => void;
   onClose: () => void;
   onOpenReview: () => void;
+  onNewScan: () => void;
   canOpenReview: boolean;
 }
 
@@ -181,10 +183,12 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
   timeline,
   sourcePath,
   isFeedPaused,
+  isCompleted,
   onToggleFeedPaused,
   onCancel,
   onClose,
   onOpenReview,
+  onNewScan,
   canOpenReview,
 }: ScanProcessingCenterProps) {
   const deferredFaces = useDeferredValue(scanStatus?.recent_faces ?? []);
@@ -203,12 +207,16 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
 
   const visibleFaces = isFeedPaused ? frozenFaces : deferredFaces;
   const visibleTimeline = isFeedPaused ? frozenTimeline : latestTimeline;
-  const progressPct = normalizeProgress(scanStatus?.progress);
-  const currentFace = visibleFaces[0] ?? null;
-  const gridFaces = visibleFaces.slice(1, 13);
+  const progressPct = isCompleted ? 100 : normalizeProgress(scanStatus?.progress);
+  const currentFace = !isCompleted ? (visibleFaces[0] ?? null) : null;
+  const gridFaces = isCompleted ? visibleFaces.slice(0, 12) : visibleFaces.slice(1, 13);
   const currentStep = deriveCurrentStep(scanStatus, progressPct);
   const sourceLabel = sourcePath || scanStatus?.last_folder_scanned || '';
   const processedLabel = `${formatInteger(scanStatus?.total_processadas)} / ${formatInteger(scanStatus?.total_files)}`;
+  const headerStatusLabel = isCompleted ? 'Processamento concluído' : (scanMsg || scanStatus?.status_text || 'Processando...');
+  const headerStatusHint = isCompleted ? 'Pronto para revisão ou novo scan.' : formatEta(scanStatus?.eta_seconds);
+  const pipelineSummary = isCompleted ? 'concluído' : (scanStatus?.scan_summary ? 'revisão pronta' : 'em análise');
+  const computeLabel = isCompleted ? `${scanStatus?.device || 'CPU'} utilizada` : `${scanStatus?.device || 'CPU'} ativa`;
 
   useEffect(() => {
     if (!logRef.current || isFeedPaused) return;
@@ -229,7 +237,7 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
         </div>
 
         <div className={styles.headerCenter}>
-          <span className={styles.statusLabel}>{scanMsg || scanStatus?.status_text || 'Processando...'}</span>
+          <span className={styles.statusLabel}>{headerStatusLabel}</span>
           <div className={styles.progressTrack}>
             <motion.div
               className={styles.progressFill}
@@ -239,29 +247,43 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
           </div>
           <div className={styles.progressMeta}>
             <span>{processedLabel} processadas</span>
-            <span>{formatEta(scanStatus?.eta_seconds)}</span>
+            <span>{headerStatusHint}</span>
           </div>
         </div>
 
         <div className={styles.headerActions}>
-          <div className={styles.computeBadge}>
+          <div className={`${styles.computeBadge} ${isCompleted ? styles.computeBadgeDone : ''}`}>
             <Cpu size={14} />
-            <span>{scanStatus?.device || 'CPU'} ativa</span>
-            <strong>{Math.round(progressPct)}%</strong>
+            <span>{computeLabel}</span>
+            <strong>{isCompleted ? 'OK' : `${Math.round(progressPct)}%`}</strong>
           </div>
 
-          <button className={styles.actionBtn} onClick={onToggleFeedPaused} title="Pausar apenas o painel visual">
-            {isFeedPaused ? <Play size={15} /> : <Pause size={15} />}
-            <span>{isFeedPaused ? 'Retomar' : 'Pausar'}</span>
-          </button>
+          {isCompleted ? (
+            <>
+              <button className={styles.actionBtn} onClick={onNewScan}>
+                <span>Novo scan</span>
+              </button>
 
-          <button className={styles.actionBtnDanger} onClick={onCancel} disabled={!isScanning}>
-            <span>Cancelar</span>
-          </button>
+              <button className={styles.actionBtnAccent} onClick={onOpenReview} disabled={!canOpenReview}>
+                <span>Abrir revisão</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button className={styles.actionBtn} onClick={onToggleFeedPaused} title="Pausar apenas o painel visual">
+                {isFeedPaused ? <Play size={15} /> : <Pause size={15} />}
+                <span>{isFeedPaused ? 'Retomar' : 'Pausar'}</span>
+              </button>
 
-          <button className={styles.actionBtnAccent} onClick={onOpenReview} disabled={!canOpenReview}>
-            <span>Revisão</span>
-          </button>
+              <button className={styles.actionBtnDanger} onClick={onCancel} disabled={!isScanning}>
+                <span>Cancelar</span>
+              </button>
+
+              <button className={styles.actionBtnAccent} onClick={onOpenReview} disabled={!canOpenReview}>
+                <span>Revisão</span>
+              </button>
+            </>
+          )}
 
           <button className={styles.iconBtn} onClick={onClose} title="Fechar painel">
             <X size={15} />
@@ -278,13 +300,30 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
         >
           <div className={styles.panelHeader}>
             <div>
-              <h3>Preview principal</h3>
-              <p>O rosto mais recente do lote atual.</p>
+              <h3>{isCompleted ? 'Resumo final' : 'Preview principal'}</h3>
+              <p>{isCompleted ? 'O scan terminou e os resultados estao prontos.' : 'O rosto mais recente do lote atual.'}</p>
             </div>
           </div>
 
           <div className={styles.previewShell}>
-            {currentFace ? (
+            {isCompleted ? (
+              <div className={`${styles.previewCard} ${styles.previewCardComplete}`}>
+                <div className={styles.completeBadge}>
+                  <CheckCircle2 size={28} />
+                </div>
+                <div className={styles.previewMeta}>
+                  <span className={styles.previewTag}>Concluído</span>
+                  <h3 className={styles.previewName}>Processamento concluído</h3>
+                  <p className={styles.previewSummary}>
+                    {formatInteger(scanStatus?.total_processadas)} fotos processadas • {formatInteger(scanStatus?.total_matches)} matches
+                  </p>
+                  <p className={styles.previewDetail}>
+                    {formatInteger(scanStatus?.total_clusters)} clusters • {formatInteger(scanStatus?.skipped_background_faces)} ignoradas.
+                    {' '}Você já pode abrir a Revisão IA ou iniciar um novo scan.
+                  </p>
+                </div>
+              </div>
+            ) : currentFace ? (
               <div className={styles.previewCard}>
                 <div className={styles.previewImageWrap}>
                   <img
@@ -359,8 +398,8 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
           </div>
 
           <div className={styles.pipelineFooter}>
-            <StatusChip label="ETA" value={formatEta(scanStatus?.eta_seconds)} />
-            <StatusChip label="Resumo" value={scanStatus?.scan_summary ? 'revisão pronta' : 'em análise'} />
+            <StatusChip label={isCompleted ? 'Estado' : 'ETA'} value={isCompleted ? 'concluído' : formatEta(scanStatus?.eta_seconds)} />
+            <StatusChip label="Resumo" value={pipelineSummary} />
           </div>
 
           {scanStatus?.gpu_error && (
