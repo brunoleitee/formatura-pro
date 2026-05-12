@@ -1,6 +1,6 @@
 import { useMemo, useState, memo } from 'react';
 import { RefreshCw, Search, X } from 'lucide-react';
-import type { RichCluster } from '../../services/api';
+import type { ReviewClusterSummary } from '../../services/api';
 import { faceThumb } from './FaceCard';
 import styles from './ReviewSidebar.module.css';
 
@@ -10,12 +10,17 @@ const CONF_CONFIRMED = 0.92;
 const CONF_POSSIBLE = 0.70;
 
 interface ReviewSidebarProps {
-  clusters: RichCluster[];
+  clusters: ReviewClusterSummary[];
   loading: boolean;
+  loadingMore?: boolean;
   selectedId: string | null;
+  total?: number;
+  hasMore?: boolean;
+  reviewReady?: boolean;
   graduationAnalysisRan?: boolean;
-  onSelect: (cluster: RichCluster) => void;
+  onSelect: (clusterId: string) => void;
   onRefresh: () => void;
+  onLoadMore?: () => void;
 }
 
 const ClusterItem = memo(function ClusterItem({
@@ -23,7 +28,7 @@ const ClusterItem = memo(function ClusterItem({
   isSelected,
   onClick,
 }: {
-  cluster: RichCluster;
+  cluster: ReviewClusterSummary;
   isSelected: boolean;
   onClick: () => void;
 }) {
@@ -114,17 +119,23 @@ const ClusterItem = memo(function ClusterItem({
 export default function ReviewSidebar({
   clusters,
   loading,
+  loadingMore = false,
   selectedId,
+  total = 0,
+  hasMore = false,
+  reviewReady = true,
   graduationAnalysisRan = false,
   onSelect,
   onRefresh,
+  onLoadMore,
 }: ReviewSidebarProps) {
   const [search, setSearch] = useState('');
   const [graduationFilter, setGraduationFilter] = useState<PriorityFilter>('all');
-  const titleCountLabel = loading ? '...' : String(clusters.length);
+  const loadedCount = clusters.length;
+  const titleCountLabel = loading && loadedCount === 0 ? '...' : String(total || loadedCount);
   const headerSubLabel = loading ? 'Calculando...' : clusters.length === 0
     ? 'Nenhum grupo pendente'
-    : `${clusters.length} grupo${clusters.length !== 1 ? 's' : ''} aguardando identificação`;
+    : `${loadedCount} de ${total || loadedCount} grupo${(total || loadedCount) !== 1 ? 's' : ''} aguardando identificação`;
   const hasGraduationAnalysis = clusters.some((cluster) =>
     Boolean(
       (cluster.gown_confidence ?? (cluster.has_gown ? 1 : 0)) >= CONF_POSSIBLE ||
@@ -262,7 +273,9 @@ export default function ReviewSidebar({
                 ? 'A IA ainda não analisou beca/canudo/faixa neste catálogo.'
                 : showNoMatchingGraduationClusters
                 ? 'Nenhum cluster com este item encontrado.'
-                : 'Tudo identificado!'}
+                : reviewReady
+                ? 'Tudo identificado!'
+                : 'Ainda preparando revisão...'}
             </span>
           </div>
         ) : (
@@ -272,9 +285,19 @@ export default function ReviewSidebar({
                 key={cluster.cluster_id}
                 cluster={cluster}
                 isSelected={cluster.cluster_id === selectedId}
-                onClick={() => onSelect(cluster)}
+                onClick={() => onSelect(cluster.cluster_id)}
               />
             ))}
+            {hasMore && !search.trim() && (
+              <button
+                type="button"
+                className={styles.loadMoreButton}
+                onClick={onLoadMore}
+                disabled={loadingMore}
+              >
+                {loadingMore ? 'Carregando mais...' : 'Carregar mais grupos'}
+              </button>
+            )}
           </>
         )}
       </div>

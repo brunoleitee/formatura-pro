@@ -930,6 +930,7 @@ class DbConnection:
         """)
         c.execute("CREATE INDEX IF NOT EXISTS idx_ufc_cluster_id ON unknown_face_clusters(cluster_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_ufc_original_path ON unknown_face_clusters(original_path)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ufc_face_id ON unknown_face_clusters(face_id)")
         try:
             c.execute("""
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_ocor_unique
@@ -1123,6 +1124,23 @@ def get_review_unknown_clusters(
     limit: int = 100
 ):
     return rm.get_unknown_clusters(catalog, min_score, min_cluster_size, limit)
+
+
+@app.get("/api/review/clusters")
+def get_review_clusters(
+    catalog: str = "",
+    limit: int = 30,
+    offset: int = 0,
+):
+    return rm.get_review_clusters_page(catalog, limit, offset)
+
+
+@app.get("/api/review/clusters/detail")
+def get_review_cluster_detail(
+    catalog: str = "",
+    cluster_id: str = "",
+):
+    return rm.get_review_cluster_detail(catalog, cluster_id)
 
 
 BulkManualIdentifyReq = rm.BulkManualIdentifyReq

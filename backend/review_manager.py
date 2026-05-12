@@ -641,6 +641,266 @@ def _sync_unknown_face_clusters(cur, clusters: list[dict]):
         )
 
 
+def _is_review_unknown_label(aluno_id: str | None) -> bool:
+    value = re.sub(r"\s+", " ", str(aluno_id or "").strip())
+    if not value:
+        return False
+    lowered = value.casefold()
+    return lowered in UNKNOWN_ALUNO_IDS or lowered.startswith("pessoa ")
+
+
+def _build_review_cluster_id(aluno_id: str | None, rowid: int) -> str:
+    value = re.sub(r"\s+", " ", str(aluno_id or "").strip())
+    lowered = value.casefold()
+    if lowered.startswith("pessoa "):
+        return f"scan::{value}"
+    if lowered in UNKNOWN_ALUNO_IDS:
+        return f"legacy-face::{int(rowid)}"
+    return f"legacy-label::{value or int(rowid)}"
+
+
+def _review_cluster_sort_key(cluster_id: str) -> tuple[int, int, str]:
+    if cluster_id.startswith("scan::Pessoa "):
+        try:
+            number = int(cluster_id.split("Pessoa ", 1)[1])
+        except Exception:
+            number = 10**9
+        return (0, number, cluster_id)
+    if cluster_id.startswith("legacy-face::"):
+        try:
+            number = int(cluster_id.split("::", 1)[1])
+        except Exception:
+            number = 10**9
+        return (2, number, cluster_id)
+    return (1, 10**9, cluster_id)
+
+
+def _load_review_occurrence_rows(cur) -> list:
+    cur.execute(
+        f"""
+        SELECT rowid, aluno_id, foto_path, x1, y1, x2, y2,
+               blur_status, blur_score, closed_eyes,
+               has_gown, has_diploma, has_sash, has_cap,
+               face_front_score, graduation_score, graduation_tags,
+               gown_confidence, diploma_confidence, sash_confidence, cap_confidence,
+               manual_graduation_tags,
+               is_foreground, foreground_score, background_penalty_reason
+        FROM ocorrencias
+        WHERE x1 IS NOT NULL
+          AND (
+              lower(aluno_id) IN ({",".join(["?"] * len(UNKNOWN_ALUNO_IDS))})
+              OR lower(aluno_id) LIKE 'pessoa %'
+          )
+        ORDER BY aluno_id ASC, foto_path ASC, rowid ASC
+        """,
+        list(UNKNOWN_ALUNO_IDS),
+    )
+    return cur.fetchall()
+
+
+def _row_to_review_item(row) -> dict:
+    return {
+        "rowid": int(row["rowid"]),
+        "aluno_id": row["aluno_id"],
+        "foto_path": row["foto_path"],
+        "box": [row["x1"], row["y1"], row["x2"], row["y2"]],
+        "blur_status": row["blur_status"],
+        "blur_score": row["blur_score"],
+        "closed_eyes": bool(row["closed_eyes"]) if row["closed_eyes"] is not None else False,
+        "has_gown": row["has_gown"],
+        "has_diploma": row["has_diploma"],
+        "has_sash": row["has_sash"],
+        "has_cap": row["has_cap"],
+        "face_front_score": row["face_front_score"],
+        "graduation_score": row["graduation_score"],
+        "graduation_tags": row["graduation_tags"],
+        "gown_confidence": row["gown_confidence"],
+        "diploma_confidence": row["diploma_confidence"],
+        "sash_confidence": row["sash_confidence"],
+        "cap_confidence": row["cap_confidence"],
+        "manual_graduation_tags": row["manual_graduation_tags"],
+        "is_foreground": row["is_foreground"],
+        "foreground_score": row["foreground_score"],
+        "background_penalty_reason": row["background_penalty_reason"],
+    }
+
+
+def _build_review_cluster_payload(
+    cluster_id: str,
+    cluster_number: int,
+    comp_items: list[dict],
+    include_faces: bool = False,
+):
+    priority_meta = [
+        _build_face_priority_meta(item, 0.0, allow_fallback=False)
+        for item in comp_items
+    ]
+    rep_item = _pick_cluster_cover_item(comp_items, priority_meta)
+    rep_item_meta = priority_meta[comp_items.index(rep_item)]
+    unique_paths = sorted({item["foto_path"] for item in comp_items if item.get("foto_path")})
+    photo_count = len(unique_paths)
+    quality_signal = [
+        (meta["face_front_score"] * 0.68) + (meta["sharpness_score"] * 0.32)
+        for meta in priority_meta
+    ]
+    cohesion_score = max(0.45, min(0.99, float(np.mean(quality_signal) if quality_signal else 0.45)))
+    max_graduation_score = max((meta["graduation_score"] for meta in priority_meta), default=0.0)
+    fg_count = sum(1 for item in comp_items if item.get("is_foreground") == 1)
+    fg_ratio = fg_count / max(1, len(comp_items))
+    priority_score = max_graduation_score + (photo_count * 1.5) + (cohesion_score * 12.0) + (fg_ratio * 2.0)
+    cluster_manual_tags = sorted({
+        tag for meta in priority_meta for tag in (meta.get("manual_graduation_tags") or [])
+    })
+    cluster_payload = {
+        "cluster_id": cluster_id,
+        "cluster_number": cluster_number,
+        "face_count": len(comp_items),
+        "photo_count": photo_count,
+        "total_photos": photo_count,
+        "cohesion_score": round(cohesion_score, 4),
+        "cohesion": round(cohesion_score, 4),
+        "priority_score": round(float(priority_score), 4),
+        "graduation_tags": _ordered_cluster_tags(priority_meta),
+        "has_gown": any(meta["has_gown"] for meta in priority_meta),
+        "has_diploma": any(meta["has_diploma"] for meta in priority_meta),
+        "has_sash": any(meta["has_sash"] for meta in priority_meta),
+        "has_cap": any(meta["has_cap"] for meta in priority_meta),
+        "gown_confidence": round(max((meta["gown_confidence"] for meta in priority_meta), default=0.0), 4),
+        "diploma_confidence": round(max((meta["diploma_confidence"] for meta in priority_meta), default=0.0), 4),
+        "sash_confidence": round(max((meta["sash_confidence"] for meta in priority_meta), default=0.0), 4),
+        "cap_confidence": round(max((meta["cap_confidence"] for meta in priority_meta), default=0.0), 4),
+        "manual_graduation_tags": cluster_manual_tags,
+        "debug_graduation_source": _resolve_cluster_graduation_source(priority_meta),
+        "preview_image": rep_item["foto_path"],
+        "status": "pending_review",
+        "representative": {
+            "rowid": rep_item["rowid"],
+            "path": rep_item["foto_path"],
+            "box": rep_item["box"],
+            "aluno_id": rep_item["aluno_id"],
+            "blur_status": rep_item.get("blur_status"),
+            "blur_score": rep_item.get("blur_score"),
+            "closed_eyes": rep_item.get("closed_eyes", False),
+            "has_gown": rep_item_meta["has_gown"],
+            "has_diploma": rep_item_meta["has_diploma"],
+            "has_sash": rep_item_meta["has_sash"],
+            "has_cap": rep_item_meta["has_cap"],
+            "face_front_score": rep_item_meta["face_front_score"],
+            "graduation_score": rep_item_meta["graduation_score"],
+            "is_representative": True,
+            "is_foreground": rep_item.get("is_foreground"),
+            "foreground_score": rep_item.get("foreground_score"),
+            "background_penalty_reason": rep_item.get("background_penalty_reason"),
+        },
+    }
+    if include_faces:
+        cluster_payload["faces"] = [
+            {
+                "rowid": item["rowid"],
+                "path": item["foto_path"],
+                "box": item["box"],
+                "aluno_id": item["aluno_id"],
+                "blur_status": item.get("blur_status"),
+                "blur_score": item.get("blur_score"),
+                "closed_eyes": item.get("closed_eyes", False),
+                "has_gown": meta["has_gown"],
+                "has_diploma": meta["has_diploma"],
+                "has_sash": meta["has_sash"],
+                "has_cap": meta["has_cap"],
+                "face_front_score": meta["face_front_score"],
+                "graduation_score": meta["graduation_score"],
+                "is_representative": item["rowid"] == rep_item["rowid"],
+                "is_foreground": item.get("is_foreground"),
+                "foreground_score": item.get("foreground_score"),
+                "background_penalty_reason": item.get("background_penalty_reason"),
+            }
+            for item, meta in zip(comp_items, priority_meta)
+        ]
+    return cluster_payload
+
+
+def _sync_review_cluster_cache(cur) -> dict:
+    rows = _load_review_occurrence_rows(cur)
+    if not rows:
+        _sync_unknown_face_clusters(cur, [])
+        return {"unknown_faces": 0, "cluster_count": 0}
+
+    grouped: dict[str, list[dict]] = {}
+    for row in rows:
+        aluno_id = str(row["aluno_id"] or "")
+        if not _is_review_unknown_label(aluno_id):
+            continue
+        cluster_id = _build_review_cluster_id(aluno_id, int(row["rowid"]))
+        grouped.setdefault(cluster_id, []).append(_row_to_review_item(row))
+
+    clusters = []
+    for idx, cluster_id in enumerate(sorted(grouped.keys(), key=_review_cluster_sort_key), start=1):
+        clusters.append(
+            _build_review_cluster_payload(
+                cluster_id=cluster_id,
+                cluster_number=idx,
+                comp_items=grouped[cluster_id],
+                include_faces=True,
+            )
+        )
+
+    _sync_unknown_face_clusters(cur, clusters)
+    return {
+        "unknown_faces": len(rows),
+        "cluster_count": len(clusters),
+    }
+
+
+def _ensure_review_cluster_cache(cur) -> dict:
+    started_at = time.perf_counter()
+    cur.execute(
+        f"""
+        SELECT COUNT(*) AS cnt
+        FROM ocorrencias
+        WHERE x1 IS NOT NULL
+          AND (
+              lower(aluno_id) IN ({",".join(["?"] * len(UNKNOWN_ALUNO_IDS))})
+              OR lower(aluno_id) LIKE 'pessoa %'
+          )
+        """,
+        list(UNKNOWN_ALUNO_IDS),
+    )
+    unknown_faces = int((cur.fetchone() or {"cnt": 0})["cnt"] or 0)
+    cur.execute("SELECT COUNT(*) AS cnt FROM unknown_face_clusters")
+    cached_faces = int((cur.fetchone() or {"cnt": 0})["cnt"] or 0)
+
+    if unknown_faces == 0:
+        if cached_faces:
+            _sync_unknown_face_clusters(cur, [])
+        return {
+            "review_ready": True,
+            "used_cache": cached_faces == 0,
+            "unknown_faces": 0,
+            "cluster_count": 0,
+            "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+        }
+
+    if cached_faces != unknown_faces:
+        sync_info = _sync_review_cluster_cache(cur)
+        return {
+            "review_ready": True,
+            "used_cache": False,
+            "unknown_faces": sync_info["unknown_faces"],
+            "cluster_count": sync_info["cluster_count"],
+            "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+        }
+
+    cur.execute("SELECT COUNT(DISTINCT cluster_id) AS cnt FROM unknown_face_clusters")
+    cluster_count = int((cur.fetchone() or {"cnt": 0})["cnt"] or 0)
+    return {
+        "review_ready": True,
+        "used_cache": True,
+        "unknown_faces": unknown_faces,
+        "cluster_count": cluster_count,
+        "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+    }
+
+
 def _ensure_action_logs_table(cur):
     cur.execute(
         """
@@ -1188,8 +1448,8 @@ def analyze_graduation_items(photo: dict | str | None = None, enable_heuristics:
     }
 
 
-def _build_face_priority_meta(item: dict, cohesion_hint: float) -> dict:
-    fallback = analyze_graduation_items(item)
+def _build_face_priority_meta(item: dict, cohesion_hint: float, allow_fallback: bool = True) -> dict:
+    fallback = analyze_graduation_items(item) if allow_fallback else {}
     raw_has_gown = item.get("has_gown")
     raw_has_diploma = item.get("has_diploma")
     raw_has_sash = item.get("has_sash")
@@ -1659,6 +1919,215 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
         _sync_unknown_face_clusters(cur, clusters)
         conn.commit()
         return {"clusters": clusters[:limit], "threshold": threshold, "min_cluster_size": min_cluster_size}
+
+
+def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0):
+    get_db = _get("get_db")
+    cat = catalog or _current_catalog()
+    if not cat:
+        return {
+            "clusters": [],
+            "limit": 0,
+            "offset": 0,
+            "total": 0,
+            "has_more": False,
+            "review_ready": False,
+        }
+
+    limit = max(1, min(int(limit or 30), 100))
+    offset = max(0, int(offset or 0))
+    started_at = time.perf_counter()
+
+    with get_db(cat) as conn:
+        cur = conn.cursor()
+        cache_info = _ensure_review_cluster_cache(cur)
+
+        cur.execute("SELECT COUNT(DISTINCT cluster_id) AS cnt FROM unknown_face_clusters")
+        total = int((cur.fetchone() or {"cnt": 0})["cnt"] or 0)
+        if total == 0:
+            conn.commit()
+            duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+            logger.info(
+                "[review_clusters_page] catalog=%s total=0 limit=%s offset=%s cache=%s duration_ms=%s",
+                cat,
+                limit,
+                offset,
+                "hit" if cache_info["used_cache"] else "refresh",
+                duration_ms,
+            )
+            return {
+                "clusters": [],
+                "limit": limit,
+                "offset": offset,
+                "total": 0,
+                "has_more": False,
+                "review_ready": bool(cache_info["review_ready"]),
+                "cache_used": bool(cache_info["used_cache"]),
+                "cache_duration_ms": cache_info["duration_ms"],
+                "query_duration_ms": 0.0,
+            }
+
+        query_started_at = time.perf_counter()
+        cur.execute(
+            """
+            SELECT u.cluster_id,
+                   COUNT(*) AS face_count,
+                   COUNT(DISTINCT o.foto_path) AS photo_count,
+                   MAX(COALESCE(o.graduation_score, 0)) AS max_graduation_score,
+                   AVG(COALESCE(u.confidence, 0)) AS avg_confidence,
+                   MIN(u.id) AS first_id
+            FROM unknown_face_clusters u
+            JOIN ocorrencias o ON o.rowid = u.face_id
+            GROUP BY u.cluster_id
+            ORDER BY max_graduation_score DESC, avg_confidence DESC, face_count DESC, first_id ASC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        )
+        summary_rows = cur.fetchall()
+        query_duration_ms = round((time.perf_counter() - query_started_at) * 1000, 2)
+        cluster_ids = [str(row["cluster_id"]) for row in summary_rows]
+
+        grouped_items: dict[str, list[dict]] = {cluster_id: [] for cluster_id in cluster_ids}
+        if cluster_ids:
+            placeholders = ",".join(["?"] * len(cluster_ids))
+            cur.execute(
+                f"""
+                SELECT u.cluster_id,
+                       o.rowid, o.aluno_id, o.foto_path, o.x1, o.y1, o.x2, o.y2,
+                       o.blur_status, o.blur_score, o.closed_eyes,
+                       o.has_gown, o.has_diploma, o.has_sash, o.has_cap,
+                       o.face_front_score, o.graduation_score, o.graduation_tags,
+                       o.gown_confidence, o.diploma_confidence, o.sash_confidence, o.cap_confidence,
+                       o.manual_graduation_tags,
+                       o.is_foreground, o.foreground_score, o.background_penalty_reason
+                FROM unknown_face_clusters u
+                JOIN ocorrencias o ON o.rowid = u.face_id
+                WHERE u.cluster_id IN ({placeholders})
+                ORDER BY u.id ASC
+                """,
+                cluster_ids,
+            )
+            for row in cur.fetchall():
+                grouped_items[str(row["cluster_id"])].append(_row_to_review_item(row))
+
+        clusters = []
+        for index, cluster_id in enumerate(cluster_ids, start=offset + 1):
+            comp_items = grouped_items.get(cluster_id, [])
+            if not comp_items:
+                continue
+            clusters.append(
+                _build_review_cluster_payload(
+                    cluster_id=cluster_id,
+                    cluster_number=index,
+                    comp_items=comp_items,
+                    include_faces=False,
+                )
+            )
+
+        conn.commit()
+
+    duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    logger.info(
+        "[review_clusters_page] catalog=%s returned=%s total=%s limit=%s offset=%s cache=%s cache_ms=%s query_ms=%s duration_ms=%s",
+        cat,
+        len(clusters),
+        total,
+        limit,
+        offset,
+        "hit" if cache_info["used_cache"] else "refresh",
+        cache_info["duration_ms"],
+        query_duration_ms,
+        duration_ms,
+    )
+    return {
+        "clusters": clusters,
+        "limit": limit,
+        "offset": offset,
+        "total": total,
+        "has_more": (offset + len(clusters)) < total,
+        "review_ready": bool(cache_info["review_ready"]),
+        "cache_used": bool(cache_info["used_cache"]),
+        "cache_duration_ms": cache_info["duration_ms"],
+        "query_duration_ms": query_duration_ms,
+    }
+
+
+def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
+    get_db = _get("get_db")
+    cat = catalog or _current_catalog()
+    cluster_id = str(cluster_id or "").strip()
+    if not cat or not cluster_id:
+        raise HTTPException(status_code=400, detail="Catalogo e cluster_id sao obrigatorios.")
+
+    started_at = time.perf_counter()
+    with get_db(cat) as conn:
+        cur = conn.cursor()
+        cache_info = _ensure_review_cluster_cache(cur)
+        cur.execute(
+            """
+            SELECT u.cluster_id,
+                   o.rowid, o.aluno_id, o.foto_path, o.x1, o.y1, o.x2, o.y2,
+                   o.blur_status, o.blur_score, o.closed_eyes,
+                   o.has_gown, o.has_diploma, o.has_sash, o.has_cap,
+                   o.face_front_score, o.graduation_score, o.graduation_tags,
+                   o.gown_confidence, o.diploma_confidence, o.sash_confidence, o.cap_confidence,
+                   o.manual_graduation_tags,
+                   o.is_foreground, o.foreground_score, o.background_penalty_reason
+            FROM unknown_face_clusters u
+            JOIN ocorrencias o ON o.rowid = u.face_id
+            WHERE u.cluster_id = ?
+            ORDER BY u.id ASC
+            """,
+            (cluster_id,),
+        )
+        rows = cur.fetchall()
+        if not rows:
+            conn.commit()
+            raise HTTPException(status_code=404, detail="Cluster nao encontrado.")
+
+        comp_items = [_row_to_review_item(row) for row in rows]
+        cur.execute(
+            """
+            SELECT u.cluster_id
+            FROM unknown_face_clusters u
+            JOIN ocorrencias o ON o.rowid = u.face_id
+            GROUP BY u.cluster_id
+            ORDER BY
+                MAX(COALESCE(o.graduation_score, 0)) DESC,
+                AVG(COALESCE(u.confidence, 0)) DESC,
+                COUNT(*) DESC,
+                MIN(u.id) ASC
+            """
+        )
+        ordered_cluster_ids = [str(row["cluster_id"]) for row in cur.fetchall()]
+        try:
+            cluster_number = ordered_cluster_ids.index(cluster_id) + 1
+        except ValueError:
+            cluster_number = 1
+        cluster = _build_review_cluster_payload(
+            cluster_id=cluster_id,
+            cluster_number=cluster_number,
+            comp_items=comp_items,
+            include_faces=True,
+        )
+        conn.commit()
+
+    duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    logger.info(
+        "[review_cluster_detail] catalog=%s cluster_id=%s faces=%s cache=%s duration_ms=%s",
+        cat,
+        cluster_id,
+        len(cluster.get("faces", [])),
+        "hit" if cache_info["used_cache"] else "refresh",
+        duration_ms,
+    )
+    return {
+        "cluster": cluster,
+        "review_ready": bool(cache_info["review_ready"]),
+        "cache_used": bool(cache_info["used_cache"]),
+        "duration_ms": duration_ms,
+    }
 
 
 def _default_graduation_analysis_status(catalog: str = "") -> dict:

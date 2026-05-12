@@ -1,11 +1,13 @@
 import { Component, type ErrorInfo, type ReactNode, useState, useEffect, useCallback, useRef } from 'react';
 import { UserCheck, RefreshCw, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../services/api';
-import type { GraduationAnalysisStatus, RichCluster } from '../services/api';
+import type { GraduationAnalysisStatus, ReviewClusterSummary, RichCluster } from '../services/api';
 import { useApp } from '../context/AppContext';
 import ReviewSidebar from '../components/review/ReviewSidebar';
 import ClusterDetail from '../components/review/ClusterDetail';
 import styles from './ReviewView.module.css';
+
+const REVIEW_PAGE_SIZE = 30;
 
 class ReviewViewBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   state = { hasError: false };
@@ -45,23 +47,87 @@ export default function ReviewView() {
 
 function ReviewViewContent() {
   const { currentCatalog } = useApp();
-  const [clusters, setClusters] = useState<RichCluster[]>([]);
+  const [clusters, setClusters] = useState<ReviewClusterSummary[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const [selected, setSelected] = useState<RichCluster | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [totalClusters, setTotalClusters] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [pageOffset, setPageOffset] = useState(0);
+  const [reviewReady, setReviewReady] = useState(true);
   const [graduationStatus, setGraduationStatus] = useState<GraduationAnalysisStatus | null>(null);
   const [isStartingGraduationAnalysis, setIsStartingGraduationAnalysis] = useState(false);
   const wasGraduationRunningRef = useRef(false);
+  const detailRequestRef = useRef(0);
 
   const load = useCallback(async () => {
     if (!currentCatalog) return;
     setLoading(true);
     try {
-      const data = await api.getUnknownClustersV2(currentCatalog);
-      setClusters(data?.clusters ?? []);
+      const data = await api.getReviewClusters(currentCatalog, REVIEW_PAGE_SIZE, 0);
+      const nextClusters = data?.clusters ?? [];
+      setClusters(nextClusters);
+      setTotalClusters(data?.total ?? nextClusters.length);
+      setHasMore(Boolean(data?.has_more));
+      setPageOffset(nextClusters.length);
+      setReviewReady(Boolean(data?.review_ready ?? true));
+      setSelectedId((prev) => {
+        if (nextClusters.length === 0) return null;
+        if (prev && nextClusters.some((cluster) => cluster.cluster_id === prev)) return prev;
+        return nextClusters[0].cluster_id;
+      });
     } catch {
       setClusters([]);
+      setSelectedId(null);
+      setSelected(null);
+      setTotalClusters(0);
+      setHasMore(false);
+      setPageOffset(0);
+      setReviewReady(false);
     } finally {
       setLoading(false);
+    }
+  }, [currentCatalog]);
+
+  const loadMore = useCallback(async () => {
+    if (!currentCatalog || loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const data = await api.getReviewClusters(currentCatalog, REVIEW_PAGE_SIZE, pageOffset);
+      const nextClusters = data?.clusters ?? [];
+      setClusters((prev) => {
+        const existing = new Set(prev.map((cluster) => cluster.cluster_id));
+        return [...prev, ...nextClusters.filter((cluster) => !existing.has(cluster.cluster_id))];
+      });
+      setTotalClusters(data?.total ?? totalClusters);
+      setHasMore(Boolean(data?.has_more));
+      setPageOffset((prev) => prev + nextClusters.length);
+      setReviewReady(Boolean(data?.review_ready ?? true));
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [currentCatalog, hasMore, loadingMore, pageOffset, totalClusters]);
+
+  const loadClusterDetail = useCallback(async (clusterId: string) => {
+    if (!currentCatalog || !clusterId) return;
+    const requestId = detailRequestRef.current + 1;
+    detailRequestRef.current = requestId;
+    setSelected((current) => (current?.cluster_id === clusterId ? current : null));
+    setLoadingDetail(true);
+    try {
+      const data = await api.getReviewClusterDetail(currentCatalog, clusterId);
+      if (detailRequestRef.current !== requestId) return;
+      setSelected(data?.cluster ?? null);
+      setReviewReady(Boolean(data?.review_ready ?? true));
+    } catch {
+      if (detailRequestRef.current !== requestId) return;
+      setSelected(null);
+    } finally {
+      if (detailRequestRef.current === requestId) {
+        setLoadingDetail(false);
+      }
     }
   }, [currentCatalog]);
 
@@ -80,9 +146,19 @@ function ReviewViewContent() {
 
   useEffect(() => {
     setSelected(null);
+    setSelectedId(null);
+    detailRequestRef.current += 1;
     load();
     refreshGraduationStatus();
   }, [load, refreshGraduationStatus]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setSelected(null);
+      return;
+    }
+    loadClusterDetail(selectedId);
+  }, [loadClusterDetail, selectedId]);
 
   useEffect(() => {
     if (!currentCatalog || !graduationStatus?.is_running) return;
@@ -107,24 +183,51 @@ function ReviewViewContent() {
   }, [currentCatalog, graduationStatus, load]);
 
   const handleAssigned = useCallback((clusterId: string) => {
-    setClusters(prev => {
-      const next = prev.filter(c => c.cluster_id !== clusterId);
-      // Auto-avança para o próximo cluster
-      const idx = prev.findIndex(c => c.cluster_id === clusterId);
-      setSelected(next[idx] ?? next[idx - 1] ?? null);
+    setClusters((prev) => {
+      const next = prev.filter((cluster) => cluster.cluster_id !== clusterId);
+      const idx = prev.findIndex((cluster) => cluster.cluster_id === clusterId);
+      setSelectedId(next[idx]?.cluster_id ?? next[idx - 1]?.cluster_id ?? null);
+      setSelected((current) => (current?.cluster_id === clusterId ? null : current));
+      setTotalClusters((value) => Math.max(0, value - 1));
       return next;
     });
   }, []);
 
   const handleSkip = useCallback(() => {
-    if (!selected) return;
-    const idx = clusters.findIndex(c => c.cluster_id === selected.cluster_id);
-    setSelected(clusters[idx + 1] ?? clusters[idx - 1] ?? null);
-  }, [selected, clusters]);
+    if (!selectedId) return;
+    const idx = clusters.findIndex((cluster) => cluster.cluster_id === selectedId);
+    setSelectedId(clusters[idx + 1]?.cluster_id ?? clusters[idx - 1]?.cluster_id ?? null);
+  }, [selectedId, clusters]);
 
   const handleClusterUpdate = useCallback((next: RichCluster) => {
-    setClusters(prev => prev.map(c => (c.cluster_id === next.cluster_id ? next : c)));
-    setSelected(prev => (prev && prev.cluster_id === next.cluster_id ? next : prev));
+    setClusters((prev) => prev.map((cluster) => (
+      cluster.cluster_id === next.cluster_id
+        ? {
+            ...cluster,
+            cluster_number: next.cluster_number,
+            face_count: next.face_count,
+            photo_count: next.photo_count,
+            total_photos: next.total_photos,
+            cohesion_score: next.cohesion_score,
+            cohesion: next.cohesion,
+            priority_score: next.priority_score,
+            graduation_tags: next.graduation_tags,
+            has_gown: next.has_gown,
+            has_diploma: next.has_diploma,
+            has_sash: next.has_sash,
+            has_cap: next.has_cap,
+            gown_confidence: next.gown_confidence,
+            diploma_confidence: next.diploma_confidence,
+            sash_confidence: next.sash_confidence,
+            cap_confidence: next.cap_confidence,
+            manual_graduation_tags: next.manual_graduation_tags,
+            debug_graduation_source: next.debug_graduation_source,
+            preview_image: next.preview_image,
+            representative: next.representative,
+          }
+        : cluster
+    )));
+    setSelected((prev) => (prev && prev.cluster_id === next.cluster_id ? next : prev));
   }, []);
 
   const handleStartGraduationAnalysis = useCallback(async () => {
@@ -155,10 +258,15 @@ function ReviewViewContent() {
       <ReviewSidebar
         clusters={clusters}
         loading={loading}
-        selectedId={selected?.cluster_id ?? null}
+        loadingMore={loadingMore}
+        selectedId={selectedId}
+        total={totalClusters}
+        hasMore={hasMore}
+        reviewReady={reviewReady}
         graduationAnalysisRan={Boolean(graduationStatus?.result || graduationStatus?.finished_at)}
-        onSelect={setSelected}
+        onSelect={setSelectedId}
         onRefresh={load}
+        onLoadMore={loadMore}
       />
 
       {/* Área principal */}
@@ -177,11 +285,22 @@ function ReviewViewContent() {
             onSkip={handleSkip}
             onClusterUpdate={handleClusterUpdate}
           />
+        ) : loadingDetail && selectedId ? (
+          <WelcomeState
+            key="detail-loading"
+            count={clusters.length}
+            loading
+            loadingMessage="Abrindo grupo..."
+            reviewReady={reviewReady}
+            onRefresh={load}
+          />
         ) : (
           <WelcomeState
             key="welcome"
             count={clusters.length}
             loading={loading}
+            loadingMessage="Carregando grupos salvos..."
+            reviewReady={reviewReady}
             onRefresh={load}
           />
         )}
@@ -286,17 +405,23 @@ function GraduationAnalysisPanel({
 function WelcomeState({
   count,
   loading,
+  reviewReady = true,
+  loadingMessage = 'Carregando grupos salvos...',
   onRefresh,
 }: {
   count: number;
   loading: boolean;
+  reviewReady?: boolean;
+  loadingMessage?: string;
   onRefresh: () => void;
 }) {
-  const titleLabel = loading ? 'Calculando agrupamentos...' : count === 0 ? 'Tudo identificado!' : 'Revisão IA';
+  const titleLabel = loading ? loadingMessage : count === 0 ? (reviewReady ? 'Tudo identificado!' : 'Ainda preparando a revisão') : 'Revisão IA';
   const subtitleLabel = loading
-    ? 'A IA está analisando as faces similares...'
+    ? 'A primeira página está sendo carregada a partir dos clusters já salvos no catálogo.'
     : count === 0
-    ? 'Nenhuma face desconhecida pendente neste evento.'
+    ? (reviewReady
+      ? 'Nenhuma face desconhecida pendente neste evento.'
+      : 'Os dados da revisão ainda estão sendo preparados em segundo plano.')
     : `${count} grupo${count !== 1 ? 's' : ''} aguardando identificação. Selecione um grupo na barra lateral para começar.`;
 
   return (

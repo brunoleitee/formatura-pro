@@ -1,5 +1,11 @@
 import { API_BASE, fetchJSON, post } from './core';
-import type { GraduationAnalysisStatus, UnknownCluster, UnknownClustersResponse } from './types';
+import type {
+  GraduationAnalysisStatus,
+  ReviewClusterDetailResponse,
+  ReviewClustersPageResponse,
+  UnknownCluster,
+  UnknownClustersResponse,
+} from './types';
 
 export const reviewApi = {
   getUnknownClusters: (catalog: string, min_score = 0.58, min_cluster_size = 2, limit = 80) =>
@@ -10,6 +16,16 @@ export const reviewApi = {
   getUnknownClustersV2: (catalog: string, min_score = 0.58, min_cluster_size = 2, limit = 100) =>
     fetchJSON<UnknownClustersResponse>(
       `${API_BASE}/review/unknown-clusters?catalog=${encodeURIComponent(catalog)}&min_score=${min_score}&min_cluster_size=${min_cluster_size}&limit=${limit}`
+    ),
+
+  getReviewClusters: (catalog: string, limit = 30, offset = 0) =>
+    fetchJSON<ReviewClustersPageResponse>(
+      `${API_BASE}/review/clusters?catalog=${encodeURIComponent(catalog)}&limit=${limit}&offset=${offset}`
+    ),
+
+  getReviewClusterDetail: (catalog: string, clusterId: string) =>
+    fetchJSON<ReviewClusterDetailResponse>(
+      `${API_BASE}/review/clusters/detail?catalog=${encodeURIComponent(catalog)}&cluster_id=${encodeURIComponent(clusterId)}`
     ),
 
   assignCluster: (

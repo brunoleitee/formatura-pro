@@ -178,10 +178,56 @@ export interface RichCluster {
   faces: RichClusterFace[];
 }
 
+export interface ReviewClusterSummary {
+  cluster_id: string;
+  cluster_number: number;
+  face_count: number;
+  photo_count: number;
+  total_photos?: number;
+  cohesion_score: number;
+  cohesion?: number;
+  priority_score?: number;
+  graduation_tags?: string[];
+  has_gown?: boolean;
+  has_diploma?: boolean;
+  has_sash?: boolean;
+  has_cap?: boolean;
+  gown_confidence?: number;
+  diploma_confidence?: number;
+  sash_confidence?: number;
+  cap_confidence?: number;
+  graduation_reviewed?: boolean;
+  manual_graduation_tags?: string[];
+  debug_graduation_source?: string;
+  preview_image?: string;
+  discovered_at?: string;
+  status?: string;
+  representative: RichClusterFace;
+}
+
 export interface UnknownClustersResponse {
   clusters: RichCluster[];
   threshold: number;
   min_cluster_size: number;
+}
+
+export interface ReviewClustersPageResponse {
+  clusters: ReviewClusterSummary[];
+  limit: number;
+  offset: number;
+  total: number;
+  has_more: boolean;
+  review_ready: boolean;
+  cache_used?: boolean;
+  cache_duration_ms?: number;
+  query_duration_ms?: number;
+}
+
+export interface ReviewClusterDetailResponse {
+  cluster: RichCluster;
+  review_ready: boolean;
+  cache_used?: boolean;
+  duration_ms?: number;
 }
 
 export interface Stats {
