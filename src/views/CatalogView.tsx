@@ -143,6 +143,7 @@ export default function CatalogView() {
                 onPhotoClick={toggleSelection}
                 onDoubleClick={setViewerPhoto}
                 onOpenDetails={setDetailsPhoto}
+                zoom={zoom}
               />
             </>
           )}
