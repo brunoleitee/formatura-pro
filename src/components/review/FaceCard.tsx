@@ -27,9 +27,8 @@ export const FaceCard = memo(function FaceCard({
   return (
     <button
       className={`${styles.card} ${styles[variant]} ${selected ? styles.selected : ''}`}
-      onClick={onClick}
+onClick={onClick}
       type="button"
-      translate="no"
     >
       <div className={styles.imgWrap}>
         <img

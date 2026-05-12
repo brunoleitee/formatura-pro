@@ -66,7 +66,6 @@ const ClusterItem = memo(function ClusterItem({
       className={`${styles.item} ${isSelected ? styles.itemActive : ''}`}
       onClick={onClick}
       type="button"
-      translate="no"
     >
       <div className={styles.avatar}>
         {rep ? (
@@ -193,7 +192,7 @@ export default function ReviewSidebar({
     (graduationAnalysisRan || hasGraduationAnalysis);
 
   return (
-    <aside className={`${styles.sidebar} notranslate`} translate="no">
+    <aside className={`${styles.sidebar}`}>
       {/* Header */}
       <div className={styles.header}>
         <div className={styles.headerRow}>

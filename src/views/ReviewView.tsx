@@ -21,7 +21,7 @@ class ReviewViewBoundary extends Component<{ children: ReactNode }, { hasError: 
   render() {
     if (this.state.hasError) {
       return (
-        <div className={`${styles.root} ${styles.reviewView} notranslate`} translate="no">
+<div className={`${styles.root} ${styles.reviewView}`}>
           <div className={styles.main}>
             <div className={styles.noCatalog}>
               <UserCheck size={40} strokeWidth={1.5} style={{ opacity: 0.25 }} />
@@ -140,7 +140,7 @@ function ReviewViewContent() {
 
   if (!currentCatalog) {
     return (
-      <div className={`${styles.root} ${styles.reviewView} notranslate`} translate="no">
+<div className={`${styles.root} ${styles.reviewView}`}>
         <div className={styles.noCatalog}>
           <UserCheck size={40} strokeWidth={1.5} style={{ opacity: 0.25 }} />
           <p>Selecione um evento para começar a revisão.</p>
@@ -150,7 +150,7 @@ function ReviewViewContent() {
   }
 
   return (
-    <div className={`${styles.root} ${styles.reviewView} notranslate`} translate="no">
+    <div className={`${styles.root} ${styles.reviewView}`}>
       {/* Sidebar esquerda de clusters */}
       <ReviewSidebar
         clusters={clusters}
@@ -162,7 +162,7 @@ function ReviewViewContent() {
       />
 
       {/* Área principal */}
-      <div className={`${styles.main} notranslate`} translate="no">
+      <div className={`${styles.main}`}>
         <GraduationAnalysisPanel
           status={graduationStatus}
           isStarting={isStartingGraduationAnalysis}
@@ -219,7 +219,7 @@ function GraduationAnalysisPanel({
   }
 
   return (
-    <div className={`${styles.analysisPanel} ${open ? styles.analysisPanelOpen : ''}`} translate="no">
+    <div className={`${styles.analysisPanel} ${open ? styles.analysisPanelOpen : ''}`}>
       <div className={styles.analysisCompact}>
         <span className={styles.analysisEyebrow}>
           <Sparkles size={11} />
@@ -300,7 +300,7 @@ function WelcomeState({
     : `${count} grupo${count !== 1 ? 's' : ''} aguardando identificação. Selecione um grupo na barra lateral para começar.`;
 
   return (
-    <div className={styles.welcome} translate="no">
+    <div className={styles.welcome}>
       <div className={styles.welcomeInner}>
         <div className={styles.welcomeOrb}>
           {loading ? (

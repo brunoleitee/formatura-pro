@@ -103,7 +103,7 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
   const canAssign = Boolean(selectedStudent?.id || nameInput.trim());
 
   return (
-    <div className={`${styles.hero} ${collapsed ? styles.heroCollapsed : ''} notranslate`} translate="no">
+    <div className={`${styles.hero} ${collapsed ? styles.heroCollapsed : ''}`}>
       {/* Avatar circular */}
       <div className={`${styles.avatar} ${collapsed ? styles.avatarTiny : ''}`}>
         {rep ? (

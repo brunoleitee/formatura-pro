@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Image as ImageIcon, MoreHorizontal } from 'lucide-react';
 import { api, type Photo } from '../../services/api';
 import { isPhotoBlurry, isPhotoAttention } from '../../utils/qualityUtils';
@@ -10,6 +10,50 @@ interface PhotoCardProps {
   onClick: (photo: Photo, event: React.MouseEvent) => void;
   onDoubleClick?: (photo: Photo) => void;
   onOpenDetails: (photo: Photo) => void;
+}
+
+function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number, h: number }, photoWidth: number, photoHeight: number) {
+  if (face.x1 == null || !photoWidth || !photoHeight) return null;
+
+  const imgRatio = photoWidth / photoHeight;
+  const containerRatio = thumbSize.w / thumbSize.h;
+
+  let renderedW = thumbSize.w;
+  let renderedH = thumbSize.h;
+
+  if (imgRatio > containerRatio) {
+    renderedH = thumbSize.w / imgRatio;
+  } else {
+    renderedW = thumbSize.h * imgRatio;
+  }
+
+  const offsetX = (thumbSize.w - renderedW) / 2;
+  const offsetY = (thumbSize.h - renderedH) / 2;
+  const isKnown = isKnownFace(face);
+
+  const x1 = offsetX + (face.x1 / photoWidth) * renderedW;
+  const y1 = offsetY + (face.y1 / photoHeight) * renderedH;
+  const widthPx = ((face.x2 - face.x1) / photoWidth) * renderedW;
+  const heightPx = ((face.y2 - face.y1) / photoHeight) * renderedH;
+  const color = isKnown ? '#22c55e' : '#9ca3af';
+
+  return (
+    <div
+      key={face.rowid ?? Math.random()}
+      style={{
+        position: 'absolute',
+        left: `${x1}px`,
+        top: `${y1}px`,
+        width: `${widthPx}px`,
+        height: `${heightPx}px`,
+        border: `2px solid ${color}`,
+        borderRadius: '4px',
+        pointerEvents: 'none',
+        boxSizing: 'border-box',
+        zIndex: 1
+      }}
+    />
+  );
 }
 
 export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDetails }: PhotoCardProps) {
@@ -75,51 +119,11 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
             >
               <MoreHorizontal size={16} />
             </button>
-            {isLoaded && thumbSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, i) => {
-              if (face.x1 == null || !photo.width || !photo.height) return null;
-              
-              const imgRatio = photo.width / photo.height;
-              const containerRatio = thumbSize.w / thumbSize.h;
-              
-              let renderedW = thumbSize.w;
-              let renderedH = thumbSize.h;
-              
-              if (imgRatio > containerRatio) {
-                renderedH = thumbSize.w / imgRatio;
-              } else {
-                renderedW = thumbSize.h * imgRatio;
-              }
-              
-              const offsetX = (thumbSize.w - renderedW) / 2;
-              const offsetY = (thumbSize.h - renderedH) / 2;
-
-              const isKnown = isKnownFace(face);
-              
-              const x1 = offsetX + (face.x1 / photo.width) * renderedW;
-              const y1 = offsetY + (face.y1 / photo.height) * renderedH;
-              const widthPx = ((face.x2 - face.x1) / photo.width) * renderedW;
-              const heightPx = ((face.y2 - face.y1) / photo.height) * renderedH;
-              
-              const color = isKnown ? '#22c55e' : '#9ca3af';
-
-              return (
-                <div
-                  key={i}
-                  style={{
-                    position: 'absolute',
-                    left: `${x1}px`, 
-                    top: `${y1}px`,
-                    width: `${widthPx}px`, 
-                    height: `${heightPx}px`,
-                    border: `2px solid ${color}`,
-                    borderRadius: '4px',
-                    pointerEvents: 'none',
-                    boxSizing: 'border-box',
-                    zIndex: 1
-                  }}
-                />
-              );
-            })}
+            {isLoaded && thumbSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, idx) => (
+                <React.Fragment key={face.rowid ?? idx}>
+                  {renderFaceOverlay(face, thumbSize, photo.width!, photo.height!)}
+                </React.Fragment>
+              ))}
           </>
         )}
         {!isLoaded && !hasError && <div className="photo-skeleton" />}

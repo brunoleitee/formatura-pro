@@ -222,7 +222,7 @@ function ExportViewContent() {
   });
 
   return (
-    <div className="view-container notranslate" translate="no">
+    <div className="view-container">
       <div className="view-header">
         <div>
           <h1>Exportar Fotos</h1>

@@ -71,6 +71,51 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate }: Phot
     if (currentIndex < total - 1) onNavigate(allPhotos[currentIndex + 1]);
   };
 
+  const renderFaceOverlay = (face: Photo['faces'][number], idx: number) => {
+    if (face.x1 == null || !photo.width || !photo.height) return null;
+
+    const faceId = face.rowid ?? `face-${idx}`;
+    const imgRatio = photo.width / photo.height;
+    const containerRatio = viewSize.w / viewSize.h;
+
+    let renderedW = viewSize.w;
+    let renderedH = viewSize.h;
+
+    if (imgRatio > containerRatio) {
+      renderedH = viewSize.w / imgRatio;
+    } else {
+      renderedW = viewSize.h * imgRatio;
+    }
+
+    const offsetX = (viewSize.w - renderedW) / 2;
+    const offsetY = (viewSize.h - renderedH) / 2;
+    const isKnown = isKnownFace(face);
+
+    const x1 = offsetX + (face.x1 / photo.width) * renderedW;
+    const y1 = offsetY + (face.y1 / photo.height) * renderedH;
+    const widthPx = ((face.x2 - face.x1) / photo.width) * renderedW;
+    const heightPx = ((face.y2 - face.y1) / photo.height) * renderedH;
+    const color = isKnown ? '#22c55e' : '#9ca3af';
+
+    return (
+      <div
+        key={faceId !== undefined ? faceId : idx}
+        style={{
+          position: 'absolute',
+          left: `${x1}px`,
+          top: `${y1}px`,
+          width: `${widthPx}px`,
+          height: `${heightPx}px`,
+          border: `2px solid ${color}`,
+          borderRadius: '6px',
+          pointerEvents: 'none',
+          boxSizing: 'border-box',
+          zIndex: 1
+        }}
+      />
+    );
+  };
+
   return (
     <div className="photo-viewer-modal" onClick={onClose}>
       <div className="photo-viewer-content" onClick={(e) => e.stopPropagation()}>
@@ -92,51 +137,7 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate }: Phot
               setViewSize({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight });
             }}
           />
-          {isLoaded && viewSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, i) => {
-            if (face.x1 == null || !photo.width || !photo.height) return null;
-            
-            const imgRatio = photo.width / photo.height;
-            const containerRatio = viewSize.w / viewSize.h;
-            
-            let renderedW = viewSize.w;
-            let renderedH = viewSize.h;
-            
-            if (imgRatio > containerRatio) {
-              renderedH = viewSize.w / imgRatio;
-            } else {
-              renderedW = viewSize.h * imgRatio;
-            }
-            
-            const offsetX = (viewSize.w - renderedW) / 2;
-            const offsetY = (viewSize.h - renderedH) / 2;
-
-            const isKnown = isKnownFace(face);
-            
-            const x1 = offsetX + (face.x1 / photo.width) * renderedW;
-            const y1 = offsetY + (face.y1 / photo.height) * renderedH;
-            const widthPx = ((face.x2 - face.x1) / photo.width) * renderedW;
-            const heightPx = ((face.y2 - face.y1) / photo.height) * renderedH;
-
-            const color = isKnown ? '#22c55e' : '#9ca3af';
-
-            return (
-              <div
-                key={i}
-                style={{
-                  position: 'absolute',
-                  left: `${x1}px`, 
-                  top: `${y1}px`,
-                  width: `${widthPx}px`, 
-                  height: `${heightPx}px`,
-                  border: `2px solid ${color}`,
-                  borderRadius: '6px',
-                  pointerEvents: 'none',
-                  boxSizing: 'border-box',
-                  zIndex: 1
-                }}
-              />
-            );
-          })}
+          {isLoaded && viewSize.w > 0 && photo.width && photo.height && (photo.faces || []).map(renderFaceOverlay)}
 
           {currentIndex < total - 1 && (
             <button className="viewer-nav viewer-next" onClick={handleNext}>

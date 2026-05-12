@@ -59,7 +59,6 @@ export const PhotoCard = memo(function PhotoCard({
     <div
       className={`${styles.photoCard} ${modeClass} ${selected ? styles.selected : ''}`}
       onClick={onToggle}
-      translate="no"
       data-selectable-card="true"
       data-rowid={face.rowid}
     >

@@ -17,7 +17,7 @@ export function getPhotoId(photo: any) {
   return id;
 }
 
-export function usePhotoSelection(photos: Photo[]) {
+export function usePhotoSelection(_photos: Photo[]) {
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
 
   const toggleSelection = useCallback((photo: Photo, event: React.MouseEvent | React.KeyboardEvent) => {
@@ -47,7 +47,7 @@ export function usePhotoSelection(photos: Photo[]) {
       }
       return next;
     });
-  }, [photos]);
+  }, []);
 
   const clearSelection = useCallback(() => setSelectedPaths(new Set()), []);
 
