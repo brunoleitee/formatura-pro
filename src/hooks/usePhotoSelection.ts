@@ -1,7 +1,21 @@
 import React, { useState, useCallback } from 'react';
 import type { Photo } from '../services/api';
 
-export const getPhotoId = (photo: any) => photo.original_path || photo.path || photo.file_path || photo.id;
+export function getPhotoId(photo: any) {
+  const id = String(
+    photo.rowid ??
+    photo.id ??
+    photo.original_path ??
+    photo.originalPath ??
+    photo.file_path ??
+    photo.filePath ??
+    photo.path
+  );
+  if (!id || id === 'undefined' || id === 'null') {
+    console.warn('[Catalog missing photo id]', photo);
+  }
+  return id;
+}
 
 export function usePhotoSelection(photos: Photo[]) {
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());

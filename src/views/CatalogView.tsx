@@ -129,18 +129,6 @@ export default function CatalogView() {
             </div>
           ) : (
             <>
-              {(() => {
-                const ids = filteredPhotos.map(getPhotoId);
-                const duplicated = ids.filter((id, i) => ids.indexOf(id) !== i);
-                if (duplicated.length > 0) {
-                  console.log('[Catalog keys debug]', {
-                    total: ids.length,
-                    duplicated,
-                    selected: Array.from(selectedPaths)
-                  });
-                }
-                return null;
-              })()}
               <PhotoGrid
                 photos={filteredPhotos}
                 selectedPaths={selectedPaths}

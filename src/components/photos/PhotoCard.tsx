@@ -145,6 +145,31 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
           <span>{firstName}</span>
         </div>
       </div>
+      <div
+        className={`photo-card-check ${isSelected ? 'photo-card-check-visible' : 'photo-card-check-hidden'}`}
+        aria-hidden={!isSelected}
+        style={{
+          position: 'absolute',
+          top: '8px',
+          left: '8px',
+          background: '#3b82f6',
+          color: 'white',
+          borderRadius: '50%',
+          width: '24px',
+          height: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: isSelected ? 1 : 0,
+          transition: 'opacity 0.2s',
+          pointerEvents: 'none',
+          zIndex: 20,
+        }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      </div>
     </div>
   );
 }
