@@ -592,7 +592,7 @@ def analyze_culling(aluno_id: str, catalog: str = ""):
         raise HTTPException(500, str(e))
 
 
-def get_image_thumb(path: str, size: int = 300):
+def get_image_thumb(path: str, size: int = 300, quality: int = 80):
     started = time.perf_counter()
     decoded_path = urllib.parse.unquote(path)
     log_info = _get("log_info")
@@ -605,7 +605,7 @@ def get_image_thumb(path: str, size: int = 300):
             mode = "missing"
             raise HTTPException(status_code=404)
         
-        cache_path = get_cached_thumb_path(decoded_path, "image", size)
+        cache_path = get_cached_thumb_path(decoded_path, "image", size, quality)
         
         cached_result = _get_result_from_cache(cache_path)
         if cached_result:
@@ -659,9 +659,10 @@ def get_image_thumb(path: str, size: int = 300):
         
         try:
             if log_info:
-                log_info(f"THUMB generation: path={os.path.basename(decoded_path)} size={size}")
+                log_info(f"THUMB generation: path={os.path.basename(decoded_path)} size={size} quality={quality}")
             
-            if _run_thumb_engine("image", decoded_path, cache_path, size):
+            # Motor Rust só é usado para qualidade padrão (80)
+            if quality == 80 and _run_thumb_engine("image", decoded_path, cache_path, size):
                 mode = "rust"
                 _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "rust")
                 result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
@@ -682,19 +683,19 @@ def get_image_thumb(path: str, size: int = 300):
             try:
                 mode = "pillow"
                 if log_info:
-                    log_info(f"THUMB PILLOW: path={os.path.basename(decoded_path)}")
+                    log_info(f"THUMB PILLOW: path={os.path.basename(decoded_path)} quality={quality}")
                 
                 pil = load_pil_with_orientation(decoded_path)
                 pil = pil.convert("RGB")
                 pil.thumbnail((size, size), Image.Resampling.LANCZOS)
                 
                 buf = io.BytesIO()
-                pil.save(buf, format="JPEG", quality=80)
+                pil.save(buf, format="JPEG", quality=quality, optimize=True)
                 buf.seek(0)
                 
                 saved = False
                 try:
-                    pil.save(cache_path, format="JPEG", quality=80)
+                    pil.save(cache_path, format="JPEG", quality=quality, optimize=True)
                     saved = True
                     _trim_thumb_cache()
                 except Exception as save_err:
@@ -702,7 +703,7 @@ def get_image_thumb(path: str, size: int = 300):
                         log_info(f"THUMB cache save error: {save_err}")
                 
                 mode = "pillow_done"
-                _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "miss", extra=f"wait={wait_ms:.0f}ms saved={saved}")
+                _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "miss", extra=f"wait={wait_ms:.0f}ms saved={saved} q={quality}")
                 result = StreamingResponse(buf, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
                 _put_result_in_cache(cache_path, result)
                 return result
@@ -802,7 +803,7 @@ def get_image_thumb(path: str, size: int = 300):
         return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
 
 
-def get_thumb(path: str, x1: int, y1: int, x2: int, y2: int, size: int = 120, expand: float = 0.35):
+def get_thumb(path: str, x1: int, y1: int, x2: int, y2: int, size: int = 120, expand: float = 0.35, quality: int = 80):
     started = time.perf_counter()
     decoded_path = urllib.parse.unquote(path)
     log_info = _get("log_info")
@@ -815,7 +816,7 @@ def get_thumb(path: str, x1: int, y1: int, x2: int, y2: int, size: int = 120, ex
             mode = "missing"
             raise HTTPException(status_code=404)
         
-        cache_path = get_cached_thumb_path(decoded_path, "face", x1, y1, x2, y2, size, expand)
+        cache_path = get_cached_thumb_path(decoded_path, "face", x1, y1, x2, y2, size, expand, quality)
         
         cached_result = _get_result_from_cache(cache_path)
         if cached_result:

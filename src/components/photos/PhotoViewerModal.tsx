@@ -51,6 +51,33 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
 
+  // Alta qualidade dinâmica
+  const [useHighRes, setUseHighRes] = useState(false);
+  const [highResLoaded, setHighResLoaded] = useState(false);
+  const [currentSrc, setCurrentSrc] = useState(api.thumbUrl(photo.path, 1200, 90));
+
+  useEffect(() => {
+    // Reset quando troca de foto
+    setIsLoaded(false);
+    setUseHighRes(false);
+    setHighResLoaded(false);
+    setCurrentSrc(api.thumbUrl(photo.path, 1200, 90));
+  }, [photo.path]);
+
+  useEffect(() => {
+    // Se zoom for alto, carregar original
+    if (zoom >= 1.0 && !useHighRes) {
+      setUseHighRes(true);
+      const img = new window.Image();
+      const highResUrl = api.fullResUrl(photo.path);
+      img.src = highResUrl;
+      img.onload = () => {
+        setCurrentSrc(highResUrl);
+        setHighResLoaded(true);
+      };
+    }
+  }, [zoom, photo.path, useHighRes]);
+
   const imageRef = useRef<HTMLImageElement>(null);
   const imageStageRef = useRef<HTMLDivElement>(null);
   const currentIndex = allPhotos.findIndex((p) => p.path === photo.path);
@@ -545,10 +572,13 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
             >
               <img
                 ref={imageRef}
-                src={api.thumbUrl(photo.path, 1200)}
+                src={currentSrc}
                 alt={photo.name}
                 className={styles.mainImage}
-                style={{ opacity: isLoaded ? 1 : 0 }}
+                style={{ 
+                  opacity: isLoaded ? 1 : 0,
+                  imageRendering: zoom >= 1 ? 'auto' : 'auto'
+                }}
                 onLoad={(e) => {
                   const img = e.currentTarget;
                   const stage = imageStageRef.current;
@@ -570,6 +600,13 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
                   setIsLoaded(true);
                 }}
               />
+
+              {useHighRes && !highResLoaded && (
+                <div className={styles.highResIndicator}>
+                  <div className={styles.highResSpinner} />
+                  <span>Alta Qualidade...</span>
+                </div>
+              )}
 
               {isDiscarded && <div className={styles.discardBadge}>DESCARTADA</div>}
 

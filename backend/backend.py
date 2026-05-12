@@ -1291,20 +1291,24 @@ def get_photo_info(path: str, catalog: str = ""):
         return {"faces": [], "discarded": False}
 
 @app.get("/api/image_thumb")
-def get_image_thumb(path: str, size: int=300):
+def get_image_thumb(path: str, size: int = 300, q: int = 80):
     try:
         get_thumb_slot()
-        return mm.get_image_thumb(path, size)
+        return mm.get_image_thumb(path, size, q)
     finally:
         release_thumb_slot()
 
 @app.get("/api/thumb")
-def get_thumb(path: str, x1: int, y1: int, x2: int, y2: int, size: int=120, expand: float=0.35):
+def get_thumb(path: str, x1: int, y1: int, x2: int, y2: int, size: int = 120, expand: float = 0.35, q: int = 80):
     try:
         get_thumb_slot()
-        return mm.get_thumb(path, x1, y1, x2, y2, size, expand)
+        return mm.get_thumb(path, x1, y1, x2, y2, size, expand, q)
     finally:
         release_thumb_slot()
+
+@app.get("/api/image_full")
+def get_image_full(path: str):
+    return mm.get_image(path)
 
 @app.get("/api/image")
 def get_image(path: str = Query(...)):
