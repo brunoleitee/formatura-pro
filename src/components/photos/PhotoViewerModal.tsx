@@ -21,6 +21,9 @@ interface SimilarResult {
   thumb_url: string;
   score: number;
   aluno_id: string | null;
+  box?: number[];
+  image_width?: number;
+  image_height?: number;
 }
 
 export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhotoUpdate, onDiscard, onRestore }: PhotoViewerModalProps) {
@@ -256,6 +259,31 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
       width: `${Math.abs(drawCurrent.x - drawStart.x)}px`,
       height: `${Math.abs(drawCurrent.y - drawStart.y)}px`,
     };
+  };
+
+  const getFaceThumbUrl = (result: SimilarResult) => {
+    if (!result.box || result.box.length < 4) {
+      return result.thumb_url || api.thumbUrl(result.photo_path, 150);
+    }
+    const imgW = result.image_width || 1000;
+    const imgH = result.image_height || 1000;
+    let [x1, y1, x2, y2] = result.box;
+    if (x1 < 1 && y1 < 1 && x2 <= 1 && y2 <= 1) {
+      x1 *= imgW; y1 *= imgH;
+      x2 *= imgW; y2 *= imgH;
+    }
+    let bw = x2 - x1;
+    let bh = y2 - y1;
+    if (bw <= 0 || bh <= 0) {
+      return result.thumb_url || api.thumbUrl(result.photo_path, 150);
+    }
+    const padX = bw * 0.35;
+    const padY = bh * 0.45;
+    x1 = Math.max(0, x1 - padX);
+    y1 = Math.max(0, y1 - padY);
+    x2 = Math.min(imgW, x2 + padX);
+    y2 = Math.min(imgH, y2 + padY);
+    return api.faceThumbUrl(result.photo_path, x1, y1, x2, y2, 150);
   };
 
   return (
@@ -542,7 +570,7 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
               <div className={styles.similarGrid}>
                 {similarResults.map((result) => (
                   <div key={result.rowid} className={styles.similarItem}>
-                    <img src={result.thumb_url || api.thumbUrl(result.photo_path, 150)} alt="" className={styles.similarImg} />
+                    <img src={getFaceThumbUrl(result)} alt="" className={styles.similarImg} />
                     <div className={styles.similarScore}>
                       {result.aluno_id ?? 'Desconhecido'} · {(result.score * 100).toFixed(0)}%
                     </div>
