@@ -111,6 +111,20 @@ function faceHint(face: ScanRecentFace) {
   return 'detecção recente';
 }
 
+function faceStatus(face: ScanRecentFace) {
+  const kind = getFaceKind(face);
+  if (kind === 'match') return 'Match automático';
+  if (kind === 'cluster') return 'Cluster em formação';
+  return 'Rosto detectado';
+}
+
+function faceConfidence(face: ScanRecentFace) {
+  const kind = getFaceKind(face);
+  if (kind === 'match') return 'score ao vivo indisponível';
+  if (kind === 'cluster') return 'agrupando por similaridade';
+  return 'analisando o lote atual';
+}
+
 function deriveCurrentStep(status: ScanStatus | null, progressPct: number) {
   const text = (status?.status_text || '').toLowerCase();
   if (!status?.is_scanning && status?.scan_summary) return PIPELINE_STEPS.length - 1;
@@ -127,10 +141,8 @@ function deriveCurrentStep(status: ScanStatus | null, progressPct: number) {
 
 const LiveFaceCard = memo(function LiveFaceCard({
   face,
-  active = false,
 }: {
   face: ScanRecentFace;
-  active?: boolean;
 }) {
   const [x1, y1, x2, y2] = face.box;
   const label = faceLabel(face);
@@ -139,16 +151,16 @@ const LiveFaceCard = memo(function LiveFaceCard({
   return (
     <motion.article
       layout
-      className={`${styles.faceCard} ${active ? styles.faceCardActive : ''}`}
-      initial={{ opacity: 0, y: 14 }}
+      className={styles.faceCard}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
-      transition={{ duration: 0.24, ease: 'easeOut' }}
+      exit={{ opacity: 0, y: -6 }}
+      transition={{ duration: 0.18, ease: 'easeOut' }}
     >
       <div className={styles.faceImageWrap}>
         <img
           className={styles.faceImage}
-          src={api.faceThumbUrl(face.path, x1, y1, x2, y2, active ? 220 : 180, 0.25, 72)}
+          src={api.faceThumbUrl(face.path, x1, y1, x2, y2, 180, 0.25, 72)}
           alt={label}
           loading="lazy"
         />
@@ -176,7 +188,7 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
   canOpenReview,
 }: ScanProcessingCenterProps) {
   const deferredFaces = useDeferredValue(scanStatus?.recent_faces ?? []);
-  const latestTimeline = useMemo(() => timeline.slice(-36), [timeline]);
+  const latestTimeline = useMemo(() => timeline.slice(-18), [timeline]);
   const [frozenFaces, setFrozenFaces] = useState<ScanRecentFace[]>([]);
   const [frozenTimeline, setFrozenTimeline] = useState<ScanTimelineEntry[]>([]);
   const logRef = useRef<HTMLDivElement>(null);
@@ -193,31 +205,42 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
   const visibleTimeline = isFeedPaused ? frozenTimeline : latestTimeline;
   const progressPct = normalizeProgress(scanStatus?.progress);
   const currentFace = visibleFaces[0] ?? null;
-  const gridFaces = visibleFaces.slice(1, 11);
+  const gridFaces = visibleFaces.slice(1, 13);
   const currentStep = deriveCurrentStep(scanStatus, progressPct);
   const sourceLabel = sourcePath || scanStatus?.last_folder_scanned || '';
+  const processedLabel = `${formatInteger(scanStatus?.total_processadas)} / ${formatInteger(scanStatus?.total_files)}`;
 
   useEffect(() => {
     if (!logRef.current || isFeedPaused) return;
     logRef.current.scrollTo({
       top: logRef.current.scrollHeight,
-      behavior: visibleTimeline.length > 12 ? 'auto' : 'smooth',
+      behavior: visibleTimeline.length > 10 ? 'auto' : 'smooth',
     });
   }, [isFeedPaused, visibleTimeline]);
 
   return (
     <section className={styles.root}>
       <header className={styles.header}>
-        <div className={styles.headerBlock}>
+        <div className={styles.headerLeft}>
           <span className={styles.headerEyebrow}>Central de processamento IA</span>
           <h2 className={styles.catalogTitle}>{currentCatalog || 'Scan em andamento'}</h2>
           <p className={styles.catalogMeta}>{formatCatalogMeta(scanStatus, sourceLabel)}</p>
           {sourceLabel && <p className={styles.sourcePath}>{sourceLabel}</p>}
         </div>
 
-        <div className={styles.headerStatus}>
+        <div className={styles.headerCenter}>
           <span className={styles.statusLabel}>{scanMsg || scanStatus?.status_text || 'Processando...'}</span>
-          <span className={styles.statusHint}>{formatEta(scanStatus?.eta_seconds)}</span>
+          <div className={styles.progressTrack}>
+            <motion.div
+              className={styles.progressFill}
+              animate={{ width: `${progressPct}%` }}
+              transition={{ duration: 0.28, ease: 'easeOut' }}
+            />
+          </div>
+          <div className={styles.progressMeta}>
+            <span>{processedLabel} processadas</span>
+            <span>{formatEta(scanStatus?.eta_seconds)}</span>
+          </div>
         </div>
 
         <div className={styles.headerActions}>
@@ -229,7 +252,7 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
 
           <button className={styles.actionBtn} onClick={onToggleFeedPaused} title="Pausar apenas o painel visual">
             {isFeedPaused ? <Play size={15} /> : <Pause size={15} />}
-            <span>{isFeedPaused ? 'Retomar painel' : 'Pausar painel'}</span>
+            <span>{isFeedPaused ? 'Retomar' : 'Pausar'}</span>
           </button>
 
           <button className={styles.actionBtnDanger} onClick={onCancel} disabled={!isScanning}>
@@ -237,7 +260,7 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
           </button>
 
           <button className={styles.actionBtnAccent} onClick={onOpenReview} disabled={!canOpenReview}>
-            <span>Abrir revisão</span>
+            <span>Revisão</span>
           </button>
 
           <button className={styles.iconBtn} onClick={onClose} title="Fechar painel">
@@ -246,161 +269,167 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
         </div>
       </header>
 
-      <div className={styles.body}>
-        <div className={styles.mainPane}>
-          <motion.section
-            className={styles.hero}
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.28, ease: 'easeOut' }}
-          >
-            {currentFace ? (
-              <>
-                <div
-                  className={styles.heroBackdrop}
-                  style={{ backgroundImage: `url(${api.thumbUrl(currentFace.path, 1200, 74)})` }}
-                />
-                <div className={styles.heroOverlay} />
-                <div className={styles.heroContent}>
-                  <div className={styles.heroText}>
-                    <span className={styles.heroKicker}>Lote vivo</span>
-                    <h3>{faceLabel(currentFace)}</h3>
-                    <p>{scanStatus?.status_text || 'A IA está processando as imagens atuais do evento.'}</p>
-                  </div>
+      <div className={styles.stageRow}>
+        <motion.section
+          className={styles.previewPanel}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, ease: 'easeOut' }}
+        >
+          <div className={styles.panelHeader}>
+            <div>
+              <h3>Preview principal</h3>
+              <p>O rosto mais recente do lote atual.</p>
+            </div>
+          </div>
 
-                  <LiveFaceCard face={currentFace} active />
+          <div className={styles.previewShell}>
+            {currentFace ? (
+              <div className={styles.previewCard}>
+                <div className={styles.previewImageWrap}>
+                  <img
+                    className={styles.previewImage}
+                    src={api.faceThumbUrl(
+                      currentFace.path,
+                      currentFace.box[0],
+                      currentFace.box[1],
+                      currentFace.box[2],
+                      currentFace.box[3],
+                      320,
+                      0.28,
+                      78,
+                    )}
+                    alt={faceLabel(currentFace)}
+                    loading="eager"
+                  />
                 </div>
-              </>
+                <div className={styles.previewMeta}>
+                  <span className={styles.previewTag}>{faceStatus(currentFace)}</span>
+                  <h3 className={styles.previewName}>{faceLabel(currentFace)}</h3>
+                  <p className={styles.previewSummary}>{faceStatus(currentFace)} • {faceConfidence(currentFace)}</p>
+                  <p className={styles.previewDetail}>{scanStatus?.status_text || 'A IA está processando o lote atual.'}</p>
+                </div>
+              </div>
             ) : (
-              <div className={styles.heroEmpty}>
+              <div className={styles.previewEmpty}>
                 <LoaderCircle size={20} className={styles.spin} />
                 <span>Preparando os primeiros rostos do lote atual...</span>
               </div>
             )}
+          </div>
+        </motion.section>
 
-            <div className={styles.metrics}>
-              <MetricCard label="Processadas" value={formatInteger(scanStatus?.total_processadas)} />
-              <MetricCard label="Matches" value={formatInteger(scanStatus?.total_matches)} />
-              <MetricCard label="Clusters" value={formatInteger(scanStatus?.total_clusters)} />
-              <MetricCard label="Ignoradas BG" value={formatInteger(scanStatus?.skipped_background_faces)} />
+        <aside className={styles.pipelinePanel}>
+          <div className={styles.panelHeader}>
+            <div>
+              <h3>Pipeline IA</h3>
+              <p>Etapas ativas do processamento.</p>
             </div>
-          </motion.section>
+          </div>
 
-          <section className={styles.liveGridPanel}>
-            <div className={styles.sectionHeader}>
-              <div>
-                <h3>Grid vivo de processamento</h3>
-                <p>Prévias recentes do que a IA está detectando agora.</p>
-              </div>
-              <span className={styles.sectionPill}>{visibleFaces.length} eventos recentes</span>
-            </div>
-
-            <div className={styles.liveGrid}>
-              <AnimatePresence initial={false}>
-                {gridFaces.length > 0 ? (
-                  gridFaces.map((face) => <LiveFaceCard key={`${face.path}-${face.box.join('-')}`} face={face} />)
-                ) : (
-                  <motion.div
-                    key="placeholder"
-                    className={styles.gridPlaceholder}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                  >
-                    O feed visual vai aparecer conforme os rostos entrarem no lote.
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </section>
-        </div>
-
-        <aside className={styles.sidePane}>
-          <section className={styles.pipelinePanel}>
-            <div className={styles.sectionHeader}>
-              <div>
-                <h3>Pipeline IA</h3>
-                <p>Etapas visuais do processamento atual.</p>
-              </div>
-            </div>
-
-            <div className={styles.pipelineList}>
-              {PIPELINE_STEPS.map((step, index) => {
-                const Icon = step.icon;
-                const isDone = !isScanning ? index <= currentStep : index < currentStep;
-                const isCurrent = isScanning ? index === currentStep : index === currentStep && Boolean(scanStatus?.scan_summary);
-                return (
-                  <div
-                    key={step.key}
-                    className={`${styles.pipelineItem} ${isCurrent ? styles.pipelineItemCurrent : ''}`}
-                  >
-                    <span className={styles.pipelineIcon}>
-                      {isDone ? (
-                        <CheckCircle2 size={16} />
-                      ) : isCurrent ? (
-                        <LoaderCircle size={16} className={styles.spin} />
-                      ) : (
-                        <Circle size={14} />
-                      )}
+          <div className={styles.pipelineList}>
+            {PIPELINE_STEPS.map((step, index) => {
+              const Icon = step.icon;
+              const isDone = !isScanning ? index <= currentStep : index < currentStep;
+              const isCurrent = isScanning ? index === currentStep : index === currentStep && Boolean(scanStatus?.scan_summary);
+              return (
+                <div
+                  key={step.key}
+                  className={`${styles.pipelineItem} ${isCurrent ? styles.pipelineItemCurrent : ''}`}
+                >
+                  <span className={styles.pipelineIcon}>
+                    {isDone ? (
+                      <CheckCircle2 size={16} />
+                    ) : isCurrent ? (
+                      <LoaderCircle size={16} className={styles.spin} />
+                    ) : (
+                      <Circle size={14} />
+                    )}
+                  </span>
+                  <div className={styles.pipelineMeta}>
+                    <span className={styles.pipelineLabel}>
+                      <Icon size={14} />
+                      <span>{step.label}</span>
                     </span>
-                    <div className={styles.pipelineMeta}>
-                      <span className={styles.pipelineLabel}>
-                        <Icon size={14} />
-                        <span>{step.label}</span>
-                      </span>
-                      <span className={styles.pipelineHint}>{step.hint}</span>
-                    </div>
+                    <span className={styles.pipelineHint}>{step.hint}</span>
                   </div>
-                );
-              })}
-            </div>
-          </section>
+                </div>
+              );
+            })}
+          </div>
 
-          <section className={styles.devicePanel}>
-            <div className={styles.sectionHeader}>
-              <div>
-                <h3>Motor ativo</h3>
-                <p>Leitura do estado atual do scanner.</p>
-              </div>
-            </div>
+          <div className={styles.pipelineFooter}>
+            <StatusChip label="ETA" value={formatEta(scanStatus?.eta_seconds)} />
+            <StatusChip label="Resumo" value={scanStatus?.scan_summary ? 'revisão pronta' : 'em análise'} />
+          </div>
 
-            <div className={styles.deviceStats}>
-              <StatusChip label="Dispositivo" value={scanStatus?.device || 'CPU'} />
-              <StatusChip label="Progresso" value={`${Math.round(progressPct)}%`} />
-              <StatusChip label="ETA" value={formatEta(scanStatus?.eta_seconds)} />
-              <StatusChip label="Resumo" value={scanStatus?.scan_summary ? 'revisão pronta' : 'em análise'} />
+          {scanStatus?.gpu_error && (
+            <div className={styles.warningBox}>
+              <span className={styles.warningTitle}>Fallback de aceleração</span>
+              <span className={styles.warningText}>{scanStatus.gpu_error}</span>
             </div>
-
-            {scanStatus?.gpu_error && (
-              <div className={styles.warningBox}>
-                <span className={styles.warningTitle}>Fallback de aceleração</span>
-                <span className={styles.warningText}>{scanStatus.gpu_error}</span>
-              </div>
-            )}
-          </section>
+          )}
         </aside>
       </div>
 
-      <section className={styles.timelinePanel}>
-        <div className={styles.sectionHeader}>
+      <section className={styles.metricsPanel}>
+        <MetricCard label="Processadas" value={formatInteger(scanStatus?.total_processadas)} />
+        <MetricCard label="Matches" value={formatInteger(scanStatus?.total_matches)} />
+        <MetricCard label="Clusters" value={formatInteger(scanStatus?.total_clusters)} />
+        <MetricCard label="Ignoradas" value={formatInteger(scanStatus?.skipped_background_faces)} />
+      </section>
+
+      <section className={styles.liveGridPanel}>
+        <div className={styles.panelHeader}>
           <div>
-            <h3>Timeline do processamento</h3>
-            <p>Log visual do que já passou pela central.</p>
+            <h3>Grid vivo</h3>
+            <p>Miniaturas recentes do processamento visual da IA.</p>
+          </div>
+          <span className={styles.sectionPill}>{gridFaces.length} visíveis</span>
+        </div>
+
+        <div className={styles.liveGrid}>
+          <AnimatePresence initial={false}>
+            {gridFaces.length > 0 ? (
+              gridFaces.map((face) => <LiveFaceCard key={`${face.path}-${face.box.join('-')}`} face={face} />)
+            ) : (
+              <motion.div
+                key="placeholder"
+                className={styles.gridPlaceholder}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+              >
+                O feed visual vai aparecer conforme os rostos entrarem no lote.
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </section>
+
+      <section className={styles.timelinePanel}>
+        <div className={styles.panelHeader}>
+          <div>
+            <h3>Timeline</h3>
+            <p>Registro discreto das últimas ações do scanner.</p>
           </div>
           <span className={styles.sectionPill}>{visibleTimeline.length} entradas</span>
         </div>
 
-        <div ref={logRef} className={styles.timelineList}>
-          {visibleTimeline.length > 0 ? (
-            visibleTimeline.map((entry) => (
-              <div key={entry.id} className={styles.timelineItem}>
-                <span className={styles.timelineTime}>[{formatTimelineTime(entry.timestamp)}]</span>
-                <span className={`${styles.timelineDot} ${styles[`timelineDot${entry.kind[0].toUpperCase()}${entry.kind.slice(1)}`]}`} />
-                <span className={styles.timelineText}>{entry.text}</span>
-              </div>
-            ))
-          ) : (
-            <div className={styles.timelineEmpty}>Os eventos do scanner aparecerão aqui conforme o lote evoluir.</div>
-          )}
+        <div className={styles.timelineViewport}>
+          <div ref={logRef} className={styles.timelineList}>
+            {visibleTimeline.length > 0 ? (
+              visibleTimeline.map((entry) => (
+                <div key={entry.id} className={styles.timelineItem}>
+                  <span className={styles.timelineTime}>[{formatTimelineTime(entry.timestamp)}]</span>
+                  <span className={`${styles.timelineDot} ${styles[`timelineDot${entry.kind[0].toUpperCase()}${entry.kind.slice(1)}`]}`} />
+                  <span className={styles.timelineText}>{entry.text}</span>
+                </div>
+              ))
+            ) : (
+              <div className={styles.timelineEmpty}>Os eventos do scanner aparecerão aqui conforme o lote evoluir.</div>
+            )}
+          </div>
+          <div className={styles.timelineFade} />
         </div>
       </section>
     </section>
