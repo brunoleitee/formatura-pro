@@ -14,15 +14,19 @@ import { ZoomControl } from '../components/photos/ZoomControl';
 import PhotoBulkActionsBar from '../components/photos/PhotoBulkActionsBar';
 import { extractSubfolders } from '../utils/pathUtils';
 
-const ZOOM_DEFAULT = 180;
-const ZOOM_MIN = 120;
-const ZOOM_MAX = 320;
+const ZOOM_MIN = 100;
+const ZOOM_MAX = 300;
+
+function zoomToSize(zoom: number) {
+  return ZOOM_MIN + (zoom / 100) * (ZOOM_MAX - ZOOM_MIN);
+}
 
 export default function CatalogView() {
   const { currentCatalog, catalogSubfolder, setCatalogSubfolders, setIsLoadingCatalogPhotos } = useApp();
   const { photos, loading, loadPhotos } = useCatalogPhotos();
   const [hideDiscarded, setHideDiscarded] = useState(false);
-  const [zoom, setZoom] = useState(ZOOM_DEFAULT);
+  const [zoom, setZoom] = useState(60);
+  const size = zoomToSize(zoom);
   const { filter, setFilter, filteredPhotos } = usePhotoFilters(photos, currentCatalog, catalogSubfolder, hideDiscarded);
   const { selectedPaths, toggleSelection, clearSelection } = usePhotoSelection(filteredPhotos);
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(filteredPhotos);
@@ -112,7 +116,7 @@ export default function CatalogView() {
         </div>
         <div className="view-header-actions">
           <PhotoFilters filter={filter} onFilterChange={setFilter} hideDiscarded={hideDiscarded} onHideDiscardedChange={setHideDiscarded} />
-          <ZoomControl zoom={zoom} onZoom={setZoom} min={ZOOM_MIN} max={ZOOM_MAX} step={20} />
+          <ZoomControl zoom={zoom} onZoom={setZoom} min={0} max={100} step={5} />
           <button className="icon-btn" title="Atualizar" onClick={loadPhotos}>
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
           </button>
@@ -143,7 +147,7 @@ export default function CatalogView() {
                 onPhotoClick={toggleSelection}
                 onDoubleClick={setViewerPhoto}
                 onOpenDetails={setDetailsPhoto}
-                zoom={zoom}
+zoom={size}
               />
             </>
           )}
