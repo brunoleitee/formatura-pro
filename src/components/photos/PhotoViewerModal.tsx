@@ -42,11 +42,28 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
   const [similarError, setSimilarError] = useState<string | null>(null);
   const [showManualModal, setShowManualModal] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [manualAlunoId, setManualAlunoId] = useState('');
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
 
   const imageRef = useRef<HTMLImageElement>(null);
+  const imageStageRef = useRef<HTMLDivElement>(null);
   const currentIndex = allPhotos.findIndex((p) => p.path === photo.path);
   const total = allPhotos.length;
   const isDiscarded = photo.discarded;
+
+  const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
+
+  const calculateInitialPan = (w: number, h: number) => {
+    if (!imageStageRef.current) return { x: 0, y: 0 };
+    const stageW = imageStageRef.current.clientWidth;
+    const stageH = imageStageRef.current.clientHeight;
+    return {
+      x: (stageW - w) / 2,
+      y: (stageH - h) / 2
+    };
+  };
 
   const showFeedbackMsg = useCallback((text: string) => {
     setFeedback(text);
@@ -110,18 +127,6 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
     setActiveMenu(null);
     try {
       const results = await api.searchSimilarFaces(face.rowid ?? 0, currentCatalog, 50);
-      if (results.results) {
-        results.results.forEach(item => {
-          console.log('[SIMILAR RAW]', {
-            rowid: item.rowid,
-            bbox: (item as any).bbox,
-            box: (item as any).box,
-            width: (item as any).image_width,
-            height: (item as any).image_height,
-            photo_path: item.photo_path,
-          });
-        });
-      }
       setSimilarResults(results.results ?? []);
       if ((results.results ?? []).length === 0) setSimilarError('Nenhuma face semelhante encontrada');
     } catch (err: any) {
@@ -155,6 +160,11 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
   };
 
   useEffect(() => {
+    setZoom(1);
+    // Initial pan will be set in onLoad when image size is known
+  }, [photo.path]);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (showRenameModal !== null || similarResults.length > 0 || showManualModal) return;
       
@@ -162,8 +172,7 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
         api.openPhotoshop(photo.path);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        if (isDiscarded) handleRestore();
-        else handleRestore();
+        handleRestore();
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
         handleDiscard();
@@ -183,7 +192,97 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [photo, currentIndex, total, onNavigate, onClose, isManualMode, showRenameModal, similarResults.length, showManualModal, isDiscarded, handleRestore, handleDiscard]);
+  }, [photo, currentIndex, total, onNavigate, onClose, isManualMode, showRenameModal, similarResults.length, showManualModal, handleRestore, handleDiscard]);
+
+  function handleWheelZoom(e: React.WheelEvent) {
+    if (isManualMode || showRenameModal !== null || similarResults.length > 0 || showManualModal) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+
+    const rect = imageStageRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const zoomFactor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    const nextZoom = clamp(zoom * zoomFactor, 1, 8);
+
+    if (nextZoom === zoom) return;
+
+    const scaleChange = nextZoom / zoom;
+
+    setPan(prev => {
+      const newPan = {
+        x: mouseX - (mouseX - prev.x) * scaleChange,
+        y: mouseY - (mouseY - prev.y) * scaleChange,
+      };
+      
+      if (nextZoom === 1) {
+        return calculateInitialPan(viewSize.w, viewSize.h);
+      }
+      return newPan;
+    });
+
+    setZoom(nextZoom);
+  }
+
+  const handleDoubleClickZoom = (e: React.MouseEvent) => {
+    if (isManualMode || showRenameModal !== null || similarResults.length > 0 || showManualModal) return;
+
+    if (zoom > 1) {
+      setZoom(1);
+      setPan(calculateInitialPan(viewSize.w, viewSize.h));
+    } else {
+      const rect = imageStageRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const nextZoom = 2;
+      const scaleChange = nextZoom / zoom;
+
+      setPan(prev => ({
+        x: mouseX - (mouseX - prev.x) * scaleChange,
+        y: mouseY - (mouseY - prev.y) * scaleChange,
+      }));
+      setZoom(nextZoom);
+    }
+  };
+
+  const handleZoomMouseDown = (e: React.MouseEvent) => {
+    if (zoom > 1 && !isManualMode) {
+      setIsDragging(true);
+      setDragStartPos({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+      e.preventDefault();
+    } else {
+      handleMouseDown(e);
+    }
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const onMove = (e: MouseEvent) => {
+      setPan({
+        x: e.clientX - dragStartPos.x,
+        y: e.clientY - dragStartPos.y
+      });
+    };
+
+    const onUp = () => {
+      setIsDragging(false);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [isDragging, dragStartPos]);
 
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -359,86 +458,107 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
           )}
 
           <div
-            className={`${styles.imageWrap} ${isManualMode ? styles.crosshair : ''}`}
-            onMouseDown={handleMouseDown}
+            ref={imageStageRef}
+            className={`${styles.imageStage} ${isManualMode ? styles.crosshair : ''}`}
+            onWheel={handleWheelZoom}
+            onMouseDown={handleZoomMouseDown}
+            onDoubleClick={handleDoubleClickZoom}
+            style={{
+              cursor: zoom > 1 && !isManualMode ? (isDragging ? 'grabbing' : 'grab') : undefined,
+            }}
           >
-
-            <img
-              ref={imageRef}
-              src={api.thumbUrl(photo.path, 1200)}
-              alt={photo.name}
-              className={styles.mainImage}
-              style={{ opacity: isLoaded ? 1 : 0 }}
-              onLoad={(e) => {
-                const img = e.currentTarget;
-                const maxW = img.parentElement?.clientWidth || 800;
-                const maxH = window.innerHeight - 130;
-                const nw = img.naturalWidth;
-                const nh = img.naturalHeight;
-                let w = nw;
-                let h = nh;
-                if (w > maxW) { w = maxW; h = (maxW / nw) * nh; }
-                if (h > maxH) { h = maxH; w = (maxH / nh) * nw; }
-                img.style.width = `${w}px`;
-                img.style.height = `${h}px`;
-                setViewSize({ w, h });
-                setIsLoaded(true);
+            <div
+              className={styles.zoomLayer}
+              style={{
+                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                transformOrigin: '0 0',
+                transition: isDragging ? 'none' : 'transform 80ms ease-out',
+                width: viewSize.w || 'auto',
+                height: viewSize.h || 'auto',
               }}
-            />
+            >
+              <img
+                ref={imageRef}
+                src={api.thumbUrl(photo.path, 1200)}
+                alt={photo.name}
+                className={styles.mainImage}
+                style={{ opacity: isLoaded ? 1 : 0 }}
+                onLoad={(e) => {
+                  const img = e.currentTarget;
+                  const stage = imageStageRef.current;
+                  const maxW = stage?.clientWidth || 800;
+                  const maxH = stage?.clientHeight || window.innerHeight - 130;
+                  const nw = img.naturalWidth;
+                  const nh = img.naturalHeight;
+                  let w = nw;
+                  let h = nh;
+                  if (w > maxW) { w = maxW; h = (maxW / nw) * nh; }
+                  if (h > maxH) { h = maxH; w = (maxH / nh) * nw; }
+                  img.style.width = `${w}px`;
+                  img.style.height = `${h}px`;
+                  setViewSize({ w, h });
+                  setPan({
+                    x: (maxW - w) / 2,
+                    y: (maxH - h) / 2
+                  });
+                  setIsLoaded(true);
+                }}
+              />
 
-            {isDiscarded && <div className={styles.discardBadge}>DESCARTADA</div>}
+              {isDiscarded && <div className={styles.discardBadge}>DESCARTADA</div>}
 
-            {isLoaded && viewSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, faceIdx) => {
-              const isKnown = isKnownFace(face);
-              const overlayStyle = getFaceOverlayStyle(face);
-              const isMenuOpen = activeMenu === faceIdx;
+              {isLoaded && viewSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, faceIdx) => {
+                const isKnown = isKnownFace(face);
+                const overlayStyle = getFaceOverlayStyle(face);
+                const isMenuOpen = activeMenu === faceIdx;
 
-              return (
-                <div
-                  key={face.rowid ?? faceIdx}
-                  className={`${styles.faceOverlay} ${isKnown ? styles.known : ''}`}
-                  style={overlayStyle}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveMenu(isMenuOpen ? null : faceIdx);
-                  }}
-                >
-                  <button
-                    className={styles.faceMenuBtn}
+                return (
+                  <div
+                    key={face.rowid ?? faceIdx}
+                    className={`${styles.faceOverlay} ${isKnown ? styles.known : ''}`}
+                    style={overlayStyle}
                     onClick={(e) => {
                       e.stopPropagation();
                       setActiveMenu(isMenuOpen ? null : faceIdx);
                     }}
                   >
-                    <Search size={10} />
-                  </button>
+                    <button
+                      className={styles.faceMenuBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveMenu(isMenuOpen ? null : faceIdx);
+                      }}
+                    >
+                      <Search size={10} />
+                    </button>
 
-                  {isMenuOpen && (
-                    <div className={styles.faceMenu} onClick={(e) => e.stopPropagation()}>
-                      <button className={styles.menuItem} onClick={() => {
-                        setShowRenameModal(faceIdx);
-                        setRenameValue(face.aluno_id ?? '');
-                        setActiveMenu(null);
-                      }}>
-                        <UserCheck size={13} />
-                        Renomear formando
-                      </button>
-                      <button className={styles.menuItem} onClick={() => handleSearchSimilar(faceIdx)}>
-                        <Search size={13} />
-                        Buscar semelhantes
-                      </button>
-                      <div className={styles.menuDivider} />
-                      <button className={`${styles.menuItem} ${styles.menuItemDanger}`} onClick={() => handleRemoveIdent(faceIdx)}>
-                        <UserMinus size={13} />
-                        Remover identificação
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                    {isMenuOpen && (
+                      <div className={styles.faceMenu} onClick={(e) => e.stopPropagation()}>
+                        <button className={styles.menuItem} onClick={() => {
+                          setShowRenameModal(faceIdx);
+                          setRenameValue(face.aluno_id ?? '');
+                          setActiveMenu(null);
+                        }}>
+                          <UserCheck size={13} />
+                          Renomear formando
+                        </button>
+                        <button className={styles.menuItem} onClick={() => handleSearchSimilar(faceIdx)}>
+                          <Search size={13} />
+                          Buscar semelhantes
+                        </button>
+                        <div className={styles.menuDivider} />
+                        <button className={`${styles.menuItem} ${styles.menuItemDanger}`} onClick={() => handleRemoveIdent(faceIdx)}>
+                          <UserMinus size={13} />
+                          Remover identificação
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
 
-            {drawStart && drawCurrent && <div className={styles.drawingRect} style={getDrawRectStyle()} />}
+              {drawStart && drawCurrent && <div className={styles.drawingRect} style={getDrawRectStyle()} />}
+            </div>
             {isManualMode && <div className={styles.drawHint}>Arraste para marcar o formando</div>}
           </div>
         </div>
