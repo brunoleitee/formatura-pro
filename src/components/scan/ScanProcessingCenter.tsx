@@ -54,13 +54,23 @@ interface PipelineStep {
   icon: typeof FolderSearch;
 }
 
-const PIPELINE_STEPS: PipelineStep[] = [
+const PRIMARY_PIPELINE_STEPS: PipelineStep[] = [
   { key: 'scan', label: 'Scan de pastas', hint: 'Mapeando lotes e origem', icon: FolderSearch },
   { key: 'decode', label: 'Extração / decode', hint: 'Lendo imagens com segurança', icon: Cpu },
   { key: 'faces', label: 'Detectando rostos', hint: 'Separando rostos principais', icon: ScanFace },
-  { key: 'embeddings', label: 'Embeddings / OCR', hint: 'Transformando sinais em vetores', icon: Sparkles },
-  { key: 'cluster', label: 'Clusterização', hint: 'Agrupando semelhanças', icon: Blocks },
-  { key: 'review', label: 'Sugestões IA', hint: 'Preparando revisão humana', icon: Wand2 },
+  { key: 'embeddings', label: 'Gerando embeddings + OCR', hint: 'OCR e vetores no mesmo fluxo', icon: Sparkles },
+  { key: 'cluster', label: 'Clusterizando', hint: 'Agrupando semelhanças durante o scan', icon: Blocks },
+  { key: 'save', label: 'Salvando banco', hint: 'Persistindo ocorrências e relações', icon: Images },
+  { key: 'review', label: 'Revisão pronta', hint: 'Fila já preparada para abertura', icon: Wand2 },
+];
+
+const SECONDARY_ANALYSES = [
+  'Beca',
+  'Canudo',
+  'Capelo',
+  'Faixa',
+  'Blur',
+  'Quality audit',
 ];
 
 function normalizeProgress(progress: number | undefined) {
@@ -138,15 +148,20 @@ function formatAiDeviceLabel(status: ScanStatus | null) {
 
 function deriveCurrentStep(status: ScanStatus | null, progressPct: number) {
   const text = (status?.status_text || '').toLowerCase();
-  if (!status?.is_scanning && status?.scan_summary) return PIPELINE_STEPS.length - 1;
+  if (!status?.is_scanning && status?.scan_summary) return PRIMARY_PIPELINE_STEPS.length - 1;
   if (text.includes('inicial')) return 0;
   if (text.includes('refer')) return 0;
+  if (text.includes('carreg')) return 1;
   if (text.includes('decod')) return 1;
-  if (text.includes('infer') || text.includes('processando lote')) return progressPct >= 62 ? 3 : 2;
-  if (progressPct >= 92) return 5;
-  if (progressPct >= 78) return 4;
-  if (progressPct >= 54) return 3;
-  if (progressPct >= 16) return 2;
+  if (text.includes('processando lote') || text.includes('detect')) return progressPct >= 28 ? 2 : 1;
+  if (text.includes('emb') || text.includes('ocr')) return 3;
+  if (text.includes('cluster')) return 4;
+  if (text.includes('salv')) return 5;
+  if (progressPct >= 94) return 6;
+  if (progressPct >= 84) return 5;
+  if (progressPct >= 68) return 4;
+  if (progressPct >= 48) return 3;
+  if (progressPct >= 22) return 2;
   return 1;
 }
 
@@ -309,7 +324,7 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
         </div>
 
         <div className={styles.pipelineList}>
-          {PIPELINE_STEPS.map((step, index) => {
+          {PRIMARY_PIPELINE_STEPS.map((step, index) => {
             const Icon = step.icon;
             const isDone = !isScanning ? index <= currentStep : index < currentStep;
             const isCurrent = isScanning ? index === currentStep : index === currentStep && Boolean(scanStatus?.scan_summary);
@@ -337,6 +352,20 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
               </div>
             );
           })}
+        </div>
+
+        <div className={styles.secondaryPanel}>
+          <div className={styles.secondaryHeader}>
+            <span className={styles.secondaryTitle}>Análises complementares</span>
+            <span className={styles.secondaryHint}>Rodam em background sem bloquear a Revisão IA</span>
+          </div>
+          <div className={styles.secondaryList}>
+            {SECONDARY_ANALYSES.map((item) => (
+              <span key={item} className={styles.secondaryChip}>
+                {item}
+              </span>
+            ))}
+          </div>
         </div>
 
         <div className={styles.pipelineFooter}>

@@ -235,8 +235,8 @@
 .pipelineList {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 12px;
-  padding: 14px 16px 12px;
+  gap: 8px 10px;
+  padding: 12px 16px 10px;
 }
 
 .pipelineItem {
@@ -244,7 +244,7 @@
   grid-template-columns: 24px minmax(0, 1fr);
   gap: 8px;
   align-items: start;
-  padding: 8px 8px;
+  padding: 7px 8px;
   border-radius: 12px;
 }
 
@@ -280,11 +280,56 @@
   line-height: 1.35;
 }
 
+.secondaryPanel {
+  margin: 0 16px 12px;
+  padding: 10px 12px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(151, 164, 181, 0.1);
+  background: rgba(15, 19, 26, 0.92);
+}
+
+.secondaryHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.secondaryTitle {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #dbe8f4;
+}
+
+.secondaryHint {
+  font-size: 0.72rem;
+  color: rgba(223, 232, 242, 0.5);
+}
+
+.secondaryList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.secondaryChip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(151, 164, 181, 0.12);
+  background: rgba(18, 23, 31, 0.96);
+  font-size: 0.76rem;
+  color: rgba(235, 242, 249, 0.74);
+}
+
 .pipelineFooter {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  padding: 0 16px 14px;
+  padding: 0 16px 12px;
 }
 
 .warningBox {
@@ -581,6 +626,11 @@
   .pipelineList {
     grid-template-columns: 1fr;
     padding: 14px 14px 12px;
+  }
+
+  .secondaryPanel {
+    margin-left: 14px;
+    margin-right: 14px;
   }
 
   .panelHeader {
