@@ -30,7 +30,7 @@ export const photoApi = {
   thumbUrl: (path: string, size = 300, q = 80) =>
     `${API_BASE}/image_thumb?path=${encodeURIComponent(path)}&size=${size}&q=${q}`,
   fullResUrl: (path: string) =>
-    `${API_BASE}/image_full?path=${encodeURIComponent(path)}`,
+    `${API_BASE}/image/resized?path=${encodeURIComponent(path)}&max_size=2200`,
   faceThumbUrl: (path: string, x1: number, y1: number, x2: number, y2: number, size = 120, expand = 0, q = 80) =>
     `${API_BASE}/thumb?path=${encodeURIComponent(path)}&x1=${x1}&y1=${y1}&x2=${x2}&y2=${y2}&size=${size}${expand ? `&expand=${expand}` : ''}&q=${q}`,
 
