@@ -80,7 +80,19 @@ export function Sidebar({
     <div className="sidebar">
       {/* Logo */}
       <div className="sidebar-header">
-        <div className="logo-icon">FP</div>
+        <svg viewBox="0 0 100 100" width={28} height={28} xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+          <defs>
+            <linearGradient id="brandLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#f1f1f1" />
+              <stop offset="50%" stopColor="#d9d9d9" />
+              <stop offset="100%" stopColor="#c7c7c7" />
+            </linearGradient>
+          </defs>
+          <path d="M20,0 L50,0 L50,25 L25,25 L25,50 L0,50 L0,20 Q0,0 20,0 Z" fill="url(#brandLogoGrad)" />
+          <path d="M50,0 L80,0 Q100,0 100,20 L100,50 L75,50 L75,25 L50,25 Z" fill="url(#brandLogoGrad)" />
+          <path d="M0,50 L25,50 L25,75 L50,75 L50,100 L20,100 Q0,100 0,80 L0,50 Z" fill="url(#brandLogoGrad)" />
+          <path d="M75,50 L100,50 L100,80 Q100,100 80,100 L50,100 L50,75 L75,75 L75,50 Z" fill="url(#brandLogoGrad)" />
+        </svg>
         <h2 style={{ fontSize: '1rem', fontWeight: 700 }}>Formatura PRO</h2>
       </div>
 

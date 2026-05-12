@@ -26,19 +26,6 @@
   gap: 10px;
 }
 
-.logo-icon {
-  width: 30px;
-  height: 30px;
-  background: linear-gradient(135deg, var(--accent-color), #8b5cf6);
-  border-radius: 7px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: 0.75rem;
-  flex-shrink: 0;
-}
-
 .sidebar-nav {
   flex: 1;
   overflow-y: auto;

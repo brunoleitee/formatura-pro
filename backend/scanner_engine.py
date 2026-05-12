@@ -429,7 +429,18 @@ def run_scanner_worker(req):
         scan_state["status_text"] = "Carregando Referências..."
         load_references(req.ref_path)
 
-        fotos = [os.path.join(r, f) for r, d, files in os.walk(req.ori_path) for f in files if f.lower().endswith(_cfg["image_extensions"])]
+        scan_roots = [req.ori_path]
+        for extra in (req.extra_paths or []):
+            if extra and os.path.isdir(extra):
+                scan_roots.append(extra)
+                
+        fotos = []
+        for root_path in scan_roots:
+            for r, d, files in os.walk(root_path):
+                for f in files:
+                    if f.lower().endswith(_cfg["image_extensions"]):
+                        fotos.append(os.path.join(r, f))
+                        
         total = len(fotos)
         scan_state["total_files"] = total
 
@@ -553,12 +564,13 @@ def run_scanner_worker(req):
                                      fg_score, is_fg, f_ratio, c_score, bg_reason),
                                 )
                                 cur.execute("INSERT OR IGNORE INTO alunos VALUES (?, ?)", (nome, "n/a"))
-                            current_time = time.time()
-                            if current_time - last_face_update_time > 0.5:
-                                new_face = {"name": nome, "path": p, "box": [x1, y1, x2, y2]}
-                                scan_state["recent_faces"].insert(0, new_face)
-                                scan_state["recent_faces"] = scan_state["recent_faces"][:50]
-                                last_face_update_time = current_time
+                                
+                                current_time = time.time()
+                                if current_time - last_face_update_time > 0.5:
+                                    new_face = {"name": nome, "path": p, "box": [x1, y1, x2, y2]}
+                                    scan_state["recent_faces"].insert(0, new_face)
+                                    scan_state["recent_faces"] = scan_state["recent_faces"][:50]
+                                    last_face_update_time = current_time
 
                     scan_state["total_processadas"] = min(total, i + batch_size)
                     scan_state["progress"] = scan_state["total_processadas"] / total
