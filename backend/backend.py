@@ -1509,7 +1509,7 @@ def search_similar_faces(rowid: int, catalog: str = "", limit: int = 50):
             cur = conn.cursor()
             # Busca embedding da ocorrência base
             cur.execute(
-                "SELECT embedding, foto_path, x1, y1, x2, y2 FROM face_embeddings WHERE occurrence_rowid = ?",
+                "SELECT embedding FROM face_embeddings WHERE occurrence_rowid = ?",
                 (rowid,)
             )
             base = cur.fetchone()
@@ -1522,13 +1522,12 @@ def search_similar_faces(rowid: int, catalog: str = "", limit: int = 50):
                 raise HTTPException(status_code=400, detail="Embedding facial inválido para este rosto.")
             query_emb /= norm
 
-            # Busca todos os outros embeddings do catálogo
+            # Busca todos os outros embeddings + coordenadas da tabela ocorrencias (fonte verdade)
             cur.execute("""
-                SELECT fe.occurrence_rowid, fe.foto_path, fe.embedding,
-                       fe.x1, fe.y1, fe.x2, fe.y2,
-                       o.aluno_id
+                SELECT fe.occurrence_rowid, fe.embedding,
+                       o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id
                 FROM face_embeddings fe
-                LEFT JOIN ocorrencias o ON o.rowid = fe.occurrence_rowid
+                INNER JOIN ocorrencias o ON o.rowid = fe.occurrence_rowid
                 WHERE fe.occurrence_rowid != ? AND fe.embedding IS NOT NULL
             """, (rowid,))
             rows = cur.fetchall()
@@ -1541,10 +1540,10 @@ def search_similar_faces(rowid: int, catalog: str = "", limit: int = 50):
                 continue
             score = float(np.dot(query_emb, emb / n))
             path = r["foto_path"] or ""
-            x1, y1, x2, y2 = r["x1"] or 0, r["y1"] or 0, r["x2"] or 0, r["y2"] or 0
+            x1, y1, x2, y2 = int(r["x1"] or 0), int(r["y1"] or 0), int(r["x2"] or 0), int(r["y2"] or 0)
             thumb = (
                 f"/api/thumb?path={urllib.parse.quote(path)}&x1={x1}&y1={y1}&x2={x2}&y2={y2}&size=150"
-                if path else ""
+                if path and x2 > x1 and y2 > y1 else ""
             )
             results.append({
                 "rowid": r["occurrence_rowid"],
