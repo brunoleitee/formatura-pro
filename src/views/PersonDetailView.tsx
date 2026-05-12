@@ -24,6 +24,9 @@ function PhotoCard({ photo, selected, onSelect }: { photo: Photo, selected: Phot
         {photo.closed_eyes && (
           <div className="blur-badge blur-attention" style={{ bottom: 28 }}>Olhos fechados</div>
         )}
+        {photo.discarded && (
+          <div className="discardBadge">DESCARTADA</div>
+        )}
       </div>
       <div className="photo-info">
         <div className="photo-name" title={photo.name}>{photo.name}</div>

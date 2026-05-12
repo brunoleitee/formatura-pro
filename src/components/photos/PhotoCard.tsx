@@ -62,6 +62,7 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
   const [thumbSize, setThumbSize] = useState({ w: 0, h: 0 });
 
   const isMapped = isPhotoMapped(photo);
+  const isDiscarded = photo.discarded === true;
   const knownNames = (photo.faces ?? [])
     .filter(isKnownFace)
     .map((f) => f.aluno_id)
@@ -70,7 +71,7 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
 
   return (
     <div
-      className={`photo-card ${isSelected ? 'selected' : ''}`}
+      className={`photo-card ${isSelected ? 'selected' : ''} ${isDiscarded ? 'discarded' : ''}`}
       onClick={(e) => onClick(photo, e)}
       onDoubleClick={() => onDoubleClick?.(photo)}
     >
@@ -138,6 +139,9 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
         )}
         {isPhotoAttention(photo) && (
           <div className="blur-badge blur-attention">Verificar foco</div>
+        )}
+        {isDiscarded && (
+          <div className="discardBadge">DESCARTADA</div>
         )}
       </div>
       <div className="photo-info">
