@@ -5,12 +5,12 @@ import { getPhotoSubfolder, sameSubfolder } from '../utils/catalogPathUtils';
 
 export type PhotoFilter = 'all' | 'mapped' | 'unmapped';
 
-export function usePhotoFilters(photos: Photo[], currentCatalog: string, selectedSubfolder: string | null) {
+export function usePhotoFilters(photos: Photo[], currentCatalog: string, selectedSubfolder: string | null, hideDiscarded = false) {
   const [filter, setFilter] = useState<PhotoFilter>('all');
 
   const filteredPhotos = useMemo(() => {
     let result = photos.filter(p => {
-      if (p.discarded) return false;
+      if (hideDiscarded && p.discarded) return false;
 
       if (selectedSubfolder) {
         const photoSubfolder = getPhotoSubfolder(p);
@@ -23,7 +23,7 @@ export function usePhotoFilters(photos: Photo[], currentCatalog: string, selecte
     });
 
     return result;
-  }, [photos, currentCatalog, selectedSubfolder, filter]);
+  }, [photos, currentCatalog, selectedSubfolder, filter, hideDiscarded]);
 
   return { filter, setFilter, filteredPhotos };
 }

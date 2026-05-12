@@ -16,7 +16,8 @@ import { extractSubfolders } from '../utils/pathUtils';
 export default function CatalogView() {
   const { currentCatalog, catalogSubfolder, setCatalogSubfolders, setIsLoadingCatalogPhotos } = useApp();
   const { photos, loading, loadPhotos } = useCatalogPhotos();
-  const { filter, setFilter, filteredPhotos } = usePhotoFilters(photos, currentCatalog, catalogSubfolder);
+  const [hideDiscarded, setHideDiscarded] = useState(false);
+  const { filter, setFilter, filteredPhotos } = usePhotoFilters(photos, currentCatalog, catalogSubfolder, hideDiscarded);
   const { selectedPaths, toggleSelection, clearSelection } = usePhotoSelection(filteredPhotos);
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(filteredPhotos);
 
@@ -104,7 +105,7 @@ export default function CatalogView() {
           <p className="view-subtitle">{subtitle}</p>
         </div>
         <div className="view-header-actions">
-          <PhotoFilters filter={filter} onFilterChange={setFilter} />
+          <PhotoFilters filter={filter} onFilterChange={setFilter} hideDiscarded={hideDiscarded} onHideDiscardedChange={setHideDiscarded} />
           <button className="icon-btn" title="Atualizar" onClick={loadPhotos}>
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
           </button>

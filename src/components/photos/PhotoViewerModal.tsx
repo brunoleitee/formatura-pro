@@ -17,6 +17,7 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate }: Phot
   const currentIndex = allPhotos.findIndex((p) => p.path === photo.path);
   const total = allPhotos.length;
 
+  const isDiscarded = photo.discarded;
   const showFeedback = (text: string) => {
     setFeedback(text);
     setTimeout(() => setFeedback(null), 2000);
@@ -118,10 +119,11 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate }: Phot
 
   return (
     <div className="photo-viewer-modal" onClick={onClose}>
-      <div className="photo-viewer-content" onClick={(e) => e.stopPropagation()}>
+      <div className={`photo-viewer-content ${isDiscarded ? 'discarded' : ''}`} onClick={(e) => e.stopPropagation()}>
         <button className="viewer-close" onClick={onClose}>
           <X size={24} />
         </button>
+        {isDiscarded && <div className="discardBadge">DESCARTADA</div>}
         <div className="viewer-image-wrap">
           {currentIndex > 0 && (
             <button className="viewer-nav viewer-prev" onClick={handlePrev}>
