@@ -1,41 +1,31 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, RefreshCw, Image as ImageIcon, FolderOpen } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Image as ImageIcon } from 'lucide-react';
 import { api, type Photo } from '../services/api';
 import { useApp } from '../context/AppContext';
+import { PhotoCard } from '../components/photos/PhotoCard';
+import { PhotoDetailPanel } from '../components/photos/PhotoDetailPanel';
+import { PhotoViewerModal } from '../components/photos/PhotoViewerModal';
+import { usePhotoSelection, getPhotoId } from '../hooks/usePhotoSelection';
+import { usePhotoViewer } from '../hooks/usePhotoViewer';
+import PhotoBulkActionsBar from '../components/photos/PhotoBulkActionsBar';
 
-function PhotoCard({ photo, selected, onSelect }: { photo: Photo, selected: Photo | null, onSelect: (photo: Photo) => void }) {
-  return (
-    <div
-      className={`photo-card ${selected?.path === photo.path ? 'selected' : ''} ${photo.discarded ? 'discarded' : ''}`}
-      onClick={() => onSelect(photo)}
-    >
-      <div className="photo-img-placeholder">
-        <img
-          src={api.thumbUrl(photo.path, 300)}
-          alt={photo.name}
-          loading="lazy"
-          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-        />
-        {photo.blur_label && photo.blur_label !== 'ok' && (
-          <div className={`blur-badge blur-${photo.blur_label}`}>
-            {photo.blur_label === 'blurry' ? 'Desfocada' : 'Atenção'}
-          </div>
-        )}
-        {photo.closed_eyes && (
-          <div className="blur-badge blur-attention" style={{ bottom: 28 }}>Olhos fechados</div>
-        )}
-        {photo.discarded && (
-          <div className="discardBadge">DESCARTADA</div>
-        )}
-      </div>
-      <div className="photo-info">
-        <div className="photo-name" title={photo.name}>{photo.name}</div>
-      </div>
-    </div>
-  );
-}
-
-function Section({ title, items, color, selected, onSelect }: { title: string; items: Photo[]; color: string, selected: Photo | null, onSelect: (photo: Photo) => void }) {
+function Section({ 
+  title, 
+  items, 
+  color, 
+  selectedPaths, 
+  onPhotoClick, 
+  onDoubleClick, 
+  onOpenDetails 
+}: { 
+  title: string; 
+  items: Photo[]; 
+  color: string;
+  selectedPaths: Set<string>;
+  onPhotoClick: (photo: Photo, event: React.MouseEvent) => void;
+  onDoubleClick: (photo: Photo) => void;
+  onOpenDetails: (photo: Photo) => void;
+}) {
   if (items.length === 0) return null;
   return (
     <div style={{ marginBottom: 32 }}>
@@ -45,7 +35,19 @@ function Section({ title, items, color, selected, onSelect }: { title: string; i
         <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 400 }}>({items.length})</span>
       </h3>
       <div className="photo-grid">
-        {items.map((p, i) => <PhotoCard key={p.path || i} photo={p} selected={selected} onSelect={onSelect} />)}
+        {items.map((p) => {
+          const id = getPhotoId(p);
+          return (
+            <PhotoCard 
+              key={id} 
+              photo={p} 
+              isSelected={selectedPaths.has(id)} 
+              onClick={onPhotoClick}
+              onDoubleClick={onDoubleClick}
+              onOpenDetails={onOpenDetails}
+            />
+          );
+        })}
       </div>
     </div>
   );
@@ -55,7 +57,10 @@ export default function PersonDetailView() {
   const { selectedPersonId, navigate, currentCatalog } = useApp();
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selected, setSelected] = useState<Photo | null>(null);
+  const [detailsPhoto, setDetailsPhoto] = useState<Photo | null>(null);
+
+  const { selectedPaths, toggleSelection, clearSelection } = usePhotoSelection(photos);
+  const { viewerPhoto, setViewerPhoto } = usePhotoViewer(photos);
 
   const load = useCallback(async () => {
     if (!selectedPersonId || !currentCatalog) return;
@@ -72,14 +77,65 @@ export default function PersonDetailView() {
 
   useEffect(() => { load(); }, [load]);
 
+  const updatePhotoStatusLocal = useCallback((path: string, updates: Partial<Photo>) => {
+    setPhotos(prev => prev.map(p => 
+      p.path === path ? { ...p, ...updates } : p
+    ));
+  }, []);
+
+  const handleDiscardSelected = async () => {
+    if (selectedPaths.size === 0) return;
+    const paths = photos.filter(p => selectedPaths.has(getPhotoId(p))).map(p => p.path);
+    paths.forEach(p => updatePhotoStatusLocal(p, { discarded: true }));
+    clearSelection();
+    try {
+      await api.bulkDiscardPhotos(currentCatalog, paths);
+      load();
+    } catch (e) { 
+      console.error(e);
+      load();
+    }
+  };
+
+  const handleRestoreSelected = async () => {
+    if (selectedPaths.size === 0) return;
+    const paths = photos.filter(p => selectedPaths.has(getPhotoId(p))).map(p => p.path);
+    paths.forEach(p => updatePhotoStatusLocal(p, { discarded: false }));
+    clearSelection();
+    try {
+      await api.bulkRestorePhotos(currentCatalog, paths);
+      load();
+    } catch (e) { 
+      console.error(e);
+      load();
+    }
+  };
+
+  const handleRemoveIdentificationSelected = async () => {
+    if (selectedPaths.size === 0) return;
+    try {
+      const selectedPhotos = photos.filter(p => selectedPaths.has(getPhotoId(p)));
+      const rowids: number[] = [];
+      selectedPhotos.forEach(p => {
+        (p.faces || []).forEach(f => {
+          if (f.rowid) rowids.push(f.rowid);
+        });
+      });
+      
+      if (rowids.length > 0) {
+        await api.bulkManualIdentify(currentCatalog, "Desconhecido", rowids);
+        clearSelection();
+        load();
+      }
+    } catch (e) { console.error(e); }
+  };
+
   if (!selectedPersonId) return null;
 
   const good = photos.filter(p => !p.discarded && p.blur_label !== 'blurry');
   const attention = photos.filter(p => !p.discarded && p.blur_label === 'attention');
   const blurry = photos.filter(p => !p.discarded && p.blur_label === 'blurry');
   const discarded = photos.filter(p => p.discarded);
-
-
 
   return (
     <div className="view-container" style={{ position: 'relative' }}>
@@ -96,15 +152,6 @@ export default function PersonDetailView() {
           </div>
         </div>
         <div className="view-header-actions">
-          {selected && (
-            <button
-              className="btn-secondary"
-              onClick={() => api.openFolder(selected.path.substring(0, selected.path.lastIndexOf('\\') || selected.path.lastIndexOf('/')))}
-            >
-              <FolderOpen size={16} />
-              Abrir Pasta
-            </button>
-          )}
           <button className="icon-btn" onClick={load}>
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
           </button>
@@ -122,38 +169,73 @@ export default function PersonDetailView() {
           <h3>Nenhuma foto encontrada</h3>
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: 24, height: '100%' }}>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            <Section title="Boas fotos" items={good.filter(p => p.blur_label !== 'attention')} color="var(--success-color)" selected={selected} onSelect={(p) => setSelected(selected?.path === p.path ? null : p)} />
-            <Section title="Requer atenção" items={attention} color="var(--warning-color)" selected={selected} onSelect={(p) => setSelected(selected?.path === p.path ? null : p)} />
-            <Section title="Desfocadas" items={blurry} color="var(--danger-color)" selected={selected} onSelect={(p) => setSelected(selected?.path === p.path ? null : p)} />
-            <Section title="Descartadas" items={discarded} color="var(--text-secondary)" selected={selected} onSelect={(p) => setSelected(selected?.path === p.path ? null : p)} />
+        <div style={{ display: 'flex', gap: 24, flex: 1, overflow: 'hidden' }}>
+          <div style={{ flex: 1, overflowY: 'auto', paddingRight: 8 }}>
+            <Section 
+              title="Boas fotos" 
+              items={good.filter(p => p.blur_label !== 'attention')} 
+              color="var(--success-color)" 
+              selectedPaths={selectedPaths}
+              onPhotoClick={toggleSelection}
+              onDoubleClick={setViewerPhoto}
+              onOpenDetails={setDetailsPhoto}
+            />
+            <Section 
+              title="Requer atenção" 
+              items={attention} 
+              color="var(--warning-color)" 
+              selectedPaths={selectedPaths}
+              onPhotoClick={toggleSelection}
+              onDoubleClick={setViewerPhoto}
+              onOpenDetails={setDetailsPhoto}
+            />
+            <Section 
+              title="Desfocadas" 
+              items={blurry} 
+              color="var(--danger-color)" 
+              selectedPaths={selectedPaths}
+              onPhotoClick={toggleSelection}
+              onDoubleClick={setViewerPhoto}
+              onOpenDetails={setDetailsPhoto}
+            />
+            <Section 
+              title="Descartadas" 
+              items={discarded} 
+              color="var(--text-secondary)" 
+              selectedPaths={selectedPaths}
+              onPhotoClick={toggleSelection}
+              onDoubleClick={setViewerPhoto}
+              onOpenDetails={setDetailsPhoto}
+            />
           </div>
 
-          {selected && (
-            <div className="photo-detail-panel">
-              <div className="photo-detail-header">
-                <span>{selected.name}</span>
-                <button className="icon-btn" onClick={() => setSelected(null)}>✕</button>
-              </div>
-              <img
-                src={api.thumbUrl(selected.path, 600)}
-                alt={selected.name}
-                style={{ width: '100%', borderRadius: 8, marginBottom: 12 }}
-              />
-              <div className="detail-info">
-                <div className="detail-row"><span>Qualidade</span><span>{selected.blur_label || 'ok'}</span></div>
-                <div className="detail-row"><span>Faces</span><span>{selected.total_faces_in_db}</span></div>
-                {selected.size && (
-                  <div className="detail-row"><span>Tamanho</span><span>{(selected.size / 1024).toFixed(0)} KB</span></div>
-                )}
-                {selected.closed_eyes && (
-                  <div className="detail-row"><span>Olhos</span><span style={{ color: 'var(--warning-color)' }}>Fechados</span></div>
-                )}
-              </div>
-            </div>
+          {detailsPhoto && (
+            <PhotoDetailPanel
+              photo={detailsPhoto}
+              onClose={() => setDetailsPhoto(null)}
+            />
           )}
         </div>
+      )}
+
+      {viewerPhoto && (
+        <PhotoViewerModal
+          photo={viewerPhoto}
+          allPhotos={photos}
+          onClose={() => setViewerPhoto(null)}
+          onNavigate={setViewerPhoto}
+          onDiscard={(path) => updatePhotoStatusLocal(path, { discarded: true })}
+          onRestore={(path) => updatePhotoStatusLocal(path, { discarded: false })}
+        />
+      )}
+
+      {selectedPaths.size > 0 && (
+        <PhotoBulkActionsBar
+          selectedCount={selectedPaths.size}
+          onDiscard={handleDiscardSelected}
+          onRestore={handleRestoreSelected}
+          onRemoveIdentification={handleRemoveIdentificationSelected}
+        />
       )}
     </div>
   );
