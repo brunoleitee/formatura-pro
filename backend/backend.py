@@ -423,11 +423,15 @@ graduation_analysis_state = {
 }
 
 quality_audit_state = {
+    "status": "idle",
+    "running": False,
+    "enabled": False,
     "is_auditing": False,
     "progress": 0.0,
     "processed": 0,
     "total": 0,
-    "status_text": "Inativo"
+    "status_text": "Quality audit não iniciado",
+    "message": "Quality audit não iniciado",
 }
 
 def configure_modules():
@@ -1688,7 +1692,20 @@ def start_quality_audit(req: dict):
 
 @app.get("/api/scan/quality_audit_status")
 def get_quality_audit_status():
-    return scm.get_quality_audit_status()
+    try:
+        return scm.get_quality_audit_status()
+    except Exception as e:
+        return {
+            "status": "error",
+            "running": False,
+            "enabled": False,
+            "processed": 0,
+            "total": 0,
+            "progress": 0.0,
+            "message": str(e),
+            "is_auditing": False,
+            "status_text": str(e),
+        }
 
 @app.post("/api/app/exit")
 def exit_app():

@@ -300,8 +300,55 @@ def start_quality_audit(req: dict):
     return {"status": "started"}
 
 
+def _normalize_quality_audit_status(state=None):
+    source = state if isinstance(state, dict) else {}
+    running = bool(source.get("is_auditing") or source.get("running"))
+    processed = max(0, int(source.get("processed") or 0))
+    total = max(0, int(source.get("total") or 0))
+    raw_progress = source.get("progress", 0) or 0
+    try:
+        progress = float(raw_progress)
+    except Exception:
+        progress = 0.0
+    if progress > 1:
+        progress = progress / 100.0
+    progress = max(0.0, min(1.0, progress))
+    status_text = str(
+        source.get("status_text")
+        or source.get("message")
+        or ("Auditoria em andamento" if running else "Quality audit não iniciado")
+    )
+    status = str(source.get("status") or ("running" if running else "idle"))
+    enabled = bool(source.get("enabled", False))
+
+    return {
+        "status": status,
+        "running": running,
+        "enabled": enabled,
+        "processed": processed,
+        "total": total,
+        "progress": progress,
+        "message": status_text,
+        "is_auditing": running,
+        "status_text": status_text,
+    }
+
+
 def get_quality_audit_status():
-    return _get("quality_audit_state")
+    try:
+        return _normalize_quality_audit_status(_get("quality_audit_state"))
+    except Exception as e:
+        return {
+            "status": "error",
+            "running": False,
+            "enabled": False,
+            "processed": 0,
+            "total": 0,
+            "progress": 0.0,
+            "message": str(e),
+            "is_auditing": False,
+            "status_text": str(e),
+        }
 
 
 def exit_app():

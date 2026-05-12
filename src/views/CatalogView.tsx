@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { api, type Photo } from '../services/api';
+import { api, type Photo, type QualityAuditStatus } from '../services/api';
 import { useApp } from '../context/AppContext';
 import { useCatalogPhotos } from '../hooks/useCatalogPhotos';
 import { usePhotoFilters } from '../hooks/usePhotoFilters';
@@ -16,6 +16,17 @@ import { extractSubfolders } from '../utils/pathUtils';
 
 const ZOOM_MIN = 100;
 const ZOOM_MAX = 300;
+const QUALITY_AUDIT_IDLE_STATUS: QualityAuditStatus = {
+  status: 'idle',
+  running: false,
+  enabled: false,
+  processed: 0,
+  total: 0,
+  progress: 0,
+  message: 'Quality audit não iniciado',
+  is_auditing: false,
+  status_text: 'Quality audit não iniciado',
+};
 
 function zoomToSize(zoom: number) {
   return ZOOM_MIN + (zoom / 100) * (ZOOM_MAX - ZOOM_MIN);
@@ -32,9 +43,7 @@ export default function CatalogView() {
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(filteredPhotos);
   const [bulkBarVisible, setBulkBarVisible] = useState(false);
   const [, setIsDraggingPhoto] = useState(false);
-  const [auditStatus, setAuditStatus] = useState<{
-    is_auditing: boolean; status_text: string; progress: number;
-  } | null>(null);
+  const [auditStatus, setAuditStatus] = useState<QualityAuditStatus | null>(null);
   const [detailsPhoto, setDetailsPhoto] = useState<Photo | null>(null);
 
   const handleDiscardSelected = useCallback(async () => {
@@ -143,19 +152,71 @@ export default function CatalogView() {
   const startQualityAudit = useCallback(async () => {
     try {
       await api.startQualityAudit(currentCatalog);
-      setAuditStatus({ is_auditing: true, status_text: 'Iniciando...', progress: 0 });
+      setAuditStatus({
+        ...QUALITY_AUDIT_IDLE_STATUS,
+        status: 'running',
+        running: true,
+        is_auditing: true,
+        status_text: 'Iniciando...',
+        message: 'Iniciando...',
+      });
     } catch (e) { console.error(e); }
   }, [currentCatalog]);
 
   useEffect(() => {
     if (!currentCatalog) return;
-    const checkAudit = async () => {
-      try { setAuditStatus(await api.getQualityAuditStatus()); } catch {}
+    let disposed = false;
+    let timer: number | null = null;
+    let controller: AbortController | null = null;
+
+    const clearTimer = () => {
+      if (timer != null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
     };
-    checkAudit();
-    const id = setInterval(checkAudit, 2000);
-    return () => clearInterval(id);
-  }, [currentCatalog]);
+
+    const scheduleNext = (delayMs: number) => {
+      clearTimer();
+      timer = window.setTimeout(() => {
+        void fetchAuditStatus();
+      }, delayMs);
+    };
+
+    const fetchAuditStatus = async () => {
+      controller?.abort();
+      controller = new AbortController();
+      try {
+        const nextStatus = await api.getQualityAuditStatus({ signal: controller.signal });
+        if (disposed) return;
+        setAuditStatus(nextStatus);
+        if (nextStatus.running || nextStatus.is_auditing) {
+          scheduleNext(2000);
+        }
+      } catch (error) {
+        if (disposed) return;
+        const err = error as { name?: string; status?: number };
+        if (err?.name === 'AbortError') return;
+        if (err?.status === 404) {
+          setAuditStatus({
+            ...QUALITY_AUDIT_IDLE_STATUS,
+            message: 'Auditoria pendente',
+            status_text: 'Auditoria pendente',
+          });
+          return;
+        }
+        setAuditStatus((prev) => prev ?? QUALITY_AUDIT_IDLE_STATUS);
+      }
+    };
+
+    void fetchAuditStatus();
+
+    return () => {
+      disposed = true;
+      clearTimer();
+      controller?.abort();
+    };
+  }, [currentCatalog, auditStatus?.is_auditing, auditStatus?.running]);
 
   const subtitle = loading && photos.length === 0
     ? 'Carregando fotos...'
@@ -175,7 +236,7 @@ export default function CatalogView() {
           <button className="icon-btn" title="Atualizar" onClick={loadPhotos}>
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
           </button>
-          {auditStatus?.is_auditing ? (
+          {auditStatus?.running || auditStatus?.is_auditing ? (
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginLeft: 8 }}>
               {auditStatus.status_text} ({Math.round(auditStatus.progress * 100)}%)
             </span>

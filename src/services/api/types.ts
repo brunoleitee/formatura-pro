@@ -73,6 +73,18 @@ export interface ScanStatus {
   scan_summary: ScanSummary | null;
 }
 
+export interface QualityAuditStatus {
+  status: string;
+  running: boolean;
+  enabled: boolean;
+  processed: number;
+  total: number;
+  progress: number;
+  message: string;
+  is_auditing: boolean;
+  status_text: string;
+}
+
 export interface ExportStatus {
   is_exporting: boolean;
   progress: number;

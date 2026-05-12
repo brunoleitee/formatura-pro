@@ -725,8 +725,12 @@ def run_quality_audit_worker(catalog_name):
     get_blur_info = _cfg["get_blur_info"]
 
     try:
+        quality_state["status"] = "running"
+        quality_state["running"] = True
+        quality_state["enabled"] = False
         quality_state["is_auditing"] = True
         quality_state["status_text"] = "Iniciando auditoria..."
+        quality_state["message"] = "Iniciando auditoria..."
         quality_state["processed"] = 0
         with get_db(catalog_name) as conn:
             cur = conn.cursor()
@@ -735,13 +739,17 @@ def run_quality_audit_worker(catalog_name):
             paths = [r["foto_path"] for r in rows if os.path.exists(r["foto_path"])]
             quality_state["total"] = len(paths)
             if not paths:
+                quality_state["status"] = "idle"
                 quality_state["status_text"] = "Catálogo já está 100% auditado."
+                quality_state["message"] = "Catálogo já está 100% auditado."
+                quality_state["running"] = False
                 quality_state["is_auditing"] = False
                 return
             for i, p in enumerate(paths):
                 if not quality_state["is_auditing"]:
                     break
                 quality_state["status_text"] = f"Auditando: {os.path.basename(p)}"
+                quality_state["message"] = quality_state["status_text"]
                 blur_info = get_blur_info(p)
                 cur.execute("SELECT x1, y1, x2, y2 FROM ocorrencias WHERE foto_path = ?", (p,))
                 face_rows = cur.fetchall()
@@ -758,8 +766,13 @@ def run_quality_audit_worker(catalog_name):
                 quality_state["processed"] = i + 1
                 quality_state["progress"] = (i + 1) / len(paths)
             conn.commit()
+        quality_state["status"] = "completed"
         quality_state["status_text"] = "Auditoria concluída!"
+        quality_state["message"] = "Auditoria concluída!"
     except Exception as e:
+        quality_state["status"] = "error"
         quality_state["status_text"] = f"Erro na auditoria: {str(e)}"
+        quality_state["message"] = quality_state["status_text"]
     finally:
+        quality_state["running"] = False
         quality_state["is_auditing"] = False

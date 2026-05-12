@@ -1,5 +1,5 @@
 import { API_BASE, fetchJSON, post } from './core';
-import type { Photo, ScanStatus } from './types';
+import type { Photo, QualityAuditStatus, ScanStatus } from './types';
 
 export const photoApi = {
   getPhotos: (path = '', catalog = '') =>
@@ -21,10 +21,8 @@ export const photoApi = {
 
   // Quality Audit
   startQualityAudit: (catalog = '') => post(`${API_BASE}/scan/start_quality_audit`, { catalog }),
-  getQualityAuditStatus: () =>
-    fetchJSON<{ is_auditing: boolean; progress: number; status_text: string; total: number; processed: number }>(
-      `${API_BASE}/scan/quality_audit_status`
-    ),
+  getQualityAuditStatus: (options?: RequestInit) =>
+    fetchJSON<QualityAuditStatus>(`${API_BASE}/scan/quality_audit_status`, options),
 
   // Thumbnails
   thumbUrl: (path: string, size = 300, q = 80) =>
