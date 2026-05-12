@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, ShieldCheck } from 'lucide-react';
 import { api, type Photo, type QualityAuditStatus } from '../services/api';
 import { useApp } from '../context/AppContext';
 import { useCatalogPhotos } from '../hooks/useCatalogPhotos';
@@ -44,6 +44,7 @@ export default function CatalogView() {
   const [bulkBarVisible, setBulkBarVisible] = useState(false);
   const [, setIsDraggingPhoto] = useState(false);
   const [auditStatus, setAuditStatus] = useState<QualityAuditStatus | null>(null);
+  const [auditStarting, setAuditStarting] = useState(false);
   const [detailsPhoto, setDetailsPhoto] = useState<Photo | null>(null);
 
   const handleDiscardSelected = useCallback(async () => {
@@ -150,18 +151,29 @@ export default function CatalogView() {
   }, [photos, setCatalogSubfolders]);
 
   const startQualityAudit = useCallback(async () => {
+    if (!currentCatalog || auditStarting) return;
+    setAuditStarting(true);
+    setAuditStatus({
+      ...QUALITY_AUDIT_IDLE_STATUS,
+      status: 'running',
+      running: true,
+      is_auditing: true,
+      status_text: 'Iniciando QA...',
+      message: 'Iniciando QA...',
+    });
     try {
       await api.startQualityAudit(currentCatalog);
+    } catch (e) {
+      console.error(e);
       setAuditStatus({
         ...QUALITY_AUDIT_IDLE_STATUS,
-        status: 'running',
-        running: true,
-        is_auditing: true,
-        status_text: 'Iniciando...',
-        message: 'Iniciando...',
+        status_text: 'Falha ao iniciar QA',
+        message: 'Falha ao iniciar QA',
       });
-    } catch (e) { console.error(e); }
-  }, [currentCatalog]);
+    } finally {
+      setAuditStarting(false);
+    }
+  }, [currentCatalog, auditStarting]);
 
   useEffect(() => {
     if (!currentCatalog) return;
@@ -236,16 +248,33 @@ export default function CatalogView() {
           <button className="icon-btn" title="Atualizar" onClick={loadPhotos}>
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
           </button>
-          {auditStatus?.running || auditStatus?.is_auditing ? (
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginLeft: 8 }}>
-              {auditStatus.status_text} ({Math.round(auditStatus.progress * 100)}%)
-            </span>
-          ) : (
-            <button className="icon-btn" title="Auditar qualidade" onClick={startQualityAudit} style={{ marginLeft: 4 }}>
-              <span style={{ fontSize: '0.7rem' }}>QA</span>
-            </button>
-          )}
         </div>
+      </div>
+
+      <div className="catalog-audit-strip">
+        <div className="catalog-audit-meta">
+          <span className="catalog-audit-icon">
+            <ShieldCheck size={14} />
+          </span>
+          <div className="catalog-audit-copy">
+            <strong>Qualidade</strong>
+            <span>
+              {auditStatus?.running || auditStatus?.is_auditing
+                ? `${auditStatus.status_text} (${Math.round(auditStatus.progress * 100)}%)`
+                : 'Auditoria em segundo plano para foco, blur e consistência visual.'}
+            </span>
+          </div>
+        </div>
+
+        {auditStatus?.running || auditStatus?.is_auditing ? (
+          <span className="catalog-audit-progress">
+            {auditStarting ? 'Iniciando...' : 'Em análise'}
+          </span>
+        ) : (
+          <button className="catalog-audit-btn" onClick={startQualityAudit} disabled={auditStarting}>
+            Iniciar QA
+          </button>
+        )}
       </div>
 
       <div style={{ display: 'flex', flex: 1, gap: '16px', overflow: 'hidden', minHeight: 0 }}>

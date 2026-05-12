@@ -22,7 +22,7 @@ export const photoApi = {
   clearScanSummary: () => post(`${API_BASE}/scan/clear_summary`, {}),
 
   // Quality Audit
-  startQualityAudit: (catalog = '') => post(`${API_BASE}/scan/start_quality_audit`, { catalog }),
+  startQualityAudit: (catalog = '') => post(`${API_BASE}/scan/quality_fill`, { catalog }),
   getQualityAuditStatus: (options?: RequestInit) =>
     fetchJSON<QualityAuditStatus>(`${API_BASE}/scan/quality_audit_status`, options),
 

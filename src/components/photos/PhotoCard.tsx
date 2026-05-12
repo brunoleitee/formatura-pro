@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CheckCircle2, Image as ImageIcon, MoreHorizontal } from 'lucide-react';
+import { Image as ImageIcon, MoreHorizontal } from 'lucide-react';
 import { api, type Photo } from '../../services/api';
 import { isPhotoBlurry, isPhotoAttention } from '../../utils/qualityUtils';
 import { isPhotoMapped, isKnownFace } from '../../utils/personIdentity';
@@ -211,12 +211,6 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
               ))}
           </>
         )}
-        {isSelected && (
-          <div className="photo-selected-badge" aria-hidden="true">
-            <CheckCircle2 size={14} />
-            <span>Selecionada</span>
-          </div>
-        )}
         {!isLoaded && !hasError && <div className="photo-skeleton" />}
         {hasError && (
           <div className="photo-error-fallback">
@@ -233,6 +227,35 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
         {isDiscarded && (
           <div className="discardBadge">DESCARTADA</div>
         )}
+        <div
+          className={`photo-card-check ${isSelected ? 'photo-card-check-visible' : 'photo-card-check-hidden'}`}
+          aria-hidden={!isSelected}
+          style={{
+            position: 'absolute',
+            left: '8px',
+            top: '8px',
+            background: 'rgba(10, 17, 29, 0.88)',
+            color: 'white',
+            border: '1px solid rgba(96, 165, 250, 0.22)',
+            borderRadius: '999px',
+            width: 'auto',
+            height: '28px',
+            padding: '0 10px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            justifyContent: 'center',
+            opacity: isSelected ? 1 : 0,
+            transition: 'opacity 0.2s',
+            pointerEvents: 'none',
+            zIndex: 20,
+          }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          <span style={{ fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.01em', whiteSpace: 'nowrap' }}>Selecionada</span>
+        </div>
       </div>
       <div className="photo-info">
         <div className="photo-name" title={photo.name}>
@@ -242,31 +265,6 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
           <div className={`status-indicator ${isMapped ? 'mapped' : 'unmapped'}`} />
           <span>{firstName}</span>
         </div>
-      </div>
-      <div
-        className={`photo-card-check ${isSelected ? 'photo-card-check-visible' : 'photo-card-check-hidden'}`}
-        aria-hidden={!isSelected}
-        style={{
-          position: 'absolute',
-          top: '8px',
-          left: '8px',
-          background: '#3b82f6',
-          color: 'white',
-          borderRadius: '50%',
-          width: '24px',
-          height: '24px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          opacity: isSelected ? 1 : 0,
-          transition: 'opacity 0.2s',
-          pointerEvents: 'none',
-          zIndex: 20,
-        }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="20 6 9 17 4 12" />
-        </svg>
       </div>
     </div>
   );

@@ -1696,6 +1696,10 @@ def stop_scan():
 def start_quality_audit(req: dict):
     return scm.start_quality_audit(req)
 
+@app.post("/api/scan/start_quality_audit")
+def start_quality_audit_legacy(req: dict):
+    return scm.start_quality_audit(req)
+
 @app.get("/api/scan/quality_audit_status")
 def get_quality_audit_status():
     try:
