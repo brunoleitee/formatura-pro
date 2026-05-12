@@ -70,6 +70,74 @@ export default function PersonDetailView() {
   const [bulkBarVisible, setBulkBarVisible] = useState(false);
   const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
 
+  const load = useCallback(async () => {
+    if (!selectedPersonId || !currentCatalog) return;
+    setLoading(true);
+    try {
+      const data = await api.getPersonPhotos(selectedPersonId);
+      setPhotos(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedPersonId, currentCatalog]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const updatePhotoStatusLocal = useCallback((path: string, updates: Partial<Photo>) => {
+    setPhotos(prev => prev.map(p => 
+      p.path === path ? { ...p, ...updates } : p
+    ));
+  }, []);
+
+  const handleDiscardSelected = useCallback(async () => {
+    if (selectedPaths.size === 0) return;
+    const paths = photos.filter(p => selectedPaths.has(getPhotoId(p))).map(p => p.path);
+    paths.forEach(p => updatePhotoStatusLocal(p, { discarded: true }));
+    clearSelection();
+    try {
+      await api.bulkDiscardPhotos(currentCatalog, paths);
+      load();
+    } catch (e) { 
+      console.error(e);
+      load();
+    }
+  }, [selectedPaths, photos, currentCatalog, clearSelection, updatePhotoStatusLocal, load]);
+
+  const handleRestoreSelected = useCallback(async () => {
+    if (selectedPaths.size === 0) return;
+    const paths = photos.filter(p => selectedPaths.has(getPhotoId(p))).map(p => p.path);
+    paths.forEach(p => updatePhotoStatusLocal(p, { discarded: false }));
+    clearSelection();
+    try {
+      await api.bulkRestorePhotos(currentCatalog, paths);
+      load();
+    } catch (e) { 
+      console.error(e);
+      load();
+    }
+  }, [selectedPaths, photos, currentCatalog, clearSelection, updatePhotoStatusLocal, load]);
+
+  const handleRemoveIdentificationSelected = useCallback(async () => {
+    if (selectedPaths.size === 0) return;
+    try {
+      const selectedPhotos = photos.filter(p => selectedPaths.has(getPhotoId(p)));
+      const rowids: number[] = [];
+      selectedPhotos.forEach(p => {
+        (p.faces || []).forEach(f => {
+          if (f.rowid) rowids.push(f.rowid);
+        });
+      });
+      
+      if (rowids.length > 0) {
+        await api.bulkManualIdentify(currentCatalog, "Desconhecido", rowids);
+        clearSelection();
+        load();
+      }
+    } catch (e) { console.error(e); }
+  }, [selectedPaths, photos, currentCatalog, clearSelection, load]);
+
   const handleDragStart = useCallback((photo: Photo) => {
     const id = getPhotoId(photo);
     if (!selectedPaths.has(id)) {
@@ -106,74 +174,6 @@ export default function PersonDetailView() {
       setBulkBarVisible(false);
     }
   }, [viewerPhoto]);
-
-  const load = useCallback(async () => {
-    if (!selectedPersonId || !currentCatalog) return;
-    setLoading(true);
-    try {
-      const data = await api.getPersonPhotos(selectedPersonId);
-      setPhotos(data);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedPersonId, currentCatalog]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const updatePhotoStatusLocal = useCallback((path: string, updates: Partial<Photo>) => {
-    setPhotos(prev => prev.map(p => 
-      p.path === path ? { ...p, ...updates } : p
-    ));
-  }, []);
-
-  const handleDiscardSelected = async () => {
-    if (selectedPaths.size === 0) return;
-    const paths = photos.filter(p => selectedPaths.has(getPhotoId(p))).map(p => p.path);
-    paths.forEach(p => updatePhotoStatusLocal(p, { discarded: true }));
-    clearSelection();
-    try {
-      await api.bulkDiscardPhotos(currentCatalog, paths);
-      load();
-    } catch (e) { 
-      console.error(e);
-      load();
-    }
-  };
-
-  const handleRestoreSelected = async () => {
-    if (selectedPaths.size === 0) return;
-    const paths = photos.filter(p => selectedPaths.has(getPhotoId(p))).map(p => p.path);
-    paths.forEach(p => updatePhotoStatusLocal(p, { discarded: false }));
-    clearSelection();
-    try {
-      await api.bulkRestorePhotos(currentCatalog, paths);
-      load();
-    } catch (e) { 
-      console.error(e);
-      load();
-    }
-  };
-
-  const handleRemoveIdentificationSelected = async () => {
-    if (selectedPaths.size === 0) return;
-    try {
-      const selectedPhotos = photos.filter(p => selectedPaths.has(getPhotoId(p)));
-      const rowids: number[] = [];
-      selectedPhotos.forEach(p => {
-        (p.faces || []).forEach(f => {
-          if (f.rowid) rowids.push(f.rowid);
-        });
-      });
-      
-      if (rowids.length > 0) {
-        await api.bulkManualIdentify(currentCatalog, "Desconhecido", rowids);
-        clearSelection();
-        load();
-      }
-    } catch (e) { console.error(e); }
-  };
 
   if (!selectedPersonId) return null;
 

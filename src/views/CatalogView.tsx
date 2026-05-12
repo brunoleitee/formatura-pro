@@ -32,6 +32,57 @@ export default function CatalogView() {
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(filteredPhotos);
   const [bulkBarVisible, setBulkBarVisible] = useState(false);
   const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
+  const [auditStatus, setAuditStatus] = useState<{
+    is_auditing: boolean; status_text: string; progress: number;
+  } | null>(null);
+  const [detailsPhoto, setDetailsPhoto] = useState<Photo | null>(null);
+
+  const handleDiscardSelected = useCallback(async () => {
+    if (selectedPaths.size === 0) return;
+    const paths = Array.from(selectedPaths);
+    paths.forEach(p => discardPhoto(p));
+    clearSelection();
+    try {
+      await api.bulkDiscardPhotos(currentCatalog, paths);
+      loadPhotos();
+    } catch (e) { 
+      console.error(e);
+      loadPhotos();
+    }
+  }, [selectedPaths, currentCatalog, discardPhoto, clearSelection, loadPhotos]);
+
+  const handleRestoreSelected = useCallback(async () => {
+    if (selectedPaths.size === 0) return;
+    const paths = Array.from(selectedPaths);
+    paths.forEach(p => restorePhoto(p));
+    clearSelection();
+    try {
+      await api.bulkRestorePhotos(currentCatalog, paths);
+      loadPhotos();
+    } catch (e) { 
+      console.error(e);
+      loadPhotos();
+    }
+  }, [selectedPaths, currentCatalog, restorePhoto, clearSelection, loadPhotos]);
+
+  const handleRemoveIdentificationSelected = useCallback(async () => {
+    if (selectedPaths.size === 0) return;
+    try {
+      const selectedPhotos = photos.filter(p => selectedPaths.has(getPhotoId(p)));
+      const rowids: number[] = [];
+      selectedPhotos.forEach(p => {
+        (p.faces || []).forEach(f => {
+          if (f.rowid) rowids.push(f.rowid);
+        });
+      });
+      
+      if (rowids.length > 0) {
+        await api.bulkManualIdentify(currentCatalog, "Desconhecido", rowids);
+        clearSelection();
+        loadPhotos();
+      }
+    } catch (e) { console.error(e); }
+  }, [selectedPaths, photos, currentCatalog, clearSelection, loadPhotos]);
 
   const handleDragStart = useCallback((photo: Photo) => {
     const id = getPhotoId(photo);
@@ -83,12 +134,6 @@ export default function CatalogView() {
     setIsLoadingCatalogPhotos(loading);
   }, [loading, setIsLoadingCatalogPhotos]);
 
-  const [auditStatus, setAuditStatus] = useState<{
-    is_auditing: boolean; status_text: string; progress: number;
-  } | null>(null);
-
-  const [detailsPhoto, setDetailsPhoto] = useState<Photo | null>(null);
-
   // Publica subfolders no contexto para a Sidebar mostrar a árvore
   useEffect(() => {
     const subfolders = extractSubfolders(photos);
@@ -111,53 +156,6 @@ export default function CatalogView() {
     const id = setInterval(checkAudit, 2000);
     return () => clearInterval(id);
   }, [currentCatalog]);
-
-  const handleDiscardSelected = async () => {
-    if (selectedPaths.size === 0) return;
-    const paths = Array.from(selectedPaths);
-    paths.forEach(p => discardPhoto(p));
-    clearSelection();
-    try {
-      await api.bulkDiscardPhotos(currentCatalog, paths);
-      loadPhotos();
-    } catch (e) { 
-      console.error(e);
-      loadPhotos();
-    }
-  };
-
-  const handleRestoreSelected = async () => {
-    if (selectedPaths.size === 0) return;
-    const paths = Array.from(selectedPaths);
-    paths.forEach(p => restorePhoto(p));
-    clearSelection();
-    try {
-      await api.bulkRestorePhotos(currentCatalog, paths);
-      loadPhotos();
-    } catch (e) { 
-      console.error(e);
-      loadPhotos();
-    }
-  };
-
-  const handleRemoveIdentificationSelected = async () => {
-    if (selectedPaths.size === 0) return;
-    try {
-      const selectedPhotos = photos.filter(p => selectedPaths.has(getPhotoId(p)));
-      const rowids: number[] = [];
-      selectedPhotos.forEach(p => {
-        (p.faces || []).forEach(f => {
-          if (f.rowid) rowids.push(f.rowid);
-        });
-      });
-      
-      if (rowids.length > 0) {
-        await api.bulkManualIdentify(currentCatalog, "Desconhecido", rowids);
-        clearSelection();
-        loadPhotos();
-      }
-    } catch (e) { console.error(e); }
-  };
 
   const subtitle = loading && photos.length === 0
     ? 'Carregando fotos...'
