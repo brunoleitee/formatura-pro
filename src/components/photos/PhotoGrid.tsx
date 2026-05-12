@@ -2,6 +2,8 @@ import { Image as ImageIcon } from 'lucide-react';
 import type { Photo } from '../../services/api';
 import { PhotoCard } from './PhotoCard';
 
+import { getPhotoId } from '../../hooks/usePhotoSelection';
+
 interface PhotoGridProps {
   photos: Photo[];
   selectedPaths: Set<string>;
@@ -23,16 +25,19 @@ export function PhotoGrid({ photos, selectedPaths, onPhotoClick, onDoubleClick, 
 
   return (
     <div className="photo-grid">
-      {photos.map((photo) => (
-        <PhotoCard
-          key={photo.path}
-          photo={photo}
-          isSelected={selectedPaths.has(photo.path)}
-          onClick={onPhotoClick}
-          onDoubleClick={onDoubleClick}
-          onOpenDetails={onOpenDetails}
-        />
-      ))}
+      {photos.map((photo) => {
+        const id = getPhotoId(photo);
+        return (
+          <PhotoCard
+            key={id}
+            photo={photo}
+            isSelected={selectedPaths.has(id)}
+            onClick={onPhotoClick}
+            onDoubleClick={onDoubleClick}
+            onOpenDetails={onOpenDetails}
+          />
+        );
+      })}
     </div>
   );
 }

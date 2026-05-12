@@ -1,19 +1,21 @@
 import React, { useState, useCallback } from 'react';
 import type { Photo } from '../services/api';
 
+export const getPhotoId = (photo: any) => photo.original_path || photo.path || photo.file_path || photo.id;
+
 export function usePhotoSelection(photos: Photo[]) {
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
 
   const toggleSelection = useCallback((photo: Photo, event: React.MouseEvent | React.KeyboardEvent) => {
     setSelectedPaths(prev => {
       const next = new Set(prev);
-      const path = photo.path;
+      const path = getPhotoId(photo);
 
       if (event.ctrlKey || event.metaKey) {
         if (next.has(path)) next.delete(path);
         else next.add(path);
       } else if (event.shiftKey && prev.size > 0) {
-        const allPaths = photos.map(p => p.path);
+        const allPaths = photos.map(getPhotoId);
         // Find the last selected path that is actually in the current view
         const prevArray = Array.from(prev);
         let lastSelectedPath = '';

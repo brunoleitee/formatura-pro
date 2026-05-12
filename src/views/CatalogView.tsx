@@ -4,7 +4,7 @@ import { api, type Photo } from '../services/api';
 import { useApp } from '../context/AppContext';
 import { useCatalogPhotos } from '../hooks/useCatalogPhotos';
 import { usePhotoFilters } from '../hooks/usePhotoFilters';
-import { usePhotoSelection } from '../hooks/usePhotoSelection';
+import { usePhotoSelection, getPhotoId } from '../hooks/usePhotoSelection';
 import { usePhotoViewer } from '../hooks/usePhotoViewer';
 import { PhotoGrid } from '../components/photos/PhotoGrid';
 import { PhotoDetailPanel } from '../components/photos/PhotoDetailPanel';
@@ -75,7 +75,7 @@ export default function CatalogView() {
   const handleRemoveIdentificationSelected = async () => {
     if (selectedPaths.size === 0) return;
     try {
-      const selectedPhotos = photos.filter(p => selectedPaths.has(p.path));
+      const selectedPhotos = photos.filter(p => selectedPaths.has(getPhotoId(p)));
       const rowids: number[] = [];
       selectedPhotos.forEach(p => {
         (p.faces || []).forEach(f => {
@@ -130,7 +130,7 @@ export default function CatalogView() {
           ) : (
             <>
               {(() => {
-                const ids = filteredPhotos.map(p => p.path);
+                const ids = filteredPhotos.map(getPhotoId);
                 const duplicated = ids.filter((id, i) => ids.indexOf(id) !== i);
                 if (duplicated.length > 0) {
                   console.log('[Catalog keys debug]', {
