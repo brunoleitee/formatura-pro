@@ -212,27 +212,17 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
   const getFaceOverlayStyle = (face: Photo['faces'][number]) => {
     if (!photo.width || !photo.height || viewSize.w === 0) return {};
 
-    const imgRatio = photo.width / photo.height;
-    const containerRatio = viewSize.w / viewSize.h;
+    const fx1 = face.x1 ?? 0;
+    const fy1 = face.y1 ?? 0;
+    const fx2 = face.x2 ?? 0;
+    const fy2 = face.y2 ?? 0;
 
-    let renderedW = viewSize.w;
-    let renderedH = viewSize.h;
+    const x1 = (fx1 / photo.width) * viewSize.w;
+    const y1 = (fy1 / photo.height) * viewSize.h;
+    const w = ((fx2 - fx1) / photo.width) * viewSize.w;
+    const h = ((fy2 - fy1) / photo.height) * viewSize.h;
 
-    if (imgRatio > containerRatio) {
-      renderedH = viewSize.w / imgRatio;
-    } else {
-      renderedW = viewSize.h * imgRatio;
-    }
-
-    const offsetX = (viewSize.w - renderedW) / 2;
-    const offsetY = (viewSize.h - renderedH) / 2;
-
-    const x1 = offsetX + ((face.x1 ?? 0) / photo.width) * renderedW;
-    const y1 = offsetY + ((face.y1 ?? 0) / photo.height) * renderedH;
-    const widthPx = ((face.x2 ?? 0 - (face.x1 ?? 0)) / photo.width) * renderedW;
-    const heightPx = ((face.y2 ?? 0 - (face.y1 ?? 0)) / photo.height) * renderedH;
-
-    return { left: `${x1}px`, top: `${y1}px`, width: `${widthPx}px`, height: `${heightPx}px` };
+    return { left: `${x1}px`, top: `${y1}px`, width: `${w}px`, height: `${h}px` };
   };
 
   const getDrawRectStyle = () => {
@@ -289,6 +279,18 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
 
         {/* Center — image */}
         <div className={styles.centerArea} onClick={(e) => e.stopPropagation()}>
+          {currentIndex > 0 && (
+            <button className={`${styles.navBtn} ${styles.navPrev}`} onClick={handlePrev}>
+              <ChevronLeft size={20} />
+            </button>
+          )}
+
+          {currentIndex < total - 1 && (
+            <button className={`${styles.navBtn} ${styles.navNext}`} onClick={handleNext}>
+              <ChevronRight size={20} />
+            </button>
+          )}
+
           <div
             className={`${styles.imageWrap} ${isManualMode ? styles.crosshair : ''}`}
             onMouseDown={handleMouseDown}
@@ -301,11 +303,6 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
               }
             }}
           >
-            {currentIndex > 0 && (
-              <button className={`${styles.navBtn} ${styles.navPrev}`} onClick={handlePrev}>
-                <ChevronLeft size={20} />
-              </button>
-            )}
 
             <img
               ref={imageRef}
@@ -314,8 +311,19 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
               className={styles.mainImage}
               style={{ opacity: isLoaded ? 1 : 0 }}
               onLoad={(e) => {
+                const img = e.currentTarget;
+                const maxW = img.parentElement?.clientWidth || 800;
+                const maxH = window.innerHeight - 130;
+                const nw = img.naturalWidth;
+                const nh = img.naturalHeight;
+                let w = nw;
+                let h = nh;
+                if (w > maxW) { w = maxW; h = (maxW / nw) * nh; }
+                if (h > maxH) { h = maxH; w = (maxH / nh) * nw; }
+                img.style.width = `${w}px`;
+                img.style.height = `${h}px`;
+                setViewSize({ w, h });
                 setIsLoaded(true);
-                setViewSize({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight });
               }}
             />
 
@@ -373,12 +381,6 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
 
             {drawStart && drawCurrent && <div className={styles.drawingRect} style={getDrawRectStyle()} />}
             {isManualMode && <div className={styles.drawHint}>Arraste para marcar o formando</div>}
-
-            {currentIndex < total - 1 && (
-              <button className={`${styles.navBtn} ${styles.navNext}`} onClick={handleNext}>
-                <ChevronRight size={20} />
-              </button>
-            )}
           </div>
         </div>
 
