@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef, type CSSProperties } from 'react';
-import type { RichCluster, RichClusterFace } from '../../services/api';
+import type { AssignClusterResponse, RichCluster, RichClusterFace } from '../../services/api';
 // import { useDragSelection } from '../../hooks/useDragSelection';
 import ClusterHero, { type ClusterHeroHandle } from './ClusterHero';
 import ClusterStatsPanel from './ClusterStatsPanel';
@@ -15,10 +15,15 @@ const ZOOM_PHOTO_DEFAULT = 240;
 interface ClusterDetailProps {
   cluster: RichCluster;
   catalog: string;
-  onAssigned: (clusterId: string) => void;
+  onAssigned: (payload: AssignClusterResponse) => void;
   onSkip: () => void;
   onClusterUpdate: (next: RichCluster) => void;
   onOpenPhoto?: (path: string) => void;
+  assignmentState?: {
+    clusterId: string;
+    studentName: string;
+    status: string;
+  } | null;
 }
 
 function filterFaces(faces: RichClusterFace[], filter: FilterOption): RichClusterFace[] {
@@ -52,6 +57,7 @@ export default function ClusterDetail({
   onSkip,
   onClusterUpdate,
   onOpenPhoto,
+  assignmentState = null,
 }: ClusterDetailProps) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState<FilterOption>('all');
@@ -192,7 +198,7 @@ export default function ClusterDetail({
   const photoImgH = Math.round(zoom * 0.85);
 
   return (
-    <div className={styles.root} key={cluster.cluster_id}>
+    <div className={`${styles.root} ${assignmentState?.clusterId === cluster.cluster_id ? styles.rootAssigned : ''}`} key={cluster.cluster_id}>
       {/* ── Header compacto ── */}
       <div className={`${styles.topSection} ${collapsed ? styles.topSectionCollapsed : ''}`}>
         <ClusterHero
@@ -201,6 +207,7 @@ export default function ClusterDetail({
           catalog={catalog}
           collapsed={collapsed}
           onToggleCollapsed={() => setCollapsed(v => !v)}
+          assignmentState={assignmentState}
           onAssigned={onAssigned}
           onSkip={onSkip}
         />

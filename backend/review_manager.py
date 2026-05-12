@@ -1679,9 +1679,13 @@ def assign_cluster(req: AssignUnknownClusterRequest):
 
     return {
         "ok": True,
+        "success": True,
         "cluster_id": req.cluster_id,
         "aluno_id": resolved_aluno_id,
+        "student_name": normalized_name or resolved_aluno_id,
         "nome_formando": normalized_name or resolved_aluno_id,
+        "status": "identified",
+        "updated_count": updated,
         "updated": updated,
     }
 

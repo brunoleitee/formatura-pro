@@ -58,9 +58,12 @@ const ClusterItem = memo(function ClusterItem({
     if (conf >= CONF_POSSIBLE) return { id: 'capelo_possible', label: 'Possível capelo', variant: 'tagMuted' as const };
     return null;
   }
-  const badgeLabels = [
+  const badgeLabels: Array<{ id: string; label: string; variant: 'ia' | 'success' | 'tag' | 'tagMuted' }> = [
     { id: 'ia', label: 'IA', variant: 'ia' as const },
-    ...[gownBadge(), diplomaBadge(), sashBadge(), capBadge()].filter(Boolean) as { id: string; label: string; variant: 'tag' | 'tagMuted' }[],
+    ...(cluster.status === 'identified' || cluster.status === 'confirmed'
+      ? [{ id: 'identified', label: 'Identificado', variant: 'success' as const }]
+      : []),
+    ...([gownBadge(), diplomaBadge(), sashBadge(), capBadge()].filter(Boolean) as { id: string; label: string; variant: 'tag' | 'tagMuted' }[]),
   ];
   const photoCount = cluster.total_photos ?? cluster.photo_count ?? cluster.face_count;
   const photoCountLabel = `${photoCount} foto${photoCount !== 1 ? 's' : ''}`;
@@ -103,6 +106,7 @@ const ClusterItem = memo(function ClusterItem({
               key={badge.id}
               className={
                 badge.variant === 'ia' ? styles.iaBadge :
+                badge.variant === 'success' ? styles.successBadge :
                 badge.variant === 'tagMuted' ? styles.tagBadgeMuted :
                 styles.tagBadge
               }

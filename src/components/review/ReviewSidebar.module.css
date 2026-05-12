@@ -334,6 +334,18 @@
   flex-shrink: 0;
 }
 
+.successBadge {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.22);
+  border-radius: 4px;
+  padding: 2px 5px;
+  flex-shrink: 0;
+}
+
 .tagBadge {
   font-size: 0.58rem;
   font-weight: 800;

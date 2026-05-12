@@ -7,6 +7,10 @@
   overflow: hidden;
 }
 
+.rootAssigned {
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.04), transparent 18%);
+}
+
 /* ── Seção superior: hero (esq) + stats (dir) ── */
 .topSection {
   display: flex;

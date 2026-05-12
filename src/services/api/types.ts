@@ -225,6 +225,9 @@ export interface ReviewClusterSummary {
   preview_image?: string;
   discovered_at?: string;
   status?: string;
+  aluno_id?: string | null;
+  student_name?: string | null;
+  nome_formando?: string | null;
   representative: RichClusterFace;
 }
 
@@ -251,6 +254,18 @@ export interface ReviewClusterDetailResponse {
   review_ready: boolean;
   cache_used?: boolean;
   duration_ms?: number;
+}
+
+export interface AssignClusterResponse {
+  success: boolean;
+  cluster_id: string;
+  aluno_id: string | null;
+  student_name: string | null;
+  status: string;
+  updated_count: number;
+  nome_formando?: string | null;
+  ok?: boolean;
+  updated?: number;
 }
 
 export interface Stats {

@@ -1,5 +1,6 @@
 import { API_BASE, fetchJSON, post } from './core';
 import type {
+  AssignClusterResponse,
   GraduationAnalysisStatus,
   ReviewClusterDetailResponse,
   ReviewClustersPageResponse,
@@ -31,7 +32,7 @@ export const reviewApi = {
   assignCluster: (
     catalog: string,
     payload: { cluster_id: string; aluno_id: string | null; nome_formando: string | null }
-  ) => post(`${API_BASE}/review/unknown-clusters/assign`, { catalog, ...payload }),
+  ) => post<AssignClusterResponse>(`${API_BASE}/review/unknown-clusters/assign`, { catalog, ...payload }),
 
   startGraduationAnalysis: (catalog: string) =>
     post<{ status: string; catalog: string }>(`${API_BASE}/review/graduation-analysis/start`, { catalog }),

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
 import { UserPlus, EyeOff, Check, X, Sparkles, ChevronUp, ChevronDown } from 'lucide-react';
-import type { RichCluster, SearchResult } from '../../services/api';
+import type { AssignClusterResponse, RichCluster, SearchResult } from '../../services/api';
 import { api } from '../../services/api';
 import { faceThumb } from './FaceCard';
 import styles from './ClusterHero.module.css';
@@ -10,7 +10,12 @@ interface ClusterHeroProps {
   catalog: string;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
-  onAssigned: (clusterId: string) => void;
+  assignmentState?: {
+    clusterId: string;
+    studentName: string;
+    status: string;
+  } | null;
+  onAssigned: (payload: AssignClusterResponse) => void;
   onSkip: () => void;
 }
 
@@ -23,6 +28,7 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
   catalog,
   collapsed = false,
   onToggleCollapsed,
+  assignmentState = null,
   onAssigned,
   onSkip,
 }, ref) {
@@ -40,6 +46,7 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
   const showSuggestions = suggestions.length > 0 && nameInput.length >= 2;
   const faceCountLabel = `${cluster.face_count} foto${cluster.face_count !== 1 ? 's' : ''}`;
   const cohesionLabel = `${pct}% coesão`;
+  const isAssigned = assignmentState?.clusterId === cluster.cluster_id;
 
   const loadSuggestions = useCallback(async (q: string) => {
     if (q.length < 2) { setSuggestions([]); return; }
@@ -85,12 +92,12 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
     setSaveError(null);
     setIsAssigning(true);
     try {
-      await api.assignCluster(catalog, {
+      const result = await api.assignCluster(catalog, {
         cluster_id: cluster.cluster_id,
         aluno_id: alunoId,
         nome_formando: nomeFormando,
       });
-      onAssigned(cluster.cluster_id);
+      onAssigned(result);
     } catch (err) {
       console.error('[assignCluster] erro:', err);
       setSaveError('Não foi possível identificar este grupo. Tente novamente.');
@@ -103,7 +110,7 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
   const canAssign = Boolean(selectedStudent?.id || nameInput.trim());
 
   return (
-    <div className={`${styles.hero} ${collapsed ? styles.heroCollapsed : ''}`}>
+    <div className={`${styles.hero} ${collapsed ? styles.heroCollapsed : ''} ${isAssigned ? styles.heroAssigned : ''}`}>
       {/* Avatar circular */}
       <div className={`${styles.avatar} ${collapsed ? styles.avatarTiny : ''}`}>
         {rep ? (
@@ -123,6 +130,12 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
         {/* Linha do título + meta em uma linha só */}
         <div className={styles.titleRow}>
           <h1 className={styles.title}>Pessoa desconhecida</h1>
+          {isAssigned && (
+            <span className={styles.assignedBadge}>
+              <Check size={10} />
+              <span>Identificado</span>
+            </span>
+          )}
           <span className={styles.clusterBadge}>#{cluster.cluster_number}</span>
           <span className={styles.iaBadge}>
             <Sparkles size={10} />
@@ -140,24 +153,27 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
             className={styles.btnPrimary}
             onClick={() => setIdentifying(true)}
             type="button"
+            disabled={isAssigned}
           >
             <UserPlus size={14} />
             <span>Identificar pessoa</span>
           </button>
-          <button
-            className={`${styles.btnSecondary} ${collapsed ? styles.inlineHidden : styles.inlineFlexVisible}`}
-            onClick={onSkip}
-            type="button"
-          >
-            <EyeOff size={14} />
-            <span>Ignorar</span>
-          </button>
+            <button
+              className={`${styles.btnSecondary} ${collapsed ? styles.inlineHidden : styles.inlineFlexVisible}`}
+              onClick={onSkip}
+              type="button"
+              disabled={isAssigned}
+            >
+              <EyeOff size={14} />
+              <span>Ignorar</span>
+            </button>
           {onToggleCollapsed && (
             <button
               className={styles.btnIcon}
               onClick={onToggleCollapsed}
               type="button"
               title={collapsed ? 'Expandir detalhes' : 'Recolher detalhes'}
+              disabled={isAssigned}
             >
               {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
               <span>{collapsed ? 'Expandir' : 'Recolher'}</span>
@@ -213,7 +229,7 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
           <button
             className={styles.btnConfirm}
             onClick={handleAssign}
-            disabled={isAssigning || !canAssign}
+            disabled={isAssigning || !canAssign || isAssigned}
             type="button"
           >
             <Check size={14} />

@@ -1,7 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode, useState, useEffect, useCallback, useRef } from 'react';
 import { UserCheck, RefreshCw, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../services/api';
-import type { Photo, PhotoContextResponse, GraduationAnalysisStatus, ReviewClusterSummary, RichCluster } from '../services/api';
+import type { AssignClusterResponse, Photo, PhotoContextResponse, GraduationAnalysisStatus, ReviewClusterSummary, RichCluster } from '../services/api';
 import { useApp } from '../context/AppContext';
 import ReviewSidebar from '../components/review/ReviewSidebar';
 import ClusterDetail from '../components/review/ClusterDetail';
@@ -114,8 +114,11 @@ function ReviewViewContent() {
   const [viewerPhoto, setViewerPhoto] = useState<Photo | null>(null);
   const [viewerContext, setViewerContext] = useState<PhotoContextResponse | null>(null);
   const [viewerContextLoading, setViewerContextLoading] = useState(false);
+  const [assignmentState, setAssignmentState] = useState<{ clusterId: string; studentName: string; status: string } | null>(null);
+  const [assignmentToast, setAssignmentToast] = useState<string | null>(null);
   const wasGraduationRunningRef = useRef(false);
   const detailRequestRef = useRef(0);
+  const assignmentTimeoutRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
     if (!currentCatalog) return;
@@ -202,6 +205,11 @@ function ReviewViewContent() {
   useEffect(() => {
     setSelected(null);
     setSelectedId(null);
+    setAssignmentState(null);
+    if (assignmentTimeoutRef.current != null) {
+      window.clearTimeout(assignmentTimeoutRef.current);
+      assignmentTimeoutRef.current = null;
+    }
     detailRequestRef.current += 1;
     load();
     refreshGraduationStatus();
@@ -237,14 +245,76 @@ function ReviewViewContent() {
     wasGraduationRunningRef.current = isRunning;
   }, [currentCatalog, graduationStatus, load]);
 
-  const handleAssigned = useCallback((clusterId: string) => {
+  useEffect(() => {
+    return () => {
+      if (assignmentTimeoutRef.current != null) {
+        window.clearTimeout(assignmentTimeoutRef.current);
+        assignmentTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      setAssignmentToast(null);
+    };
+  }, []);
+
+  const handleAssigned = useCallback((result: AssignClusterResponse) => {
+    const clusterId = result.cluster_id;
+    const studentName = result.student_name ?? result.nome_formando ?? result.aluno_id ?? 'Identificado';
+    const status = result.status || 'identified';
+
+    if (assignmentTimeoutRef.current != null) {
+      window.clearTimeout(assignmentTimeoutRef.current);
+      assignmentTimeoutRef.current = null;
+    }
+    setAssignmentToast(`Formando vinculado com sucesso: ${studentName}`);
+    window.setTimeout(() => setAssignmentToast(null), 1800);
+
     setClusters((prev) => {
-      const next = prev.filter((cluster) => cluster.cluster_id !== clusterId);
-      const idx = prev.findIndex((cluster) => cluster.cluster_id === clusterId);
-      setSelectedId(next[idx]?.cluster_id ?? next[idx - 1]?.cluster_id ?? null);
-      setSelected((current) => (current?.cluster_id === clusterId ? null : current));
+      const updated = prev.map((cluster) => (
+        cluster.cluster_id === clusterId
+          ? {
+              ...cluster,
+              status,
+              aluno_id: result.aluno_id ?? cluster.aluno_id ?? null,
+              student_name: studentName,
+              nome_formando: studentName,
+            }
+          : cluster
+      ));
+
+      const assignedIndex = updated.findIndex((cluster) => cluster.cluster_id === clusterId);
+      const nextSelectedId = updated[assignedIndex + 1]?.cluster_id ?? updated[assignedIndex - 1]?.cluster_id ?? null;
+
+      setSelectedId(clusterId);
+      setSelected((current) => (
+        current && current.cluster_id === clusterId
+          ? {
+              ...current,
+              status,
+              aluno_id: result.aluno_id ?? null,
+              student_name: studentName,
+              nome_formando: studentName,
+            } as RichCluster
+          : current
+      ));
+      setAssignmentState({ clusterId, studentName, status });
       setTotalClusters((value) => Math.max(0, value - 1));
-      return next;
+
+      assignmentTimeoutRef.current = window.setTimeout(() => {
+        setClusters((latest) => latest.filter((cluster) => cluster.cluster_id !== clusterId));
+        setSelectedId((currentId) => {
+          if (currentId !== clusterId) return currentId;
+          return nextSelectedId;
+        });
+        setSelected((current) => (current?.cluster_id === clusterId ? null : current));
+        setAssignmentState(null);
+        assignmentTimeoutRef.current = null;
+      }, 850);
+
+      return updated;
     });
   }, []);
 
@@ -388,6 +458,7 @@ function ReviewViewContent() {
             onSkip={handleSkip}
             onClusterUpdate={handleClusterUpdate}
             onOpenPhoto={openViewerForPath}
+            assignmentState={assignmentState}
           />
         ) : loadingDetail && selectedId ? (
           <WelcomeState
@@ -424,6 +495,10 @@ function ReviewViewContent() {
           }}
           onNavigate={setViewerPhoto}
         />
+      )}
+
+      {assignmentToast && (
+        <div className={styles.assignmentToast}>{assignmentToast}</div>
       )}
     </div>
   );

@@ -8,6 +8,14 @@
   min-width: 0;
 }
 
+.heroAssigned {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.10), rgba(16, 185, 129, 0.04));
+  border: 1px solid rgba(16, 185, 129, 0.20);
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.04);
+}
+
 .heroCollapsed {
   gap: 10px;
 }
@@ -103,6 +111,19 @@
   border-radius: 20px;
   padding: 3px 9px;
   border: 1px solid rgba(16, 185, 129, 0.22);
+}
+
+.assignedBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  border-radius: 20px;
+  padding: 3px 9px;
+  border: 1px solid rgba(16, 185, 129, 0.25);
 }
 
 /* ── Meta row ── */
@@ -205,6 +226,15 @@
 
 .btnPrimary:active {
   transform: scale(0.97);
+}
+
+.btnPrimary:disabled,
+.btnSecondary:disabled,
+.btnIcon:disabled,
+.btnConfirm:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
 }
 
 .btnSecondary {
