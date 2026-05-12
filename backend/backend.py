@@ -1503,69 +1503,79 @@ def open_file(req: OpenFolderReq):
 
 @app.get("/api/faces/similar")
 def search_similar_faces(rowid: int, catalog: str = "", limit: int = 50):
-    import numpy as np
+    print(f"[faces/similar] rowid={rowid} catalog={repr(catalog)} limit={limit}")
     try:
         with get_db(catalog) as conn:
             cur = conn.cursor()
-            # Busca embedding da ocorrência base
-            cur.execute(
-                "SELECT embedding FROM face_embeddings WHERE occurrence_rowid = ?",
-                (rowid,)
-            )
+
+            cur.execute("SELECT embedding FROM face_embeddings WHERE occurrence_rowid = ?", (rowid,))
             base = cur.fetchone()
+            print(f"[faces/similar] base_face={'found' if base else 'NOT FOUND'}, has_embedding={bool(base and base['embedding'])}")
+
             if not base or not base["embedding"]:
-                raise HTTPException(status_code=400, detail="Embedding facial não disponível para este rosto. Execute uma nova varredura para gerar os embeddings.")
+                return {"results": [], "message": "Embedding facial não disponível para este rosto. Execute uma nova varredura para gerar os embeddings."}
 
             query_emb = np.frombuffer(base["embedding"], dtype="float32").copy()
             norm = np.linalg.norm(query_emb)
             if norm == 0:
-                raise HTTPException(status_code=400, detail="Embedding facial inválido para este rosto.")
+                return {"results": [], "message": "Embedding facial inválido para este rosto."}
             query_emb /= norm
 
-            # Busca todos os outros embeddings + coordenadas da tabela ocorrencias (fonte verdade)
+            # Coordenadas vêm de ocorrencias (fonte canônica, sem JOIN em fotos)
             cur.execute("""
                 SELECT fe.occurrence_rowid, fe.embedding,
-                       o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id,
-                       f.width AS image_width, f.height AS image_height
+                       o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id
                 FROM face_embeddings fe
                 INNER JOIN ocorrencias o ON o.rowid = fe.occurrence_rowid
-                LEFT JOIN fotos f ON f.path = o.foto_path
                 WHERE fe.occurrence_rowid != ? AND fe.embedding IS NOT NULL
             """, (rowid,))
             rows = cur.fetchall()
+            print(f"[faces/similar] candidates={len(rows)}")
 
         results = []
         for r in rows:
-            emb = np.frombuffer(r["embedding"], dtype="float32").copy()
-            n = np.linalg.norm(emb)
-            if n == 0:
+            try:
+                emb = np.frombuffer(r["embedding"], dtype="float32").copy()
+                n = np.linalg.norm(emb)
+                if n == 0:
+                    continue
+                score = float(np.dot(query_emb, emb / n))
+                path = r["foto_path"] or ""
+                x1 = int(r["x1"] or 0)
+                y1 = int(r["y1"] or 0)
+                x2 = int(r["x2"] or 0)
+                y2 = int(r["y2"] or 0)
+                has_bbox = path and x2 > x1 and y2 > y1
+                thumb = (
+                    f"/api/faces/thumb?rowid={r['occurrence_rowid']}&catalog={urllib.parse.quote(catalog)}&size=180"
+                    if has_bbox else
+                    f"/api/image_thumb?path={urllib.parse.quote(path)}&size=180"
+                    if path else ""
+                )
+                results.append({
+                    "rowid": r["occurrence_rowid"],
+                    "photo_path": path,
+                    "thumb_url": thumb,
+                    "score": score,
+                    "aluno_id": r["aluno_id"],
+                    "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
+                    "box": [x1, y1, x2, y2],
+                })
+            except Exception as row_err:
+                print(f"[faces/similar] erro em row {r['occurrence_rowid']}: {row_err}")
                 continue
-            score = float(np.dot(query_emb, emb / n))
-            path = r["foto_path"] or ""
-            x1, y1, x2, y2 = int(r["x1"] or 0), int(r["y1"] or 0), int(r["x2"] or 0), int(r["y2"] or 0)
-            thumb = (
-                f"/api/faces/thumb?rowid={r['occurrence_rowid']}&size=180"
-                if path and x2 > x1 and y2 > y1 else
-                f"/api/image_thumb?path={urllib.parse.quote(path)}&size=180" if path else ""
-            )
-            results.append({
-                "rowid": r["occurrence_rowid"],
-                "photo_path": path,
-                "thumb_url": thumb,
-                "score": score,
-                "aluno_id": r["aluno_id"],
-                "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
-                "box": [x1, y1, x2, y2],
-                "image_width": r["image_width"],
-                "image_height": r["image_height"],
-            })
 
         results.sort(key=lambda x: x["score"], reverse=True)
+        print(f"[faces/similar] returning {min(len(results), limit)} results")
         return {"results": results[:limit]}
+
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        print(f"[faces/similar] ERRO: {repr(e)}")
+        traceback.print_exc()
+        return {"results": [], "message": f"Erro ao buscar faces semelhantes: {e}"}
 
 @app.get("/api/faces/thumb")
 def get_face_thumb(rowid: int, catalog: str = "", size: int = 180):
@@ -1573,59 +1583,32 @@ def get_face_thumb(rowid: int, catalog: str = "", size: int = 180):
         get_thumb_slot()
         with get_db(catalog) as conn:
             cur = conn.cursor()
-            cur.execute("""
-                SELECT o.foto_path, o.x1, o.y1, o.x2, o.y2, f.width, f.height
-                FROM ocorrencias o
-                LEFT JOIN fotos f ON f.path = o.foto_path
-                WHERE o.rowid = ?
-            """, (rowid,))
+            cur.execute(
+                "SELECT foto_path, x1, y1, x2, y2 FROM ocorrencias WHERE rowid = ?",
+                (rowid,)
+            )
             row = cur.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Face não encontrada")
             path = row["foto_path"]
-            x1, y1, x2, y2 = int(row["x1"] or 0), int(row["y1"] or 0), int(row["x2"] or 0), int(row["y2"] or 0)
-            img_w = row["width"]
-            img_h = row["height"]
-            if not path or x2 <= x1 or y2 <= y1:
-                return mm.get_image_thumb(path, size) if path else HTTPException(status_code=400, detail="Bounding box inválido")
+            x1 = int(row["x1"] or 0)
+            y1 = int(row["y1"] or 0)
+            x2 = int(row["x2"] or 0)
+            y2 = int(row["y2"] or 0)
 
-        # Carregar imagem original
-        full = Path(mm.resolve_media_path(path))
-        if not full.exists():
+        if not path or x2 <= x1 or y2 <= y1:
+            return mm.get_image_thumb(path, size) if path else HTTPException(status_code=400, detail="Bounding box inválido")
+
+        if not os.path.exists(path):
             raise HTTPException(status_code=404, detail="Arquivo de imagem não encontrado")
-        img = Image.open(full).convert("RGB")
-        iw, ih = img.size
 
-        # Se as coordenadas estiverem normalizadas (0-1), converter para pixels
-        if x1 < 2 and y1 < 2 and x2 <= 2 and y2 <= 2 and iw > 0 and ih > 0:
-            x1 = int(x1 * iw)
-            y1 = int(y1 * ih)
-            x2 = int(x2 * iw)
-            y2 = int(y2 * ih)
-
-        bw = x2 - x1
-        bh = y2 - y1
-
-        # Padding facial
-        pad_x = int(bw * 0.35)
-        pad_y_top = int(bh * 0.45)
-        pad_y_bottom = int(bh * 0.30)
-
-        crop_x1 = max(0, x1 - pad_x)
-        crop_y1 = max(0, y1 - pad_y_top)
-        crop_x2 = min(iw, x2 + pad_x)
-        crop_y2 = min(ih, y2 + pad_y_bottom)
-
-        face = img.crop((crop_x1, crop_y1, crop_x2, crop_y2))
-        face.thumbnail((size, size), Image.LANCZOS)
-
-        buf = io.BytesIO()
-        face.save(buf, format="JPEG", quality=88)
-        buf.seek(0)
-        return Response(content=buf.read(), media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+        return mm.get_thumb(path, x1, y1, x2, y2, size)
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        print(f"[faces/thumb] ERRO rowid={rowid}: {repr(e)}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         release_thumb_slot()
