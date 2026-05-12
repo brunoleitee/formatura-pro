@@ -5,8 +5,10 @@
   height: 100%;
   min-height: 0;
   padding: 18px;
+  overflow-y: auto;
+  isolation: isolate;
   background:
-    linear-gradient(180deg, rgba(11, 15, 20, 0.98) 0%, rgba(7, 9, 13, 1) 100%);
+    linear-gradient(180deg, rgb(11, 15, 20) 0%, rgb(7, 9, 13) 100%);
   color: #f4f7fb;
 }
 
@@ -16,9 +18,11 @@
 .metricsPanel,
 .liveGridPanel,
 .timelinePanel {
+  position: relative;
+  z-index: 1;
   border: 1px solid rgba(151, 164, 181, 0.14);
   border-radius: 16px;
-  background: rgba(13, 17, 23, 0.96);
+  background: rgb(13, 17, 23);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
 }
 
@@ -250,7 +254,7 @@
   width: min(360px, 100%);
   padding: 18px;
   border-radius: 18px;
-  background: rgba(16, 21, 28, 0.96);
+  background: rgb(16, 21, 28);
   border: 1px solid rgba(151, 164, 181, 0.14);
   box-shadow: 0 14px 28px rgba(0, 0, 0, 0.28);
 }
@@ -428,7 +432,7 @@
   min-width: 0;
   padding: 13px 14px;
   border-radius: 14px;
-  background: rgba(18, 23, 31, 0.86);
+  background: rgb(18, 23, 31);
   border: 1px solid rgba(151, 164, 181, 0.12);
 }
 
@@ -505,7 +509,7 @@
   min-width: 0;
   padding: 9px;
   border-radius: 16px;
-  background: rgba(17, 22, 30, 0.96);
+  background: rgb(17, 22, 30);
   border: 1px solid rgba(151, 164, 181, 0.13);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
   transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
