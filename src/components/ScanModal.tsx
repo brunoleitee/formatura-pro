@@ -6,7 +6,7 @@ import styles from './ScanModal.module.css';
 
 interface Props {
   onClose: () => void;
-  onScanStarted: () => void;
+  onScanStarted: (meta: { catalogName: string; oriPath: string; refPath: string }) => void;
 }
 
 export default function ScanModal({ onClose, onScanStarted }: Props) {
@@ -40,7 +40,7 @@ export default function ScanModal({ onClose, onScanStarted }: Props) {
       await api.scanFolder(oriPath, refPath, activeCatalog);
       await setCatalog(activeCatalog);
       await refreshCatalogs();
-      onScanStarted();
+      onScanStarted({ catalogName: activeCatalog, oriPath, refPath });
       onClose();
     } catch (e) {
       setError('Erro ao iniciar o escaneamento. Verifique o backend.');

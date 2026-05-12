@@ -31,7 +31,7 @@ export default function CatalogView() {
   const { selectedPaths, toggleSelection, clearSelection } = usePhotoSelection(filteredPhotos);
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(filteredPhotos);
   const [bulkBarVisible, setBulkBarVisible] = useState(false);
-  const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
+  const [, setIsDraggingPhoto] = useState(false);
   const [auditStatus, setAuditStatus] = useState<{
     is_auditing: boolean; status_text: string; progress: number;
   } | null>(null);

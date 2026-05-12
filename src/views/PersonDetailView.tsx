@@ -68,7 +68,7 @@ export default function PersonDetailView() {
   const { selectedPaths, toggleSelection, clearSelection } = usePhotoSelection(photos);
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(photos);
   const [bulkBarVisible, setBulkBarVisible] = useState(false);
-  const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
+  const [, setIsDraggingPhoto] = useState(false);
 
   const load = useCallback(async () => {
     if (!selectedPersonId || !currentCatalog) return;

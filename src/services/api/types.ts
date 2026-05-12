@@ -40,16 +40,36 @@ export interface Photo {
   closed_eyes: boolean;
 }
 
+export interface ScanRecentFace {
+  name: string;
+  path: string;
+  box: [number, number, number, number];
+}
+
+export interface ScanSummary {
+  time_str?: string;
+  total_photos?: number;
+  total_faces?: number;
+  [key: string]: unknown;
+}
+
 export interface ScanStatus {
   is_scanning: boolean;
   progress: number;
   status_text: string;
   total_processadas: number;
   total_matches: number;
+  total_clusters?: number;
   total_files: number;
+  last_folder_scanned?: string;
   eta_seconds: number;
   device: string;
-  scan_summary: unknown | null;
+  gpu_error?: string;
+  skipped_background_faces?: number;
+  current_photo?: string | null;
+  current_photo_index?: number;
+  recent_faces?: ScanRecentFace[];
+  scan_summary: ScanSummary | null;
 }
 
 export interface ExportStatus {

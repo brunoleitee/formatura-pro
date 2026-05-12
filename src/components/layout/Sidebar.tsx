@@ -242,9 +242,9 @@ export function Sidebar({
           {/* Escanear */}
           <div
             className={`nav-item ${isScanning ? 'sidebar-scanning' : ''}`}
-            onClick={() => { if (!isScanning && currentCatalog) onScanClick(); }}
+            onClick={() => { if (currentCatalog) onScanClick(); }}
             style={{ opacity: !currentCatalog ? 0.4 : 1, cursor: !currentCatalog ? 'default' : 'pointer' }}
-            title={!currentCatalog ? 'Selecione um evento primeiro' : isScanning ? 'Escaneando...' : 'Escanear fotos'}
+            title={!currentCatalog ? 'Selecione um evento primeiro' : isScanning ? 'Abrir central de processamento' : 'Escanear fotos'}
           >
             {isScanning
               ? <Loader size={17} className="spin" />
