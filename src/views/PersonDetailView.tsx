@@ -17,7 +17,8 @@ function Section({
   onPhotoClick, 
   onDoubleClick, 
   onOpenDetails,
-  onLongPress
+  onDragStart,
+  onDragEnd
 }: { 
   title: string; 
   items: Photo[]; 
@@ -26,7 +27,8 @@ function Section({
   onPhotoClick: (photo: Photo, event: React.MouseEvent) => void;
   onDoubleClick: (photo: Photo) => void;
   onOpenDetails: (photo: Photo) => void;
-  onLongPress: (photo: Photo) => void;
+  onDragStart: (photo: Photo, event: React.PointerEvent) => void;
+  onDragEnd: (photo: Photo, event: React.PointerEvent) => void;
 }) {
   if (items.length === 0) return null;
   return (
@@ -47,7 +49,8 @@ function Section({
               onClick={onPhotoClick}
               onDoubleClick={onDoubleClick}
               onOpenDetails={onOpenDetails}
-              onLongPress={onLongPress}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
             />
           );
         })}
@@ -65,6 +68,30 @@ export default function PersonDetailView() {
   const { selectedPaths, toggleSelection, clearSelection } = usePhotoSelection(photos);
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(photos);
   const [bulkBarVisible, setBulkBarVisible] = useState(false);
+  const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
+
+  const handleDragStart = useCallback((photo: Photo) => {
+    const id = getPhotoId(photo);
+    if (!selectedPaths.has(id)) {
+      toggleSelection(photo, { ctrlKey: false, metaKey: false, shiftKey: false } as any);
+    }
+    setIsDraggingPhoto(true);
+    setBulkBarVisible(true);
+  }, [selectedPaths, toggleSelection]);
+
+  const handleDragEnd = useCallback((_photo: Photo, e: React.PointerEvent) => {
+    setIsDraggingPhoto(false);
+    
+    const target = document.elementFromPoint(e.clientX, e.clientY);
+    const actionBtn = target?.closest('[data-bulk-action]');
+    
+    if (actionBtn) {
+      const action = actionBtn.getAttribute('data-bulk-action');
+      if (action === 'discard') handleDiscardSelected();
+      else if (action === 'restore') handleRestoreSelected();
+      else if (action === 'remove-identification') handleRemoveIdentificationSelected();
+    }
+  }, [handleDiscardSelected, handleRestoreSelected, handleRemoveIdentificationSelected]);
 
   // Reset bulk bar if selection is cleared
   useEffect(() => {
@@ -197,7 +224,8 @@ export default function PersonDetailView() {
               onPhotoClick={toggleSelection}
               onDoubleClick={setViewerPhoto}
               onOpenDetails={setDetailsPhoto}
-              onLongPress={() => setBulkBarVisible(true)}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
             />
             <Section 
               title="Requer atenção" 
@@ -207,7 +235,8 @@ export default function PersonDetailView() {
               onPhotoClick={toggleSelection}
               onDoubleClick={setViewerPhoto}
               onOpenDetails={setDetailsPhoto}
-              onLongPress={() => setBulkBarVisible(true)}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
             />
             <Section 
               title="Desfocadas" 
@@ -217,7 +246,8 @@ export default function PersonDetailView() {
               onPhotoClick={toggleSelection}
               onDoubleClick={setViewerPhoto}
               onOpenDetails={setDetailsPhoto}
-              onLongPress={() => setBulkBarVisible(true)}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
             />
             <Section 
               title="Descartadas" 
@@ -227,7 +257,8 @@ export default function PersonDetailView() {
               onPhotoClick={toggleSelection}
               onDoubleClick={setViewerPhoto}
               onOpenDetails={setDetailsPhoto}
-              onLongPress={() => setBulkBarVisible(true)}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
             />
           </div>
 

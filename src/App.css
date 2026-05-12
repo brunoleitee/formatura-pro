@@ -516,6 +516,13 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.photo-card img {
+  -webkit-user-drag: none;
+  user-select: none;
 }
 .photo-card:hover {
   border-color: rgba(255,255,255,0.18);

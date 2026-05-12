@@ -31,6 +31,38 @@ export default function CatalogView() {
   const { selectedPaths, toggleSelection, clearSelection } = usePhotoSelection(filteredPhotos);
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(filteredPhotos);
   const [bulkBarVisible, setBulkBarVisible] = useState(false);
+  const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
+
+  const handleDragStart = useCallback((photo: Photo) => {
+    const id = getPhotoId(photo);
+    if (!selectedPaths.has(id)) {
+      // Forçar seleção se não estiver selecionada
+      toggleSelection(photo, { ctrlKey: false, metaKey: false, shiftKey: false } as any);
+    }
+    setIsDraggingPhoto(true);
+    setBulkBarVisible(true);
+  }, [selectedPaths, toggleSelection]);
+
+  const handleDragEnd = useCallback((_photo: Photo, e: React.PointerEvent) => {
+    setIsDraggingPhoto(false);
+    
+    const target = document.elementFromPoint(e.clientX, e.clientY);
+    const actionBtn = target?.closest('[data-bulk-action]');
+    
+    if (actionBtn) {
+      const action = actionBtn.getAttribute('data-bulk-action');
+      if (action === 'discard') handleDiscardSelected();
+      else if (action === 'restore') handleRestoreSelected();
+      else if (action === 'remove-identification') handleRemoveIdentificationSelected();
+    } else {
+      // Se não soltou em uma ação, e não temos seleção (improvável aqui pois acabamos de selecionar ou já tinha), 
+      // ou se o usuário quer que a barra suma se não houver drop (comportamento solicitado: "pode manter por 1s ou esconder")
+      // Vamos manter a barra visível se houver seleção para permitir cliques manuais,
+      // a menos que o usuário não queira. O prompt diz "pode manter por 1s ou esconder".
+      // Se "esconder", o usuário teria que arrastar de novo para ver a barra.
+      // Vamos deixar ela visível se houver seleção.
+    }
+  }, [handleDiscardSelected, handleRestoreSelected, handleRemoveIdentificationSelected]);
 
   // Reset bulk bar if selection is cleared
   useEffect(() => {
@@ -172,7 +204,8 @@ export default function CatalogView() {
                 onPhotoClick={toggleSelection}
                 onDoubleClick={setViewerPhoto}
                 onOpenDetails={setDetailsPhoto}
-                onLongPress={() => setBulkBarVisible(true)}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
                 zoom={size}
               />
             </>

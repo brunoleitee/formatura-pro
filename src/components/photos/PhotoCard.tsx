@@ -10,7 +10,8 @@ interface PhotoCardProps {
   onClick: (photo: Photo, event: React.MouseEvent) => void;
   onDoubleClick?: (photo: Photo) => void;
   onOpenDetails: (photo: Photo) => void;
-  onLongPress?: (photo: Photo) => void;
+  onDragStart?: (photo: Photo, event: React.PointerEvent) => void;
+  onDragEnd?: (photo: Photo, event: React.PointerEvent) => void;
 }
 
 function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number, h: number }, photoWidth: number, photoHeight: number) {
@@ -68,13 +69,14 @@ function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number,
   );
 }
 
-export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDetails, onLongPress }: PhotoCardProps) {
+export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd }: PhotoCardProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [thumbSize, setThumbSize] = useState({ w: 0, h: 0 });
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const holdTimerRef = useRef<any>(null);
+  const dragStartRef = useRef<{ x: number, y: number } | null>(null);
+  const isDraggingInternal = useRef(false);
 
   const isMapped = isPhotoMapped(photo);
   const isDiscarded = photo.discarded === true;
@@ -103,28 +105,60 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
     return () => observer.disconnect();
   }, []);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return; // Only left click
-    holdTimerRef.current = setTimeout(() => {
-      onLongPress?.(photo);
-    }, 350);
+    
+    // Ignore if clicking on interactive elements like the details button
+    if ((e.target as HTMLElement).closest('[data-interactive="true"]')) {
+      return;
+    }
+
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    isDraggingInternal.current = false;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
-  const clearTimer = () => {
-    if (holdTimerRef.current) {
-      clearTimeout(holdTimerRef.current);
-      holdTimerRef.current = null;
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!dragStartRef.current) return;
+    
+    if (!isDraggingInternal.current) {
+      const dx = Math.abs(e.clientX - dragStartRef.current.x);
+      const dy = Math.abs(e.clientY - dragStartRef.current.y);
+      if (dx + dy > 8) {
+        isDraggingInternal.current = true;
+        onDragStart?.(photo, e);
+      }
     }
+  };
+
+  const wasDraggingRef = useRef(false);
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (isDraggingInternal.current) {
+      onDragEnd?.(photo, e);
+      wasDraggingRef.current = true;
+      // Pequeno delay para evitar que o clique dispare imediatamente após o drag
+      setTimeout(() => {
+        wasDraggingRef.current = false;
+      }, 100);
+    }
+    dragStartRef.current = null;
+    isDraggingInternal.current = false;
   };
 
   return (
     <div
       className={`photo-card ${isSelected ? 'selected' : ''} ${isDiscarded ? 'discarded' : ''}`}
-      onClick={(e) => onClick(photo, e)}
-      onDoubleClick={() => onDoubleClick?.(photo)}
-      onMouseDown={handleMouseDown}
-      onMouseUp={clearTimer}
-      onMouseLeave={clearTimer}
+      onClick={(e) => {
+        if (wasDraggingRef.current) return;
+        onClick(photo, e);
+      }}
+      onDoubleClick={() => !wasDraggingRef.current && onDoubleClick?.(photo)}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      style={{ userSelect: 'none', touchAction: 'none' }}
     >
       <div className="photo-img-placeholder" ref={containerRef}>
         {!hasError && (
@@ -135,7 +169,8 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
               alt={photo.name}
               loading="lazy"
               decoding="async"
-              style={{ opacity: isLoaded ? 1 : 0 }}
+              draggable={false}
+              style={{ opacity: isLoaded ? 1 : 0, userSelect: 'none', pointerEvents: 'none' }}
               onError={() => setHasError(true)}
             />
             <button

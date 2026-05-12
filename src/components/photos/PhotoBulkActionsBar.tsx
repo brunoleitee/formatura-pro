@@ -26,26 +26,38 @@ const PhotoBulkActionsBar: React.FC<PhotoBulkActionsBarProps> = ({
         </div>
 
         <div className={styles.actions}>
-          <button className={`${styles.actionBtn} ${styles.discard}`} onClick={onDiscard}>
+          <button 
+            className={`${styles.actionBtn} ${styles.discard}`} 
+            onClick={onDiscard}
+            data-bulk-action="discard"
+          >
             <div className={styles.btnIcon}><Trash size={20} /></div>
             <div className={styles.btnText}>
-              <span className={styles.hint}>Clique aqui para</span>
+              <span className={styles.hint}>Clique ou solte aqui para</span>
               <span className={styles.main}>Descartar</span>
             </div>
           </button>
 
-          <button className={`${styles.actionBtn} ${styles.restore}`} onClick={onRestore}>
+          <button 
+            className={`${styles.actionBtn} ${styles.restore}`} 
+            onClick={onRestore}
+            data-bulk-action="restore"
+          >
             <div className={styles.btnIcon}><RotateCcw size={20} /></div>
             <div className={styles.btnText}>
-              <span className={styles.hint}>Clique aqui para</span>
+              <span className={styles.hint}>Clique ou solte aqui para</span>
               <span className={styles.main}>Restaurar</span>
             </div>
           </button>
 
-          <button className={`${styles.actionBtn} ${styles.removeIdent}`} onClick={onRemoveIdentification}>
+          <button 
+            className={`${styles.actionBtn} ${styles.removeIdent}`} 
+            onClick={onRemoveIdentification}
+            data-bulk-action="remove-identification"
+          >
             <div className={styles.btnIcon}><UserMinus size={20} /></div>
             <div className={styles.btnText}>
-              <span className={styles.hint}>Clique aqui para</span>
+              <span className={styles.hint}>Clique ou solte aqui para</span>
               <span className={styles.main}>Remover identificação</span>
             </div>
           </button>

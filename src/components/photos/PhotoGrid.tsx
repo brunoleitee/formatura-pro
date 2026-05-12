@@ -9,11 +9,12 @@ interface PhotoGridProps {
   onPhotoClick: (photo: Photo, event: React.MouseEvent) => void;
   onDoubleClick?: (photo: Photo) => void;
   onOpenDetails: (photo: Photo) => void;
-  onLongPress?: (photo: Photo) => void;
+  onDragStart?: (photo: Photo, event: React.PointerEvent) => void;
+  onDragEnd?: (photo: Photo, event: React.PointerEvent) => void;
   zoom?: number;
 }
 
-export function PhotoGrid({ photos, selectedPaths, onPhotoClick, onDoubleClick, onOpenDetails, onLongPress, zoom = 180 }: PhotoGridProps) {
+export function PhotoGrid({ photos, selectedPaths, onPhotoClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, zoom = 180 }: PhotoGridProps) {
   if (photos.length === 0) {
     return (
       <div className="empty-state">
@@ -36,7 +37,8 @@ export function PhotoGrid({ photos, selectedPaths, onPhotoClick, onDoubleClick, 
             onClick={onPhotoClick}
             onDoubleClick={onDoubleClick}
             onOpenDetails={onOpenDetails}
-            onLongPress={onLongPress}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
           />
         );
       })}
