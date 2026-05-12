@@ -4,7 +4,14 @@ export const API_BASE = '/api';
 
 export async function fetchJSON<T = unknown>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, options);
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  if (!res.ok) {
+    let detail: string | undefined;
+    try { detail = (await res.json()).detail; } catch {}
+    const err: any = new Error(detail ?? `HTTP ${res.status}: ${res.statusText}`);
+    err.status = res.status;
+    err.detail = detail;
+    throw err;
+  }
   return res.json() as Promise<T>;
 }
 

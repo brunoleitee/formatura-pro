@@ -1501,6 +1501,67 @@ def open_photoshop(req: OpenFolderReq):
 def open_file(req: OpenFolderReq):
     return im.open_file(req.path)
 
+@app.get("/api/faces/similar")
+def search_similar_faces(rowid: int, catalog: str = "", limit: int = 50):
+    import numpy as np
+    try:
+        with get_db(catalog) as conn:
+            cur = conn.cursor()
+            # Busca embedding da ocorrência base
+            cur.execute(
+                "SELECT embedding, foto_path, x1, y1, x2, y2 FROM face_embeddings WHERE occurrence_rowid = ?",
+                (rowid,)
+            )
+            base = cur.fetchone()
+            if not base or not base["embedding"]:
+                raise HTTPException(status_code=400, detail="Embedding facial não disponível para este rosto. Execute uma nova varredura para gerar os embeddings.")
+
+            query_emb = np.frombuffer(base["embedding"], dtype="float32").copy()
+            norm = np.linalg.norm(query_emb)
+            if norm == 0:
+                raise HTTPException(status_code=400, detail="Embedding facial inválido para este rosto.")
+            query_emb /= norm
+
+            # Busca todos os outros embeddings do catálogo
+            cur.execute("""
+                SELECT fe.occurrence_rowid, fe.foto_path, fe.embedding,
+                       fe.x1, fe.y1, fe.x2, fe.y2,
+                       o.aluno_id
+                FROM face_embeddings fe
+                LEFT JOIN ocorrencias o ON o.rowid = fe.occurrence_rowid
+                WHERE fe.occurrence_rowid != ? AND fe.embedding IS NOT NULL
+            """, (rowid,))
+            rows = cur.fetchall()
+
+        results = []
+        for r in rows:
+            emb = np.frombuffer(r["embedding"], dtype="float32").copy()
+            n = np.linalg.norm(emb)
+            if n == 0:
+                continue
+            score = float(np.dot(query_emb, emb / n))
+            path = r["foto_path"] or ""
+            x1, y1, x2, y2 = r["x1"] or 0, r["y1"] or 0, r["x2"] or 0, r["y2"] or 0
+            thumb = (
+                f"/api/thumb?path={urllib.parse.quote(path)}&x1={x1}&y1={y1}&x2={x2}&y2={y2}&size=150"
+                if path else ""
+            )
+            results.append({
+                "rowid": r["occurrence_rowid"],
+                "photo_path": path,
+                "thumb_url": thumb,
+                "score": score,
+                "aluno_id": r["aluno_id"],
+                "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
+            })
+
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return {"results": results[:limit]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/scan/precheck")
 def scan_precheck(req: scm.ScanRequest):
     return scm.scan_precheck(req)

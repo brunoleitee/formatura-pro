@@ -7,8 +7,8 @@
   color: #e2e8f0;
 }
 
-.viewerOverlay.discarded {
-  opacity: 0.75;
+.viewerOverlay.discarded .mainImage {
+  opacity: 0.65;
 }
 
 /* ── Top header bar ── */
@@ -77,6 +77,18 @@
   background: rgba(59, 130, 246, 0.15);
   border-color: #3b82f6;
   color: #60a5fa;
+}
+
+.headerBtnPhotoshop {
+  background: rgba(37, 99, 235, 0.2);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #60a5fa;
+}
+
+.headerBtnPhotoshop:hover {
+  background: rgba(37, 99, 235, 0.3);
+  border-color: #3b82f6;
+  color: #93c5fd;
 }
 
 .headerBtnDanger {
@@ -336,6 +348,22 @@
   letter-spacing: 0.5px;
   text-transform: uppercase;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.identCount {
+  background: rgba(255, 255, 255, 0.08);
+  color: #64748b;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.65rem;
+}
+
+.identChevron {
+  margin-left: auto;
+  color: #334155;
 }
 
 .identList {
@@ -389,50 +417,54 @@
 .sideActionBtn {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   width: 100%;
-  padding: 10px 14px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(255, 255, 255, 0.03);
-  color: #94a3b8;
-  font-size: 0.78rem;
+  color: #e2e8f0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.8px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s;
 }
 
 .sideActionBtn:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .sideActionBtnPrimary {
-  border-color: rgba(34, 197, 94, 0.3);
-  color: #22c55e;
-}
-
-.sideActionBtnPrimary:hover {
-  background: rgba(34, 197, 94, 0.1);
-  border-color: #22c55e;
+  border-color: rgba(255, 255, 255, 0.06);
 }
 
 .sideActionBtnDanger {
-  border-color: rgba(239, 68, 68, 0.3);
-  color: #f87171;
+  border-color: rgba(255, 255, 255, 0.06);
 }
 
-.sideActionBtnDanger:hover {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: #ef4444;
+.actionIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: #16a34a;
+  color: white;
+  flex-shrink: 0;
 }
 
-.sideActionBtn .shortcut {
-  margin-left: auto;
-  font-size: 0.6rem;
-  color: #475569;
-  background: rgba(255, 255, 255, 0.05);
-  padding: 1px 5px;
-  border-radius: 3px;
+.actionIconDanger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: #dc2626;
+  color: white;
+  flex-shrink: 0;
 }
 
 /* ── Feedback toast ── */

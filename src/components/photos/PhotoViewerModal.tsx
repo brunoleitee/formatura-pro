@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, ChevronLeft, ChevronRight, Search, UserCheck, UserMinus, Plus, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Search, UserCheck, UserMinus, Plus, ArrowUp, ArrowDown, FolderOpen } from 'lucide-react';
 import { api, type Photo } from '../../services/api';
 import { isKnownFace } from '../../utils/personIdentity';
 import { useApp } from '../../context/AppContext';
@@ -36,6 +36,7 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
   const [renameValue, setRenameValue] = useState('');
   const [similarResults, setSimilarResults] = useState<SimilarResult[]>([]);
   const [similarLoading, setSimilarLoading] = useState(false);
+  const [similarError, setSimilarError] = useState<string | null>(null);
   const [showManualModal, setShowManualModal] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [manualAlunoId, setManualAlunoId] = useState('');
 
@@ -102,13 +103,16 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
     const face = photo.faces?.[faceIdx];
     if (!face) return;
     setSimilarLoading(true);
+    setSimilarError(null);
     setActiveMenu(null);
     try {
-      const results = await api.searchSimilarFaces(face.rowid ?? 0, 50);
+      const results = await api.searchSimilarFaces(face.rowid ?? 0, currentCatalog, 50);
       setSimilarResults(results.results ?? []);
-    } catch (err) {
-      console.error("Erro ao buscar semelhantes:", err);
-      showFeedbackMsg("Erro ao buscar semelhantes");
+      if ((results.results ?? []).length === 0) setSimilarError('Nenhuma face semelhante encontrada');
+    } catch (err: any) {
+      const msg = err?.detail || err?.message || 'Erro ao buscar semelhantes';
+      setSimilarError(msg);
+      setSimilarResults([]);
     } finally {
       setSimilarLoading(false);
     }
@@ -139,7 +143,9 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
     const onKey = (e: KeyboardEvent) => {
       if (showRenameModal !== null || similarResults.length > 0 || showManualModal) return;
       
-      if (e.key === 'ArrowUp') {
+      if (e.key === 'p' || e.key === 'P') {
+        api.openPhotoshop(photo.path);
+      } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         if (isDiscarded) handleRestore();
         else handleRestore();
@@ -178,36 +184,53 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
     if (!isManualMode || !imageRef.current) return;
     const rect = imageRef.current.getBoundingClientRect();
     setDrawStart({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isManualMode || !drawStart || !imageRef.current) return;
-    const rect = imageRef.current.getBoundingClientRect();
-    setDrawCurrent({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-  };
-
-  const handleMouseUp = () => {
-    if (!isManualMode || !drawStart || !drawCurrent || !imageRef.current) return;
-    
-    const x1 = Math.min(drawStart.x, drawCurrent.x);
-    const y1 = Math.min(drawStart.y, drawCurrent.y);
-    const x2 = Math.max(drawStart.x, drawCurrent.x);
-    const y2 = Math.max(drawStart.y, drawCurrent.y);
-    const width = x2 - x1;
-    const height = y2 - y1;
-    
-    if (width >= 20 && height >= 20 && imageRef.current.naturalWidth) {
-      const normX1 = x1 / imageRef.current.naturalWidth;
-      const normY1 = y1 / imageRef.current.naturalHeight;
-      const normX2 = x2 / imageRef.current.naturalWidth;
-      const normY2 = y2 / imageRef.current.naturalHeight;
-      setShowManualModal({ x1: normX1, y1: normY1, x2: normX2, y2: normY2 });
-    }
-    
-    setDrawStart(null);
     setDrawCurrent(null);
-    setIsManualMode(false);
   };
+
+  useEffect(() => {
+    if (!drawStart || !isManualMode) return;
+
+    const onMove = (e: MouseEvent) => {
+      if (!imageRef.current) return;
+      const rect = imageRef.current.getBoundingClientRect();
+      setDrawCurrent({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    };
+
+    const onUp = (e: MouseEvent) => {
+      if (!imageRef.current) {
+        setDrawStart(null);
+        setDrawCurrent(null);
+        return;
+      }
+      const rect = imageRef.current.getBoundingClientRect();
+      const cur = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+
+      const x1 = Math.min(drawStart.x, cur.x);
+      const y1 = Math.min(drawStart.y, cur.y);
+      const x2 = Math.max(drawStart.x, cur.x);
+      const y2 = Math.max(drawStart.y, cur.y);
+
+      if (x2 - x1 >= 20 && y2 - y1 >= 20 && photo.width && photo.height) {
+        setShowManualModal({
+          x1: (x1 / rect.width) * photo.width,
+          y1: (y1 / rect.height) * photo.height,
+          x2: (x2 / rect.width) * photo.width,
+          y2: (y2 / rect.height) * photo.height,
+        });
+      }
+
+      setDrawStart(null);
+      setDrawCurrent(null);
+      setIsManualMode(false);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [drawStart, isManualMode, photo.width, photo.height]);
 
   const getFaceOverlayStyle = (face: Photo['faces'][number]) => {
     if (!photo.width || !photo.height || viewSize.w === 0) return {};
@@ -252,17 +275,36 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
             Adicionar Rosto
           </button>
           <button
+            className={styles.headerBtn}
+            onClick={() => {
+              const sep = photo.path.includes('\\') ? '\\' : '/';
+              const folder = photo.path.substring(0, photo.path.lastIndexOf(sep));
+              api.openFolder(folder);
+            }}
+            title="Abrir pasta"
+          >
+            <FolderOpen size={13} />
+            Pasta
+          </button>
+          <button
+            className={`${styles.headerBtn} ${styles.headerBtnPhotoshop}`}
+            onClick={() => api.openPhotoshop(photo.path)}
+            title="Abrir no Photoshop (P)"
+          >
+            Photoshop (P)
+          </button>
+          <button
             className={`${styles.headerBtn} ${isDiscarded ? styles.headerBtnDanger : ''}`}
             onClick={(e) => {
               e.stopPropagation();
               isDiscarded ? handleRestore() : handleDiscard();
             }}
           >
-            {isDiscarded ? <ThumbsUp size={13} /> : <ThumbsDown size={13} />}
+            {isDiscarded ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
             {isDiscarded ? 'Restaurar' : 'Descartar'}
           </button>
           <button className={styles.headerBtn} onClick={onClose}>
-            <X size={14} />
+            Fechar
           </button>
         </div>
       </div>
@@ -294,14 +336,6 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
           <div
             className={`${styles.imageWrap} ${isManualMode ? styles.crosshair : ''}`}
             onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={() => {
-              if (drawStart) {
-                setDrawStart(null);
-                setDrawCurrent(null);
-              }
-            }}
           >
 
             <img
@@ -386,7 +420,10 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
 
         {/* Right panel — identification */}
         <div className={styles.rightPanel} onClick={(e) => e.stopPropagation()}>
-          <div className={styles.identHeader}>IDENTIFICAÇÃO</div>
+          <div className={styles.identHeader}>
+            IDENTIFICAÇÃO {(photo.faces || []).length > 0 && <span className={styles.identCount}>{(photo.faces || []).length}</span>}
+            <ChevronRight size={14} className={styles.identChevron} />
+          </div>
 
           <div className={styles.identList}>
             {(photo.faces || []).length === 0 && (
@@ -419,14 +456,16 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
 
           <div className={styles.identActions}>
             <button className={`${styles.sideActionBtn} ${styles.sideActionBtnPrimary}`} onClick={handleRestore}>
-              <ThumbsUp size={14} />
-              {isDiscarded ? 'Restaurar' : 'Aprovar'}
-              <span className={styles.shortcut}>↑</span>
+              <span className={styles.actionIcon}>
+                <ArrowUp size={14} />
+              </span>
+              {isDiscarded ? 'RESTAURAR' : 'APROVAR'}
             </button>
             <button className={`${styles.sideActionBtn} ${styles.sideActionBtnDanger}`} onClick={handleDiscard}>
-              <ThumbsDown size={14} />
-              Descartar
-              <span className={styles.shortcut}>↓</span>
+              <span className={styles.actionIconDanger}>
+                <ArrowDown size={14} />
+              </span>
+              DESCARTAR
             </button>
           </div>
         </div>
@@ -488,25 +527,29 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
       )}
 
       {/* ── Similar results panel ── */}
-      {similarResults.length > 0 && (
-        <div className={styles.modalOverlay} onClick={() => setSimilarResults([])}>
+      {(similarResults.length > 0 || similarError) && (
+        <div className={styles.modalOverlay} onClick={() => { setSimilarResults([]); setSimilarError(null); }}>
           <div className={styles.similarPanel} onClick={(e) => e.stopPropagation()}>
             <div className={styles.similarHeader}>
               <h3 className={styles.modalTitle}>Faces semelhantes</h3>
-              <button className={styles.similarClose} onClick={() => setSimilarResults([])}>
+              <button className={styles.similarClose} onClick={() => { setSimilarResults([]); setSimilarError(null); }}>
                 <X size={16} />
               </button>
             </div>
-            <div className={styles.similarGrid}>
-              {similarResults.map((result) => (
-                <div key={result.rowid} className={styles.similarItem}>
-                  <img src={result.thumb_url || api.thumbUrl(result.photo_path, 150)} alt="" className={styles.similarImg} />
-                  <div className={styles.similarScore}>
-                    {result.aluno_id ?? 'Desconhecido'} · {(result.score * 100).toFixed(0)}%
+            {similarError ? (
+              <div className={styles.similarLoading}>{similarError}</div>
+            ) : (
+              <div className={styles.similarGrid}>
+                {similarResults.map((result) => (
+                  <div key={result.rowid} className={styles.similarItem}>
+                    <img src={result.thumb_url || api.thumbUrl(result.photo_path, 150)} alt="" className={styles.similarImg} />
+                    <div className={styles.similarScore}>
+                      {result.aluno_id ?? 'Desconhecido'} · {(result.score * 100).toFixed(0)}%
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
