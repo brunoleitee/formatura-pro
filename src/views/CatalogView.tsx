@@ -128,13 +128,27 @@ export default function CatalogView() {
               <p>Carregando fotos...</p>
             </div>
           ) : (
-            <PhotoGrid
-              photos={filteredPhotos}
-              selectedPaths={selectedPaths}
-              onPhotoClick={toggleSelection}
-              onDoubleClick={setViewerPhoto}
-              onOpenDetails={setDetailsPhoto}
-            />
+            <>
+              {(() => {
+                const ids = filteredPhotos.map(p => p.path);
+                const duplicated = ids.filter((id, i) => ids.indexOf(id) !== i);
+                if (duplicated.length > 0) {
+                  console.log('[Catalog keys debug]', {
+                    total: ids.length,
+                    duplicated,
+                    selected: Array.from(selectedPaths)
+                  });
+                }
+                return null;
+              })()}
+              <PhotoGrid
+                photos={filteredPhotos}
+                selectedPaths={selectedPaths}
+                onPhotoClick={toggleSelection}
+                onDoubleClick={setViewerPhoto}
+                onOpenDetails={setDetailsPhoto}
+              />
+            </>
           )}
         </div>
 
@@ -155,12 +169,14 @@ export default function CatalogView() {
         />
       )}
 
-      <PhotoBulkActionsBar
-        selectedCount={selectedPaths.size}
-        onDiscard={handleDiscardSelected}
-        onRestore={handleRestoreSelected}
-        onRemoveIdentification={handleRemoveIdentificationSelected}
-      />
+      {selectedPaths.size > 0 && (
+        <PhotoBulkActionsBar
+          selectedCount={selectedPaths.size}
+          onDiscard={handleDiscardSelected}
+          onRestore={handleRestoreSelected}
+          onRemoveIdentification={handleRemoveIdentificationSelected}
+        />
+      )}
     </div>
   );
 }

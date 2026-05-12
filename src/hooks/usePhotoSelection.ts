@@ -13,10 +13,17 @@ export function usePhotoSelection(photos: Photo[]) {
         if (next.has(path)) next.delete(path);
         else next.add(path);
       } else if (event.shiftKey && prev.size > 0) {
-        // Implementação básica de shift-click: seleciona do último selecionado até o atual
-        // Para simplificar, vamos apenas adicionar o intervalo se houver fotos ordenadas
         const allPaths = photos.map(p => p.path);
-        const lastSelectedPath = Array.from(prev).pop()!;
+        // Find the last selected path that is actually in the current view
+        const prevArray = Array.from(prev);
+        let lastSelectedPath = '';
+        for (let i = prevArray.length - 1; i >= 0; i--) {
+          if (allPaths.includes(prevArray[i])) {
+            lastSelectedPath = prevArray[i];
+            break;
+          }
+        }
+        
         const startIdx = allPaths.indexOf(lastSelectedPath);
         const endIdx = allPaths.indexOf(path);
         
@@ -29,7 +36,6 @@ export function usePhotoSelection(photos: Photo[]) {
           next.add(path);
         }
       } else {
-        // Clique simples: limpa outros e seleciona apenas este (ou desseleciona se já era o único)
         if (next.has(path) && next.size === 1) {
           next.clear();
         } else {
