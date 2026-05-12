@@ -10,13 +10,14 @@ import { PhotoGrid } from '../components/photos/PhotoGrid';
 import { PhotoDetailPanel } from '../components/photos/PhotoDetailPanel';
 import { PhotoViewerModal } from '../components/photos/PhotoViewerModal';
 import { PhotoFilters } from '../components/photos/PhotoFilters';
+import PhotoBulkActionsBar from '../components/photos/PhotoBulkActionsBar';
 import { extractSubfolders } from '../utils/pathUtils';
 
 export default function CatalogView() {
   const { currentCatalog, catalogSubfolder, setCatalogSubfolders, setIsLoadingCatalogPhotos } = useApp();
   const { photos, loading, loadPhotos } = useCatalogPhotos();
   const { filter, setFilter, filteredPhotos } = usePhotoFilters(photos, currentCatalog, catalogSubfolder);
-  const { selectedPhoto, handlePhotoClick } = usePhotoSelection();
+  const { selectedPaths, toggleSelection, clearSelection } = usePhotoSelection(filteredPhotos);
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(filteredPhotos);
 
   // Sincronizar loading com contexto
@@ -52,6 +53,43 @@ export default function CatalogView() {
     const id = setInterval(checkAudit, 2000);
     return () => clearInterval(id);
   }, [currentCatalog]);
+
+  const handleDiscardSelected = async () => {
+    if (selectedPaths.size === 0) return;
+    try {
+      await api.bulkDiscardPhotos(currentCatalog, Array.from(selectedPaths));
+      clearSelection();
+      loadPhotos();
+    } catch (e) { console.error(e); }
+  };
+
+  const handleRestoreSelected = async () => {
+    if (selectedPaths.size === 0) return;
+    try {
+      await api.bulkRestorePhotos(currentCatalog, Array.from(selectedPaths));
+      clearSelection();
+      loadPhotos();
+    } catch (e) { console.error(e); }
+  };
+
+  const handleRemoveIdentificationSelected = async () => {
+    if (selectedPaths.size === 0) return;
+    try {
+      const selectedPhotos = photos.filter(p => selectedPaths.has(p.path));
+      const rowids: number[] = [];
+      selectedPhotos.forEach(p => {
+        (p.faces || []).forEach(f => {
+          if (f.rowid) rowids.push(f.rowid);
+        });
+      });
+      
+      if (rowids.length > 0) {
+        await api.bulkManualIdentify(currentCatalog, "Desconhecido", rowids);
+        clearSelection();
+        loadPhotos();
+      }
+    } catch (e) { console.error(e); }
+  };
 
   const subtitle = loading && photos.length === 0
     ? 'Carregando fotos...'
@@ -92,8 +130,9 @@ export default function CatalogView() {
           ) : (
             <PhotoGrid
               photos={filteredPhotos}
-              selectedPhoto={selectedPhoto}
-              onPhotoClick={(photo) => handlePhotoClick(photo, setViewerPhoto)}
+              selectedPaths={selectedPaths}
+              onPhotoClick={toggleSelection}
+              onDoubleClick={setViewerPhoto}
               onOpenDetails={setDetailsPhoto}
             />
           )}
@@ -115,6 +154,13 @@ export default function CatalogView() {
           onNavigate={setViewerPhoto}
         />
       )}
+
+      <PhotoBulkActionsBar
+        selectedCount={selectedPaths.size}
+        onDiscard={handleDiscardSelected}
+        onRestore={handleRestoreSelected}
+        onRemoveIdentification={handleRemoveIdentificationSelected}
+      />
     </div>
   );
 }

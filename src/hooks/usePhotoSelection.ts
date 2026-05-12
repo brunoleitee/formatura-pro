@@ -1,28 +1,52 @@
-import { useState, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import type { Photo } from '../services/api';
 
-export function usePhotoSelection() {
-  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
-  const lastClickTime = useRef<number>(0);
-  const lastClickPhoto = useRef<string>('');
+export function usePhotoSelection(photos: Photo[]) {
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
 
-  const handlePhotoClick = (photo: Photo, onDoubleClick: (photo: Photo) => void) => {
-    const now = Date.now();
-    const timeSinceLastClick = now - lastClickTime.current;
-    
-    if (timeSinceLastClick < 300 && lastClickPhoto.current === photo.path) {
-      onDoubleClick(photo);
-      lastClickTime.current = 0;
-    } else {
-      lastClickTime.current = now;
-      lastClickPhoto.current = photo.path;
-      setSelectedPhoto(selectedPhoto?.path === photo.path ? null : photo);
-    }
-  };
+  const toggleSelection = useCallback((photo: Photo, event: React.MouseEvent | React.KeyboardEvent) => {
+    setSelectedPaths(prev => {
+      const next = new Set(prev);
+      const path = photo.path;
+
+      if (event.ctrlKey || event.metaKey) {
+        if (next.has(path)) next.delete(path);
+        else next.add(path);
+      } else if (event.shiftKey && prev.size > 0) {
+        // Implementação básica de shift-click: seleciona do último selecionado até o atual
+        // Para simplificar, vamos apenas adicionar o intervalo se houver fotos ordenadas
+        const allPaths = photos.map(p => p.path);
+        const lastSelectedPath = Array.from(prev).pop()!;
+        const startIdx = allPaths.indexOf(lastSelectedPath);
+        const endIdx = allPaths.indexOf(path);
+        
+        if (startIdx !== -1 && endIdx !== -1) {
+          const [low, high] = startIdx < endIdx ? [startIdx, endIdx] : [endIdx, startIdx];
+          for (let i = low; i <= high; i++) {
+            next.add(allPaths[i]);
+          }
+        } else {
+          next.add(path);
+        }
+      } else {
+        // Clique simples: limpa outros e seleciona apenas este (ou desseleciona se já era o único)
+        if (next.has(path) && next.size === 1) {
+          next.clear();
+        } else {
+          next.clear();
+          next.add(path);
+        }
+      }
+      return next;
+    });
+  }, [photos]);
+
+  const clearSelection = useCallback(() => setSelectedPaths(new Set()), []);
 
   return {
-    selectedPhoto,
-    setSelectedPhoto,
-    handlePhotoClick
+    selectedPaths,
+    setSelectedPaths,
+    toggleSelection,
+    clearSelection
   };
 }

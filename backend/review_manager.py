@@ -19,6 +19,7 @@ import cv2
 import numpy as np
 from fastapi import HTTPException, Query
 from pydantic import BaseModel
+from typing import List, Optional
 
 # Cache para face_cache_path
 face_cache_path_cache = {}
@@ -353,6 +354,27 @@ class DiscardPhotoReq(BaseModel):
     discard: bool = True
 
 
+class BulkDiscardPhotoReq(BaseModel):
+    catalog: str = ""
+    foto_paths: Optional[list[str]] = None
+    rowids: Optional[list[int]] = None
+    photo_ids: Optional[list[int]] = None
+    reason: Optional[str] = None
+
+    def ids(self) -> list[int]:
+        return self.rowids or self.photo_ids or []
+
+
+class BulkRestorePhotoReq(BaseModel):
+    catalog: str = ""
+    foto_paths: Optional[list[str]] = None
+    rowids: Optional[list[int]] = None
+    photo_ids: Optional[list[int]] = None
+
+    def ids(self) -> list[int]:
+        return self.rowids or self.photo_ids or []
+
+
 class BulkManualIdentifyReq(BaseModel):
     catalog: str
     new_name: str
@@ -478,6 +500,50 @@ def bulk_manual_identify(req: BulkManualIdentifyReq):
             _ensure_person_reference(conn, req.catalog, new_name)
 
     return {"ok": True, "status": "ok", "updated": updated, "new_name": new_name}
+
+
+def bulk_discard_photos(req: BulkDiscardPhotoReq):
+    get_db = _get("get_db")
+    backup_catalog_db = _get("backup_catalog_db")
+    backup_catalog_db(req.catalog, "antes_descarte_lote")
+
+    paths = list(req.foto_paths) if req.foto_paths else []
+    ids = req.ids()
+    
+    with get_db(req.catalog) as conn:
+        cur = conn.cursor()
+        if ids:
+            placeholders = ",".join(["?"] * len(ids))
+            cur.execute(f"SELECT DISTINCT foto_path FROM ocorrencias WHERE rowid IN ({placeholders})", ids)
+            paths.extend([row["foto_path"] for row in cur.fetchall()])
+        
+        unique_paths = set(p for p in paths if p)
+        for path in unique_paths:
+            cur.execute("INSERT OR IGNORE INTO discarded_photos (foto_path) VALUES (?)", (path,))
+        conn.commit()
+    return {"ok": True, "count": len(unique_paths)}
+
+
+def bulk_restore_photos(req: BulkRestorePhotoReq):
+    get_db = _get("get_db")
+    backup_catalog_db = _get("backup_catalog_db")
+    backup_catalog_db(req.catalog, "antes_restauro_lote")
+
+    paths = list(req.foto_paths) if req.foto_paths else []
+    ids = req.ids()
+
+    with get_db(req.catalog) as conn:
+        cur = conn.cursor()
+        if ids:
+            placeholders = ",".join(["?"] * len(ids))
+            cur.execute(f"SELECT DISTINCT foto_path FROM ocorrencias WHERE rowid IN ({placeholders})", ids)
+            paths.extend([row["foto_path"] for row in cur.fetchall()])
+
+        unique_paths = set(p for p in paths if p)
+        for path in unique_paths:
+            cur.execute("DELETE FROM discarded_photos WHERE foto_path = ?", (path,))
+        conn.commit()
+    return {"ok": True, "count": len(unique_paths)}
 
 
 AssignClusterReq = AssignUnknownClusterRequest

@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import List, Optional
 from pathlib import Path
 from PIL import Image, ExifTags, ImageOps
 import contextlib
@@ -1100,6 +1101,14 @@ def get_review_unknown_clusters(
 ):
     return rm.get_unknown_clusters(catalog, min_score, min_cluster_size, limit)
 
+
+BulkManualIdentifyReq = rm.BulkManualIdentifyReq
+
+
+@app.post("/api/review/bulk-manual-identify")
+def bulk_manual_identify(req: BulkManualIdentifyReq):
+    return rm.bulk_manual_identify(req)
+
 AssignUnknownClusterRequest = rm.AssignUnknownClusterRequest
 GraduationAnalysisRequest = rm.GraduationAnalysisRequest
 
@@ -1176,6 +1185,44 @@ def graduation_manual_override(req: GraduationManualOverrideRequest):
             status_code=500,
             content={"ok": False, "error": str(e)},
         )
+
+
+class BulkDiscardPhotoReq(BaseModel):
+    catalog: str = ""
+    photo_ids: Optional[List[int]] = None
+    rowids: Optional[List[int]] = None
+    foto_paths: Optional[List[str]] = None
+    reason: Optional[str] = None
+
+    def ids(self) -> List[int]:
+        return self.photo_ids or self.rowids or []
+
+class BulkRestorePhotoReq(BaseModel):
+    catalog: str = ""
+    photo_ids: Optional[List[int]] = None
+    rowids: Optional[List[int]] = None
+    foto_paths: Optional[List[str]] = None
+
+    def ids(self) -> List[int]:
+        return self.photo_ids or self.rowids or []
+
+class BulkRemoveIdentificationReq(BaseModel):
+    catalog: str = ""
+    photo_ids: Optional[List[int]] = None
+    rowids: Optional[List[int]] = None
+
+    def ids(self) -> List[int]:
+        return self.photo_ids or self.rowids or []
+
+
+@app.post("/api/review/bulk-discard")
+def bulk_discard_photos(req: BulkDiscardPhotoReq):
+    return rm.bulk_discard_photos(req)
+
+
+@app.post("/api/review/bulk-restore")
+def bulk_restore_photos(req: BulkRestorePhotoReq):
+    return rm.bulk_restore_photos(req)
 
 
 @app.on_event("startup")

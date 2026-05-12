@@ -7,11 +7,12 @@ import { isPhotoMapped, isKnownFace } from '../../utils/personIdentity';
 interface PhotoCardProps {
   photo: Photo;
   isSelected: boolean;
-  onClick: (photo: Photo) => void;
+  onClick: (photo: Photo, event: React.MouseEvent) => void;
+  onDoubleClick?: (photo: Photo) => void;
   onOpenDetails: (photo: Photo) => void;
 }
 
-export function PhotoCard({ photo, isSelected, onClick, onOpenDetails }: PhotoCardProps) {
+export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDetails }: PhotoCardProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [thumbSize, setThumbSize] = useState({ w: 0, h: 0 });
@@ -26,7 +27,8 @@ export function PhotoCard({ photo, isSelected, onClick, onOpenDetails }: PhotoCa
   return (
     <div
       className={`photo-card ${isSelected ? 'selected' : ''}`}
-      onClick={() => onClick(photo)}
+      onClick={(e) => onClick(photo, e)}
+      onDoubleClick={() => onDoubleClick?.(photo)}
     >
       <div className="photo-img-placeholder">
         {!hasError && (
@@ -74,9 +76,9 @@ export function PhotoCard({ photo, isSelected, onClick, onOpenDetails }: PhotoCa
               <MoreHorizontal size={16} />
             </button>
             {isLoaded && thumbSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, i) => {
-              if (face.x1 == null) return null;
+              if (face.x1 == null || !photo.width || !photo.height) return null;
               
-              const imgRatio = photo.width! / photo.height!;
+              const imgRatio = photo.width / photo.height;
               const containerRatio = thumbSize.w / thumbSize.h;
               
               let renderedW = thumbSize.w;
@@ -93,24 +95,24 @@ export function PhotoCard({ photo, isSelected, onClick, onOpenDetails }: PhotoCa
 
               const isKnown = isKnownFace(face);
               
-              const faceCenterX = offsetX + ((face.x1 + face.x2) / 2 / photo.width!) * renderedW;
-              const faceCenterY = offsetY + ((face.y1 + face.y2) / 2 / photo.height!) * renderedH;
+              const x1 = offsetX + (face.x1 / photo.width) * renderedW;
+              const y1 = offsetY + (face.y1 / photo.height) * renderedH;
+              const widthPx = ((face.x2 - face.x1) / photo.width) * renderedW;
+              const heightPx = ((face.y2 - face.y1) / photo.height) * renderedH;
               
               const color = isKnown ? '#22c55e' : '#9ca3af';
-
-              const widthPx = ((face.x2 - face.x1) / photo.width!) * renderedW;
-              const heightPx = ((face.y2 - face.y1) / photo.height!) * renderedH;
 
               return (
                 <div
                   key={i}
                   style={{
                     position: 'absolute',
-                    left: `${faceCenterX}px`, top: `${faceCenterY}px`,
-                    width: `${widthPx}px`, height: `${heightPx}px`,
+                    left: `${x1}px`, 
+                    top: `${y1}px`,
+                    width: `${widthPx}px`, 
+                    height: `${heightPx}px`,
                     border: `2px solid ${color}`,
-                    borderRadius: '6px',
-                    transform: 'translate(-50%, -50%)',
+                    borderRadius: '4px',
                     pointerEvents: 'none',
                     boxSizing: 'border-box',
                     zIndex: 1

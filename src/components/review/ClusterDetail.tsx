@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef, type CSSProperties } from 'react';
+import { api } from '../../services/api';
 import type { RichCluster, RichClusterFace } from '../../services/api';
 // import { useDragSelection } from '../../hooks/useDragSelection';
 import ClusterHero, { type ClusterHeroHandle } from './ClusterHero';
@@ -6,7 +7,7 @@ import ClusterStatsPanel from './ClusterStatsPanel';
 import ClusterToolbar from './ClusterToolbar';
 import type { FilterOption, SortOption, ViewMode } from './ClusterToolbar';
 import { PhotoCard } from './PhotoCard';
-import { GraduationActions, type GraduationActionsHandle, type GraduationItem } from './GraduationActions';
+import GraduationActions, { type GraduationActionsHandle, type GraduationItem } from './GraduationActions';
 import styles from './ClusterDetail.module.css';
 
 const ZOOM_FACE_DEFAULT = 170;
@@ -176,6 +177,53 @@ export default function ClusterDetail({
     setLastSelectedRowId(rowid);
   }, [lastSelectedRowId, visibleRowIds]);
 
+  // --- Bulk Actions ---
+  const handleDiscardBulk = async () => {
+    if (selected.size === 0) return;
+    const selectedFaces = cluster.faces.filter(f => selected.has(f.rowid));
+    const paths = Array.from(new Set(selectedFaces.map(f => f.path)));
+    try {
+      await api.bulkDiscardPhotos(catalog, paths);
+      onClusterUpdate({
+        ...cluster,
+        faces: cluster.faces.filter(f => !selected.has(f.rowid))
+      });
+      setSelected(new Set());
+      setLastSelectedRowId(null);
+    } catch (err) {
+      console.error("Erro ao descartar:", err);
+    }
+  };
+
+  const handleRestoreBulk = async () => {
+    if (selected.size === 0) return;
+    const selectedFaces = cluster.faces.filter(f => selected.has(f.rowid));
+    const paths = Array.from(new Set(selectedFaces.map(f => f.path)));
+    try {
+      await api.bulkRestorePhotos(catalog, paths);
+      setSelected(new Set());
+      setLastSelectedRowId(null);
+    } catch (err) {
+      console.error("Erro ao restaurar:", err);
+    }
+  };
+
+  const handleRemoveIdentBulk = async () => {
+    if (selected.size === 0) return;
+    const rowids = Array.from(selected);
+    try {
+      await api.bulkManualIdentify(catalog, "Desconhecido", rowids);
+      onClusterUpdate({
+        ...cluster,
+        faces: cluster.faces.filter(f => !selected.has(f.rowid))
+      });
+      setSelected(new Set());
+      setLastSelectedRowId(null);
+    } catch (err) {
+      console.error("Erro ao remover identificação:", err);
+    }
+  };
+
   const handleSelectBest = useCallback(() => {
     const best = cluster.faces
       .filter(f => f.is_representative || f.blur_status === 'sharp')
@@ -277,6 +325,7 @@ export default function ClusterDetail({
           </div>
         )}
       </div>
+
     </div>
   );
 }

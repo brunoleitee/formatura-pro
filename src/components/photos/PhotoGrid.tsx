@@ -4,12 +4,13 @@ import { PhotoCard } from './PhotoCard';
 
 interface PhotoGridProps {
   photos: Photo[];
-  selectedPhoto: Photo | null;
-  onPhotoClick: (photo: Photo) => void;
+  selectedPaths: Set<string>;
+  onPhotoClick: (photo: Photo, event: React.MouseEvent) => void;
+  onDoubleClick?: (photo: Photo) => void;
   onOpenDetails: (photo: Photo) => void;
 }
 
-export function PhotoGrid({ photos, selectedPhoto, onPhotoClick, onOpenDetails }: PhotoGridProps) {
+export function PhotoGrid({ photos, selectedPaths, onPhotoClick, onDoubleClick, onOpenDetails }: PhotoGridProps) {
   if (photos.length === 0) {
     return (
       <div className="empty-state">
@@ -26,8 +27,9 @@ export function PhotoGrid({ photos, selectedPhoto, onPhotoClick, onOpenDetails }
         <PhotoCard
           key={photo.path}
           photo={photo}
-          isSelected={selectedPhoto?.path === photo.path}
+          isSelected={selectedPaths.has(photo.path)}
           onClick={onPhotoClick}
+          onDoubleClick={onDoubleClick}
           onOpenDetails={onOpenDetails}
         />
       ))}

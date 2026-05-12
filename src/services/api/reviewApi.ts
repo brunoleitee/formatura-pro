@@ -35,4 +35,16 @@ export const reviewApi = {
     `${API_BASE}/review/graduation/manual-override`,
     { catalog, ...payload }
   ),
+
+  discardPhoto: (payload: { foto_path: string; discard: boolean }) =>
+    post(`${API_BASE}/discard-photo`, payload),
+
+  bulkDiscardPhotos: (catalog: string, foto_paths: string[]) =>
+    post(`${API_BASE}/review/bulk-discard`, { catalog, foto_paths }),
+
+  bulkRestorePhotos: (catalog: string, foto_paths: string[]) =>
+    post(`${API_BASE}/review/bulk-restore`, { catalog, foto_paths }),
+
+  bulkManualIdentify: (catalog: string, new_name: string, rowids: number[]) =>
+    post(`${API_BASE}/review/bulk-manual-identify`, { catalog, new_name, rowids }),
 };

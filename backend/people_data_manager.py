@@ -9,6 +9,31 @@ _people_cache = {}
 _people_cache_lock = threading.Lock()
 _CACHE_TTL_SECONDS = 300
 
+_img_dim_cache = {}
+_img_dim_lock = threading.Lock()
+
+
+def get_image_dimensions(p):
+    with _img_dim_lock:
+        if p in _img_dim_cache:
+            return _img_dim_cache[p]
+
+    try:
+        from PIL import Image
+        with Image.open(p) as img:
+            w, h = img.width, img.height
+            try:
+                exif = img._getexif()
+                if exif and exif.get(274) in [5, 6, 7, 8]:
+                    w, h = h, w
+            except Exception:
+                pass
+            with _img_dim_lock:
+                _img_dim_cache[p] = (w, h)
+            return w, h
+    except Exception:
+        return None, None
+
 
 def configure(**kwargs):
     _cfg.update(kwargs)
@@ -156,7 +181,7 @@ def get_photos(aluno_id: str):
         cur = conn.cursor()
         cur.execute("SELECT foto_path FROM discarded_photos")
         discarded = {r["foto_path"] for r in cur.fetchall()}
-        cur.execute("SELECT foto_path, x1, y1, x2, y2, blur_score, blur_status, closed_eyes FROM ocorrencias WHERE aluno_id = ?", (aluno_id,))
+        cur.execute("SELECT rowid, foto_path, x1, y1, x2, y2, blur_score, blur_status, closed_eyes FROM ocorrencias WHERE aluno_id = ?", (aluno_id,))
         rows = cur.fetchall()
 
         unique_photos = {}
@@ -183,10 +208,21 @@ def get_photos(aluno_id: str):
                     unique_photos[p]["size"] = stat.st_size
                     unique_photos[p]["mtime"] = stat.st_mtime
                     unique_photos[p]["ctime"] = stat.st_ctime
+                    
+                    w, h = get_image_dimensions(p)
+                    unique_photos[p]["width"] = w
+                    unique_photos[p]["height"] = h
                 except Exception:
+                    unique_photos[p]["width"] = None
+                    unique_photos[p]["height"] = None
                     pass
             if r["x1"] is not None:
-                unique_photos[p]["faces"].append({"aluno_id": aluno_id, "x1": r["x1"], "y1": r["y1"], "x2": r["x2"], "y2": r["y2"]})
+                unique_photos[p]["faces"].append({
+                    "rowid": r["rowid"],
+                    "aluno_id": aluno_id,
+                    "x1": r["x1"], "y1": r["y1"],
+                    "x2": r["x2"], "y2": r["y2"]
+                })
 
         if unique_photos:
             paths = list(unique_photos.keys())
@@ -244,17 +280,10 @@ def get_all_photos(limit: int = 1000):
                 stat = os.stat(p)
                 unique_photos[p]["size"] = stat.st_size
                 unique_photos[p]["mtime"] = stat.st_mtime
-                from PIL import Image
-                with Image.open(p) as img:
-                    w, h = img.width, img.height
-                    try:
-                        exif = img._getexif()
-                        if exif and exif.get(274) in [5, 6, 7, 8]:
-                            w, h = h, w
-                    except Exception:
-                        pass
-                    unique_photos[p]["width"] = w
-                    unique_photos[p]["height"] = h
+                
+                w, h = get_image_dimensions(p)
+                unique_photos[p]["width"] = w
+                unique_photos[p]["height"] = h
             except Exception:
                 unique_photos[p]["width"] = None
                 unique_photos[p]["height"] = None
@@ -265,13 +294,14 @@ def get_all_photos(limit: int = 1000):
                 chunk = paths[i:i + 900]
                 placeholders = ",".join(["?"] * len(chunk))
                 cur.execute(
-                    f"SELECT foto_path, aluno_id, x1, y1, x2, y2 FROM ocorrencias WHERE foto_path IN ({placeholders})",
+                    f"SELECT rowid, foto_path, aluno_id, x1, y1, x2, y2 FROM ocorrencias WHERE foto_path IN ({placeholders})",
                     chunk
                 )
                 for c in cur.fetchall():
                     fp = c["foto_path"]
                     if fp in unique_photos:
                         unique_photos[fp]["faces"].append({
+                            "rowid": c["rowid"],
                             "aluno_id": c["aluno_id"],
                             "x1": c["x1"], "y1": c["y1"],
                             "x2": c["x2"], "y2": c["y2"],
