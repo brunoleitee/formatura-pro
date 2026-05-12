@@ -266,7 +266,6 @@ def get_available_ai_provider():
             except Exception as e:
                 preload_error = str(e)
                 _cfg["log_info"](f"[AI] CUDA disponível, mas falhou ao pré-carregar DLLs: {e}")
-                available = [p for p in available if p != "CUDAExecutionProvider"]
     except Exception as e:
         provider_error = str(e)
         _cfg["log_debug"](f"Erro verificando providers: {e}")

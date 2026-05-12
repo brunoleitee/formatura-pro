@@ -172,7 +172,7 @@ def system_status():
             "is_scanning": scan_state.get("is_scanning", False),
             "device": scan_state.get("device") or _value("face_engine_label", "") or _value("face_engine_device", "") or "",
             "provider": scan_state.get("provider") or _value("face_engine_provider", "") or "",
-            "gpu_error": scan_state.get("gpu_error") or _get("face_engine_gpu_error", "") or "",
+            "gpu_error": scan_state.get("gpu_error") or _value("face_engine_gpu_error", "") or "",
             "last_error_at": last_scanner_error,
         },
         "export": {
