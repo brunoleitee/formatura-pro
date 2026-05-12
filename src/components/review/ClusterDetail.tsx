@@ -7,7 +7,7 @@ import ClusterStatsPanel from './ClusterStatsPanel';
 import ClusterToolbar from './ClusterToolbar';
 import type { FilterOption, SortOption, ViewMode } from './ClusterToolbar';
 import { PhotoCard } from './PhotoCard';
-import GraduationActions, { type GraduationActionsHandle, type GraduationItem } from './GraduationActions';
+import { GraduationActions, type GraduationActionsHandle, type GraduationItem } from './GraduationActions';
 import styles from './ClusterDetail.module.css';
 
 const ZOOM_FACE_DEFAULT = 170;
