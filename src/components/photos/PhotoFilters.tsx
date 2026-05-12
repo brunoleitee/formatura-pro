@@ -31,7 +31,7 @@ export function PhotoFilters({ filter, onFilterChange, hideDiscarded = false, on
           onClick={() => onHideDiscardedChange(!hideDiscarded)}
           title={hideDiscarded ? 'Mostrar descartadas' : 'Ocultar descartadas'}
         >
-          {hideDiscarded ? '🔍 Ocultas' : '🚫 Ocultar'}
+          {hideDiscarded ? '🔍 Mostrar' : '🚫 Ocultar'}
         </button>
       )}
     </div>

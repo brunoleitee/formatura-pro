@@ -1,7 +1,6 @@
 import { Image as ImageIcon } from 'lucide-react';
 import type { Photo } from '../../services/api';
 import { PhotoCard } from './PhotoCard';
-
 import { getPhotoId } from '../../hooks/usePhotoSelection';
 
 interface PhotoGridProps {
@@ -10,9 +9,10 @@ interface PhotoGridProps {
   onPhotoClick: (photo: Photo, event: React.MouseEvent) => void;
   onDoubleClick?: (photo: Photo) => void;
   onOpenDetails: (photo: Photo) => void;
+  zoom?: number;
 }
 
-export function PhotoGrid({ photos, selectedPaths, onPhotoClick, onDoubleClick, onOpenDetails }: PhotoGridProps) {
+export function PhotoGrid({ photos, selectedPaths, onPhotoClick, onDoubleClick, onOpenDetails, zoom = 180 }: PhotoGridProps) {
   if (photos.length === 0) {
     return (
       <div className="empty-state">
@@ -24,7 +24,7 @@ export function PhotoGrid({ photos, selectedPaths, onPhotoClick, onDoubleClick, 
   }
 
   return (
-    <div className="photo-grid">
+    <div className="photo-grid" style={{ '--grid-item-size': `${zoom}px` } as React.CSSProperties}>
       {photos.map((photo) => {
         const id = getPhotoId(photo);
         return (
