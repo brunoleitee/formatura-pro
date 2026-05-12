@@ -8,6 +8,7 @@ DEFAULT_APP_SETTINGS = {
     "auto_backup_interval_hours": 24,
     "last_auto_backup": None,
     "scan_parallel_photos": 4,
+    "image_extensions": [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"],
     "export_incremental_default": False,
     "selection_accent_color": "#d4a44c",
     "photoshop_path": None,

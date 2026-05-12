@@ -84,7 +84,7 @@ class AIAutomation:
         raw_exts = self._app_settings.get("image_extensions") if isinstance(self._app_settings, dict) else None
         if raw_exts:
             return tuple(ext.lower() for ext in raw_exts)
-        return (".jpg", ".jpeg", ".png", ".webp", ".bmp")
+        return (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff")
 
     def _load_index_from_storage(self):
         if self._schema is None or self._search_index is None:

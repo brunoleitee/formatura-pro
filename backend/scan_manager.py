@@ -2,6 +2,7 @@ import os
 import threading
 import urllib.parse
 import traceback
+from collections import Counter
 
 from fastapi import HTTPException
 from pydantic import BaseModel
@@ -20,6 +21,61 @@ def _get(name, default=None):
 def _value(name, default=None):
     value = _get(name, default)
     return value() if callable(value) else value
+
+
+def _collect_scan_files(root_paths, image_extensions):
+    valid_exts = tuple(ext.lower() for ext in (image_extensions or ()))
+    counters = Counter()
+    files_to_process = []
+    seen_files = set()
+    seen_roots = set()
+
+    for root_path in root_paths:
+        if not root_path:
+            continue
+        abs_root = os.path.abspath(root_path)
+        if abs_root in seen_roots or not os.path.isdir(abs_root):
+            continue
+        seen_roots.add(abs_root)
+
+        for current_root, _dirs, filenames in os.walk(abs_root):
+            for filename in filenames:
+                counters["found_total"] += 1
+                full_path = os.path.join(current_root, filename)
+                ext = os.path.splitext(filename)[1].lower()
+                if ext in valid_exts:
+                    counters["valid_total"] += 1
+                    counters[f"valid_ext:{ext}"] += 1
+                    norm_path = os.path.normcase(os.path.abspath(full_path))
+                    if norm_path in seen_files:
+                        counters["ignored_duplicates"] += 1
+                        continue
+                    seen_files.add(norm_path)
+                    files_to_process.append(full_path)
+                else:
+                    counters["ignored_invalid_extension"] += 1
+                    if ext:
+                        counters[f"ignored_ext:{ext}"] += 1
+                    else:
+                        counters["ignored_ext:<sem_ext>"] += 1
+
+    return {
+        "files": files_to_process,
+        "found_total": counters["found_total"],
+        "valid_total": counters["valid_total"],
+        "ignored_invalid_extension": counters["ignored_invalid_extension"],
+        "ignored_duplicates": counters["ignored_duplicates"],
+        "valid_by_extension": {
+            key.split(":", 1)[1]: value
+            for key, value in counters.items()
+            if key.startswith("valid_ext:")
+        },
+        "ignored_by_extension": {
+            key.split(":", 1)[1]: value
+            for key, value in counters.items()
+            if key.startswith("ignored_ext:")
+        },
+    }
 
 
 from pydantic import BaseModel, Field, validator
@@ -126,8 +182,6 @@ def scan_precheck(req: ScanRequest):
         elif not ref_selected:
             warnings.append("Sem referências selecionadas. O scanner criará grupos automáticos para conferência.")
 
-        photo_count = 0
-        ref_count = 0
         scan_roots = []
         seen_scan_roots = set()
         for root_path in [req.ori_path] + extra_paths:
@@ -138,17 +192,27 @@ def scan_precheck(req: ScanRequest):
                 continue
             seen_scan_roots.add(abs_root)
             scan_roots.append(abs_root)
-        for root_path in scan_roots:
-            if not root_path or not os.path.isdir(root_path):
-                continue
-            for _root, _dirs, files in os.walk(root_path):
-                photo_count += sum(1 for f in files if f.lower().endswith(image_extensions))
+        photo_stats = _collect_scan_files(scan_roots, image_extensions)
+        photo_count = photo_stats["valid_total"]
+
+        ref_count = 0
+        ref_stats = {
+            "found_total": 0,
+            "valid_total": 0,
+            "ignored_invalid_extension": 0,
+            "ignored_duplicates": 0,
+        }
         if ref_ok:
-            for _root, _dirs, files in os.walk(req.ref_path):
-                ref_count += sum(1 for f in files if f.lower().endswith(image_extensions))
+            ref_stats = _collect_scan_files([req.ref_path], image_extensions)
+            ref_count = ref_stats["valid_total"]
         checks.append({"label": "Fotos encontradas", "ok": photo_count > 0, "detail": f"{photo_count} imagem(ns)"})
         if ori_ok and photo_count == 0:
-            errors.append("Nenhuma imagem JPG, JPEG ou PNG foi encontrada na pasta de fotos.")
+            errors.append("Nenhuma imagem valida foi encontrada na pasta de fotos.")
+
+        if photo_stats["ignored_invalid_extension"] > 0:
+            warnings.append(
+                f"{photo_stats['ignored_invalid_extension']} arquivo(s) foram ignorados por extensao invalida."
+            )
 
         gpu = gpu_diagnostics()
         gpu_ok = bool(gpu.get("cuda_available") or gpu.get("directml_available"))
@@ -169,6 +233,8 @@ def scan_precheck(req: ScanRequest):
             "catalog_exists": catalog_exists,
             "photo_count": photo_count,
             "reference_count": ref_count,
+            "photo_stats": photo_stats,
+            "reference_stats": ref_stats,
             "device": provider_label,
             "gpu_error": gpu.get("gpu_error", ""),
             "checks": checks,
@@ -262,6 +328,12 @@ def start_scan(req: ScanRequest):
         scan_state["eta_seconds"] = 0
         scan_state["gpu_error"] = ""
         scan_state["scan_summary"] = None
+        scan_state["total_found_files"] = 0
+        scan_state["total_valid_files"] = 0
+        scan_state["total_existing_files"] = 0
+        scan_state["total_inserted_files"] = 0
+        scan_state["total_ignored_files"] = 0
+        scan_state["ignored_reasons"] = {}
         log_info(f"[SCAN] Iniciando scanner: project={req.project_name}, ref={req.ref_path}, ori={req.ori_path}")
         threading.Thread(target=_safe_scanner_worker, args=(se, req, log_info, scan_state), daemon=True).start()
         return {"message": "Scanner Batch iniciado."}

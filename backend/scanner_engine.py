@@ -2,6 +2,7 @@ import contextlib
 import hashlib
 import os
 from pathlib import Path
+from collections import Counter
 
 import cv2
 import numpy as np
@@ -25,7 +26,7 @@ _cfg = {
     "faiss_available": False,
     "runtime_dir": "",
     "data_dir": "",
-    "image_extensions": (".jpg", ".jpeg", ".png"),
+    "image_extensions": (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"),
     "image_models_ready": False,
     "app_face": None,
     "face_engine_device": "",
@@ -207,6 +208,58 @@ def file_sha1(path):
         return h.hexdigest()
     except Exception:
         return None
+
+
+def collect_scan_inputs(root_paths, image_extensions):
+    valid_exts = tuple(ext.lower() for ext in (image_extensions or ()))
+    counters = Counter()
+    files_to_process = []
+    seen_files = set()
+    seen_roots = set()
+
+    for root_path in root_paths:
+        if not root_path:
+            continue
+        abs_root = os.path.abspath(root_path)
+        if abs_root in seen_roots or not os.path.isdir(abs_root):
+            continue
+        seen_roots.add(abs_root)
+
+        for current_root, _dirs, filenames in os.walk(abs_root):
+            for filename in filenames:
+                counters["found_total"] += 1
+                full_path = os.path.join(current_root, filename)
+                ext = os.path.splitext(filename)[1].lower()
+                if ext in valid_exts:
+                    counters["valid_total"] += 1
+                    counters[f"valid_ext:{ext}"] += 1
+                    normalized = os.path.normcase(os.path.abspath(full_path))
+                    if normalized in seen_files:
+                        counters["ignored_duplicates"] += 1
+                        continue
+                    seen_files.add(normalized)
+                    files_to_process.append(full_path)
+                else:
+                    counters["ignored_invalid_extension"] += 1
+                    counters[f"ignored_ext:{ext or '<sem_ext>'}"] += 1
+
+    return {
+        "files": files_to_process,
+        "found_total": counters["found_total"],
+        "valid_total": counters["valid_total"],
+        "ignored_invalid_extension": counters["ignored_invalid_extension"],
+        "ignored_duplicates": counters["ignored_duplicates"],
+        "valid_by_extension": {
+            key.split(":", 1)[1]: value
+            for key, value in counters.items()
+            if key.startswith("valid_ext:")
+        },
+        "ignored_by_extension": {
+            key.split(":", 1)[1]: value
+            for key, value in counters.items()
+            if key.startswith("ignored_ext:")
+        },
+    }
 
 
 def _provider_device(provider_name):
@@ -496,6 +549,12 @@ def run_scanner_worker(req):
     scan_state["skipped_background_faces"] = 0
     scan_state["provider"] = ""
     scan_state["gpu_error"] = ""
+    scan_state["total_found_files"] = 0
+    scan_state["total_valid_files"] = 0
+    scan_state["total_existing_files"] = 0
+    scan_state["total_inserted_files"] = 0
+    scan_state["total_ignored_files"] = 0
+    scan_state["ignored_reasons"] = {}
     scan_state["scan_summary"] = None
     scan_state["recent_faces"] = []
 
@@ -533,16 +592,28 @@ def run_scanner_worker(req):
         for extra in (req.extra_paths or []):
             if extra and os.path.isdir(extra):
                 scan_roots.append(extra)
-                
-        fotos = []
-        for root_path in scan_roots:
-            for r, d, files in os.walk(root_path):
-                for f in files:
-                    if f.lower().endswith(_cfg["image_extensions"]):
-                        fotos.append(os.path.join(r, f))
-                        
+
+        scan_inputs = collect_scan_inputs(scan_roots, _cfg["image_extensions"])
+        fotos = scan_inputs["files"]
         total = len(fotos)
+        ignored_reasons = {
+            "invalid_extension": scan_inputs["ignored_invalid_extension"],
+            "duplicate_path": scan_inputs["ignored_duplicates"],
+            "read_error": 0,
+            "ai_error": 0,
+        }
+        scan_state["total_found_files"] = scan_inputs["found_total"]
+        scan_state["total_valid_files"] = scan_inputs["valid_total"]
         scan_state["total_files"] = total
+        scan_state["total_ignored_files"] = scan_inputs["ignored_invalid_extension"] + scan_inputs["ignored_duplicates"]
+        scan_state["ignored_reasons"] = dict(ignored_reasons)
+
+        log_info(
+            f"[SCAN] Arquivos encontrados={scan_inputs['found_total']} "
+            f"validos={scan_inputs['valid_total']} "
+            f"ignorados_ext={scan_inputs['ignored_invalid_extension']} "
+            f"duplicados={scan_inputs['ignored_duplicates']}"
+        )
 
         if total == 0:
             scan_state["status_text"] = "Nenhuma foto encontrada para scan."
@@ -551,6 +622,12 @@ def run_scanner_worker(req):
 
         with get_db(cname) as conn:
             cur = conn.cursor()
+            cur.execute("SELECT DISTINCT foto_path FROM ocorrencias")
+            existing_photo_paths = {row["foto_path"] for row in cur.fetchall()}
+            initial_existing_photo_paths = set(existing_photo_paths)
+            inserted_photo_paths = set()
+            processed_photo_paths = set()
+            log_info(f"[SCAN] Fotos ja existentes no catalogo antes do scan: {len(existing_photo_paths)}")
             batch_size = 24 if get_face_engine_device() == "GPU" else 12
             import time
             start_time = time.time()
@@ -567,7 +644,9 @@ def run_scanner_worker(req):
                     scan_state["status_text"] = f"Inferencia IA Lote {i} a {min(total, i + batch_size)}..."
 
                     for p, img in zip(chunk_paths, chunk_imgs):
+                        processed_photo_paths.add(p)
                         if img is None:
+                            ignored_reasons["read_error"] += 1
                             continue
                         photo_hash = file_sha1(p)
                         try:
@@ -575,6 +654,7 @@ def run_scanner_worker(req):
                                 faces = _cfg["app_face"].get(img) or []
                         except Exception as e:
                             log_debug(f"Falha de AI em {p}: {e}")
+                            ignored_reasons["ai_error"] += 1
                             continue
 
                         valid_faces = []
@@ -598,6 +678,9 @@ def run_scanner_worker(req):
                                 "INSERT OR IGNORE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                 ("Sem Rostos", p, None, None, None, None, photo_hash, b_score, b_status),
                             )
+                            if p not in existing_photo_paths:
+                                inserted_photo_paths.add(p)
+                                existing_photo_paths.add(p)
                         else:
                             largest_face_area = max((face_data[5] for face_data in valid_faces), default=0)
                             
@@ -663,6 +746,9 @@ def run_scanner_worker(req):
                                     (nome, p, x1, y1, x2, y2, photo_hash, b_score, b_status,
                                      fg_score, is_fg, f_ratio, c_score, bg_reason),
                                 )
+                                if p not in existing_photo_paths:
+                                    inserted_photo_paths.add(p)
+                                    existing_photo_paths.add(p)
                                 cur.execute("INSERT OR IGNORE INTO alunos VALUES (?, ?)", (nome, "n/a"))
                                 
                                 current_time = time.time()
@@ -672,7 +758,11 @@ def run_scanner_worker(req):
                                     scan_state["recent_faces"] = scan_state["recent_faces"][:50]
                                     last_face_update_time = current_time
 
-                    scan_state["total_processadas"] = min(total, i + batch_size)
+                    scan_state["total_processadas"] = len(processed_photo_paths)
+                    scan_state["total_existing_files"] = len(processed_photo_paths.intersection(initial_existing_photo_paths))
+                    scan_state["total_inserted_files"] = len(inserted_photo_paths)
+                    scan_state["total_ignored_files"] = sum(ignored_reasons.values())
+                    scan_state["ignored_reasons"] = dict(ignored_reasons)
                     scan_state["progress"] = scan_state["total_processadas"] / total
                     elapsed = time.time() - start_time
                     if scan_state["total_processadas"] > 0:
@@ -700,8 +790,20 @@ def run_scanner_worker(req):
         scan_state["scan_summary"] = {
             "time_str": f"{mins}m {secs}s",
             "total_photos": scan_state["total_processadas"],
-            "total_faces": total_faces_found
+            "total_faces": total_faces_found,
+            "found_total": scan_state["total_found_files"],
+            "valid_total": scan_state["total_valid_files"],
+            "inserted_total": scan_state["total_inserted_files"],
+            "existing_total": scan_state["total_existing_files"],
+            "ignored_total": scan_state["total_ignored_files"],
+            "ignored_reasons": dict(scan_state["ignored_reasons"]),
         }
+        log_info(
+            f"[SCAN] Resumo final: encontradas={scan_state['total_found_files']} "
+            f"validas={scan_state['total_valid_files']} processadas={scan_state['total_processadas']} "
+            f"novas={scan_state['total_inserted_files']} existentes={scan_state['total_existing_files']} "
+            f"ignoradas={scan_state['total_ignored_files']} motivos={scan_state['ignored_reasons']}"
+        )
     except Exception as e:
         import traceback
         err_msg = traceback.format_exc()

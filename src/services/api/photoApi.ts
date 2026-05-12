@@ -6,8 +6,10 @@ export const photoApi = {
     fetchJSON<{ items?: Photo[]; photos?: Photo[] } | Photo[]>(
       `${API_BASE}/explorer/ls?path=${encodeURIComponent(path)}&catalog=${encodeURIComponent(catalog)}`
     ),
-  getAllPhotos: (catalog = '', limit = 1000) =>
-    fetchJSON<Photo[]>(`${API_BASE}/photos/all?catalog=${encodeURIComponent(catalog)}&limit=${limit}`),
+  getAllPhotos: (catalog = '', limit?: number) =>
+    fetchJSON<Photo[]>(
+      `${API_BASE}/photos/all?catalog=${encodeURIComponent(catalog)}${typeof limit === 'number' ? `&limit=${limit}` : ''}`
+    ),
   getPersonPhotos: (aluno_id: string) =>
     fetchJSON<Photo[]>(`${API_BASE}/photos/${encodeURIComponent(aluno_id)}`),
 

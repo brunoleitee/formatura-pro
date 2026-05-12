@@ -239,7 +239,7 @@ def get_photos(aluno_id: str):
     return list(unique_photos.values())
 
 
-def get_all_photos(limit: int = 1000):
+def get_all_photos(limit: int = None):
     get_db = _get("get_db")
     get_blur_label = _get("get_blur_label")
     load_quality_settings = _get("load_quality_settings")
@@ -250,7 +250,7 @@ def get_all_photos(limit: int = 1000):
         cur = conn.cursor()
         cur.execute("SELECT foto_path FROM discarded_photos")
         discarded = {r["foto_path"] for r in cur.fetchall()}
-        cur.execute("""
+        base_query = """
             SELECT foto_path,
                    MAX(blur_score) as blur_score,
                    MAX(blur_status) as blur_status,
@@ -259,8 +259,12 @@ def get_all_photos(limit: int = 1000):
             FROM ocorrencias
             GROUP BY foto_path
             ORDER BY foto_path
-            LIMIT ?
-        """, (limit,))
+        """
+        params = ()
+        if limit is not None and int(limit) > 0:
+            base_query += "\nLIMIT ?"
+            params = (int(limit),)
+        cur.execute(base_query, params)
         rows = cur.fetchall()
         qs = load_quality_settings()
         unique_photos = {}

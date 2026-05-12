@@ -72,7 +72,7 @@ PORT = args.port
 
 APP_NAME = "Formatura PRO"
 APP_VERSION = "1.2.0"
-IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
+IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff")
 EMBEDDING_CACHE_FILE = None
 
 DEBUG_MODE = os.environ.get("FORM_PRO_DEBUG", "0") == "1"
@@ -370,6 +370,12 @@ scan_state = {
     "provider": "",
     "gpu_error": "",
     "skipped_background_faces": 0,
+    "total_found_files": 0,
+    "total_valid_files": 0,
+    "total_existing_files": 0,
+    "total_inserted_files": 0,
+    "total_ignored_files": 0,
+    "ignored_reasons": {},
     "scan_summary": None,
     "current_photo": None,
     "current_photo_index": 0,
@@ -1092,7 +1098,7 @@ def get_people(unknown: bool = False):
     return pdm.get_people(unknown)
 
 @app.get("/api/photos/all")
-def get_all_photos(limit: int = 1000):
+def get_all_photos(limit: int = None):
     return pdm.get_all_photos(limit)
 
 @app.get("/api/photos/{aluno_id}")
