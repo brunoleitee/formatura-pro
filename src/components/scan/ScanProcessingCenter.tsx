@@ -5,14 +5,19 @@ import {
   CheckCircle2,
   Circle,
   Cpu,
+  EyeOff,
   FolderSearch,
+  Images,
+  Layers3,
   LoaderCircle,
   Pause,
   Play,
   ScanFace,
   Sparkles,
+  UserCheck,
   Wand2,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import type { ScanRecentFace, ScanStatus } from '../../services/api';
@@ -127,6 +132,12 @@ function faceConfidence(face: ScanRecentFace) {
   return 'analisando o lote atual';
 }
 
+function photoSequenceLabel(path: string) {
+  const filename = path.split(/[\\/]/).pop() || '';
+  const numberMatch = filename.match(/(\d+)(?=\.[^.]+$)/);
+  return numberMatch?.[1] || filename.replace(/\.[^.]+$/, '') || 'foto';
+}
+
 function formatAiDeviceLabel(status: ScanStatus | null) {
   const provider = status?.provider || '';
   const device = status?.device || '';
@@ -158,7 +169,6 @@ const LiveFaceCard = memo(function LiveFaceCard({
 }: {
   face: ScanRecentFace;
 }) {
-  const [x1, y1, x2, y2] = face.box;
   const label = faceLabel(face);
   const hint = faceHint(face);
 
@@ -174,13 +184,14 @@ const LiveFaceCard = memo(function LiveFaceCard({
       <div className={styles.faceImageWrap}>
         <img
           className={styles.faceImage}
-          src={api.faceThumbUrl(face.path, x1, y1, x2, y2, 180, 0.25, 72)}
+          src={api.thumbUrl(face.path, 520, 90)}
           alt={label}
           loading="lazy"
+          decoding="async"
         />
       </div>
       <div className={styles.faceMeta}>
-        <span className={styles.faceLabel}>{label}</span>
+        <span className={styles.faceLabel}>{photoSequenceLabel(face.path)}</span>
         <span className={styles.faceHint}>{hint}</span>
       </div>
     </motion.article>
@@ -353,6 +364,7 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
                     )}
                     alt={faceLabel(currentFace)}
                     loading="eager"
+                    decoding="async"
                   />
                 </div>
                 <div className={styles.previewMeta}>
@@ -425,10 +437,10 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
       </div>
 
       <section className={styles.metricsPanel}>
-        <MetricCard label="Processadas" value={formatInteger(scanStatus?.total_processadas)} />
-        <MetricCard label="Matches" value={formatInteger(scanStatus?.total_matches)} />
-        <MetricCard label="Clusters" value={formatInteger(scanStatus?.total_clusters)} />
-        <MetricCard label="Ignoradas" value={formatInteger(scanStatus?.skipped_background_faces)} />
+        <MetricCard icon={Images} label="Processadas" value={formatInteger(scanStatus?.total_processadas)} />
+        <MetricCard icon={UserCheck} label="Matches" value={formatInteger(scanStatus?.total_matches)} />
+        <MetricCard icon={Layers3} label="Clusters" value={formatInteger(scanStatus?.total_clusters)} />
+        <MetricCard icon={EyeOff} label="Ignoradas" value={formatInteger(scanStatus?.skipped_background_faces)} />
       </section>
 
       <section className={styles.liveGridPanel}>
@@ -488,9 +500,12 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
   );
 });
 
-function MetricCard({ label, value }: { label: string; value: string }) {
+function MetricCard({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
   return (
     <div className={styles.metricCard}>
+      <span className={styles.metricIcon}>
+        <Icon size={15} />
+      </span>
       <span className={styles.metricLabel}>{label}</span>
       <strong className={styles.metricValue}>{value}</strong>
     </div>

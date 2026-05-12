@@ -906,14 +906,15 @@ def get_thumb(path: str, x1: int, y1: int, x2: int, y2: int, size: int = 120, ex
 
                 crop = pil.crop((left, top, right, bottom))
                 crop.thumbnail((size, size), Image.Resampling.LANCZOS)
+                jpeg_quality = max(60, min(int(quality), 95))
 
                 buf = io.BytesIO()
-                crop.save(buf, format="JPEG", quality=60)
+                crop.save(buf, format="JPEG", quality=jpeg_quality, optimize=True)
                 buf.seek(0)
                 
                 saved = False
                 try:
-                    crop.save(cache_path, format="JPEG", quality=80)
+                    crop.save(cache_path, format="JPEG", quality=jpeg_quality, optimize=True)
                     saved = True
                     _trim_thumb_cache()
                 except Exception as save_err:
@@ -921,7 +922,7 @@ def get_thumb(path: str, x1: int, y1: int, x2: int, y2: int, size: int = 120, ex
                         log_info(f"FACE cache save error: {save_err}")
                 
                 mode = "pillow_done"
-                _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "miss", extra=f"wait={wait_ms:.0f}ms saved={saved}")
+                _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "miss", extra=f"wait={wait_ms:.0f}ms saved={saved} q={jpeg_quality}")
                 result = StreamingResponse(buf, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
                 _put_result_in_cache(cache_path, result)
                 return result
