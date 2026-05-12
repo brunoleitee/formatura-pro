@@ -29,8 +29,8 @@ export const photoApi = {
   // Thumbnails
   thumbUrl: (path: string, size = 300) =>
     `${API_BASE}/image_thumb?path=${encodeURIComponent(path)}&size=${size}`,
-  faceThumbUrl: (path: string, x1: number, y1: number, x2: number, y2: number, size = 120) =>
-    `${API_BASE}/thumb?path=${encodeURIComponent(path)}&x1=${x1}&y1=${y1}&x2=${x2}&y2=${y2}&size=${size}`,
+  faceThumbUrl: (path: string, x1: number, y1: number, x2: number, y2: number, size = 120, expand = 0) =>
+    `${API_BASE}/thumb?path=${encodeURIComponent(path)}&x1=${x1}&y1=${y1}&x2=${x2}&y2=${y2}&size=${size}${expand ? `&expand=${expand}` : ''}`,
 
   // Face identification
   bulkManualIdentify: (catalog: string, aluno_id: string, rowids: number[]) =>

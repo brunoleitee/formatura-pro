@@ -617,6 +617,31 @@
   flex-direction: column;
 }
 
+.similarViewToggle {
+  display: flex;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.toggleBtn {
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toggleActive {
+  background: #3b82f6;
+  color: white;
+}
+
 .similarCount {
   font-size: 0.7rem;
   color: #64748b;
@@ -675,6 +700,7 @@
 .similarApplyForm {
   display: flex;
   gap: 8px;
+  max-width: 400px;
 }
 
 .similarInput {
@@ -682,7 +708,7 @@
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
-  padding: 8px 12px;
+  padding: 6px 12px;
   color: #e2e8f0;
   font-size: 0.82rem;
   outline: none;
@@ -699,8 +725,8 @@
   color: white;
   border: none;
   border-radius: 6px;
-  padding: 0 16px;
-  font-size: 0.78rem;
+  padding: 0 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s;
@@ -721,7 +747,8 @@
   min-height: 0;
   overflow-y: auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  grid-auto-rows: min-content;
   gap: 14px;
   padding: 18px;
 }
@@ -736,6 +763,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
+  height: 160px;
 }
 
 .similarItem:hover {
@@ -753,14 +781,15 @@
 .similarImgWrap {
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 3;
+  flex: 1;
+  min-height: 0;
+  background: #000;
 }
 
 .similarImg {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center center;
   display: block;
 }
 

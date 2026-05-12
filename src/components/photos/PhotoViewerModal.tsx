@@ -43,6 +43,7 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
   const [similarName, setSimilarName] = useState('');
   const [selectedSimilarIds, setSelectedSimilarIds] = useState<Set<number>>(new Set());
   const [applyingSimilarName, setApplyingSimilarName] = useState(false);
+  const [similarViewMode, setSimilarViewMode] = useState<'face' | 'photo'>('face');
   const [showManualModal, setShowManualModal] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [manualAlunoId, setManualAlunoId] = useState('');
   const [zoom, setZoom] = useState(1);
@@ -414,13 +415,37 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
   };
 
   const getFaceThumbUrl = (result: SimilarResult) => {
+    if (similarViewMode === 'photo') {
+      return result.photo_path ? api.thumbUrl(result.photo_path, 400) : '';
+    }
     if (result.box && result.box.length >= 4 && result.photo_path) {
       const [x1, y1, x2, y2] = result.box;
       if (x2 > x1 && y2 > y1) {
-        return api.faceThumbUrl(result.photo_path, x1, y1, x2, y2, 180);
+        // Usar expand=0.4 para um melhor crop da face
+        return api.faceThumbUrl(result.photo_path, x1, y1, x2, y2, 200, 0.4);
       }
     }
-    return result.photo_path ? api.thumbUrl(result.photo_path, 180) : '';
+    return result.photo_path ? api.thumbUrl(result.photo_path, 200) : '';
+  };
+
+  const getFaceImageStyle = (result: SimilarResult): React.CSSProperties => {
+    if (similarViewMode === 'photo') {
+      return { objectFit: 'contain', background: '#000' };
+    }
+    
+    if (result.box && result.box.length >= 4 && result.image_width && result.image_height) {
+      const [x1, y1, x2, y2] = result.box;
+      const centerX = (x1 + x2) / 2;
+      const centerY = (y1 + y2) / 2;
+      const xPercent = (centerX / result.image_width) * 100;
+      const yPercent = (centerY / result.image_height) * 100;
+      return {
+        objectFit: 'cover',
+        objectPosition: `${xPercent}% ${yPercent}%`
+      };
+    }
+    
+    return { objectFit: 'cover', objectPosition: 'center 35%' };
   };
 
   return (
@@ -721,6 +746,24 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
                 <h3 className={styles.modalTitle}>Faces semelhantes</h3>
                 <span className={styles.similarCount}>{similarResults.length} encontradas</span>
               </div>
+
+              {!similarError && (
+                <div className={styles.similarViewToggle}>
+                  <button 
+                    className={`${styles.toggleBtn} ${similarViewMode === 'face' ? styles.toggleActive : ''}`}
+                    onClick={() => setSimilarViewMode('face')}
+                  >
+                    Rosto
+                  </button>
+                  <button 
+                    className={`${styles.toggleBtn} ${similarViewMode === 'photo' ? styles.toggleActive : ''}`}
+                    onClick={() => setSimilarViewMode('photo')}
+                  >
+                    Foto
+                  </button>
+                </div>
+              )}
+
               <button className={styles.similarClose} onClick={() => { setSimilarResults([]); setSimilarError(null); }}>
                 <X size={16} />
               </button>
@@ -776,7 +819,12 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
                       onClick={() => toggleSimilarSelection(result.rowid)}
                     >
                       <div className={styles.similarImgWrap}>
-                        <img src={getFaceThumbUrl(result)} alt="" className={styles.similarImg} />
+                        <img 
+                          src={getFaceThumbUrl(result)} 
+                          alt="" 
+                          className={styles.similarImg} 
+                          style={getFaceImageStyle(result)}
+                        />
                         {isSelected && (
                           <div className={styles.itemCheck}>
                             <UserCheck size={14} />
