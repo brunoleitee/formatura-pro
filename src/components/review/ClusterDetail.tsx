@@ -18,6 +18,7 @@ interface ClusterDetailProps {
   onAssigned: (clusterId: string) => void;
   onSkip: () => void;
   onClusterUpdate: (next: RichCluster) => void;
+  onOpenPhoto?: (path: string) => void;
 }
 
 function filterFaces(faces: RichClusterFace[], filter: FilterOption): RichClusterFace[] {
@@ -50,6 +51,7 @@ export default function ClusterDetail({
   onAssigned,
   onSkip,
   onClusterUpdate,
+  onOpenPhoto,
 }: ClusterDetailProps) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState<FilterOption>('all');
@@ -246,11 +248,13 @@ export default function ClusterDetail({
           } as CSSProperties}
         >
           {visibleFaces.map(face => (
-            <PhotoCard
+          <PhotoCard
               key={face.rowid}
               face={face}
               selected={selected.has(face.rowid)}
               onToggle={(e) => handlePhotoSelect(face.rowid, e)}
+              onOpen={onOpenPhoto ? (nextFace) => onOpenPhoto(nextFace.path) : undefined}
+              clickMode={onOpenPhoto ? 'open' : 'select'}
               thumbSize={thumbSize}
               viewMode={viewMode}
             />

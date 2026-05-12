@@ -50,6 +50,8 @@ interface PhotoCardProps {
   face: RichClusterFace;
   selected: boolean;
   onToggle: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onOpen?: (face: RichClusterFace) => void;
+  clickMode?: 'select' | 'open';
   thumbSize?: number;
   viewMode?: 'photo' | 'face';
 }
@@ -58,6 +60,8 @@ export const PhotoCard = memo(function PhotoCard({
   face,
   selected,
   onToggle,
+  onOpen,
+  clickMode = 'select',
   thumbSize = 400,
   viewMode = 'face',
 }: PhotoCardProps) {
@@ -68,7 +72,13 @@ export const PhotoCard = memo(function PhotoCard({
   return (
     <div
       className={`${styles.photoCard} ${modeClass} ${selected ? styles.selected : ''}`}
-      onClick={onToggle}
+      onClick={(e) => {
+        if (clickMode === 'open' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+          onOpen?.(face);
+          return;
+        }
+        onToggle(e);
+      }}
       data-selectable-card="true"
       data-rowid={face.rowid}
     >

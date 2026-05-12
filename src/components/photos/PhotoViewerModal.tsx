@@ -8,6 +8,9 @@ import styles from './PhotoViewerModal.module.css';
 interface PhotoViewerModalProps {
   photo: Photo;
   allPhotos: Photo[];
+  contextPhotos?: Photo[];
+  contextBadge?: string | null;
+  contextLoading?: boolean;
   onClose: () => void;
   onNavigate: (photo: Photo) => void;
   onPhotoUpdate?: (photo: Photo) => void;
@@ -26,7 +29,18 @@ interface SimilarResult {
   image_height?: number;
 }
 
-export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhotoUpdate, onDiscard, onRestore }: PhotoViewerModalProps) {
+export function PhotoViewerModal({
+  photo,
+  allPhotos,
+  contextPhotos,
+  contextBadge,
+  contextLoading = false,
+  onClose,
+  onNavigate,
+  onPhotoUpdate,
+  onDiscard,
+  onRestore,
+}: PhotoViewerModalProps) {
   const { currentCatalog } = useApp();
   const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
   const [isLoaded, setIsLoaded] = useState(false);
@@ -57,6 +71,7 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
   const [highResLoading, setHighResLoading] = useState(false);
   const [highResError, setHighResError] = useState<string | null>(null);
   const [currentSrc, setCurrentSrc] = useState(api.thumbUrl(photo.path, 1200, 90));
+  const navigationPhotos = (contextPhotos?.length ? contextPhotos : allPhotos);
 
   useEffect(() => {
     // Reset quando troca de foto
@@ -99,8 +114,8 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
 
   const imageRef = useRef<HTMLImageElement>(null);
   const imageStageRef = useRef<HTMLDivElement>(null);
-  const currentIndex = allPhotos.findIndex((p) => p.path === photo.path);
-  const total = allPhotos.length;
+  const currentIndex = navigationPhotos.findIndex((p) => p.path === photo.path);
+  const total = navigationPhotos.length;
   const isDiscarded = photo.discarded;
 
   const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
@@ -125,7 +140,7 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
       await api.discardPhoto({ foto_path: photo.path, discard: true });
       showFeedbackMsg("Foto descartada");
       onDiscard?.(photo.path);
-      if (currentIndex < total - 1) onNavigate(allPhotos[currentIndex + 1]);
+      if (currentIndex < total - 1) onNavigate(navigationPhotos[currentIndex + 1]);
     } catch (err) {
       console.error("Erro ao descartar:", err);
     }
@@ -253,6 +268,23 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
   }, [photo.path]);
 
   useEffect(() => {
+    const targets = [navigationPhotos[currentIndex - 1], navigationPhotos[currentIndex], navigationPhotos[currentIndex + 1]]
+      .filter((item): item is Photo => Boolean(item));
+    const preloads = targets
+      .filter((item) => item.path && item.path !== photo.path)
+      .map((item) => {
+        const img = new window.Image();
+        img.src = api.thumbUrl(item.path, 500, 88);
+        return img;
+      });
+    return () => {
+      preloads.forEach((img) => {
+        img.src = '';
+      });
+    };
+  }, [navigationPhotos, currentIndex, photo.path]);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (showRenameModal !== null || similarResults.length > 0 || showManualModal) return;
       
@@ -264,10 +296,10 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
         handleDiscard();
-      } else if (e.key === 'ArrowLeft') {
-        if (currentIndex > 0) onNavigate(allPhotos[currentIndex - 1]);
-      } else if (e.key === 'ArrowRight') {
-        if (currentIndex < total - 1) onNavigate(allPhotos[currentIndex + 1]);
+      } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        if (currentIndex > 0) onNavigate(navigationPhotos[currentIndex - 1]);
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        if (currentIndex < total - 1) onNavigate(navigationPhotos[currentIndex + 1]);
       } else if (e.key === 'Escape') {
         if (isManualMode) {
           setIsManualMode(false);
@@ -374,12 +406,12 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
 
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (currentIndex > 0) onNavigate(allPhotos[currentIndex - 1]);
+    if (currentIndex > 0) onNavigate(navigationPhotos[currentIndex - 1]);
   };
 
   const handleNext = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (currentIndex < total - 1) onNavigate(allPhotos[currentIndex + 1]);
+    if (currentIndex < total - 1) onNavigate(navigationPhotos[currentIndex + 1]);
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -687,6 +719,38 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
             </div>
             {isManualMode && <div className={styles.drawHint}>Arraste para marcar o formando</div>}
           </div>
+
+          {(contextLoading || contextBadge || total > 1) && (
+            <div className={styles.contextRail} onClick={(e) => e.stopPropagation()}>
+              {contextBadge && <div className={styles.contextBadge}>{contextBadge}</div>}
+              {contextLoading && <div className={styles.contextLoading}>Carregando contexto...</div>}
+              {total > 1 && (
+                <div className={styles.filmstrip}>
+                  {navigationPhotos.map((item, index) => {
+                    const isActive = item.path === photo.path;
+                    return (
+                      <button
+                        key={`${item.path}-${index}`}
+                        type="button"
+                        className={`${styles.filmstripItem} ${isActive ? styles.filmstripItemActive : ''}`}
+                        onClick={() => onNavigate(item)}
+                        title={item.name}
+                      >
+                        <img
+                          src={api.thumbUrl(item.path, 180, 84)}
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                          className={styles.filmstripThumb}
+                        />
+                        {isActive && <span className={styles.filmstripLabel}>Atual</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Right panel — identification */}

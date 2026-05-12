@@ -1101,6 +1101,81 @@ def get_people(unknown: bool = False):
 def get_all_photos(limit: int = None):
     return pdm.get_all_photos(limit)
 
+@app.get("/api/photos/context")
+def get_photo_context(path: str = "", catalog: str = ""):
+    try:
+        decoded_path = urllib.parse.unquote(path or "").strip()
+        if not decoded_path:
+            return {
+                "current": None,
+                "previous": None,
+                "next": None,
+                "neighbors": [],
+                "index": -1,
+                "total": 0,
+            }
+
+        photos = pdm.get_all_photos()
+        if not photos:
+            return {
+                "current": None,
+                "previous": None,
+                "next": None,
+                "neighbors": [],
+                "index": -1,
+                "total": 0,
+            }
+
+        def _norm(value: str) -> str:
+            return os.path.normcase(os.path.normpath(urllib.parse.unquote(value or "")))
+
+        target_norm = _norm(decoded_path)
+        index = next((i for i, photo in enumerate(photos) if _norm(str(photo.get("path", ""))) == target_norm), -1)
+
+        if index < 0:
+            base_name = os.path.basename(decoded_path)
+            if base_name:
+                index = next(
+                    (i for i, photo in enumerate(photos) if os.path.basename(str(photo.get("path", ""))) == base_name),
+                    -1,
+                )
+
+        if index < 0:
+            return {
+                "current": None,
+                "previous": None,
+                "next": None,
+                "neighbors": [],
+                "index": -1,
+                "total": len(photos),
+            }
+
+        window = 3
+        start = max(0, index - window)
+        end = min(len(photos), index + window + 1)
+        neighbors = photos[start:end]
+
+        return {
+            "current": photos[index],
+            "previous": photos[index - 1] if index > 0 else None,
+            "next": photos[index + 1] if index < len(photos) - 1 else None,
+            "neighbors": neighbors,
+            "index": index,
+            "total": len(photos),
+            "catalog": catalog or "",
+        }
+    except Exception as e:
+        logging.getLogger(__name__).exception("[photos/context] erro")
+        return {
+            "current": None,
+            "previous": None,
+            "next": None,
+            "neighbors": [],
+            "index": -1,
+            "total": 0,
+            "error": str(e),
+        }
+
 @app.get("/api/photos/{aluno_id}")
 def get_photos(aluno_id: str):
     return pdm.get_photos(aluno_id)

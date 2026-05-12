@@ -1,13 +1,65 @@
 import { Component, type ErrorInfo, type ReactNode, useState, useEffect, useCallback, useRef } from 'react';
 import { UserCheck, RefreshCw, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../services/api';
-import type { GraduationAnalysisStatus, ReviewClusterSummary, RichCluster } from '../services/api';
+import type { Photo, PhotoContextResponse, GraduationAnalysisStatus, ReviewClusterSummary, RichCluster } from '../services/api';
 import { useApp } from '../context/AppContext';
 import ReviewSidebar from '../components/review/ReviewSidebar';
 import ClusterDetail from '../components/review/ClusterDetail';
+import { PhotoViewerModal } from '../components/photos/PhotoViewerModal';
+import { isKnownFace } from '../utils/personIdentity';
 import styles from './ReviewView.module.css';
 
 const REVIEW_PAGE_SIZE = 30;
+
+function createViewerStub(path: string): Photo {
+  const name = path.split(/[\\/]/).pop() || path;
+  const ext = name.includes('.') ? (name.split('.').pop() || 'img') : 'img';
+  return {
+    path,
+    name,
+    type: ext,
+    size: null,
+    mtime: null,
+    ctime: null,
+    faces: [],
+    total_faces_in_db: 0,
+    discarded: false,
+    blur_score: null,
+    blur_status: null,
+    blur_label: null,
+    closed_eyes: false,
+  };
+}
+
+function getKnownNames(photo: Photo | null | undefined) {
+  if (!photo?.faces?.length) return [];
+  const names = photo.faces
+    .filter(isKnownFace)
+    .map((face) => face.aluno_id.trim())
+    .filter(Boolean);
+  return Array.from(new Set(names));
+}
+
+function buildContextBadge(context: PhotoContextResponse | null) {
+  if (!context) return null;
+
+  const neighbors = [
+    ...(context.previous ? [{ photo: context.previous, label: 'foto anterior' }] : []),
+    ...(context.next ? [{ photo: context.next, label: 'foto próxima' }] : []),
+    ...(context.neighbors ?? [])
+      .filter((photo) => photo.path !== context.current?.path)
+      .map((photo) => ({ photo, label: 'contexto' })),
+  ];
+
+  for (const item of neighbors) {
+    const names = getKnownNames(item.photo);
+    if (names.length > 0) {
+      return `Possível contexto encontrado: ${names[0]} (${item.label})`;
+    }
+  }
+
+  return null;
+}
 
 class ReviewViewBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   state = { hasError: false };
@@ -59,6 +111,9 @@ function ReviewViewContent() {
   const [reviewReady, setReviewReady] = useState(true);
   const [graduationStatus, setGraduationStatus] = useState<GraduationAnalysisStatus | null>(null);
   const [isStartingGraduationAnalysis, setIsStartingGraduationAnalysis] = useState(false);
+  const [viewerPhoto, setViewerPhoto] = useState<Photo | null>(null);
+  const [viewerContext, setViewerContext] = useState<PhotoContextResponse | null>(null);
+  const [viewerContextLoading, setViewerContextLoading] = useState(false);
   const wasGraduationRunningRef = useRef(false);
   const detailRequestRef = useRef(0);
 
@@ -241,6 +296,54 @@ function ReviewViewContent() {
     }
   }, [currentCatalog, graduationStatus?.is_running, isStartingGraduationAnalysis, refreshGraduationStatus]);
 
+  const openViewerForPath = useCallback((path: string) => {
+    setViewerPhoto(createViewerStub(path));
+    setViewerContext(null);
+    setViewerContextLoading(true);
+  }, []);
+
+  useEffect(() => {
+    if (!viewerPhoto?.path || !currentCatalog) {
+      if (!viewerPhoto) {
+        setViewerContext(null);
+        setViewerContextLoading(false);
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadContext = async () => {
+      try {
+        const context = await api.getPhotoContext(viewerPhoto.path, currentCatalog);
+        if (cancelled) return;
+        setViewerContext(context);
+        setViewerPhoto(context.current ?? createViewerStub(viewerPhoto.path));
+      } catch {
+        if (cancelled) return;
+        const fallback = createViewerStub(viewerPhoto.path);
+        setViewerContext({
+          current: fallback,
+          previous: null,
+          next: null,
+          neighbors: [fallback],
+          index: 0,
+          total: 1,
+          catalog: currentCatalog,
+        });
+        setViewerPhoto(fallback);
+      } finally {
+        if (!cancelled) setViewerContextLoading(false);
+      }
+    };
+
+    void loadContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentCatalog, viewerPhoto?.path]);
+
   if (!currentCatalog) {
     return (
 <div className={`${styles.root} ${styles.reviewView}`}>
@@ -284,6 +387,7 @@ function ReviewViewContent() {
             onAssigned={handleAssigned}
             onSkip={handleSkip}
             onClusterUpdate={handleClusterUpdate}
+            onOpenPhoto={openViewerForPath}
           />
         ) : loadingDetail && selectedId ? (
           <WelcomeState
@@ -305,6 +409,22 @@ function ReviewViewContent() {
           />
         )}
       </div>
+
+      {viewerPhoto && (
+        <PhotoViewerModal
+          photo={viewerPhoto}
+          allPhotos={viewerContext?.neighbors?.length ? viewerContext.neighbors : [viewerPhoto]}
+          contextPhotos={viewerContext?.neighbors?.length ? viewerContext.neighbors : [viewerPhoto]}
+          contextBadge={buildContextBadge(viewerContext)}
+          contextLoading={viewerContextLoading}
+          onClose={() => {
+            setViewerPhoto(null);
+            setViewerContext(null);
+            setViewerContextLoading(false);
+          }}
+          onNavigate={setViewerPhoto}
+        />
+      )}
     </div>
   );
 }

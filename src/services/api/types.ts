@@ -40,6 +40,17 @@ export interface Photo {
   closed_eyes: boolean;
 }
 
+export interface PhotoContextResponse {
+  current: Photo | null;
+  previous: Photo | null;
+  next: Photo | null;
+  neighbors: Photo[];
+  index: number;
+  total: number;
+  catalog?: string;
+  error?: string;
+}
+
 export interface ScanRecentFace {
   name: string;
   path: string;

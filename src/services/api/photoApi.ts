@@ -1,5 +1,5 @@
 import { API_BASE, fetchJSON, post } from './core';
-import type { Photo, QualityAuditStatus, ScanStatus } from './types';
+import type { Photo, PhotoContextResponse, QualityAuditStatus, ScanStatus } from './types';
 
 export const photoApi = {
   getPhotos: (path = '', catalog = '') =>
@@ -12,6 +12,10 @@ export const photoApi = {
     ),
   getPersonPhotos: (aluno_id: string) =>
     fetchJSON<Photo[]>(`${API_BASE}/photos/${encodeURIComponent(aluno_id)}`),
+  getPhotoContext: (path: string, catalog = '') =>
+    fetchJSON<PhotoContextResponse>(
+      `${API_BASE}/photos/context?path=${encodeURIComponent(path)}&catalog=${encodeURIComponent(catalog)}`
+    ),
 
   // Scan
   selectFolder: () => fetchJSON<{ path: string }>(`${API_BASE}/select-folder`),
