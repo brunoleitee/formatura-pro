@@ -181,7 +181,7 @@ def get_photos(aluno_id: str):
         cur = conn.cursor()
         cur.execute("SELECT foto_path FROM discarded_photos")
         discarded = {r["foto_path"] for r in cur.fetchall()}
-        cur.execute("SELECT rowid, foto_path, x1, y1, x2, y2, blur_score, blur_status, closed_eyes FROM ocorrencias WHERE aluno_id = ?", (aluno_id,))
+        cur.execute("SELECT rowid, foto_path, x1, y1, x2, y2, blur_score, blur_status, closed_eyes, is_foreground, foreground_score, background_penalty_reason FROM ocorrencias WHERE aluno_id = ?", (aluno_id,))
         rows = cur.fetchall()
 
         unique_photos = {}
@@ -221,7 +221,10 @@ def get_photos(aluno_id: str):
                     "rowid": r["rowid"],
                     "aluno_id": aluno_id,
                     "x1": r["x1"], "y1": r["y1"],
-                    "x2": r["x2"], "y2": r["y2"]
+                    "x2": r["x2"], "y2": r["y2"],
+                    "is_foreground": r["is_foreground"],
+                    "foreground_score": r["foreground_score"],
+                    "background_penalty_reason": r["background_penalty_reason"]
                 })
 
         if unique_photos:

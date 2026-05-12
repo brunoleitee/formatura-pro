@@ -1444,7 +1444,8 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                    has_gown, has_diploma, has_sash, has_cap,
                    face_front_score, graduation_score, graduation_tags,
                    gown_confidence, diploma_confidence, sash_confidence, cap_confidence,
-                   manual_graduation_tags
+                   manual_graduation_tags,
+                   is_foreground, foreground_score, background_penalty_reason
             FROM ocorrencias
             WHERE x1 IS NOT NULL
               AND (
@@ -1479,6 +1480,9 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 "has_cap": occ["has_cap"],
                 "face_front_score": occ["face_front_score"],
                 "graduation_score": occ["graduation_score"],
+                "is_foreground": occ["is_foreground"],
+                "foreground_score": occ["foreground_score"],
+                "background_penalty_reason": occ["background_penalty_reason"],
                 "graduation_tags": occ["graduation_tags"],
                 "gown_confidence": occ["gown_confidence"],
                 "diploma_confidence": occ["diploma_confidence"],
@@ -1568,7 +1572,13 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             cluster_manual_tags = sorted({
                 tag for meta in priority_meta for tag in (meta.get("manual_graduation_tags") or [])
             })
-            priority_score = max_graduation_score + cohesion_score + photo_count
+            
+            # Boost priority if there are many foreground faces
+            fg_count = sum(1 for item in comp_items if item.get("is_foreground") == 1)
+            fg_ratio = fg_count / max(1, len(comp_items))
+            fg_boost = fg_ratio * 2.0
+            
+            priority_score = max_graduation_score + cohesion_score + photo_count + fg_boost
             rep_item = _pick_cluster_cover_item(comp_items, priority_meta)
             rep_item_meta = priority_meta[comp_items.index(rep_item)]
             graduation_tags = _ordered_cluster_tags(priority_meta)
@@ -1611,6 +1621,9 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                     "face_front_score": rep_item_meta["face_front_score"],
                     "graduation_score": rep_item_meta["graduation_score"],
                     "is_representative": True,
+                    "is_foreground": rep_item.get("is_foreground"),
+                    "foreground_score": rep_item.get("foreground_score"),
+                    "background_penalty_reason": rep_item.get("background_penalty_reason"),
                 },
                 "faces": [
                     {
@@ -1628,6 +1641,9 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                         "face_front_score": meta["face_front_score"],
                         "graduation_score": meta["graduation_score"],
                         "is_representative": item["rowid"] == rep_item["rowid"],
+                        "is_foreground": item.get("is_foreground"),
+                        "foreground_score": item.get("foreground_score"),
+                        "background_penalty_reason": item.get("background_penalty_reason"),
                     }
                     for item, meta in zip(comp_items, priority_meta)
                 ],

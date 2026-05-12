@@ -274,31 +274,13 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
   };
 
   const getFaceThumbUrl = (result: SimilarResult) => {
-    if (result.rowid) {
-      return `/api/faces/thumb?rowid=${result.rowid}&size=180`;
-    }
-    if (result.box && result.box.length >= 4 && result.image_width && result.image_height) {
-      let [x1, y1, x2, y2] = result.box;
-      if (x1 <= 1 && y1 <= 1 && x2 <= 1 && y2 <= 1) {
-        x1 *= result.image_width; y1 *= result.image_height;
-        x2 *= result.image_width; y2 *= result.image_height;
-      }
-      const bw = x2 - x1;
-      const bh = y2 - y1;
-      if (bw > 0 && bh > 0) {
-        const imgW = result.image_width;
-        const imgH = result.image_height;
-        const padX = bw * 0.35;
-        const padYTop = bh * 0.45;
-        const padYBot = bh * 0.30;
-        const cx1 = Math.max(0, x1 - padX);
-        const cy1 = Math.max(0, y1 - padYTop);
-        const cx2 = Math.min(imgW, x2 + padX);
-        const cy2 = Math.min(imgH, y2 + padYBot);
-        return api.faceThumbUrl(result.photo_path, cx1, cy1, cx2, cy2, 180);
+    if (result.box && result.box.length >= 4 && result.photo_path) {
+      const [x1, y1, x2, y2] = result.box;
+      if (x2 > x1 && y2 > y1) {
+        return api.faceThumbUrl(result.photo_path, x1, y1, x2, y2, 180);
       }
     }
-    return api.thumbUrl(result.photo_path, 180);
+    return result.photo_path ? api.thumbUrl(result.photo_path, 180) : '';
   };
 
   return (

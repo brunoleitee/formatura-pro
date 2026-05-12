@@ -64,6 +64,78 @@ def is_background_face(x1, y1, x2, y2, largest_face_area, image_shape, valid_fac
     return area_ratio < 0.38 and height_ratio < 0.22
 
 
+def calc_foreground_score(x1, y1, x2, y2, area, img_shape, face, blur_score):
+    if not img_shape:
+        return 0.5, 1, 0.0, 0.5, "No image shape"
+    
+    img_h, img_w = img_shape[:2]
+    img_area = img_h * img_w
+    if img_area == 0:
+        return 0.5, 1, 0.0, 0.5, "Zero image area"
+
+    face_area_ratio = area / img_area
+    
+    if face_area_ratio > 0.05:
+        size_score = 1.0
+    elif face_area_ratio < 0.004:
+        size_score = 0.0
+    else:
+        size_score = min(1.0, face_area_ratio / 0.05)
+        
+    face_cx = (x1 + x2) / 2.0
+    face_cy = (y1 + y2) / 2.0
+    img_cx = img_w / 2.0
+    img_cy = img_h / 2.0
+    
+    dist_x = abs(face_cx - img_cx) / img_w
+    dist_y = abs(face_cy - img_cy) / img_h
+    dist = (dist_x**2 + dist_y**2)**0.5
+    
+    center_score = max(0.0, 1.0 - (dist * 2.0))
+    
+    sharpness_score = 0.5
+    if blur_score is not None:
+        try:
+            val = float(blur_score)
+            sharpness_score = min(1.0, max(0.0, val / 100.0))
+        except:
+            pass
+            
+    pose_score = 0.8
+    if hasattr(face, 'pose') and face.pose is not None:
+        pitch, yaw, roll = face.pose
+        pose_penalty = min(1.0, (abs(yaw) + abs(pitch)) / 90.0)
+        pose_score = 1.0 - pose_penalty
+        
+    edge_penalty_score = 1.0
+    margin_w = img_w * 0.02
+    margin_h = img_h * 0.02
+    if x1 < margin_w or y1 < margin_h or x2 > img_w - margin_w or y2 > img_h - margin_h:
+        edge_penalty_score = 0.2
+
+    fg_score = (0.40 * size_score) + (0.25 * center_score) + (0.15 * sharpness_score) + (0.10 * pose_score) + (0.10 * edge_penalty_score)
+    
+    if face_area_ratio < 0.008:
+        fg_score *= 0.5
+    
+    bg_reason = ""
+    if face_area_ratio < 0.004:
+        bg_reason = "Rosto muito pequeno"
+        fg_score = min(fg_score, 0.3)
+    elif edge_penalty_score < 0.5:
+        bg_reason = "Na borda"
+    elif pose_score < 0.4:
+        bg_reason = "Muito lateral"
+    elif sharpness_score < 0.2:
+        bg_reason = "Desfocado"
+    elif fg_score < 0.45:
+        bg_reason = "Segundo plano provável"
+        
+    is_foreground = 1 if fg_score >= 0.45 else 0
+    
+    return fg_score, is_foreground, face_area_ratio, center_score, bg_reason
+
+
 def quiet_external_output():
     return _cfg["quiet_external_output"]()
 
@@ -417,10 +489,45 @@ def run_scanner_worker(req):
                             )
                         else:
                             largest_face_area = max((face_data[5] for face_data in valid_faces), default=0)
+                            
+                            # Calcula score de foreground para todas as faces
+                            scored_faces = []
                             for face, x1, y1, x2, y2, area in valid_faces:
+                                fg_score, is_fg, f_ratio, c_score, bg_reason = calc_foreground_score(
+                                    x1, y1, x2, y2, area, img.shape, face, b_score
+                                )
+                                scored_faces.append({
+                                    "face": face, "x1": x1, "y1": y1, "x2": x2, "y2": y2, "area": area,
+                                    "fg_score": fg_score, "is_fg": is_fg, "f_ratio": f_ratio,
+                                    "c_score": c_score, "bg_reason": bg_reason
+                                })
+                                
+                            # Ordena por score para pegar os 3 melhores
+                            scored_faces.sort(key=lambda x: x["fg_score"], reverse=True)
+                            
+                            # Limita para no maximo 3 como foreground
+                            fg_count = 0
+                            for sf in scored_faces:
+                                if sf["is_fg"] == 1:
+                                    if fg_count < 3:
+                                        fg_count += 1
+                                    else:
+                                        sf["is_fg"] = 0
+                                        sf["bg_reason"] = "Muitas pessoas na foto (4+)"
+                            
+                            log_debug(f"[foreground] foto={os.path.basename(p)} faces={len(scored_faces)} principais={fg_count} ignoradas_bg={len(scored_faces)-fg_count}")
+
+                            for sf in scored_faces:
+                                face, x1, y1, x2, y2, area = sf["face"], sf["x1"], sf["y1"], sf["x2"], sf["y2"], sf["area"]
+                                fg_score, is_fg, f_ratio, c_score, bg_reason = sf["fg_score"], sf["is_fg"], sf["f_ratio"], sf["c_score"], sf["bg_reason"]
+                                
+                                log_debug(f"[foreground-face] area={f_ratio:.3f} center={c_score:.2f} score={fg_score:.2f} foreground={is_fg} reason={bg_reason}")
+
+                                # Apenas continua se decidimos pular a face baseada no is_background_face original (opcional, vamos manter para não estragar compatibilidade)
                                 if is_background_face(x1, y1, x2, y2, largest_face_area, img.shape, len(valid_faces)):
                                     scan_state["skipped_background_faces"] += 1
                                     continue
+                                    
                                 total_faces_found += 1
                                 emb = face.embedding.astype("float32")
                                 norm = np.linalg.norm(emb)
@@ -436,8 +543,14 @@ def run_scanner_worker(req):
                                     scan_state["total_clusters"] = len(_cfg["cluster_names"])
                                 
                                 cur.execute(
-                                    "INSERT OR IGNORE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                    (nome, p, x1, y1, x2, y2, photo_hash, b_score, b_status),
+                                    """
+                                    INSERT OR IGNORE INTO ocorrencias 
+                                    (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status, 
+                                     foreground_score, is_foreground, face_area_ratio, center_score, background_penalty_reason) 
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    """,
+                                    (nome, p, x1, y1, x2, y2, photo_hash, b_score, b_status,
+                                     fg_score, is_fg, f_ratio, c_score, bg_reason),
                                 )
                                 cur.execute("INSERT OR IGNORE INTO alunos VALUES (?, ?)", (nome, "n/a"))
                             current_time = time.time()

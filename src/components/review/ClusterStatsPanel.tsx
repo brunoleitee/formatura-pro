@@ -105,6 +105,36 @@ export default function ClusterStatsPanel({
                 />
               )}
             </div>
+            
+            <p className={styles.analysisTitle} style={{ marginTop: '12px' }}>Primeiro e Segundo Plano</p>
+            <div className={styles.qualityBars}>
+              <QualityRow label="1º Plano" count={cluster.faces.filter(f => f.is_foreground === 1 || (f.foreground_score && f.foreground_score >= 0.65)).length} total={cluster.face_count} color="#10b981" />
+              <QualityRow label="2º Plano" count={cluster.faces.filter(f => f.is_foreground === 0 || (f.foreground_score && f.foreground_score < 0.45)).length} total={cluster.face_count} color="#f59e0b" />
+            </div>
+
+            {/* Agrupar razões de 2º plano */}
+            {(() => {
+              const bgFaces = cluster.faces.filter(f => f.is_foreground === 0 || (f.foreground_score && f.foreground_score < 0.45));
+              const reasons: Record<string, number> = {};
+              for (const f of bgFaces) {
+                if (f.background_penalty_reason) {
+                  reasons[f.background_penalty_reason] = (reasons[f.background_penalty_reason] || 0) + 1;
+                }
+              }
+              const entries = Object.entries(reasons).sort((a, b) => b[1] - a[1]);
+              
+              if (entries.length === 0) return null;
+              return (
+                <>
+                  <p className={styles.analysisTitle} style={{ marginTop: '12px', fontSize: '11px', color: '#94a3b8' }}>Razões para 2º plano</p>
+                  <div className={styles.qualityBars}>
+                    {entries.map(([reason, count]) => (
+                      <QualityRow key={reason} label={reason} count={count} total={bgFaces.length} color="#64748b" />
+                    ))}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
       </div>

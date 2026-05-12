@@ -215,7 +215,7 @@
 /* ── Face overlays ── */
 .faceOverlay {
   position: absolute;
-  border: 2px solid rgba(34, 197, 94, 0.6);
+  border: 2px solid rgba(251, 191, 36, 0.6);
   border-radius: 4px;
   cursor: pointer;
   pointer-events: auto;
@@ -223,11 +223,16 @@
   box-sizing: border-box;
 }
 
-.faceOverlay.known {
-  border-color: rgba(34, 197, 94, 0.8);
+.faceOverlay:hover {
+  border-color: rgba(251, 191, 36, 0.95);
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.25);
 }
 
-.faceOverlay:hover {
+.faceOverlay.known {
+  border-color: rgba(34, 197, 94, 0.7);
+}
+
+.faceOverlay.known:hover {
   border-color: #22c55e;
   box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3);
 }

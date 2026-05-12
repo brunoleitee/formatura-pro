@@ -31,6 +31,16 @@ function getBadges(face: RichClusterFace): Badge[] {
   if (face.blur_status === 'sharp') badges.push({ label: 'Nítida', variant: 'info' });
   else if (face.blur_status === 'attention') badges.push({ label: 'Suave', variant: 'warning' });
   if (face.closed_eyes) badges.push({ label: 'Olhos fechados', variant: 'warning' });
+  
+  if (face.is_foreground === 1 || (face.foreground_score && face.foreground_score >= 0.65)) {
+    badges.push({ label: '1º plano', variant: 'success' });
+  } else if (face.is_foreground === 0 || (face.foreground_score !== undefined && face.foreground_score !== null && face.foreground_score < 0.45)) {
+    badges.push({ label: '2º plano', variant: 'warning' });
+    if (face.background_penalty_reason) {
+      badges.push({ label: face.background_penalty_reason, variant: 'warning' });
+    }
+  }
+
   return badges;
 }
 

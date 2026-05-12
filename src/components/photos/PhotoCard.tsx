@@ -52,7 +52,18 @@ function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number,
         boxSizing: 'border-box',
         zIndex: 1
       }}
-    />
+    >
+      {(face.is_foreground === 1 || (face.foreground_score && face.foreground_score >= 0.65)) && (
+        <div style={{ position: 'absolute', top: '-20px', left: '-2px', background: '#10b981', color: 'white', fontSize: '10px', padding: '2px 4px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
+          1º plano
+        </div>
+      )}
+      {(face.is_foreground === 0 || (face.foreground_score !== undefined && face.foreground_score !== null && face.foreground_score < 0.45)) && (
+        <div style={{ position: 'absolute', top: '-20px', left: '-2px', background: '#f59e0b', color: 'white', fontSize: '10px', padding: '2px 4px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
+          2º plano {face.background_penalty_reason ? `(${face.background_penalty_reason})` : ''}
+        </div>
+      )}
+    </div>
   );
 }
 

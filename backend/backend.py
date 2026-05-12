@@ -767,6 +767,21 @@ def ensure_quality_columns(conn):
     if 'graduation_tags' not in columns:
         c.execute("ALTER TABLE ocorrencias ADD COLUMN graduation_tags TEXT")
         modified = True
+    if 'foreground_score' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN foreground_score REAL")
+        modified = True
+    if 'is_foreground' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN is_foreground INTEGER DEFAULT 1")
+        modified = True
+    if 'face_area_ratio' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN face_area_ratio REAL")
+        modified = True
+    if 'center_score' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN center_score REAL")
+        modified = True
+    if 'background_penalty_reason' not in columns:
+        c.execute("ALTER TABLE ocorrencias ADD COLUMN background_penalty_reason TEXT")
+        modified = True
     if modified:
         conn.commit()
 
@@ -837,7 +852,12 @@ class DbConnection:
                 face_front_score REAL,
                 graduation_score REAL,
                 graduation_tags TEXT DEFAULT '[]',
-                graduation_analyzed_at TEXT
+                graduation_analyzed_at TEXT,
+                foreground_score REAL,
+                is_foreground INTEGER DEFAULT 1,
+                face_area_ratio REAL,
+                center_score REAL,
+                background_penalty_reason TEXT
             )
         """)
         ensure_quality_columns(self.conn)

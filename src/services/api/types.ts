@@ -17,6 +17,9 @@ export interface PhotoFace {
   rowid: number;
   aluno_id: string;
   x1: number; y1: number; x2: number; y2: number;
+  is_foreground?: number;
+  foreground_score?: number | null;
+  background_penalty_reason?: string | null;
 }
 
 export interface Photo {
@@ -122,6 +125,9 @@ export interface RichClusterFace {
   face_front_score?: number | null;
   graduation_score?: number | null;
   is_representative?: boolean;
+  is_foreground?: number;
+  foreground_score?: number | null;
+  background_penalty_reason?: string | null;
 }
 
 export interface RichCluster {

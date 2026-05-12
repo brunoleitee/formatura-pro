@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { FolderOpen, Scan, X, Info, Plus } from 'lucide-react';
 import { api } from '../services/api';
 import { useApp } from '../context/AppContext';
+import styles from './ScanModal.module.css';
 
 interface Props {
   onClose: () => void;
@@ -48,125 +49,155 @@ export default function ScanModal({ onClose, onScanStarted }: Props) {
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-box" style={{ width: 500 }}>
-        <div className="modal-header">
-          <h2>Escanear Fotos</h2>
-          <button className="icon-btn" onClick={onClose}><X size={18} /></button>
+    <div className={styles.overlay}>
+      <div className={styles.modal}>
+
+        {/* Gradient top strip */}
+        <div className={styles.topStrip} />
+
+        {/* Header */}
+        <div className={styles.header}>
+          <div className={styles.headerLeft}>
+            <div className={styles.iconBadge}>
+              <Scan size={17} />
+            </div>
+            <div className={styles.titleGroup}>
+              <h2 className={styles.title}>Escanear Fotos</h2>
+              <p className={styles.subtitle}>Configure as pastas e inicie o processamento</p>
+            </div>
+          </div>
+          <button className={styles.closeBtn} onClick={onClose}>
+            <X size={15} />
+          </button>
         </div>
 
-        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div className={styles.headerDivider} />
 
-          {/* Catalog selector */}
-          <div className="config-section">
-            <label className="config-label">
-              Evento / Catálogo *
-              <span className="config-hint">Selecione um existente ou crie um novo.</span>
-            </label>
+        {/* Body */}
+        <div className={styles.body}>
+
+          {/* Step 01 — Catalog */}
+          <div className={styles.field}>
+            <div className={styles.fieldMeta}>
+              <span className={styles.stepBadge}>01</span>
+              <span className={styles.fieldLabel}>
+                Evento / Catálogo <span className={styles.required}>*</span>
+              </span>
+            </div>
+            <p className={styles.fieldHint}>Selecione um existente ou crie um novo.</p>
             {newCatalogMode ? (
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div className={styles.inputRow}>
                 <input
-                  className="config-input"
+                  className={styles.input}
                   placeholder="Nome do novo evento..."
                   value={newCatalogName}
                   onChange={e => setNewCatalogName(e.target.value)}
                   autoFocus
                 />
                 <button
-                  className="btn-secondary"
+                  className={styles.cancelNewBtn}
                   onClick={() => { setNewCatalogMode(false); setNewCatalogName(''); }}
                   title="Cancelar"
                 >
-                  <X size={16} />
+                  <X size={14} />
                 </button>
               </div>
             ) : (
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div className={styles.inputRow}>
                 <select
-                  className="config-input"
+                  className={styles.inputSelect}
                   value={catalogName}
                   onChange={e => setCatalogName(e.target.value)}
-                  style={{ flex: 1 }}
                 >
                   {catalogs.map(c => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
                 <button
-                  className="btn-secondary"
+                  className={styles.folderBtn}
                   onClick={() => setNewCatalogMode(true)}
                   title="Criar novo evento"
                 >
-                  <Plus size={16} />
+                  <Plus size={14} />
                 </button>
               </div>
             )}
           </div>
 
-          {/* Reference folder */}
-          <div className="config-section">
-            <label className="config-label">
-              Pasta de Referência
-              <span className="config-hint">
-                Fotos nomeadas com o nome do formando (ex: "João Silva.jpg").
-                Usada para treinar o reconhecimento facial.
+          {/* Step 02 — Event folder */}
+          <div className={styles.field}>
+            <div className={styles.fieldMeta}>
+              <span className={styles.stepBadge}>02</span>
+              <span className={styles.fieldLabel}>
+                Pasta de Evento <span className={styles.required}>*</span>
               </span>
-            </label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                className="config-input"
-                placeholder="(opcional) C:\Referencias\Turma..."
-                value={refPath}
-                onChange={e => setRefPath(e.target.value)}
-              />
-              <button className="btn-secondary" onClick={pickRef} title="Selecionar pasta">
-                <FolderOpen size={16} />
-              </button>
             </div>
-          </div>
-
-          {/* Event folder */}
-          <div className="config-section">
-            <label className="config-label">
-              Pasta de Evento *
-              <span className="config-hint">
-                Fotos tiradas no evento da formatura para identificar.
-              </span>
-            </label>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <p className={styles.fieldHint}>
+              Fotos tiradas no evento da formatura para identificar.
+            </p>
+            <div className={styles.inputRow}>
               <input
-                className="config-input"
+                className={styles.input}
                 placeholder="C:\Fotos\Formatura 2026..."
                 value={oriPath}
                 onChange={e => setOriPath(e.target.value)}
               />
-              <button className="btn-secondary" onClick={pickOri} title="Selecionar pasta">
-                <FolderOpen size={16} />
+              <button className={styles.folderBtn} onClick={pickOri} title="Selecionar pasta">
+                <FolderOpen size={14} />
               </button>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
-            <Info size={14} style={{ flexShrink: 0 }} />
-            <span>
-              Evento: <strong style={{ color: 'var(--accent-color)' }}>{activeCatalog || '—'}</strong>
+          {/* Step 03 — Reference folder */}
+          <div className={styles.field}>
+            <div className={styles.fieldMeta}>
+              <span className={styles.stepBadge}>03</span>
+              <span className={styles.fieldLabel}>Pasta de Referência</span>
+            </div>
+            <p className={styles.fieldHint}>
+              Fotos nomeadas com o nome do formando (ex: "João Silva.jpg"). Usada para treinar o reconhecimento facial.
+            </p>
+            <div className={styles.inputRow}>
+              <input
+                className={styles.input}
+                placeholder="(opcional) C:\Referencias\Turma..."
+                value={refPath}
+                onChange={e => setRefPath(e.target.value)}
+              />
+              <button className={styles.folderBtn} onClick={pickRef} title="Selecionar pasta">
+                <FolderOpen size={14} />
+              </button>
+            </div>
+          </div>
+
+          <div className={styles.divider} />
+
+          {/* Info */}
+          <div className={styles.infoStrip}>
+            <Info size={13} className={styles.infoIcon} />
+            <span className={styles.infoText}>
+              Evento: <strong>{activeCatalog || '—'}</strong>
               &nbsp;· O escaneamento continua em segundo plano após fechar este modal.
             </span>
           </div>
 
-          {error && <p className="modal-error" style={{ margin: 0 }}>{error}</p>}
+          {error && <p className={styles.errorMsg}>{error}</p>}
 
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <button className="btn-secondary" onClick={onClose}>Cancelar</button>
+          {/* Actions */}
+          <div className={styles.actions}>
+            <button className={styles.cancelBtn} onClick={onClose}>
+              Cancelar
+            </button>
             <button
-              className="btn-primary"
+              className={styles.scanBtn}
               onClick={handleScan}
               disabled={starting || !oriPath || !activeCatalog}
             >
-              <Scan size={16} />
+              <Scan size={14} />
               {starting ? 'Iniciando...' : 'Iniciar Scan'}
             </button>
           </div>
+
         </div>
       </div>
     </div>
