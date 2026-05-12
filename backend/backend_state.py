@@ -13,6 +13,7 @@ scan_state = {
     "last_folder_scanned": "",
     "eta_seconds": 0,
     "device": "",
+    "provider": "",
     "gpu_error": "",
     "skipped_background_faces": 0,
     "scan_summary": None,

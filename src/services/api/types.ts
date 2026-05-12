@@ -64,6 +64,7 @@ export interface ScanStatus {
   last_folder_scanned?: string;
   eta_seconds: number;
   device: string;
+  provider?: string;
   gpu_error?: string;
   skipped_background_faces?: number;
   current_photo?: string | null;

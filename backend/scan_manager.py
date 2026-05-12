@@ -151,8 +151,15 @@ def scan_precheck(req: ScanRequest):
             errors.append("Nenhuma imagem JPG, JPEG ou PNG foi encontrada na pasta de fotos.")
 
         gpu = gpu_diagnostics()
-        gpu_ok = bool(gpu.get("cuda_available"))
-        checks.append({"label": "Placa de vídeo", "ok": gpu_ok, "detail": "GPU disponível" if gpu_ok else "Rodando em CPU"})
+        gpu_ok = bool(gpu.get("cuda_available") or gpu.get("directml_available"))
+        provider_label = gpu.get("active_device")
+        if not provider_label or provider_label == "Não inicializado":
+            provider_label = {
+                "CUDAExecutionProvider": "GPU NVIDIA",
+                "DmlExecutionProvider": "GPU DirectML",
+                "CPUExecutionProvider": "CPU",
+            }.get(gpu.get("preferred_provider"), "CPU")
+        checks.append({"label": "Placa de vídeo", "ok": gpu_ok, "detail": provider_label})
         if not gpu_ok:
             warnings.append("GPU não ativada. O processamento pode ficar mais lento.")
 
@@ -162,7 +169,7 @@ def scan_precheck(req: ScanRequest):
             "catalog_exists": catalog_exists,
             "photo_count": photo_count,
             "reference_count": ref_count,
-            "device": "GPU" if gpu_ok else "CPU",
+            "device": provider_label,
             "gpu_error": gpu.get("gpu_error", ""),
             "checks": checks,
             "warnings": warnings,

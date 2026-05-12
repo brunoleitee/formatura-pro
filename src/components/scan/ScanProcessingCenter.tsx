@@ -127,6 +127,18 @@ function faceConfidence(face: ScanRecentFace) {
   return 'analisando o lote atual';
 }
 
+function formatAiDeviceLabel(status: ScanStatus | null) {
+  const provider = status?.provider || '';
+  const device = status?.device || '';
+
+  if (device && device !== 'GPU' && device !== 'CPU') return device;
+  if (provider === 'CUDAExecutionProvider') return 'GPU NVIDIA';
+  if (provider === 'DmlExecutionProvider') return 'GPU DirectML';
+  if (provider === 'CPUExecutionProvider') return 'CPU';
+  if (device === 'GPU') return 'GPU';
+  return 'CPU';
+}
+
 function deriveCurrentStep(status: ScanStatus | null, progressPct: number) {
   const text = (status?.status_text || '').toLowerCase();
   if (!status?.is_scanning && status?.scan_summary) return PIPELINE_STEPS.length - 1;
@@ -216,7 +228,8 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
   const headerStatusLabel = isCompleted ? 'Processamento concluído' : (scanMsg || scanStatus?.status_text || 'Processando...');
   const headerStatusHint = isCompleted ? 'Pronto para revisão ou novo scan.' : formatEta(scanStatus?.eta_seconds);
   const pipelineSummary = isCompleted ? 'concluído' : (scanStatus?.scan_summary ? 'revisão pronta' : 'em análise');
-  const computeLabel = isCompleted ? `${scanStatus?.device || 'CPU'} utilizada` : `${scanStatus?.device || 'CPU'} ativa`;
+  const aiDeviceLabel = formatAiDeviceLabel(scanStatus);
+  const computeLabel = isCompleted ? `${aiDeviceLabel} utilizada` : `${aiDeviceLabel} ativa`;
 
   useEffect(() => {
     if (!logRef.current || isFeedPaused) return;

@@ -115,6 +115,8 @@ def configure_modules(
         scan_state=scan_state,
         export_state=export_state,
         face_engine_device=get_face_engine_device,
+        face_engine_provider=se.get_face_engine_provider,
+        face_engine_label=se.get_face_engine_label,
         face_engine_gpu_error=get_face_engine_gpu_error,
         load_export_history=ex.load_export_history,
         get_current_catalog=lambda: AppState.current_catalog,

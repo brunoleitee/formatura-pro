@@ -33,10 +33,27 @@ def gpu_diagnostics():
     else:
         provider_error = ""
     scan_state = _get("scan_state", {})
+    active_provider = _value("face_engine_provider", "") or scan_state.get("provider") or ""
+    active_device = (
+        _value("face_engine_label", "")
+        or _value("face_engine_device", "")
+        or scan_state.get("device")
+        or "Não inicializado"
+    )
+    preferred_provider = (
+        "CUDAExecutionProvider"
+        if "CUDAExecutionProvider" in available else
+        "DmlExecutionProvider"
+        if "DmlExecutionProvider" in available else
+        "CPUExecutionProvider"
+    )
     return {
         "available_providers": available,
         "cuda_available": "CUDAExecutionProvider" in available,
-        "active_device": _value("face_engine_device", "") or scan_state.get("device") or "Não inicializado",
+        "directml_available": "DmlExecutionProvider" in available,
+        "preferred_provider": preferred_provider,
+        "active_provider": active_provider,
+        "active_device": active_device,
         "gpu_error": _value("face_engine_gpu_error", "") or scan_state.get("gpu_error") or provider_error,
         "onnxruntime": ort_version,
     }
@@ -153,7 +170,8 @@ def system_status():
         "gpu": gpu,
         "scanner": {
             "is_scanning": scan_state.get("is_scanning", False),
-            "device": scan_state.get("device") or _get("face_engine_device", "") or "",
+            "device": scan_state.get("device") or _value("face_engine_label", "") or _value("face_engine_device", "") or "",
+            "provider": scan_state.get("provider") or _value("face_engine_provider", "") or "",
             "gpu_error": scan_state.get("gpu_error") or _get("face_engine_gpu_error", "") or "",
             "last_error_at": last_scanner_error,
         },
