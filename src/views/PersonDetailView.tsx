@@ -16,7 +16,8 @@ function Section({
   selectedPaths, 
   onPhotoClick, 
   onDoubleClick, 
-  onOpenDetails 
+  onOpenDetails,
+  onLongPress
 }: { 
   title: string; 
   items: Photo[]; 
@@ -25,6 +26,7 @@ function Section({
   onPhotoClick: (photo: Photo, event: React.MouseEvent) => void;
   onDoubleClick: (photo: Photo) => void;
   onOpenDetails: (photo: Photo) => void;
+  onLongPress: (photo: Photo) => void;
 }) {
   if (items.length === 0) return null;
   return (
@@ -45,6 +47,7 @@ function Section({
               onClick={onPhotoClick}
               onDoubleClick={onDoubleClick}
               onOpenDetails={onOpenDetails}
+              onLongPress={onLongPress}
             />
           );
         })}
@@ -61,6 +64,21 @@ export default function PersonDetailView() {
 
   const { selectedPaths, toggleSelection, clearSelection } = usePhotoSelection(photos);
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(photos);
+  const [bulkBarVisible, setBulkBarVisible] = useState(false);
+
+  // Reset bulk bar if selection is cleared
+  useEffect(() => {
+    if (selectedPaths.size === 0) {
+      setBulkBarVisible(false);
+    }
+  }, [selectedPaths.size]);
+
+  // Hide bulk bar when opening viewer
+  useEffect(() => {
+    if (viewerPhoto) {
+      setBulkBarVisible(false);
+    }
+  }, [viewerPhoto]);
 
   const load = useCallback(async () => {
     if (!selectedPersonId || !currentCatalog) return;
@@ -179,6 +197,7 @@ export default function PersonDetailView() {
               onPhotoClick={toggleSelection}
               onDoubleClick={setViewerPhoto}
               onOpenDetails={setDetailsPhoto}
+              onLongPress={() => setBulkBarVisible(true)}
             />
             <Section 
               title="Requer atenção" 
@@ -188,6 +207,7 @@ export default function PersonDetailView() {
               onPhotoClick={toggleSelection}
               onDoubleClick={setViewerPhoto}
               onOpenDetails={setDetailsPhoto}
+              onLongPress={() => setBulkBarVisible(true)}
             />
             <Section 
               title="Desfocadas" 
@@ -197,6 +217,7 @@ export default function PersonDetailView() {
               onPhotoClick={toggleSelection}
               onDoubleClick={setViewerPhoto}
               onOpenDetails={setDetailsPhoto}
+              onLongPress={() => setBulkBarVisible(true)}
             />
             <Section 
               title="Descartadas" 
@@ -206,6 +227,7 @@ export default function PersonDetailView() {
               onPhotoClick={toggleSelection}
               onDoubleClick={setViewerPhoto}
               onOpenDetails={setDetailsPhoto}
+              onLongPress={() => setBulkBarVisible(true)}
             />
           </div>
 
@@ -229,7 +251,7 @@ export default function PersonDetailView() {
         />
       )}
 
-      {selectedPaths.size > 0 && (
+      {selectedPaths.size > 0 && bulkBarVisible && !viewerPhoto && (
         <PhotoBulkActionsBar
           selectedCount={selectedPaths.size}
           onDiscard={handleDiscardSelected}

@@ -27,9 +27,24 @@ export default function CatalogView() {
   const [hideDiscarded, setHideDiscarded] = useState(false);
   const [zoom, setZoom] = useState(60);
   const size = zoomToSize(zoom);
-  const { filter, setFilter, filteredPhotos } = usePhotoFilters(photos, currentCatalog, catalogSubfolder, hideDiscarded);
+  const { filteredPhotos, filter, setFilter } = usePhotoFilters(photos, currentCatalog, catalogSubfolder, hideDiscarded);
   const { selectedPaths, toggleSelection, clearSelection } = usePhotoSelection(filteredPhotos);
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(filteredPhotos);
+  const [bulkBarVisible, setBulkBarVisible] = useState(false);
+
+  // Reset bulk bar if selection is cleared
+  useEffect(() => {
+    if (selectedPaths.size === 0) {
+      setBulkBarVisible(false);
+    }
+  }, [selectedPaths.size]);
+
+  // Hide bulk bar when opening viewer
+  useEffect(() => {
+    if (viewerPhoto) {
+      setBulkBarVisible(false);
+    }
+  }, [viewerPhoto]);
 
   // Sincronizar loading com contexto
   useEffect(() => {
@@ -157,7 +172,8 @@ export default function CatalogView() {
                 onPhotoClick={toggleSelection}
                 onDoubleClick={setViewerPhoto}
                 onOpenDetails={setDetailsPhoto}
-zoom={size}
+                onLongPress={() => setBulkBarVisible(true)}
+                zoom={size}
               />
             </>
           )}
@@ -182,7 +198,7 @@ zoom={size}
         />
       )}
 
-      {selectedPaths.size > 0 && (
+      {selectedPaths.size > 0 && bulkBarVisible && !viewerPhoto && (
         <PhotoBulkActionsBar
           selectedCount={selectedPaths.size}
           onDiscard={handleDiscardSelected}

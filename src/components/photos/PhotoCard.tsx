@@ -10,6 +10,7 @@ interface PhotoCardProps {
   onClick: (photo: Photo, event: React.MouseEvent) => void;
   onDoubleClick?: (photo: Photo) => void;
   onOpenDetails: (photo: Photo) => void;
+  onLongPress?: (photo: Photo) => void;
 }
 
 function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number, h: number }, photoWidth: number, photoHeight: number) {
@@ -67,12 +68,13 @@ function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number,
   );
 }
 
-export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDetails }: PhotoCardProps) {
+export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDetails, onLongPress }: PhotoCardProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [thumbSize, setThumbSize] = useState({ w: 0, h: 0 });
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const holdTimerRef = useRef<any>(null);
 
   const isMapped = isPhotoMapped(photo);
   const isDiscarded = photo.discarded === true;
@@ -101,11 +103,28 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
     return () => observer.disconnect();
   }, []);
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return; // Only left click
+    holdTimerRef.current = setTimeout(() => {
+      onLongPress?.(photo);
+    }, 350);
+  };
+
+  const clearTimer = () => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+  };
+
   return (
     <div
       className={`photo-card ${isSelected ? 'selected' : ''} ${isDiscarded ? 'discarded' : ''}`}
       onClick={(e) => onClick(photo, e)}
       onDoubleClick={() => onDoubleClick?.(photo)}
+      onMouseDown={handleMouseDown}
+      onMouseUp={clearTimer}
+      onMouseLeave={clearTimer}
     >
       <div className="photo-img-placeholder" ref={containerRef}>
         {!hasError && (
