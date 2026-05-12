@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Image as ImageIcon, MoreHorizontal } from 'lucide-react';
 import { api, type Photo } from '../../services/api';
 import { isPhotoBlurry, isPhotoAttention } from '../../utils/qualityUtils';
@@ -60,6 +60,8 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [thumbSize, setThumbSize] = useState({ w: 0, h: 0 });
+  const imgRef = useRef<HTMLImageElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const isMapped = isPhotoMapped(photo);
   const isDiscarded = photo.discarded === true;
@@ -69,25 +71,41 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
     .filter((v, idx, a) => a.indexOf(v) === idx);
   const firstName = knownNames.length > 0 ? knownNames.join(', ') : 'Não mapeada';
 
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setThumbSize({ w: rect.width, h: rect.height });
+        if (!isLoaded) setIsLoaded(true);
+      }
+    };
+
+    measure();
+
+    const observer = new ResizeObserver(() => measure());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <div
       className={`photo-card ${isSelected ? 'selected' : ''} ${isDiscarded ? 'discarded' : ''}`}
       onClick={(e) => onClick(photo, e)}
       onDoubleClick={() => onDoubleClick?.(photo)}
     >
-      <div className="photo-img-placeholder">
+      <div className="photo-img-placeholder" ref={containerRef}>
         {!hasError && (
           <>
             <img
+              ref={imgRef}
               src={api.thumbUrl(photo.path, 300)}
               alt={photo.name}
               loading="lazy"
               decoding="async"
               style={{ opacity: isLoaded ? 1 : 0 }}
-              onLoad={(e) => {
-                setIsLoaded(true);
-                setThumbSize({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight });
-              }}
               onError={() => setHasError(true)}
             />
             <button
