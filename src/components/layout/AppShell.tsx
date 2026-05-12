@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { api } from '../../services/api';
 import type { ScanStatus } from '../../services/api';
+import ConfirmModal from '../ConfirmModal';
 import CatalogModal from '../CatalogModal';
 import ScanModal from '../ScanModal';
 import { ScanProcessingCenter, type ScanTimelineEntry } from '../scan/ScanProcessingCenter';
@@ -18,6 +19,17 @@ interface ScanSessionMeta {
   oriPath: string;
   refPath: string;
   startedAt: number;
+}
+
+interface ConfirmDialogOptions {
+  title: string;
+  message: string;
+  confirmText: string;
+  cancelText: string;
+}
+
+interface ConfirmDialogState extends ConfirmDialogOptions {
+  resolve: (confirmed: boolean) => void;
 }
 
 function normalizeScanProgress(progress: number | undefined) {
@@ -76,6 +88,7 @@ export function AppShell() {
   const [scanTimeline, setScanTimeline] = useState<ScanTimelineEntry[]>([]);
   const [scanSession, setScanSession] = useState<ScanSessionMeta | null>(null);
   const [isScanFeedPaused, setIsScanFeedPaused] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const prevScanStatusRef = useRef<ScanStatus | null>(null);
   const scanCenterDismissedRef = useRef(false);
   const scanCompleted = isScanCompleted(scanStatus);
@@ -98,6 +111,12 @@ export function AppShell() {
     setScanTimeline(prev => [...prev.slice(-79), entry]);
   }, []);
 
+  const requestConfirm = useCallback((options: ConfirmDialogOptions) => {
+    return new Promise<boolean>((resolve) => {
+      setConfirmDialog({ ...options, resolve });
+    });
+  }, []);
+
   const syncTimelineFromStatus = useCallback((prev: ScanStatus | null, next: ScanStatus) => {
     const nextEntries: ScanTimelineEntry[] = [];
     const nextProgress = Math.round(normalizeScanProgress(next.progress));
@@ -117,7 +136,7 @@ export function AppShell() {
 
     if (nextMatches > prevMatches) {
       const delta = nextMatches - prevMatches;
-      nextEntries.push(buildTimelineEntry('match', `${delta} match${delta !== 1 ? 'es' : ''} automátic${delta !== 1 ? 'os' : 'o'} confirmado${delta !== 1 ? 's' : ''}.`));
+      nextEntries.push(buildTimelineEntry('match', `${delta} match${delta !== 1 ? 'es' : ''} automÃ¡tic${delta !== 1 ? 'os' : 'o'} confirmado${delta !== 1 ? 's' : ''}.`));
     }
 
     if (nextClusters > prevClusters) {
@@ -148,11 +167,11 @@ export function AppShell() {
       const summary = next.scan_summary;
       const totalFaces = typeof summary?.total_faces === 'number' ? summary.total_faces : undefined;
       const totalPhotos = typeof summary?.total_photos === 'number' ? summary.total_photos : next.total_processadas;
-      const totalFacesLabel = totalFaces ? ` • ${totalFaces} rostos` : '';
+      const totalFacesLabel = totalFaces ? ` â€¢ ${totalFaces} rostos` : '';
       nextEntries.push(
         buildTimelineEntry(
           'summary',
-          `Processamento concluído com ${totalPhotos ?? 0} fotos${totalFacesLabel}.`,
+          `Processamento concluÃ­do com ${totalPhotos ?? 0} fotos${totalFacesLabel}.`,
         ),
       );
     }
@@ -267,14 +286,20 @@ export function AppShell() {
 
   const handleCancelScan = async () => {
     if (!isScanning) return;
-    if (!window.confirm('Cancelar o scanner atual? O processamento em andamento será interrompido.')) return;
-    appendTimeline(buildTimelineEntry('warning', 'Solicitação de cancelamento enviada ao scanner.'));
+    const confirmed = await requestConfirm({
+      title: 'Descartar novo scan?',
+      message: 'Iniciar um novo scan irá cancelar o processamento atual e limpar os dados em andamento.',
+      confirmText: 'Iniciar novo scan',
+      cancelText: 'Cancelar',
+    });
+    if (!confirmed) return;
+    appendTimeline(buildTimelineEntry('warning', 'SolicitaÃ§Ã£o de cancelamento enviada ao scanner.'));
     setScanMsg('Cancelando scan...');
     try {
       await api.stopScan();
       await pollScanStatus();
     } catch {
-      appendTimeline(buildTimelineEntry('warning', 'Não foi possível cancelar o scanner agora.'));
+      appendTimeline(buildTimelineEntry('warning', 'NÃ£o foi possÃ­vel cancelar o scanner agora.'));
     }
   };
 
@@ -297,7 +322,7 @@ export function AppShell() {
   const renderView = () => {
     switch (activeView) {
       case 'photos':        return <CatalogView />;
-      case 'people':        return <PeopleView />;
+      case 'people':        return <PeopleView onRequestConfirm={requestConfirm} />;
       case 'person-detail': return <PersonDetailView />;
       case 'review':        return <ReviewView />;
       case 'export':        return <ExportView />;
@@ -316,6 +341,7 @@ export function AppShell() {
         isScanning={isScanning}
         scanMsg={scanMsg}
         scanProgress={normalizeScanProgress(scanStatus?.progress)}
+        onRequestConfirm={requestConfirm}
       />
       <div className="main-content">
         <div className="view-area">
@@ -342,11 +368,31 @@ export function AppShell() {
         </div>
       </div>
       {showCatalogModal && (
-        <CatalogModal onClose={() => { if (currentCatalog) setShowCatalogModal(false); }} />
+        <CatalogModal
+          onClose={() => { if (currentCatalog) setShowCatalogModal(false); }}
+          onRequestConfirm={requestConfirm}
+        />
       )}
       {showScanModal && (
         <ScanModal onClose={() => setShowScanModal(false)} onScanStarted={handleScanStarted} />
       )}
+      <ConfirmModal
+        open={Boolean(confirmDialog)}
+        title={confirmDialog?.title || ''}
+        message={confirmDialog?.message || ''}
+        confirmText={confirmDialog?.confirmText || 'Confirmar'}
+        cancelText={confirmDialog?.cancelText || 'Cancelar'}
+        onConfirm={() => {
+          const resolve = confirmDialog?.resolve;
+          setConfirmDialog(null);
+          resolve?.(true);
+        }}
+        onCancel={() => {
+          const resolve = confirmDialog?.resolve;
+          setConfirmDialog(null);
+          resolve?.(false);
+        }}
+      />
     </div>
   );
 }

@@ -3,7 +3,11 @@ import { Users, RefreshCw, Edit2, Trash2, ChevronRight, Check, X } from 'lucide-
 import { api, type Person } from '../services/api';
 import { useApp } from '../context/AppContext';
 
-export default function PeopleView() {
+interface PeopleViewProps {
+  onRequestConfirm: (options: { title: string; message: string; confirmText: string; cancelText: string }) => Promise<boolean>;
+}
+
+export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
   const { currentCatalog, navigate, refreshKey } = useApp();
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(false);
@@ -45,7 +49,13 @@ export default function PeopleView() {
   };
 
   const handleDelete = async (person: Person) => {
-    if (!window.confirm(`Excluir "${person.name}" e todas as suas ocorrências?`)) return;
+    const confirmed = await onRequestConfirm({
+      title: 'Excluir formando?',
+      message: `Excluir "${person.name}" e todas as suas ocorrências?`,
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+    });
+    if (!confirmed) return;
     try {
       await api.deletePerson(person.id);
       await load();

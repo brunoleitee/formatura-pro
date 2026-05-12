@@ -5,9 +5,10 @@ import { api } from '../services/api';
 
 interface Props {
   onClose: () => void;
+  onRequestConfirm: (options: { title: string; message: string; confirmText: string; cancelText: string }) => Promise<boolean>;
 }
 
-export default function CatalogModal({ onClose }: Props) {
+export default function CatalogModal({ onClose, onRequestConfirm }: Props) {
   const { catalogs, currentCatalog, setCatalog, refreshCatalogs } = useApp();
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -54,7 +55,13 @@ export default function CatalogModal({ onClose }: Props) {
   };
 
   const handleDelete = async (name: string) => {
-    if (!window.confirm(`Excluir o evento "${name}"? Esta ação não pode ser desfeita.`)) return;
+    const confirmed = await onRequestConfirm({
+      title: 'Excluir evento?',
+      message: `Excluir o evento "${name}"? Esta ação não pode ser desfeita.`,
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+    });
+    if (!confirmed) return;
     try {
       await api.deleteCatalog(name);
       await refreshCatalogs();

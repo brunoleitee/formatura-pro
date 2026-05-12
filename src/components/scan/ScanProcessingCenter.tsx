@@ -118,20 +118,6 @@ function faceHint(face: ScanRecentFace) {
   return 'detecção recente';
 }
 
-function faceStatus(face: ScanRecentFace) {
-  const kind = getFaceKind(face);
-  if (kind === 'match') return 'Match automático';
-  if (kind === 'cluster') return 'Cluster em formação';
-  return 'Rosto detectado';
-}
-
-function faceConfidence(face: ScanRecentFace) {
-  const kind = getFaceKind(face);
-  if (kind === 'match') return 'score ao vivo indisponível';
-  if (kind === 'cluster') return 'agrupando por similaridade';
-  return 'analisando o lote atual';
-}
-
 function photoSequenceLabel(path: string) {
   const filename = path.split(/[\\/]/).pop() || '';
   const numberMatch = filename.match(/(\d+)(?=\.[^.]+$)/);
@@ -231,8 +217,7 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
   const visibleFaces = isFeedPaused ? frozenFaces : deferredFaces;
   const visibleTimeline = isFeedPaused ? frozenTimeline : latestTimeline;
   const progressPct = isCompleted ? 100 : normalizeProgress(scanStatus?.progress);
-  const currentFace = !isCompleted ? (visibleFaces[0] ?? null) : null;
-  const gridFaces = isCompleted ? visibleFaces.slice(0, 12) : visibleFaces.slice(1, 13);
+  const gridFaces = visibleFaces.slice(0, 12);
   const currentStep = deriveCurrentStep(scanStatus, progressPct);
   const sourceLabel = sourcePath || scanStatus?.last_folder_scanned || '';
   const processedLabel = `${formatInteger(scanStatus?.total_processadas)} / ${formatInteger(scanStatus?.total_files)}`;
@@ -315,126 +300,57 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
         </div>
       </header>
 
-      <div className={styles.stageRow}>
-        <motion.section
-          className={styles.previewPanel}
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.22, ease: 'easeOut' }}
-        >
-          <div className={styles.panelHeader}>
-            <div>
-              <h3>{isCompleted ? 'Resumo final' : 'Preview principal'}</h3>
-              <p>{isCompleted ? 'O scan terminou e os resultados estao prontos.' : 'O rosto mais recente do lote atual.'}</p>
-            </div>
+      <section className={styles.pipelinePanel}>
+        <div className={styles.panelHeader}>
+          <div>
+            <h3>Pipeline IA</h3>
+            <p>Etapas ativas do processamento.</p>
           </div>
+        </div>
 
-          <div className={styles.previewShell}>
-            {isCompleted ? (
-              <div className={`${styles.previewCard} ${styles.previewCardComplete}`}>
-                <div className={styles.completeBadge}>
-                  <CheckCircle2 size={28} />
-                </div>
-                <div className={styles.previewMeta}>
-                  <span className={styles.previewTag}>Concluído</span>
-                  <h3 className={styles.previewName}>Processamento concluído</h3>
-                  <p className={styles.previewSummary}>
-                    {formatInteger(scanStatus?.total_processadas)} fotos processadas • {formatInteger(scanStatus?.total_matches)} matches
-                  </p>
-                  <p className={styles.previewDetail}>
-                    {formatInteger(scanStatus?.total_clusters)} clusters • {formatInteger(scanStatus?.skipped_background_faces)} ignoradas.
-                    {' '}Você já pode abrir a Revisão IA ou iniciar um novo scan.
-                  </p>
-                </div>
-              </div>
-            ) : currentFace ? (
-              <div className={styles.previewCard}>
-                <div className={styles.previewImageWrap}>
-                  <img
-                    className={styles.previewImage}
-                    src={api.faceThumbUrl(
-                      currentFace.path,
-                      currentFace.box[0],
-                      currentFace.box[1],
-                      currentFace.box[2],
-                      currentFace.box[3],
-                      320,
-                      0.28,
-                      78,
-                    )}
-                    alt={faceLabel(currentFace)}
-                    loading="eager"
-                    decoding="async"
-                  />
-                </div>
-                <div className={styles.previewMeta}>
-                  <span className={styles.previewTag}>{faceStatus(currentFace)}</span>
-                  <h3 className={styles.previewName}>{faceLabel(currentFace)}</h3>
-                  <p className={styles.previewSummary}>{faceStatus(currentFace)} • {faceConfidence(currentFace)}</p>
-                  <p className={styles.previewDetail}>{scanStatus?.status_text || 'A IA está processando o lote atual.'}</p>
-                </div>
-              </div>
-            ) : (
-              <div className={styles.previewEmpty}>
-                <LoaderCircle size={20} className={styles.spin} />
-                <span>Preparando os primeiros rostos do lote atual...</span>
-              </div>
-            )}
-          </div>
-        </motion.section>
-
-        <aside className={styles.pipelinePanel}>
-          <div className={styles.panelHeader}>
-            <div>
-              <h3>Pipeline IA</h3>
-              <p>Etapas ativas do processamento.</p>
-            </div>
-          </div>
-
-          <div className={styles.pipelineList}>
-            {PIPELINE_STEPS.map((step, index) => {
-              const Icon = step.icon;
-              const isDone = !isScanning ? index <= currentStep : index < currentStep;
-              const isCurrent = isScanning ? index === currentStep : index === currentStep && Boolean(scanStatus?.scan_summary);
-              return (
-                <div
-                  key={step.key}
-                  className={`${styles.pipelineItem} ${isCurrent ? styles.pipelineItemCurrent : ''}`}
-                >
-                  <span className={styles.pipelineIcon}>
-                    {isDone ? (
-                      <CheckCircle2 size={16} />
-                    ) : isCurrent ? (
-                      <LoaderCircle size={16} className={styles.spin} />
-                    ) : (
-                      <Circle size={14} />
-                    )}
+        <div className={styles.pipelineList}>
+          {PIPELINE_STEPS.map((step, index) => {
+            const Icon = step.icon;
+            const isDone = !isScanning ? index <= currentStep : index < currentStep;
+            const isCurrent = isScanning ? index === currentStep : index === currentStep && Boolean(scanStatus?.scan_summary);
+            return (
+              <div
+                key={step.key}
+                className={`${styles.pipelineItem} ${isCurrent ? styles.pipelineItemCurrent : ''}`}
+              >
+                <span className={styles.pipelineIcon}>
+                  {isDone ? (
+                    <CheckCircle2 size={16} />
+                  ) : isCurrent ? (
+                    <LoaderCircle size={16} className={styles.spin} />
+                  ) : (
+                    <Circle size={14} />
+                  )}
+                </span>
+                <div className={styles.pipelineMeta}>
+                  <span className={styles.pipelineLabel}>
+                    <Icon size={14} />
+                    <span>{step.label}</span>
                   </span>
-                  <div className={styles.pipelineMeta}>
-                    <span className={styles.pipelineLabel}>
-                      <Icon size={14} />
-                      <span>{step.label}</span>
-                    </span>
-                    <span className={styles.pipelineHint}>{step.hint}</span>
-                  </div>
+                  <span className={styles.pipelineHint}>{step.hint}</span>
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            );
+          })}
+        </div>
 
-          <div className={styles.pipelineFooter}>
-            <StatusChip label={isCompleted ? 'Estado' : 'ETA'} value={isCompleted ? 'concluído' : formatEta(scanStatus?.eta_seconds)} />
-            <StatusChip label="Resumo" value={pipelineSummary} />
-          </div>
+        <div className={styles.pipelineFooter}>
+          <StatusChip label={isCompleted ? 'Estado' : 'ETA'} value={isCompleted ? 'concluído' : formatEta(scanStatus?.eta_seconds)} />
+          <StatusChip label="Resumo" value={pipelineSummary} />
+        </div>
 
-          {scanStatus?.gpu_error && (
-            <div className={styles.warningBox}>
-              <span className={styles.warningTitle}>Fallback de aceleração</span>
-              <span className={styles.warningText}>{scanStatus.gpu_error}</span>
-            </div>
-          )}
-        </aside>
-      </div>
+        {scanStatus?.gpu_error && (
+          <div className={styles.warningBox}>
+            <span className={styles.warningTitle}>Fallback de aceleração</span>
+            <span className={styles.warningText}>{scanStatus.gpu_error}</span>
+          </div>
+        )}
+      </section>
 
       <section className={styles.metricsPanel}>
         <MetricCard icon={Images} label="Processadas" value={formatInteger(scanStatus?.total_processadas)} />
@@ -520,3 +436,4 @@ function StatusChip({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+

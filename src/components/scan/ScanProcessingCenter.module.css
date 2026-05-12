@@ -13,7 +13,6 @@
 }
 
 .header,
-.previewPanel,
 .pipelinePanel,
 .metricsPanel,
 .liveGridPanel,
@@ -203,16 +202,10 @@
 }
 
 .stageRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 16px;
-  min-height: 0;
-}
-
-.previewPanel {
   display: flex;
   flex-direction: column;
-  min-height: 320px;
+  gap: 16px;
+  min-height: 0;
 }
 
 .pipelinePanel {
@@ -224,8 +217,8 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 12px;
-  padding: 16px 18px 0;
+  gap: 10px;
+  padding: 14px 16px 0;
 }
 
 .panelHeader h3 {
@@ -236,126 +229,22 @@
 
 .panelHeader p {
   margin: 4px 0 0;
-  font-size: 0.82rem;
-}
-
-.previewShell {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-}
-
-.previewCard {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  width: min(360px, 100%);
-  padding: 18px;
-  border-radius: 18px;
-  background: rgb(16, 21, 28);
-  border: 1px solid rgba(151, 164, 181, 0.14);
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.28);
-}
-
-.previewCardComplete {
-  align-items: center;
-  text-align: center;
-  padding-top: 28px;
-  padding-bottom: 28px;
-}
-
-.previewImageWrap {
-  overflow: hidden;
-  aspect-ratio: 1 / 1;
-  border-radius: 14px;
-  background: rgba(22, 28, 37, 0.9);
-}
-
-.previewImage {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  image-rendering: auto;
-}
-
-.previewMeta {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.completeBadge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 72px;
-  height: 72px;
-  border-radius: 999px;
-  background: rgba(22, 66, 49, 0.82);
-  color: #a7f3d0;
-}
-
-.previewTag {
-  display: inline-flex;
-  align-self: flex-start;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(18, 45, 68, 0.84);
-  color: #a5d6fb;
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.previewCardComplete .previewTag {
-  align-self: center;
-}
-
-.previewName {
-  margin: 0;
-  font-size: 1.44rem;
-  line-height: 1.08;
-}
-
-.previewSummary {
-  margin: 0;
-  font-size: 0.9rem;
-  color: rgba(238, 244, 250, 0.82);
-}
-
-.previewDetail {
-  margin: 2px 0 0;
-  font-size: 0.84rem;
-  line-height: 1.5;
-  color: rgba(223, 232, 242, 0.64);
-}
-
-.previewEmpty {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 18px 22px;
-  border-radius: 16px;
-  background: rgba(15, 19, 25, 0.94);
-  color: rgba(236, 242, 248, 0.74);
+  font-size: 0.78rem;
 }
 
 .pipelineList {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 18px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  padding: 14px 16px 12px;
 }
 
 .pipelineItem {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
-  gap: 10px;
+  gap: 8px;
   align-items: start;
-  padding: 9px 8px;
+  padding: 8px 8px;
   border-radius: 12px;
 }
 
@@ -380,26 +269,27 @@
 .pipelineLabel {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.88rem;
+  gap: 7px;
+  font-size: 0.84rem;
   font-weight: 600;
   color: #f5f8fc;
 }
 
 .pipelineHint {
-  font-size: 0.78rem;
+  font-size: 0.74rem;
+  line-height: 1.35;
 }
 
 .pipelineFooter {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  padding: 0 20px 18px;
+  padding: 0 16px 14px;
 }
 
 .warningBox {
-  margin: 0 20px 20px;
-  padding: 12px 14px;
+  margin: 0 16px 14px;
+  padding: 10px 12px;
   border-radius: 14px;
   background: rgba(54, 20, 22, 0.72);
   border: 1px solid rgba(248, 113, 113, 0.14);
@@ -408,14 +298,14 @@
 .warningTitle {
   display: block;
   margin-bottom: 4px;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 700;
   color: #fecaca;
 }
 
 .warningText {
   display: block;
-  font-size: 0.77rem;
+  font-size: 0.74rem;
   line-height: 1.45;
 }
 
@@ -658,10 +548,6 @@
     justify-content: flex-start;
   }
 
-  .stageRow {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .liveGrid {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
@@ -688,20 +574,23 @@
     padding: 16px;
   }
 
-  .previewShell,
-  .liveGrid,
-  .pipelineList {
+  .liveGrid {
     padding: 16px;
   }
 
+  .pipelineList {
+    grid-template-columns: 1fr;
+    padding: 14px 14px 12px;
+  }
+
   .panelHeader {
-    padding: 16px 16px 0;
+    padding: 14px 14px 0;
   }
 
   .pipelineFooter,
   .timelineViewport {
-    padding-left: 16px;
-    padding-right: 16px;
+    padding-left: 14px;
+    padding-right: 14px;
   }
 
   .liveGrid {

@@ -17,6 +17,7 @@ interface SidebarProps {
   isScanning: boolean;
   scanMsg: string;
   scanProgress: number;
+  onRequestConfirm: (options: { title: string; message: string; confirmText: string; cancelText: string }) => Promise<boolean>;
 }
 
 export function Sidebar({
@@ -27,6 +28,7 @@ export function Sidebar({
   isScanning,
   scanMsg,
   scanProgress,
+  onRequestConfirm,
 }: SidebarProps) {
   const {
     currentCatalog, catalogs, activeView, navigate, setCatalog, refreshCatalogs,
@@ -119,7 +121,13 @@ export function Sidebar({
                   title="Excluir evento"
                   onClick={async (e) => {
                     e.stopPropagation();
-                    if (!window.confirm(`Excluir o evento "${cat}"? Esta ação não pode ser desfeita.`)) return;
+                    const confirmed = await onRequestConfirm({
+                      title: 'Excluir evento?',
+                      message: `Excluir o evento "${cat}"? Esta ação não pode ser desfeita.`,
+                      confirmText: 'Excluir',
+                      cancelText: 'Cancelar',
+                    });
+                    if (!confirmed) return;
                     try { await api.deleteCatalog(cat); await refreshCatalogs(); } catch { /* ignore */ }
                   }}
                 >
