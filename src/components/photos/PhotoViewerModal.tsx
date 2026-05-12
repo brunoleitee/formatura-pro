@@ -110,6 +110,18 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
     setActiveMenu(null);
     try {
       const results = await api.searchSimilarFaces(face.rowid ?? 0, currentCatalog, 50);
+      if (results.results) {
+        results.results.forEach(item => {
+          console.log('[SIMILAR RAW]', {
+            rowid: item.rowid,
+            bbox: (item as any).bbox,
+            box: (item as any).box,
+            width: (item as any).image_width,
+            height: (item as any).image_height,
+            photo_path: item.photo_path,
+          });
+        });
+      }
       setSimilarResults(results.results ?? []);
       if ((results.results ?? []).length === 0) setSimilarError('Nenhuma face semelhante encontrada');
     } catch (err: any) {
@@ -262,28 +274,31 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
   };
 
   const getFaceThumbUrl = (result: SimilarResult) => {
-    if (!result.box || result.box.length < 4) {
-      return result.thumb_url || api.thumbUrl(result.photo_path, 150);
+    if (result.rowid) {
+      return `/api/faces/thumb?rowid=${result.rowid}&size=180`;
     }
-    const imgW = result.image_width || 1000;
-    const imgH = result.image_height || 1000;
-    let [x1, y1, x2, y2] = result.box;
-    if (x1 < 1 && y1 < 1 && x2 <= 1 && y2 <= 1) {
-      x1 *= imgW; y1 *= imgH;
-      x2 *= imgW; y2 *= imgH;
+    if (result.box && result.box.length >= 4 && result.image_width && result.image_height) {
+      let [x1, y1, x2, y2] = result.box;
+      if (x1 <= 1 && y1 <= 1 && x2 <= 1 && y2 <= 1) {
+        x1 *= result.image_width; y1 *= result.image_height;
+        x2 *= result.image_width; y2 *= result.image_height;
+      }
+      const bw = x2 - x1;
+      const bh = y2 - y1;
+      if (bw > 0 && bh > 0) {
+        const imgW = result.image_width;
+        const imgH = result.image_height;
+        const padX = bw * 0.35;
+        const padYTop = bh * 0.45;
+        const padYBot = bh * 0.30;
+        const cx1 = Math.max(0, x1 - padX);
+        const cy1 = Math.max(0, y1 - padYTop);
+        const cx2 = Math.min(imgW, x2 + padX);
+        const cy2 = Math.min(imgH, y2 + padYBot);
+        return api.faceThumbUrl(result.photo_path, cx1, cy1, cx2, cy2, 180);
+      }
     }
-    let bw = x2 - x1;
-    let bh = y2 - y1;
-    if (bw <= 0 || bh <= 0) {
-      return result.thumb_url || api.thumbUrl(result.photo_path, 150);
-    }
-    const padX = bw * 0.35;
-    const padY = bh * 0.45;
-    x1 = Math.max(0, x1 - padX);
-    y1 = Math.max(0, y1 - padY);
-    x2 = Math.min(imgW, x2 + padX);
-    y2 = Math.min(imgH, y2 + padY);
-    return api.faceThumbUrl(result.photo_path, x1, y1, x2, y2, 150);
+    return api.thumbUrl(result.photo_path, 180);
   };
 
   return (
