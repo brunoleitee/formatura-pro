@@ -31,4 +31,14 @@ export const photoApi = {
     `${API_BASE}/image_thumb?path=${encodeURIComponent(path)}&size=${size}`,
   faceThumbUrl: (path: string, x1: number, y1: number, x2: number, y2: number, size = 120) =>
     `${API_BASE}/thumb?path=${encodeURIComponent(path)}&x1=${x1}&y1=${y1}&x2=${x2}&y2=${y2}&size=${size}`,
+
+  // Face identification
+  bulkManualIdentify: (catalog: string, aluno_id: string, rowids: number[]) =>
+    post(`${API_BASE}/faces/bulk_identify`, { catalog, aluno_id, rowids }),
+  searchSimilarFaces: (face_rowid: number, limit = 50) =>
+    fetchJSON<{ results: Array<{ rowid: number; photo_path: string; thumb_url: string; score: number; aluno_id: string | null }> }>(
+      `${API_BASE}/faces/similar?rowid=${face_rowid}&limit=${limit}`
+    ),
+  addManualFace: (data: { photo_id: number; photo_path: string; aluno_id: string; bbox: { x1: number; y1: number; x2: number; y2: number }; source: string }) =>
+    post(`${API_BASE}/faces/manual`, data),
 };
