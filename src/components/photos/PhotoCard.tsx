@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Image as ImageIcon, MoreHorizontal } from 'lucide-react';
+import { CheckCircle2, Image as ImageIcon, MoreHorizontal } from 'lucide-react';
 import { api, type Photo } from '../../services/api';
 import { isPhotoBlurry, isPhotoAttention } from '../../utils/qualityUtils';
 import { isPhotoMapped, isKnownFace } from '../../utils/personIdentity';
@@ -204,12 +204,18 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
             >
               <MoreHorizontal size={16} />
             </button>
-            {isLoaded && thumbSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, idx) => (
+        {isLoaded && thumbSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, idx) => (
                 <React.Fragment key={face.rowid ?? idx}>
                   {renderFaceOverlay(face, thumbSize, photo.width!, photo.height!)}
                 </React.Fragment>
               ))}
           </>
+        )}
+        {isSelected && (
+          <div className="photo-selected-badge" aria-hidden="true">
+            <CheckCircle2 size={14} />
+            <span>Selecionada</span>
+          </div>
         )}
         {!isLoaded && !hasError && <div className="photo-skeleton" />}
         {hasError && (

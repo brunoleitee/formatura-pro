@@ -54,6 +54,8 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
   // Alta qualidade dinâmica
   const [useHighRes, setUseHighRes] = useState(false);
   const [highResLoaded, setHighResLoaded] = useState(false);
+  const [highResLoading, setHighResLoading] = useState(false);
+  const [highResError, setHighResError] = useState<string | null>(null);
   const [currentSrc, setCurrentSrc] = useState(api.thumbUrl(photo.path, 1200, 90));
 
   useEffect(() => {
@@ -61,22 +63,39 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
     setIsLoaded(false);
     setUseHighRes(false);
     setHighResLoaded(false);
+    setHighResLoading(false);
+    setHighResError(null);
     setCurrentSrc(api.thumbUrl(photo.path, 1200, 90));
   }, [photo.path]);
 
   useEffect(() => {
     // Se zoom for alto, carregar original
-    if (zoom >= 1.0 && !useHighRes) {
+    if (zoom >= 1.0 && !useHighRes && !highResLoaded && !highResLoading && !highResError) {
       setUseHighRes(true);
+      setHighResLoading(true);
       const img = new window.Image();
       const highResUrl = api.fullResUrl(photo.path);
+      let cancelled = false;
       img.src = highResUrl;
       img.onload = () => {
+        if (cancelled) return;
         setCurrentSrc(highResUrl);
         setHighResLoaded(true);
+        setHighResLoading(false);
+      };
+      img.onerror = () => {
+        if (cancelled) return;
+        setHighResLoaded(false);
+        setHighResLoading(false);
+        setHighResError('imagem original indisponível');
+      };
+      return () => {
+        cancelled = true;
+        img.onload = null;
+        img.onerror = null;
       };
     }
-  }, [zoom, photo.path, useHighRes]);
+  }, [zoom, photo.path, useHighRes, highResLoaded, highResLoading, highResError]);
 
   const imageRef = useRef<HTMLImageElement>(null);
   const imageStageRef = useRef<HTMLDivElement>(null);
@@ -601,11 +620,15 @@ export function PhotoViewerModal({ photo, allPhotos, onClose, onNavigate, onPhot
                 }}
               />
 
-              {useHighRes && !highResLoaded && (
+              {highResLoading && (
                 <div className={styles.highResIndicator}>
                   <div className={styles.highResSpinner} />
-                  <span>Alta Qualidade...</span>
+                  <span>Carregando original...</span>
                 </div>
+              )}
+
+              {highResError && !highResLoading && (
+                <div className={styles.highResError}>{highResError}</div>
               )}
 
               {isDiscarded && <div className={styles.discardBadge}>DESCARTADA</div>}

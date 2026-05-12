@@ -530,8 +530,39 @@
 }
 .photo-card:hover .photo-img-placeholder img { transform: scale(1.04); }
 .photo-card.selected {
-  border-color: var(--accent-color);
-  box-shadow: 0 0 0 2px rgba(59,130,246,0.3);
+  border-color: rgba(96, 165, 250, 0.9);
+  box-shadow:
+    0 0 0 1px rgba(96, 165, 250, 0.25),
+    0 0 0 3px rgba(59, 130, 246, 0.18),
+    0 8px 26px rgba(12, 24, 48, 0.22);
+}
+.photo-card.selected .photo-img-placeholder {
+  position: relative;
+}
+
+.photo-selected-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 12;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(12, 25, 44, 0.92);
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  color: #bfdbfe;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  animation: photoSelectedPop 160ms ease-out;
+}
+
+@keyframes photoSelectedPop {
+  from { opacity: 0; transform: scale(0.96) translateY(-2px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 .photo-card.discarded {
   opacity: 0.75;
