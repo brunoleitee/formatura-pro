@@ -678,13 +678,18 @@ def run_export_worker(req: ExportReq, catalog_name: str):
             os.makedirs(export_base, exist_ok=True)
 
             safe_p_al_map = {}
-            for aid, _f, _p_al in worklist:
+            organize_by_class = bool(getattr(req, "organize_by_class", False))
+            for aid, _f, p_al in worklist:
                 if aid not in safe_p_al_map:
-                    safe_aid = _export_folder_name(aid, sanitize_folder_name)
                     if aid in ("#BASE", "#DESCARTE"):
+                        safe_aid = _export_folder_name(aid, sanitize_folder_name)
                         safe_p_al_map[aid] = os.path.join(req.dest_path, safe_aid)
                     else:
-                        safe_p_al_map[aid] = os.path.join(export_base, safe_aid)
+                        if organize_by_class:
+                            safe_p_al_map[aid] = p_al
+                        else:
+                            safe_aid = _export_folder_name(aid, sanitize_folder_name)
+                            safe_p_al_map[aid] = os.path.join(export_base, safe_aid)
                     try:
                         os.makedirs(safe_p_al_map[aid], exist_ok=True)
                     except Exception as e:
