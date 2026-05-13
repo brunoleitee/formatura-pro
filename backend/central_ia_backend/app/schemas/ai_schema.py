@@ -14,6 +14,8 @@ class CentralStatsResponse(BaseModel):
     
     percents: dict
 
+    ocr: Optional[dict] = None
+
 
 class SuggestionResponse(BaseModel):
     face_id: int

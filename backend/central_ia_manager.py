@@ -6,6 +6,8 @@ from typing import List, Optional, Dict
 from pydantic import BaseModel
 import time
 
+from services.ocr_engine import get_tesseract_status
+
 router = APIRouter(prefix="/api/ai", tags=["Central IA"])
 
 # Dependências injetadas pelo backend.py
@@ -62,6 +64,8 @@ async def get_central_stats(catalog: str = Query(...)):
             def calc_pct(val):
                 return round((val / total_photos * 100), 1) if total_photos > 0 else 0
 
+            ocr_status = get_tesseract_status()
+
             return {
                 "total": total_photos,
                 "processed": processed_photos,
@@ -75,7 +79,14 @@ async def get_central_stats(catalog: str = Query(...)):
                     "pending": calc_pct(pending),
                     "errors": calc_pct(errors)
                 },
-                "timeline": timeline
+                "timeline": timeline,
+                "ocr": {
+                    "available": ocr_status.get("available", False),
+                    "message": "OCR indisponível: Tesseract não instalado"
+                    if not ocr_status.get("available", False)
+                    else "OCR disponível",
+                    "status": "unavailable" if not ocr_status.get("available", False) else "available",
+                }
             }
     except Exception as e:
         logging.error(f"Erro em get_central_stats: {e}")

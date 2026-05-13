@@ -8,6 +8,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+from services.ocr_engine import get_tesseract_status, is_tesseract_available, log_tesseract_unavailable_once, run_tesseract_safe
+
 
 def _load_image(local_path: str) -> Optional[np.ndarray]:
     img = cv2.imread(local_path)
@@ -66,13 +68,7 @@ def _enhance_crop(crop: np.ndarray) -> np.ndarray:
 
 
 def _run_tesseract(image: np.ndarray, config: str = "") -> str:
-    import pytesseract
-    try:
-        text = pytesseract.image_to_string(image, config=config, lang="por")
-        return text.strip()
-    except Exception as e:
-        print(f"[OCR] tesseract error: {e}")
-        return ""
+    return run_tesseract_safe(image, config=config)
 
 
 def _extract_numbers(text: str) -> str:
@@ -104,11 +100,33 @@ def _ocr_numeric_only(image: np.ndarray) -> Dict:
 
 
 def process_ocr(local_path: str) -> Dict[str, Any]:
+    if not is_tesseract_available():
+        log_tesseract_unavailable_once(logger.info)
+        status = get_tesseract_status()
+        return {
+            "ocr_text": "",
+            "ocr_confidence": 0.0,
+            "ocr_type": "unavailable",
+            "ocr_raw": "",
+            "regions_found": 0,
+            "candidates": 0,
+            "error": "Tesseract não instalado ou fora do PATH",
+            "ocr_available": False,
+            "ocr_status": status,
+        }
+
     print(f"[OCR] processing: {local_path}")
     img = _load_image(local_path)
     if img is None:
         print("[OCR] failed to load image")
-        return {"ocr_text": "", "ocr_confidence": 0.0, "ocr_type": "none", "regions_found": 0}
+        return {
+            "ocr_text": "",
+            "ocr_confidence": 0.0,
+            "ocr_type": "none",
+            "regions_found": 0,
+            "ocr_available": is_tesseract_available(),
+            "ocr_status": get_tesseract_status(),
+        }
 
     h, w = img.shape[:2]
     print(f"[OCR] image size: {w}x{h}")

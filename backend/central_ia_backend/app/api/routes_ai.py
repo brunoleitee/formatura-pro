@@ -10,6 +10,7 @@ from app.schemas import (
 )
 from app.services import ImportService, FaceService, ScanService, get_storage_size
 from app.core.config import settings
+from services.ocr_engine import get_tesseract_status
 
 router = APIRouter(prefix="/ai", tags=["IA"])
 
@@ -80,6 +81,13 @@ def get_central_stats(catalog: str = Query(...)):
                 "inCuration": calc_pct(stats["in_curation"]),
                 "pending": calc_pct(stats["pending"]),
                 "errors": calc_pct(stats["errors"])
+            },
+            ocr={
+                "available": get_tesseract_status().get("available", False),
+                "message": "OCR indisponível: Tesseract não instalado"
+                if not get_tesseract_status().get("available", False)
+                else "OCR disponível",
+                "status": "unavailable" if not get_tesseract_status().get("available", False) else "available",
             }
         )
     finally:

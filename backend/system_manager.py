@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 
 from onnx_provider_utils import get_onnx_providers
+from services.ocr_engine import get_tesseract_status
 
 _cfg = {}
 
@@ -165,6 +166,7 @@ def system_status():
 
     history = load_export_history()
     gpu = gpu_diagnostics()
+    ocr_status = get_tesseract_status()
     scanner_log = os.path.join(data_dir, "error_scanner.log")
     last_scanner_error = ""
     try:
@@ -183,6 +185,12 @@ def system_status():
         "latest_backup": latest_backup,
         "last_export": history[0] if history else None,
         "gpu": gpu,
+        "ocr": {
+            "available": ocr_status.get("available", False),
+            "message": "OCR indisponível: Tesseract não instalado" if not ocr_status.get("available", False) else "OCR disponível",
+            "status": "unavailable" if not ocr_status.get("available", False) else "available",
+            "tesseract_cmd": ocr_status.get("cmd", ""),
+        },
         "scanner": {
             "is_scanning": scan_state.get("is_scanning", False),
             "device": scan_state.get("device") or _value("face_engine_label", "") or _value("face_engine_device", "") or "",
