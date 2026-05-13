@@ -86,11 +86,13 @@ export function PhotoViewerModal({
   const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
   const VIEWER_PREVIEW_SIZE = 1920;
   const [displayedSrc, setDisplayedSrc] = useState(() => getViewerFallbackUrl(photo));
+  const [displayedPhoto, setDisplayedPhoto] = useState<Photo>(photo);
   const navigationPhotos = (contextPhotos?.length ? contextPhotos : allPhotos);
   const viewerTransitionRef = useRef<'open' | 'next' | 'prev'>('open');
   const viewerLoadStartRef = useRef<number | null>(null);
   const viewerMountedRef = useRef(false);
   const viewerLoggedRef = useRef(false);
+  const requestIdRef = useRef(0);
   const previewTokenRef = useRef(0);
   const previewStartRef = useRef<number | null>(null);
   const imageCacheRef = useRef(new Map<string, { status: 'loading' | 'loaded' | 'error'; promise?: Promise<boolean> }>());
@@ -112,11 +114,13 @@ export function PhotoViewerModal({
   const imageRef = useRef<HTMLImageElement>(null);
   const imageWrapRef = useRef<HTMLDivElement>(null);
   const imageStageRef = useRef<HTMLDivElement>(null);
+  const visiblePhoto = displayedPhoto;
   const currentIndex = navigationPhotos.findIndex((p) => p.path === photo.path);
   const total = navigationPhotos.length;
-  const displayIndex = currentIndex >= 0 ? currentIndex + 1 : 1;
-  const isDiscarded = photo.discarded;
-  const currentPhotoKey = (photo as ViewerPhoto).id ?? (photo as ViewerPhoto).original_path ?? photo.path;
+  const displayIndex = navigationPhotos.findIndex((p) => p.path === visiblePhoto.path);
+  const displayCounter = displayIndex >= 0 ? displayIndex + 1 : 1;
+  const isDiscarded = visiblePhoto.discarded;
+  const currentPhotoKey = (visiblePhoto as ViewerPhoto).id ?? (visiblePhoto as ViewerPhoto).original_path ?? visiblePhoto.path;
 
   const getViewerPhotoKey = useCallback((item: Photo) => (
     (item as ViewerPhoto).id ?? (item as ViewerPhoto).original_path ?? item.path
@@ -183,9 +187,9 @@ export function PhotoViewerModal({
 
   const handleDiscard = async () => {
     try {
-      await api.discardPhoto({ foto_path: photo.path, discard: true });
+      await api.discardPhoto({ foto_path: visiblePhoto.path, discard: true });
       showFeedbackMsg("Foto descartada");
-      onDiscard?.(photo.path);
+      onDiscard?.(visiblePhoto.path);
       if (currentIndex < total - 1) onNavigate(navigationPhotos[currentIndex + 1]);
     } catch (err) {
       console.error("Erro ao descartar:", err);
@@ -194,23 +198,23 @@ export function PhotoViewerModal({
 
   const handleRestore = async () => {
     try {
-      await api.discardPhoto({ foto_path: photo.path, discard: false });
+      await api.discardPhoto({ foto_path: visiblePhoto.path, discard: false });
       showFeedbackMsg("Foto restaurada");
-      onRestore?.(photo.path);
+      onRestore?.(visiblePhoto.path);
     } catch (err) {
       console.error("Erro ao restaurar:", err);
     }
   };
 
   const handleRename = async (faceIdx: number) => {
-    const face = photo.faces?.[faceIdx];
+    const face = visiblePhoto.faces?.[faceIdx];
     if (!face) return;
     try {
       await api.bulkManualIdentify(currentCatalog, renameValue, face.rowid ? [face.rowid] : []);
       showFeedbackMsg(`Vinculado: ${renameValue}`);
       setShowRenameModal(null);
       setRenameValue('');
-      onPhotoUpdate?.({ ...photo });
+      onPhotoUpdate?.({ ...visiblePhoto });
     } catch (err) {
       console.error("Erro ao renomear:", err);
       showFeedbackMsg("Erro ao vincular");
@@ -218,20 +222,20 @@ export function PhotoViewerModal({
   };
 
   const handleRemoveIdent = async (faceIdx: number) => {
-    const face = photo.faces?.[faceIdx];
+    const face = visiblePhoto.faces?.[faceIdx];
     if (!face) return;
     try {
       await api.bulkManualIdentify(currentCatalog, 'Desconhecido', face.rowid ? [face.rowid] : []);
       showFeedbackMsg("IdentificaÃ§Ã£o removida");
       setActiveMenu(null);
-      onPhotoUpdate?.({ ...photo });
+      onPhotoUpdate?.({ ...visiblePhoto });
     } catch (err) {
       console.error("Erro ao remover:", err);
     }
   };
 
   const handleSearchSimilar = async (faceIdx: number) => {
-    const face = photo.faces?.[faceIdx];
+    const face = visiblePhoto.faces?.[faceIdx];
     if (!face) return;
     setSimilarLoading(true);
     setSimilarError(null);
@@ -278,7 +282,7 @@ export function PhotoViewerModal({
       
       setSelectedSimilarIds(new Set());
       setSimilarName('');
-      onPhotoUpdate?.({ ...photo });
+      onPhotoUpdate?.({ ...visiblePhoto });
     } catch (err) {
       console.error("Erro ao aplicar nome em lote:", err);
       showFeedbackMsg("Erro ao aplicar nome");
@@ -289,19 +293,19 @@ export function PhotoViewerModal({
 
   const handleAddManualFace = async () => {
     if (!manualAlunoId.trim() || !showManualModal) return;
-    if (!photo.width || !photo.height) {
+    if (!visiblePhoto.width || !visiblePhoto.height) {
       showFeedbackMsg("Imagem indisponível para salvar o rosto manual");
       return;
     }
 
-    const x1 = Math.round(showManualModal.x * photo.width);
-    const y1 = Math.round(showManualModal.y * photo.height);
-    const x2 = Math.round((showManualModal.x + showManualModal.width) * photo.width);
-    const y2 = Math.round((showManualModal.y + showManualModal.height) * photo.height);
+    const x1 = Math.round(showManualModal.x * visiblePhoto.width);
+    const y1 = Math.round(showManualModal.y * visiblePhoto.height);
+    const x2 = Math.round((showManualModal.x + showManualModal.width) * visiblePhoto.width);
+    const y2 = Math.round((showManualModal.y + showManualModal.height) * visiblePhoto.height);
 
     try {
       await api.addManualFace({
-        foto_path: photo.path,
+        foto_path: visiblePhoto.path,
         catalog: currentCatalog,
         box: [x1, y1, x2, y2],
         new_name: manualAlunoId.trim(),
@@ -310,7 +314,7 @@ export function PhotoViewerModal({
       setShowManualModal(null);
       setManualAlunoId('');
       setIsManualMode(false);
-      onPhotoUpdate?.({ ...photo });
+      onPhotoUpdate?.({ ...visiblePhoto });
     } catch (err) {
       console.error("Erro ao adicionar rosto manual:", err);
       showFeedbackMsg("Erro ao adicionar rosto");
@@ -323,11 +327,13 @@ export function PhotoViewerModal({
   }, [photo.path]);
 
   useEffect(() => {
+    const requestId = ++requestIdRef.current;
     const token = ++previewTokenRef.current;
     previewStartRef.current = perfNow();
     viewerLoggedRef.current = false;
     const currentUrl = getViewerImageUrl(photo, VIEWER_PREVIEW_SIZE);
     const fallbackUrl = getViewerFallbackUrl(photo);
+    const PREVIEW_TIMEOUT_MS = 4500;
 
     const preloadImage = (targetPhoto: Photo) => {
       const targetUrl = getViewerImageUrl(targetPhoto, VIEWER_PREVIEW_SIZE);
@@ -341,29 +347,42 @@ export function PhotoViewerModal({
       void loadPreview(targetUrl);
     };
 
+    const settleCurrent = (url: string, sourcePhoto: Photo, kind: 'cache-miss' | 'fallback') => {
+      if (requestId !== requestIdRef.current) return false;
+      setDisplayedPhoto(sourcePhoto);
+      setDisplayedSrc(url);
+      setIsLoaded(true);
+      if (previewStartRef.current !== null) {
+        logPerf(`viewer preview ${kind}`, previewStartRef.current, sourcePhoto.path);
+      }
+      return true;
+    };
+
     if (imageCacheRef.current.get(currentUrl)?.status === 'loaded') {
+      setDisplayedPhoto(photo);
       setDisplayedSrc(currentUrl);
       setIsLoaded(true);
       if (previewStartRef.current !== null) {
         logPerf('viewer preview cache hit', previewStartRef.current, photo.path);
       }
     } else {
-      void loadPreview(currentUrl).then((ok) => {
-        if (token !== previewTokenRef.current) return;
+      const timeoutId = window.setTimeout(() => {
+        settleCurrent(fallbackUrl, photo, 'fallback');
+      }, PREVIEW_TIMEOUT_MS);
 
-        if (ok) {
-          setDisplayedSrc(currentUrl);
-          setIsLoaded(true);
+      void loadPreview(currentUrl).then((ok) => {
+        window.clearTimeout(timeoutId);
+        if (token !== previewTokenRef.current || requestId !== requestIdRef.current) {
           if (previewStartRef.current !== null) {
-            logPerf('viewer preview cache miss', previewStartRef.current, photo.path);
+            logPerf('viewer preview stale ignored', previewStartRef.current, photo.path);
           }
-        } else {
-          setDisplayedSrc(fallbackUrl);
-          setIsLoaded(true);
-          if (previewStartRef.current !== null) {
-            logPerf('viewer preview fallback', previewStartRef.current, photo.path);
-          }
+          return;
         }
+        if (ok) {
+          settleCurrent(currentUrl, photo, 'cache-miss');
+          return;
+        }
+        settleCurrent(fallbackUrl, photo, 'fallback');
       });
     }
 
@@ -415,7 +434,7 @@ export function PhotoViewerModal({
       if (showRenameModal !== null || similarResults.length > 0 || showManualModal) return;
       
       if (e.key === 'p' || e.key === 'P') {
-        api.openPhotoshop(photo.path);
+        api.openPhotoshop(visiblePhoto.path);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         handleRestore();
@@ -605,17 +624,17 @@ export function PhotoViewerModal({
   }, [drawStart, drawCurrent, getImagePoint, isManualMode]);
 
   const getFaceOverlayStyle = (face: Photo['faces'][number]) => {
-    if (!photo.width || !photo.height || viewSize.w === 0) return {};
+    if (!visiblePhoto.width || !visiblePhoto.height || viewSize.w === 0) return {};
 
     const fx1 = face.x1 ?? 0;
     const fy1 = face.y1 ?? 0;
     const fx2 = face.x2 ?? 0;
     const fy2 = face.y2 ?? 0;
 
-    const x1 = (fx1 / photo.width) * viewSize.w;
-    const y1 = (fy1 / photo.height) * viewSize.h;
-    const w = ((fx2 - fx1) / photo.width) * viewSize.w;
-    const h = ((fy2 - fy1) / photo.height) * viewSize.h;
+    const x1 = (fx1 / visiblePhoto.width) * viewSize.w;
+    const y1 = (fy1 / visiblePhoto.height) * viewSize.h;
+    const w = ((fx2 - fx1) / visiblePhoto.width) * viewSize.w;
+    const h = ((fy2 - fy1) / visiblePhoto.height) * viewSize.h;
 
     return { left: `${x1}px`, top: `${y1}px`, width: `${w}px`, height: `${h}px` };
   };
@@ -683,8 +702,8 @@ export function PhotoViewerModal({
           <button
             className={styles.headerBtn}
             onClick={() => {
-              const sep = photo.path.includes('\\') ? '\\' : '/';
-              const folder = photo.path.substring(0, photo.path.lastIndexOf(sep));
+              const sep = visiblePhoto.path.includes('\\') ? '\\' : '/';
+              const folder = visiblePhoto.path.substring(0, visiblePhoto.path.lastIndexOf(sep));
               api.openFolder(folder);
             }}
             title="Abrir pasta"
@@ -694,7 +713,7 @@ export function PhotoViewerModal({
           </button>
           <button
             className={`${styles.headerBtn} ${styles.headerBtnPhotoshop}`}
-            onClick={() => api.openPhotoshop(photo.path)}
+            onClick={() => api.openPhotoshop(visiblePhoto.path)}
             title="Abrir no Photoshop (P)"
           >
             Photoshop (P)
@@ -721,15 +740,15 @@ export function PhotoViewerModal({
         <div className={styles.leftPanel} onClick={(e) => e.stopPropagation()}>
           <div className={styles.fileInfoCard}>
             <div className={styles.fileInfoLabel}>ARQUIVO</div>
-            <div className={styles.fileInfoName}>{photo.name}</div>
+            <div className={styles.fileInfoName}>{visiblePhoto.name}</div>
           </div>
         </div>
 
         {/* Center â€” image */}
         <div className={styles.centerArea} onClick={(e) => e.stopPropagation()}>
           <div className={styles.viewerTopMeta}>
-            <span className={styles.viewerTopName}>{photo.name}</span>
-            <span className={styles.viewerTopCounter}>{displayIndex} de {Math.max(total, 1)}</span>
+            <span className={styles.viewerTopName}>{visiblePhoto.name}</span>
+        <span className={styles.viewerTopCounter}>{displayCounter} de {Math.max(total, 1)}</span>
           </div>
 
           {currentIndex > 0 && (
@@ -767,7 +786,7 @@ export function PhotoViewerModal({
                   <img
                     ref={imageRef}
                     src={displayedSrc}
-                    alt={photo.name}
+                    alt={visiblePhoto.name}
                     className={styles.mainImage}
                   style={{ 
                     opacity: isLoaded ? 1 : 0,
@@ -797,11 +816,11 @@ export function PhotoViewerModal({
                     setIsLoaded(true);
                     if (viewerLoadStartRef.current !== null && !viewerLoggedRef.current) {
                       viewerLoggedRef.current = true;
-                      logPerf(`viewer loaded ${viewerTransitionRef.current}`, viewerLoadStartRef.current, photo.path);
+                      logPerf(`viewer loaded ${viewerTransitionRef.current}`, viewerLoadStartRef.current, visiblePhoto.path);
                     }
                   }}
                   onError={() => {
-                    const fallback = getViewerFallbackUrl(photo);
+                    const fallback = getViewerFallbackUrl(visiblePhoto);
                     if (displayedSrc === fallback) {
                       setIsLoaded(true);
                       return;
@@ -810,14 +829,14 @@ export function PhotoViewerModal({
                     setIsLoaded(true);
                     if (viewerLoadStartRef.current !== null && !viewerLoggedRef.current) {
                       viewerLoggedRef.current = true;
-                      logPerf(`viewer loaded ${viewerTransitionRef.current}`, viewerLoadStartRef.current, photo.path);
+                      logPerf(`viewer loaded ${viewerTransitionRef.current}`, viewerLoadStartRef.current, visiblePhoto.path);
                     }
                   }}
                 />
 
                 {isDiscarded && <div className={styles.discardBadge}>DESCARTADA</div>}
 
-                {isLoaded && viewSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, faceIdx) => {
+                {isLoaded && viewSize.w > 0 && visiblePhoto.width && visiblePhoto.height && (visiblePhoto.faces || []).map((face, faceIdx) => {
                   const isKnown = isKnownFace(face);
                   const overlayStyle = getFaceOverlayStyle(face);
                   const isMenuOpen = activeMenu === faceIdx;
@@ -900,7 +919,7 @@ export function PhotoViewerModal({
                   }}
                 >
                   {navigationPhotos.map((item) => {
-                    const isActive = item.path === photo.path;
+                    const isActive = item.path === visiblePhoto.path;
                     const itemKey = getViewerPhotoKey(item);
                     return (
                       <button
@@ -933,17 +952,17 @@ export function PhotoViewerModal({
         {/* Right panel â€” identification */}
         <div className={styles.rightPanel} onClick={(e) => e.stopPropagation()}>
           <div className={styles.identHeader}>
-            IDENTIFICAÃ‡ÃƒO {(photo.faces || []).length > 0 && <span className={styles.identCount}>{(photo.faces || []).length}</span>}
+            IDENTIFICAÃ‡ÃƒO {(visiblePhoto.faces || []).length > 0 && <span className={styles.identCount}>{(visiblePhoto.faces || []).length}</span>}
             <ChevronRight size={14} className={styles.identChevron} />
           </div>
 
           <div className={styles.identList}>
-            {(photo.faces || []).length === 0 && (
+            {(visiblePhoto.faces || []).length === 0 && (
               <div style={{ padding: '20px', textAlign: 'center', color: '#475569', fontSize: '0.75rem' }}>
                 Nenhum rosto detectado
               </div>
             )}
-            {(photo.faces || []).map((face, idx) => {
+            {(visiblePhoto.faces || []).map((face, idx) => {
               const isKnown = isKnownFace(face);
               const name = face.aluno_id || 'Desconhecido';
               return (
@@ -1154,4 +1173,5 @@ export function PhotoViewerModal({
     </div>
   );
 }
+
 
