@@ -200,6 +200,7 @@
 .zoomLayer {
   position: relative;
   will-change: transform;
+  transform-origin: 0 0;
   transition: transform 80ms ease-out;
 }
 

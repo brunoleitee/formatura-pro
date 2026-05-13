@@ -84,6 +84,7 @@ export function PhotoViewerModal({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
+  const [isWheelZooming, setIsWheelZooming] = useState(false);
   const VIEWER_PREVIEW_SIZE = 1920;
   const [displayedSrc, setDisplayedSrc] = useState(() => getViewerFallbackUrl(photo));
   const [displayedPhoto, setDisplayedPhoto] = useState<Photo>(photo);
@@ -96,6 +97,10 @@ export function PhotoViewerModal({
   const previewTokenRef = useRef(0);
   const previewStartRef = useRef<number | null>(null);
   const imageCacheRef = useRef(new Map<string, { status: 'loading' | 'loaded' | 'error'; promise?: Promise<boolean> }>());
+  const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
+  const wheelCommitRef = useRef<number | null>(null);
+  const wheelResetTimerRef = useRef<number | null>(null);
   const filmstripRef = useRef<HTMLDivElement | null>(null);
   const thumbRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const filmstripScrollTimerRef = useRef<number | null>(null);
@@ -110,6 +115,27 @@ export function PhotoViewerModal({
       viewerMountedRef.current = true;
     }
   }, [photo.path]);
+
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
+  useEffect(() => {
+    panRef.current = pan;
+  }, [pan]);
+
+  useEffect(() => {
+    return () => {
+      if (wheelCommitRef.current !== null) {
+        window.cancelAnimationFrame(wheelCommitRef.current);
+        wheelCommitRef.current = null;
+      }
+      if (wheelResetTimerRef.current !== null) {
+        window.clearTimeout(wheelResetTimerRef.current);
+        wheelResetTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const imageRef = useRef<HTMLImageElement>(null);
   const imageWrapRef = useRef<HTMLDivElement>(null);
@@ -323,6 +349,18 @@ export function PhotoViewerModal({
 
   useEffect(() => {
     setZoom(1);
+    setPan(calculateInitialPan(viewSize.w, viewSize.h));
+    zoomRef.current = 1;
+    panRef.current = calculateInitialPan(viewSize.w, viewSize.h);
+    setIsWheelZooming(false);
+    if (wheelCommitRef.current !== null) {
+      window.cancelAnimationFrame(wheelCommitRef.current);
+      wheelCommitRef.current = null;
+    }
+    if (wheelResetTimerRef.current !== null) {
+      window.clearTimeout(wheelResetTimerRef.current);
+      wheelResetTimerRef.current = null;
+    }
     // Initial pan will be set in onLoad when image size is known
   }, [photo.path]);
 
@@ -461,9 +499,34 @@ export function PhotoViewerModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [photo, currentIndex, total, onNavigate, onClose, isManualMode, showRenameModal, similarResults.length, showManualModal, handleRestore, handleDiscard]);
 
-  function handleWheelZoom(e: WheelEvent | React.WheelEvent) {
+  const clampPanToStage = useCallback((nextPan: { x: number; y: number }, nextZoom: number) => {
+    const stage = imageStageRef.current;
+    if (!stage || !viewSize.w || !viewSize.h) return nextPan;
+
+    if (nextZoom <= 1) {
+      return calculateInitialPan(viewSize.w, viewSize.h);
+    }
+
+    const stageW = stage.clientWidth;
+    const stageH = stage.clientHeight;
+    const contentW = viewSize.w * nextZoom;
+    const contentH = viewSize.h * nextZoom;
+
+    let x = nextPan.x;
+    let y = nextPan.y;
+
+    if (contentW <= stageW) x = (stageW - contentW) / 2;
+    else x = clamp(x, stageW - contentW, 0);
+
+    if (contentH <= stageH) y = (stageH - contentH) / 2;
+    else y = clamp(y, stageH - contentH, 0);
+
+    return { x, y };
+  }, [viewSize.w, viewSize.h]);
+
+  const handleWheelZoom = useCallback((e: WheelEvent | React.WheelEvent) => {
     if (isManualMode || showRenameModal !== null || similarResults.length > 0 || showManualModal) return;
-    
+
     e.preventDefault();
     e.stopPropagation();
 
@@ -474,26 +537,39 @@ export function PhotoViewerModal({
     const mouseY = e.clientY - rect.top;
 
     const zoomFactor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-    const nextZoom = clamp(zoom * zoomFactor, 1, 8);
+    const currentZoom = zoomRef.current;
+    const nextZoom = clamp(currentZoom * zoomFactor, 1, 5);
 
-    if (nextZoom === zoom) return;
+    if (nextZoom === currentZoom) return;
 
-    const scaleChange = nextZoom / zoom;
+    const scaleChange = nextZoom / currentZoom;
+    const currentPan = panRef.current;
+    const nextPan = clampPanToStage({
+      x: mouseX - (mouseX - currentPan.x) * scaleChange,
+      y: mouseY - (mouseY - currentPan.y) * scaleChange,
+    }, nextZoom);
 
-    setPan(prev => {
-      const newPan = {
-        x: mouseX - (mouseX - prev.x) * scaleChange,
-        y: mouseY - (mouseY - prev.y) * scaleChange,
-      };
-      
-      if (nextZoom === 1) {
-        return calculateInitialPan(viewSize.w, viewSize.h);
-      }
-      return newPan;
+    zoomRef.current = nextZoom;
+    panRef.current = nextPan;
+
+    setIsWheelZooming(true);
+    if (wheelResetTimerRef.current !== null) {
+      window.clearTimeout(wheelResetTimerRef.current);
+    }
+    wheelResetTimerRef.current = window.setTimeout(() => {
+      setIsWheelZooming(false);
+      wheelResetTimerRef.current = null;
+    }, 120);
+
+    if (wheelCommitRef.current !== null) {
+      window.cancelAnimationFrame(wheelCommitRef.current);
+    }
+    wheelCommitRef.current = window.requestAnimationFrame(() => {
+      setZoom(zoomRef.current);
+      setPan(panRef.current);
+      wheelCommitRef.current = null;
     });
-
-    setZoom(nextZoom);
-  }
+  }, [clampPanToStage, isManualMode, showRenameModal, similarResults.length, showManualModal]);
 
   const handleDoubleClickZoom = (e: React.MouseEvent) => {
     if (isManualMode || showRenameModal !== null || similarResults.length > 0 || showManualModal) return;
@@ -501,6 +577,8 @@ export function PhotoViewerModal({
     if (zoom > 1) {
       setZoom(1);
       setPan(calculateInitialPan(viewSize.w, viewSize.h));
+      zoomRef.current = 1;
+      panRef.current = calculateInitialPan(viewSize.w, viewSize.h);
     } else {
       const rect = imageStageRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -509,13 +587,19 @@ export function PhotoViewerModal({
       const mouseY = e.clientY - rect.top;
 
       const nextZoom = 2;
-      const scaleChange = nextZoom / zoom;
+      const currentZoom = zoomRef.current;
+      const currentPan = panRef.current;
+      const scaleChange = nextZoom / currentZoom;
 
-      setPan(prev => ({
-        x: mouseX - (mouseX - prev.x) * scaleChange,
-        y: mouseY - (mouseY - prev.y) * scaleChange,
-      }));
+      const nextPan = clampPanToStage({
+        x: mouseX - (mouseX - currentPan.x) * scaleChange,
+        y: mouseY - (mouseY - currentPan.y) * scaleChange,
+      }, nextZoom);
+
+      zoomRef.current = nextZoom;
+      panRef.current = nextPan;
       setZoom(nextZoom);
+      setPan(nextPan);
     }
   };
 
@@ -775,9 +859,9 @@ export function PhotoViewerModal({
             <div
               className={styles.zoomLayer}
               style={{
-                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
                 transformOrigin: '0 0',
-                transition: isDragging ? 'none' : 'transform 80ms ease-out',
+                transition: isDragging || isWheelZooming ? 'none' : 'transform 80ms ease-out',
                 width: viewSize.w || 'auto',
                 height: viewSize.h || 'auto',
               }}
