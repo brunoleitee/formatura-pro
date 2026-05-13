@@ -2592,6 +2592,139 @@ def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
         return {"error": str(e)}
 
 
+@app.post("/api/ai/retry-face-detection")
+def ai_retry_face_detection(foto_path: str = ""):
+    try:
+        if not foto_path:
+            return {"error": "foto_path obrigatorio"}
+
+        from services.photo_loader import load_photo_for_ai
+        local_path = load_photo_for_ai({"foto_path": foto_path, "source_type": "google_drive" if foto_path.startswith("cloud://") else "local"})
+
+        if not local_path or not os.path.exists(local_path):
+            return {"error": "Imagem nao encontrada", "face_detected": False}
+
+        import cv2
+        import numpy as np
+        from scanner_engine import ensure_face_engine, get_app_face
+
+        ensure_face_engine()
+        app_face = get_app_face()
+        if app_face is None:
+            return {"error": "Motor de deteccao nao disponivel", "face_detected": False}
+
+        img = cv2.imread(local_path)
+        if img is None:
+            return {"error": "Falha ao ler imagem", "face_detected": False}
+
+        h, w = img.shape[:2]
+        print(f"[RetryFace] original: {w}x{h}")
+
+        # Pre-processamento: redimensionar para 1280px max (ajuda rostos pequenos)
+        max_dim = 1280
+        scale = min(max_dim / w, max_dim / h, 1.0)
+        if scale < 1.0:
+            new_w, new_h = int(w * scale), int(h * scale)
+            img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+            print(f"[RetryFace] redimensionado para: {new_w}x{new_h}")
+
+        # Contraste leve (CLAHE) no canal L do LAB
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        l = clahe.apply(l)
+        lab = cv2.merge([l, a, b])
+        img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+        # Tentar deteccao com threshold padrao
+        with _suppress_stdout():
+            faces = app_face.get(img) or []
+
+        print(f"[RetryFace] deteccao padrao: {len(faces)} faces")
+
+        # Fallback: se nao detectou, tentar com det_size maior e threshold menor
+        if len(faces) == 0 and max(w, h) > 300:
+            from insightface.app import FaceAnalysis
+            old_det_size = app_face.det_size
+            try:
+                app_face.det_size = (1280, 1280)
+                app_face.prepare(ctx_id=0, det_size=(1280, 1280))
+                with _suppress_stdout():
+                    faces = app_face.get(img) or []
+                print(f"[RetryFace] fallback det_size=1280: {len(faces)} faces")
+            except Exception:
+                pass
+            finally:
+                app_face.det_size = old_det_size
+                try:
+                    app_face.prepare(ctx_id=0, det_size=old_det_size)
+                except Exception:
+                    pass
+
+        result = {
+            "face_detected": len(faces) > 0,
+            "faces_count": len(faces),
+            "fallback_used": len(faces) > 0,
+        }
+
+        if len(faces) > 0:
+            face = faces[0]
+            import math
+            emb = face.embedding.astype("float32")
+            norm = float(np.linalg.norm(emb))
+            result["confidence"] = float(face.det_score) if hasattr(face, "det_score") else 0.0
+            result["embedding_ready"] = norm > 0
+
+            # Salvar no banco do catalogo se disponivel
+            for db_file in Path(__file__).resolve().parents[1].glob("data/catalogs/*.db"):
+                try:
+                    conn = sqlite3.connect(str(db_file))
+                    c = conn.cursor()
+                    c.execute("SELECT rowid FROM ocorrencias WHERE foto_path = ? LIMIT 1", (foto_path,))
+                    occ_row = c.fetchone()
+                    if occ_row:
+                        rowid = occ_row[0]
+                        c.execute("""
+                            INSERT OR REPLACE INTO face_embeddings
+                            (occurrence_rowid, foto_path, x1, y1, x2, y2, embedding, mtime_ns, size)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            rowid, foto_path,
+                            int(face.bbox[0]), int(face.bbox[1]),
+                            int(face.bbox[2]), int(face.bbox[3]),
+                            emb.tobytes(),
+                            int(os.path.getmtime(local_path) * 1e9) if os.path.exists(local_path) else 0,
+                            os.path.getsize(local_path) if os.path.exists(local_path) else 0,
+                        ))
+                        conn.commit()
+                        print(f"[RetryFace] embedding salvo para: {foto_path}")
+                        conn.close()
+                        break
+                except Exception:
+                    pass
+
+        print(f"[RetryFace] resultado: {result}")
+        return result
+
+    except Exception as e:
+        print(f"[RetryFace] erro: {e}")
+        return {"error": str(e), "face_detected": False}
+
+
+import contextlib
+
+@contextlib.contextmanager
+def _suppress_stdout():
+    import sys
+    from io import StringIO
+    old = sys.stdout
+    sys.stdout = StringIO()
+    try:
+        yield
+    finally:
+        sys.stdout = old
+
+
 @app.get("/")
 def root_handler(code: str = Query(None), state: str = Query(None)):
     if code:

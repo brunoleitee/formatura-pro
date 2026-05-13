@@ -813,6 +813,29 @@
   padding: 3px 0;
 }
 
+.aiStatusFail {
+  font-size: 0.8rem;
+  color: #ef4444;
+  padding: 3px 0;
+}
+
+.aiRetryBtn {
+  margin-top: 4px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid #ef4444;
+  background: transparent;
+  color: #ef4444;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.aiRetryBtn:hover {
+  background: #ef4444;
+  color: white;
+}
+
 .aiLabel {
   font-size: 0.7rem;
   color: #6b7280;

@@ -737,6 +737,33 @@ export default function CloudSyncView() {
                           ))}
                         </div>
                       )}
+                      {!aiDetails.face_detected && (
+                        <div className={styles.aiPanelSection}>
+                          <span className={styles.aiStatusFail}>Rosto não detectado</span>
+                          <button
+                            className={styles.aiRetryBtn}
+                            onClick={async () => {
+                              setAiDetailsLoading(true);
+                              try {
+                                const resp = await fetch(`/api/ai/retry-face-detection?foto_path=cloud://${previewFile?.fileId}`, { method: 'POST' });
+                                const data = await resp.json();
+                                if (data.face_detected) {
+                                  setAiStatus('completed');
+                                  fetchAiDetails(previewFile?.fileId || '');
+                                } else {
+                                  alert('Nenhum rosto detectado mesmo após fallback.');
+                                }
+                              } catch (e) {
+                                console.error('[AIViewer] retry error:', e);
+                              } finally {
+                                setAiDetailsLoading(false);
+                              }
+                            }}
+                          >
+                            Tentar redetectar
+                          </button>
+                        </div>
+                      )}
                       {!aiDetails.face_detected && !aiDetails.embedding_ready && !aiDetails.possible_student && (
                         <p className={styles.aiPanelEmpty}>Nenhum dado IA disponível</p>
                       )}
