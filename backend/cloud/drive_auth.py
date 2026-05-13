@@ -7,8 +7,19 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-TOKEN_FILE = "data/cloud/google_token.json"
-CLIENT_SECRETS_FILE = "data/cloud/client_secrets.json"
+BASE_DIR = Path(__file__).resolve().parents[2]
+DATA_DIR = BASE_DIR / "data" / "cloud"
+
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+CLIENT_SECRETS_FILE = DATA_DIR / "client_secrets.json"
+TOKEN_FILE = DATA_DIR / "google_token.json"
+
+print("[GoogleDrive] BASE_DIR:", BASE_DIR)
+print("[GoogleDrive] DATA_DIR:", DATA_DIR)
+print("[GoogleDrive] CLIENT_SECRETS_FILE:", CLIENT_SECRETS_FILE)
+print("[GoogleDrive] CLIENT_SECRETS exists:", CLIENT_SECRETS_FILE.exists())
+
 SCOPES = [
     "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/drive.file",
@@ -16,8 +27,7 @@ SCOPES = [
 
 
 def get_token_path() -> str:
-    os.makedirs("data/cloud", exist_ok=True)
-    return os.path.join(TOKEN_FILE)
+    return str(TOKEN_FILE)
 
 
 def save_token(token_data: Dict[str, Any]) -> None:
@@ -31,7 +41,7 @@ def save_token(token_data: Dict[str, Any]) -> None:
 
 def load_token() -> Optional[Dict[str, Any]]:
     try:
-        if os.path.exists(get_token_path()):
+        if TOKEN_FILE.exists():
             with open(get_token_path(), "r", encoding="utf-8") as f:
                 return json.load(f)
         return None
@@ -42,8 +52,8 @@ def load_token() -> Optional[Dict[str, Any]]:
 
 def clear_token() -> None:
     try:
-        if os.path.exists(get_token_path()):
-            os.remove(get_token_path())
+        if TOKEN_FILE.exists():
+            TOKEN_FILE.unlink()
         logger.info("Token removido")
     except Exception as e:
         logger.error(f"Erro ao remover token: {e}")
@@ -57,19 +67,35 @@ def is_authenticated() -> bool:
     return datetime.now().timestamp() < expires_at
 
 
+def get_client_secrets_path() -> str:
+    if not CLIENT_SECRETS_FILE.exists():
+        raise FileNotFoundError(
+            f"Client secrets não encontrado em: {CLIENT_SECRETS_FILE}\n"
+            f"Crie o arquivo em: {CLIENT_SECRETS_FILE}\n"
+            f"Formato: {{
+              'web': {{
+                'client_id': 'SEU_CLIENT_ID',
+                'client_secret': 'SEU_CLIENT_SECRET',
+                'redirect_uris': ['http://localhost:8000/api/cloud/google/callback']
+              }}
+            }}"
+        )
+    return str(CLIENT_SECRETS_FILE)
+
+
 def get_auth_url() -> str:
     from google_auth_oauthlib import Flow
     from app.core.config import settings
 
     flow = Flow.from_client_secrets_file(
-        "data/cloud/client_secrets.json",
+        get_client_secrets_path(),
         scopes=[
             "https://www.googleapis.com/auth/drive.readonly",
             "https://www.googleapis.com/auth/drive.file",
         ],
     )
 
-    flow.redirect_uri = settings.BACKEND_URL + "/api/cloud/google-drive/callback"
+    flow.redirect_uri = settings.BACKEND_URL + "/api/cloud/google/callback"
 
     auth_url, _ = flow.authorization_url(prompt="consent")
     return auth_url
@@ -80,14 +106,14 @@ def exchange_code_for_token(code: str) -> Optional[Dict[str, Any]]:
 
     try:
         flow = Flow.from_client_secrets_file(
-            "data/cloud/client_secrets.json",
+            get_client_secrets_path(),
             scopes=[
                 "https://www.googleapis.com/auth/drive.readonly",
                 "https://www.googleapis.com/auth/drive.file",
             ],
         )
 
-        flow.redirect_uri = "http://localhost:8000/api/cloud/google-drive/callback"
+        flow.redirect_uri = "http://localhost:8000/api/cloud/google/callback"
         flow.fetch_token(code=code)
 
         credentials = flow.credentials
@@ -114,12 +140,10 @@ def get_login_url() -> Optional[str]:
     try:
         from google_auth_oauthlib.flow import Flow
 
-        if not os.path.exists(CLIENT_SECRETS_FILE):
-            logger.error(f"Arquivo de client secrets não encontrado: {CLIENT_SECRETS_FILE}")
-            return None
+        secrets_path = get_client_secrets_path()
 
-        flow = Flow.from_client_secrets_file(CLIENT_SECRETS_FILE, scopes=SCOPES)
-        flow.redirect_uri = "http://localhost:8000/api/cloud/google/auth/callback"
+        flow = Flow.from_client_secrets_file(secrets_path, scopes=SCOPES)
+        flow.redirect_uri = "http://localhost:8000/api/cloud/google/callback"
 
         auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
         return auth_url
