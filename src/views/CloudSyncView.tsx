@@ -47,10 +47,35 @@ export default function CloudSyncView() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newCatalogName, setNewCatalogName] = useState('');
   const [createResult, setCreateResult] = useState<{ status: string; message: string } | null>(null);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [selectedFolderName, setSelectedFolderName] = useState<string>('');
+  const [isIndexing, setIsIndexing] = useState(false);
+  const [indexCount, setIndexCount] = useState<number | null>(null);
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [loadedThumbs, setLoadedThumbs] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     checkGoogleStatus();
   }, []);
+
+  useEffect(() => {
+    if (indexCount !== null && files.length > 0) {
+      const timer = setInterval(() => {
+        setLoadedThumbs(prev => {
+          const next = new Set(prev);
+          for (const f of files) {
+            if (f.has_thumb && !next.has(f.drive_file_id)) {
+              next.add(f.drive_file_id);
+              return next;
+            }
+          }
+          clearInterval(timer);
+          return prev;
+        });
+      }, 200);
+      return () => clearInterval(timer);
+    }
+  }, [indexCount, files]);
 
   const checkGoogleStatus = async () => {
     try {
@@ -69,7 +94,6 @@ export default function CloudSyncView() {
       alert('Apenas Google Drive disponível nesta versão');
       return;
     }
-
     setLoading(true);
     try {
       const result = await cloudApi.getGoogleAuthUrl();
@@ -95,6 +119,10 @@ export default function CloudSyncView() {
       setUserEmail('');
       setFolders([]);
       setFiles([]);
+      setSelectedFolderId(null);
+      setSelectedFolderName('');
+      setIndexCount(null);
+      setLoadedThumbs(new Set());
     } catch (e) {
       console.error('Erro ao desconectar:', e);
     } finally {
@@ -102,33 +130,16 @@ export default function CloudSyncView() {
     }
   };
 
-  const handleSelectFolder = async (folderId: string) => {
-    setCurrentFolder(folderId);
-    setLoading(true);
-    try {
-      const result = await cloudApi.indexFolder(folderId);
-      if (!result.error) {
-        const filesResult = await cloudApi.getFiles(folderId);
-        setFiles(filesResult.files as CloudFile[] || []);
-      }
-    } catch (e) {
-      console.error('Erro ao indexar pasta:', e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleProviderSelect = async (providerId: string) => {
     if (providerId !== 'google-drive') return;
-
     if (selectedProvider === providerId) {
       setSelectedProvider(null);
       return;
     }
-
     setSelectedProvider(providerId);
     setFiles([]);
-
+    setIndexCount(null);
+    setSelectedFolderId(null);
     if (connectedProvider === 'google-drive') {
       setLoading(true);
       try {
@@ -142,9 +153,68 @@ export default function CloudSyncView() {
     }
   };
 
-  const navigateToFolder = (folderId: string) => {
-    handleSelectFolder(folderId);
+  const handleSelectFolder = (folderId: string, folderName: string) => {
+    setSelectedFolderId(folderId);
+    setSelectedFolderName(folderName);
+    setCurrentFolder(folderId);
+    setIndexCount(null);
+    setFiles([]);
+    setLoadedThumbs(new Set());
   };
+
+  const handleIndex = async () => {
+    if (!selectedFolderId) return;
+    setIsIndexing(true);
+    setIndexCount(null);
+    try {
+      const result = await cloudApi.indexFolder(selectedFolderId);
+      if (!result.error) {
+        setIndexCount(result.count || 0);
+        setIsLoadingFiles(true);
+        const filesResult = await cloudApi.getFiles(selectedFolderId);
+        setFiles(filesResult.files as CloudFile[] || []);
+        setIsLoadingFiles(false);
+      } else {
+        console.error('Erro ao indexar:', result.error);
+      }
+    } catch (e) {
+      console.error('Erro ao indexar pasta:', e);
+    } finally {
+      setIsIndexing(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    if (!selectedFolderId) return;
+    setIsLoadingFiles(true);
+    try {
+      const filesResult = await cloudApi.getFiles(selectedFolderId);
+      setFiles(filesResult.files as CloudFile[] || []);
+    } catch (e) {
+      console.error('Erro ao recarregar:', e);
+    } finally {
+      setIsLoadingFiles(false);
+    }
+  };
+
+  const handleNavigateFolder = (folderId: string) => {
+    setCurrentFolder(folderId);
+    setSelectedFolderId(null);
+    setSelectedFolderName('');
+    setFiles([]);
+    setIndexCount(null);
+    setLoading(true);
+    cloudApi.getGoogleFolders(folderId).then(result => {
+      setFolders(result.folders || []);
+    }).catch(e => {
+      console.error('Erro ao navegar:', e);
+    }).finally(() => {
+      setLoading(false);
+    });
+  };
+
+  const selectedStyle = (id: string) =>
+    selectedFolderId === id ? styles.folderSelected : '';
 
   return (
     <div className={styles.page}>
@@ -160,6 +230,9 @@ export default function CloudSyncView() {
         </div>
         {connectedProvider === 'google-drive' && userEmail && (
           <span className={styles.lastSync}>Conectado: {userEmail}</span>
+        )}
+        {connectedProvider === 'google-drive' && !userEmail && (
+          <span className={styles.lastSync}>Google Drive conectado</span>
         )}
       </div>
 
@@ -196,60 +269,125 @@ export default function CloudSyncView() {
 
       {selectedProvider === 'google-drive' && connectedProvider === 'google-drive' && (
         <section className={styles.foldersSection}>
-          <h2>Pasta do Google Drive</h2>
-          {loading ? (
+          <div className={styles.folderSectionHeader}>
+            <h2>Pastas do Google Drive</h2>
+          </div>
+
+          {loading && !folders.length ? (
             <div className={styles.folderSelector}>
-              <p className={styles.placeholder}>Carregando...</p>
+              <p className={styles.placeholder}>Carregando pastas...</p>
             </div>
-          ) : files.length > 0 ? (
+          ) : files.length > 0 || indexCount !== null ? (
             <>
               <div className={styles.breadcrumb}>
-                <button onClick={() => handleSelectFolder('root')}>Raiz</button>
-                {currentFolder !== 'root' && <span> / {currentFolder}</span>}
+                <button onClick={() => handleNavigateFolder('root')}>
+                  {selectedFolderName || 'Raiz'}
+                </button>
               </div>
-              <div className={styles.filesGrid}>
-                {files.map((file) => (
-                  <div key={file.drive_file_id} className={styles.fileCard}>
-                    <div className={styles.fileThumb}>
-                      {file.has_thumb ? (
-                        <img src={`/api/cloud/thumb?file_id=${file.drive_file_id}`} alt={file.name} />
-                      ) : (
-                        <div className={styles.filePlaceholder}>📷</div>
-                      )}
+
+              {indexCount !== null && (
+                <div className={styles.indexResult}>
+                  <span>{indexCount} arquivos indexados</span>
+                  <button className={styles.refreshBtn} onClick={handleRefresh} disabled={isLoadingFiles}>
+                    {isLoadingFiles ? '...' : 'Recarregar'}
+                  </button>
+                </div>
+              )}
+
+              {isLoadingFiles ? (
+                <div className={styles.folderSelector}>
+                  <p className={styles.placeholder}>Carregando arquivos...</p>
+                </div>
+              ) : files.length > 0 ? (
+                <div className={styles.filesGrid}>
+                  {files.map((file) => (
+                    <div key={file.drive_file_id} className={styles.fileCard}>
+                      <div className={styles.fileThumb}>
+                        {file.has_thumb && loadedThumbs.has(file.drive_file_id) ? (
+                          <img src={`/api/cloud/thumb?file_id=${file.drive_file_id}`} alt={file.name} />
+                        ) : (
+                          <div className={styles.filePlaceholder}>📷</div>
+                        )}
+                        <div className={styles.cloudBadge}>☁️</div>
+                      </div>
+                      <div className={styles.fileInfo}>
+                        <span className={styles.fileName}>{file.name}</span>
+                      </div>
                     </div>
-                    <div className={styles.fileInfo}>
-                      <span className={styles.fileName}>{file.name}</span>
-                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className={styles.folderSelector}>
+                  <p className={styles.placeholder}>Nenhum arquivo encontrado nesta pasta.</p>
+                </div>
+              )}
+
+              {files.length > 0 && (
+                <div className={styles.createCatalogSection}>
+                  <button
+                    className={styles.createCatalogBtn}
+                    onClick={() => setShowCreateModal(true)}
+                  >
+                    Criar catálogo a partir desta pasta
+                  </button>
+                </div>
+              )}
+            </>
+          ) : folders.length > 0 ? (
+            <>
+              <div className={styles.folderBreadcrumb}>
+                <span
+                  className={styles.folderBreadcrumbItem}
+                  onClick={() => handleNavigateFolder('root')}
+                >Raiz</span>
+                {currentFolder !== 'root' && selectedFolderName && (
+                  <span className={styles.folderBreadcrumbItem}> / {selectedFolderName}</span>
+                )}
+              </div>
+              <div className={styles.folderList}>
+                {currentFolder !== 'root' && (
+                  <div className={styles.folderItem} onClick={() => handleNavigateFolder('root')}>
+                    <span>⬆️ Voltar</span>
+                  </div>
+                )}
+                {folders.map((folder) => (
+                  <div
+                    key={folder.id}
+                    className={`${styles.folderItem} ${selectedStyle(folder.id)}`}
+                    onClick={() => handleSelectFolder(folder.id, folder.name)}
+                  >
+                    <span>📁 {folder.name}</span>
+                    {selectedFolderId === folder.id && (
+                      <span className={styles.folderSelectedBadge}>Selecionado</span>
+                    )}
                   </div>
                 ))}
               </div>
-            </>
-          ) : folders.length > 0 ? (
-            <div className={styles.folderList}>
-              {currentFolder !== 'root' && (
-                <div className={styles.folderItem} onClick={() => navigateToFolder('root')}>
-                  <span>⬆️ Voltar</span>
+
+              {selectedFolderId && (
+                <div className={styles.indexActions}>
+                  <button
+                    className={styles.indexBtn}
+                    onClick={handleIndex}
+                    disabled={isIndexing}
+                  >
+                    {isIndexing ? (
+                      <span className={styles.indexingContent}>
+                        <span className={styles.spinner}></span>
+                        Indexando...
+                      </span>
+                    ) : (
+                      `Indexar pasta "${selectedFolderName}"`
+                    )}
+                  </button>
                 </div>
               )}
-              {folders.map((folder) => (
-                <div key={folder.id} className={styles.folderItem} onClick={() => handleSelectFolder(folder.id)}>
-                  <span>📁 {folder.name}</span>
-                </div>
-              ))}
-            </div>
+            </>
           ) : (
             <div className={styles.folderSelector}>
-              <p className={styles.placeholder}>Nenhuma pasta encontrada. Selecione uma pasta para indexar.</p>
-            </div>
-          )}
-
-          {files.length > 0 && (
-            <div className={styles.createCatalogSection}>
-              <button
-                className={styles.createCatalogBtn}
-                onClick={() => setShowCreateModal(true)}
-              >
-                Criar catálogo a partir desta pasta
+              <p className={styles.placeholder}>Nenhuma pasta encontrada.</p>
+              <button className={styles.refreshBtn} onClick={() => handleNavigateFolder('root')}>
+                Recarregar pastas
               </button>
             </div>
           )}

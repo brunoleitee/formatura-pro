@@ -224,6 +224,7 @@
 }
 
 .fileThumb {
+  position: relative;
   width: 100%;
   aspect-ratio: 1;
   background: #0a0d14;
@@ -376,4 +377,158 @@
   font-size: 1.2rem;
   cursor: pointer;
   padding: 0;
+}
+
+.folderSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.folderSectionHeader h2 {
+  margin: 0;
+}
+
+.folderList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.folderItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(15, 20, 30, 0.98);
+  border: 1px solid #1f2937;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.folderItem:hover {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.folderSelected {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.folderSelectedBadge {
+  margin-left: auto;
+  font-size: 0.7rem;
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.15);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.folderBreadcrumb {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: rgba(15, 20, 30, 0.98);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: #9ca3af;
+}
+
+.folderBreadcrumbItem {
+  cursor: pointer;
+  color: #3b82f6;
+}
+
+.folderBreadcrumbItem:hover {
+  text-decoration: underline;
+}
+
+.indexActions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
+}
+
+.indexBtn {
+  padding: 14px 32px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #3b82f6, #6d5efc);
+  border: none;
+  color: white;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  min-width: 240px;
+}
+
+.indexBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.indexBtn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.indexingContent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.indexResult {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+  color: #22c55e;
+}
+
+.refreshBtn {
+  margin-left: auto;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid #1f2937;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.refreshBtn:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.cloudBadge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  font-size: 0.7rem;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 2px 5px;
+  border-radius: 4px;
+  line-height: 1;
 }
