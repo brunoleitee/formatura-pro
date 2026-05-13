@@ -1988,7 +1988,7 @@ def cloud_google_folders(parent_id: str = "root"):
 def cloud_google_index(folder_id: str = "root"):
     try:
         from cloud import is_authenticated, drive_manager
-        from cloud.drive_cache import cache
+        from cloud.drive_cache import cache, download_queue
 
         if not is_authenticated():
             return {"error": "Não conectado", "files": []}
@@ -2011,10 +2011,29 @@ def cloud_google_index(folder_id: str = "root"):
             metadata["thumb_path"] = cache.get_thumb_path(f.id) if cache.thumb_exists(f.id) else None
             indexed.append(metadata)
 
+            # Enfileira download de thumbnail em background
+            if not cache.thumb_exists(f.id) and not download_queue.is_downloading(f.id):
+                download_queue.add_task(
+                    file_id=f.id,
+                    file_type="thumb",
+                    url=f.thumbnailLink or "",
+                    dest_path=cache.get_thumb_dir(),
+                    priority=5
+                )
+
+        print(f"[CloudThumb] index concluido: {len(indexed)} arquivos, thumb downloads enfileirados")
         return {"files": indexed, "count": len(indexed)}
     except Exception as e:
         return {"error": str(e), "files": []}
 
+
+PLACEHOLDER_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">'
+    '<rect width="200" height="200" fill="#1a1a2e" rx="4"/>'
+    '<circle cx="100" cy="80" r="28" fill="none" stroke="#374151" stroke-width="3"/>'
+    '<path d="M55 155 L65 120 L82 132 L100 95 L118 132 L135 120 L145 155 Z" fill="none" stroke="#374151" stroke-width="2.5"/>'
+    '</svg>'
+)
 
 @app.get("/api/cloud/thumb")
 def cloud_thumb(file_id: str = "", size: int = 200):
@@ -2022,37 +2041,47 @@ def cloud_thumb(file_id: str = "", size: int = 200):
         from cloud.drive_cache import cache, download_queue
 
         if not file_id:
-            return {"error": "file_id obrigatório"}
+            return Response(content=PLACEHOLDER_SVG, media_type="image/svg+xml",
+                            headers={"Cache-Control": "no-store, must-revalidate"})
 
         thumb_path = cache.get_thumb_path(file_id)
 
         if cache.thumb_exists(file_id):
-            return FileResponse(thumb_path, media_type="image/jpeg")
+            print(f"[CloudThumb] cache hit: {thumb_path}")
+            return FileResponse(thumb_path, media_type="image/jpeg",
+                                headers={"Cache-Control": "public, max-age=86400"})
+
+        print(f"[CloudThumb] cache miss: {file_id}")
 
         from cloud import is_authenticated, drive_manager
         if not is_authenticated():
-            return {"error": "Não conectado"}
+            return Response(content=PLACEHOLDER_SVG, media_type="image/svg+xml",
+                            headers={"Cache-Control": "no-store, must-revalidate"})
 
-        metadata = cache.load_metadata(file_id)
-        if not metadata:
-            return {"error": "Arquivo não indexado"}
+        if not download_queue.is_downloading(file_id):
+            metadata = cache.load_metadata(file_id)
+            if not metadata:
+                return Response(content=PLACEHOLDER_SVG, media_type="image/svg+xml",
+                                headers={"Cache-Control": "no-store, must-revalidate"})
 
-        file_info = drive_manager.get_file_metadata(file_id)
-        if not file_info:
-            return {"error": "Arquivo não encontrado no Drive"}
+            file_info = drive_manager.get_file_metadata(file_id)
+            thumb_url = file_info.thumbnailLink if file_info and file_info.thumbnailLink else ""
 
-        download_queue.add_task(
-            file_id=file_id,
-            file_type="thumb",
-            url=file_info.thumbnailLink or f"https://drive.google.com/uc?id={file_id}",
-            dest_path=cache.get_thumb_dir(),
-            priority=1
-        )
+            download_queue.add_task(
+                file_id=file_id,
+                file_type="thumb",
+                url=thumb_url,
+                dest_path=cache.get_thumb_dir(),
+                priority=1
+            )
 
-        return {"status": "downloading", "file_id": file_id}
+        return Response(content=PLACEHOLDER_SVG, media_type="image/svg+xml",
+                        headers={"Cache-Control": "no-store, must-revalidate"})
 
     except Exception as e:
-        return {"error": str(e)}
+        print(f"[CloudThumb] erro: {e}")
+        return Response(content=PLACEHOLDER_SVG, media_type="image/svg+xml",
+                        headers={"Cache-Control": "no-store, must-revalidate"})
 
 
 @app.get("/api/cloud/google/files")

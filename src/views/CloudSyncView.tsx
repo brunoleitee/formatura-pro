@@ -55,6 +55,7 @@ export default function CloudSyncView() {
   const [loadedThumbs, setLoadedThumbs] = useState<Set<string>>(new Set());
   const [showExplorer, setShowExplorer] = useState(false);
   const pollingRef = useRef<number | null>(null);
+  const [thumbTick, setThumbTick] = useState(0);
 
   const loadFolders = useCallback(async (parentId: string = 'root') => {
     setLoading(true);
@@ -117,7 +118,7 @@ export default function CloudSyncView() {
         setLoadedThumbs(prev => {
           const next = new Set(prev);
           for (const f of files) {
-            if (f.has_thumb && !next.has(f.drive_file_id)) {
+            if (!next.has(f.drive_file_id)) {
               next.add(f.drive_file_id);
               return next;
             }
@@ -128,6 +129,12 @@ export default function CloudSyncView() {
       }, 300);
       return () => clearInterval(timer);
     }
+  }, [indexCount, files]);
+
+  useEffect(() => {
+    if (indexCount === null || files.length === 0) return;
+    const timer = setInterval(() => setThumbTick(t => t + 1), 3000);
+    return () => clearInterval(timer);
   }, [indexCount, files]);
 
   const handleConnect = async (providerId: string) => {
@@ -317,8 +324,13 @@ export default function CloudSyncView() {
                   {files.map((file) => (
                     <div key={file.drive_file_id} className={styles.fileCard}>
                       <div className={styles.fileThumb}>
-                        {file.has_thumb && loadedThumbs.has(file.drive_file_id) ? (
-                          <img src={`/api/cloud/thumb?file_id=${file.drive_file_id}`} alt={file.name} />
+                        {loadedThumbs.has(file.drive_file_id) ? (
+                          <img
+                            src={`/api/cloud/thumb?file_id=${file.drive_file_id}&_t=${thumbTick}`}
+                            alt={file.name}
+                            loading="lazy"
+                            decoding="async"
+                          />
                         ) : (
                           <div className={styles.filePlaceholder}>📷</div>
                         )}

@@ -3,6 +3,7 @@ import json
 import logging
 import threading
 import time
+import urllib.request
 from typing import Optional, List, Dict, Any, Set
 from datetime import datetime
 from queue import Queue, PriorityQueue
@@ -139,16 +140,21 @@ class DownloadQueue:
         self.lock = threading.Lock()
         self.running = False
 
+    def is_downloading(self, file_id: str) -> bool:
+        with self.lock:
+            return file_id in self.active
+
     def add_task(self, file_id: str, file_type: str, url: str, dest_path: str, priority: int = 5) -> None:
         with self.lock:
             if file_id in self.active:
+                print(f"[CloudThumb] ja esta baixando: {file_id}")
                 return
             task = DownloadTask(
                 priority=priority,
                 file_id=file_id,
                 file_type=file_type,
                 url=url,
-                dest_path=os.path.dirname(dest_path),
+                dest_path=dest_path,
                 timestamp=time.time()
             )
             self.queue.put(task)
@@ -164,46 +170,63 @@ class DownloadQueue:
     def _worker(self) -> None:
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
+        from googleapiclient.http import MediaIoBaseDownload
         from cloud import load_token
 
-        while self.running and len(self.active) < MAX_ACTIVE_DOWNLOADS:
+        while self.running:
             try:
                 task = self.queue.get(timeout=1)
             except:
-                break
+                if not self.active:
+                    break
+                continue
 
             with self.lock:
                 if task.file_id in self.active:
                     continue
                 self.active.add(task.file_id)
 
+            dest_file = os.path.join(task.dest_path, f"{task.file_id}.jpg")
+            downloaded = False
+
             try:
-                token_data = load_token()
-                if not token_data:
-                    continue
-
-                credentials = Credentials(
-                    token=token_data.get("token"),
-                    refresh_token=token_data.get("refresh_token"),
-                    token_uri=token_data.get("token_uri"),
-                    client_id=token_data.get("client_id"),
-                    client_secret=token_data.get("client_secret"),
-                    scopes=token_data.get("scopes", []),
-                )
-
-                service = build("drive", "v3", credentials=credentials, cache_discovery=False)
-
                 os.makedirs(task.dest_path, exist_ok=True)
 
-                request = service.files().get_media(fileId=task.file_id)
-                with open(os.path.join(task.dest_path, f"{task.file_id}.jpg"), "wb") as f:
-                    from googleapiclient.media import MediaIoBaseDownload
-                    downloader = MediaIoBaseDownload(f, request)
-                    done = False
-                    while not done:
-                        _, done = downloader.next_chunk()
+                # Tenta download via URL primeiro (thumbnailLink) — rapido e pequeno
+                if task.url:
+                    try:
+                        print(f"[CloudThumb] download via URL: {task.file_id}")
+                        with urllib.request.urlopen(task.url, timeout=30) as resp:
+                            with open(dest_file, "wb") as f:
+                                f.write(resp.read())
+                        if os.path.getsize(dest_file) > 100:
+                            downloaded = True
+                            print(f"[CloudThumb] download via URL OK: {task.file_id} ({os.path.getsize(dest_file)} bytes)")
+                    except Exception as e:
+                        print(f"[CloudThumb] URL download falhou, fallback get_media: {e}")
 
-                logger.info(f"Download concluído: {task.file_type} - {task.file_id}")
+                # Fallback: get_media (baixa arquivo full, mas funciona sempre)
+                if not downloaded:
+                    print(f"[CloudThumb] download via get_media: {task.file_id}")
+                    token_data = load_token()
+                    if token_data:
+                        credentials = Credentials(
+                            token=token_data.get("token"),
+                            refresh_token=token_data.get("refresh_token"),
+                            token_uri=token_data.get("token_uri"),
+                            client_id=token_data.get("client_id"),
+                            client_secret=token_data.get("client_secret"),
+                            scopes=token_data.get("scopes", []),
+                        )
+                        service = build("drive", "v3", credentials=credentials, cache_discovery=False)
+                        request = service.files().get_media(fileId=task.file_id)
+                        with open(dest_file, "wb") as f:
+                            downloader = MediaIoBaseDownload(f, request)
+                            done = False
+                            while not done:
+                                _, done = downloader.next_chunk()
+                        downloaded = True
+                        print(f"[CloudThumb] download via get_media OK: {task.file_id} ({os.path.getsize(dest_file)} bytes)")
 
             except Exception as e:
                 logger.error(f"Erro no download {task.file_id}: {e}")

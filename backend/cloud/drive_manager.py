@@ -97,7 +97,7 @@ class DriveManager:
     def get_file_metadata(self, file_id: str) -> Optional[DriveFile]:
         try:
             service = self._get_service()
-            f = service.files().get(fileId=file_id, fields="id, name, mimeType, size, parents, modifiedTime").execute()
+            f = service.files().get(fileId=file_id, fields="id, name, mimeType, size, parents, modifiedTime, thumbnailLink").execute()
             return DriveFile(
                 id=f["id"],
                 name=f["name"],
@@ -105,6 +105,7 @@ class DriveManager:
                 size=int(f.get("size", 0)),
                 parent=f.get("parents", [None])[0],
                 modifiedTime=f.get("modifiedTime"),
+                thumbnailLink=f.get("thumbnailLink"),
             )
         except Exception as e:
             logger.error(f"Erro ao buscar metadata: {e}")
