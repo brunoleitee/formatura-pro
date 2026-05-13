@@ -57,3 +57,7 @@ backend/binaries/
 *.env
 .env.*
 app_settings.json
+
+# ---- Ligação Google Drive (se aplicável) ───────────────────────────────
+data/cloud/client_secrets.json
+data/cloud/google_token.json
