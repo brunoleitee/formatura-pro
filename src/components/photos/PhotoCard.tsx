@@ -8,6 +8,9 @@ interface PhotoCardProps {
   photo: Photo;
   isSelected: boolean;
   getSelectionCount?: () => number;
+  cardWidth?: number;
+  thumbHeight?: number;
+  cardHeight?: number;
   imgLoading?: 'eager' | 'lazy';
   imgFetchPriority?: 'high' | 'low' | 'auto';
   onClick: (photo: Photo, event: React.MouseEvent) => void;
@@ -74,7 +77,7 @@ function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number,
   );
 }
 
-export function PhotoCard({ photo, isSelected, getSelectionCount, imgLoading = 'lazy', imgFetchPriority = 'auto', onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
+export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thumbHeight, cardHeight, imgLoading = 'lazy', imgFetchPriority = 'auto', onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [thumbSize, setThumbSize] = useState({ w: 0, h: 0 });
@@ -164,10 +167,13 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, imgLoading = '
   }, [onFirstThumbLoad]);
 
   const cardStyle: React.CSSProperties = {
+    width: cardWidth ? `${cardWidth}px` : '100%',
+    minWidth: cardWidth ? `${cardWidth}px` : undefined,
+    height: cardHeight ? `${cardHeight}px` : '100%',
     userSelect: 'none' as const,
     touchAction: 'none' as const,
     contentVisibility: 'auto' as const,
-    containIntrinsicSize: '320px 360px',
+    containIntrinsicSize: cardWidth && cardHeight ? `${cardWidth}px ${cardHeight}px` : '320px 360px',
     transition: 'border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease',
     transform: isHovered ? 'translateY(-2px)' : 'translateY(0)',
     borderColor: isSelected ? 'rgba(96, 165, 250, 0.85)' : isHovered ? 'rgba(148, 163, 184, 0.18)' : undefined,
@@ -199,7 +205,11 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, imgLoading = '
       onMouseLeave={() => setIsHovered(false)}
       style={cardStyle}
     >
-      <div className="photo-img-placeholder" ref={containerRef}>
+      <div
+        className="photo-img-placeholder"
+        ref={containerRef}
+        style={thumbHeight ? { height: `${thumbHeight}px`, flex: '0 0 auto' } : undefined}
+      >
         {!hasError && (
           <>
             <img

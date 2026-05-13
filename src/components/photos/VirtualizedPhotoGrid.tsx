@@ -21,7 +21,8 @@ interface VirtualizedPhotoGridProps {
 }
 
 const GRID_GAP = 10;
-const MIN_COL_WIDTH = 220;
+const MIN_COL_WIDTH = 140;
+const CARD_INFO_HEIGHT = 72;
 
 export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
   photos,
@@ -61,26 +62,32 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
 
   const columns = useMemo(() => {
     const safeWidth = Math.max(0, viewportWidth);
-    const minWidth = Math.min(Math.max(140, zoom), MIN_COL_WIDTH);
-    const rawColumns = Math.floor((safeWidth + GRID_GAP) / (minWidth + GRID_GAP));
+    const cardWidth = Math.max(MIN_COL_WIDTH, Math.round(zoom));
+    const rawColumns = Math.floor((safeWidth + GRID_GAP) / (cardWidth + GRID_GAP));
     return Math.max(1, rawColumns || 1);
   }, [viewportWidth, zoom]);
 
-  const rowHeight = useMemo(() => Math.round(zoom * 1.09), [zoom]);
+  const cardWidth = useMemo(() => Math.max(MIN_COL_WIDTH, Math.round(zoom)), [zoom]);
+  const thumbHeight = useMemo(() => Math.max(120, Math.round(cardWidth * 0.66)), [cardWidth]);
+  const cardHeight = useMemo(() => thumbHeight + CARD_INFO_HEIGHT, [thumbHeight]);
   const rowCount = useMemo(() => Math.ceil(photos.length / columns), [photos.length, columns]);
   const totalRowsSize = useMemo(() => {
     if (rowCount === 0) return 0;
-    return rowCount * rowHeight + Math.max(0, rowCount - 1) * GRID_GAP;
-  }, [rowCount, rowHeight]);
+    return rowCount * cardHeight + Math.max(0, rowCount - 1) * GRID_GAP;
+  }, [rowCount, cardHeight]);
 
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => rowHeight + GRID_GAP,
+    estimateSize: () => cardHeight + GRID_GAP,
     overscan: 6,
   });
 
   const virtualRows = rowVirtualizer.getVirtualItems();
+
+  useEffect(() => {
+    rowVirtualizer.measure();
+  }, [rowVirtualizer, cardWidth, thumbHeight, cardHeight, columns]);
 
   if (photos.length === 0) {
     return (
@@ -119,11 +126,12 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
                 left: 0,
                 width: '100%',
                 transform: `translateY(${virtualRow.start}px)`,
-                height: `${rowHeight}px`,
+                height: `${cardHeight}px`,
                 display: 'grid',
-                gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+                gridTemplateColumns: `repeat(${columns}, ${cardWidth}px)`,
                 gap: `${GRID_GAP}px`,
                 alignItems: 'stretch',
+                justifyContent: 'start',
               }}
             >
               {rowPhotos.map((photo, localIndex) => {
@@ -137,6 +145,9 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
                     photo={photo}
                     isSelected={selectedPaths.has(id)}
                     getSelectionCount={getSelectionCount}
+                    cardWidth={cardWidth}
+                    thumbHeight={thumbHeight}
+                    cardHeight={cardHeight}
                     imgLoading={eager ? 'eager' : 'lazy'}
                     imgFetchPriority={eager ? 'high' : 'low'}
                     onClick={onPhotoClick}
