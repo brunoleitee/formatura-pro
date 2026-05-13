@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict
+import shutil
+import threading
+from typing import Any, Dict, Optional
 
 _OCR_STATE: Dict[str, Any] = {
     "checked": False,
@@ -11,18 +13,33 @@ _OCR_STATE: Dict[str, Any] = {
     "cmd": "",
 }
 
+_STATE_LOCK = threading.Lock()
+
+
+def _candidate_tesseract_cmd() -> Optional[str]:
+    env_cmd = os.environ.get("TESSERACT_CMD", "").strip()
+    if env_cmd:
+        return env_cmd
+
+    if os.name == "nt":
+        default_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+        if os.path.exists(default_cmd):
+            return default_cmd
+
+    which_cmd = shutil.which("tesseract")
+    return which_cmd
+
 
 def _configure_tesseract_cmd() -> None:
-    cmd = os.environ.get("TESSERACT_CMD", "").strip()
+    cmd = _candidate_tesseract_cmd()
     if not cmd:
         return
 
     try:
-        if os.path.exists(cmd):
-            import pytesseract
+        import pytesseract
 
-            pytesseract.pytesseract.tesseract_cmd = cmd
-            _OCR_STATE["cmd"] = cmd
+        pytesseract.pytesseract.tesseract_cmd = cmd
+        _OCR_STATE["cmd"] = cmd
     except Exception:
         pass
 
@@ -45,7 +62,9 @@ def _probe_tesseract() -> bool:
 
 def is_tesseract_available() -> bool:
     if not _OCR_STATE["checked"]:
-        return _probe_tesseract()
+        with _STATE_LOCK:
+            if not _OCR_STATE["checked"]:
+                return _probe_tesseract()
     return bool(_OCR_STATE["available"])
 
 

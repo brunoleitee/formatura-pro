@@ -2526,7 +2526,10 @@ def ai_photo_details(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
                         details["ai_processed_at"] = metadata.get("ai_processed_at")
                     details["ocr_text"] = metadata.get("ai_ocr_text", "")
                     details["ocr_confidence"] = metadata.get("ai_ocr_confidence", 0.0)
+                    details["ocr_confidence_pct"] = metadata.get("ai_ocr_confidence_pct", round(float(metadata.get("ai_ocr_confidence", 0.0)) * 100))
+                    details["ocr_score"] = metadata.get("ai_ocr_score", metadata.get("ai_ocr_confidence", 0.0))
                     details["ocr_type"] = metadata.get("ai_ocr_type", "none")
+                    details["ocr_label"] = metadata.get("ai_ocr_label", metadata.get("ai_ocr_type", "none"))
 
             # Try to find in catalogs by foto_path
             for db_file in catalogs_dir.glob("*.db"):
@@ -2653,7 +2656,10 @@ def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
                 "faces_count": len(faces),
                 "ocr_text": ocr_result["ocr_text"],
                 "ocr_confidence": ocr_result["ocr_confidence"],
+                "ocr_confidence_pct": ocr_result.get("ocr_confidence_pct", int(round(float(ocr_result["ocr_confidence"]) * 100))),
+                "ocr_score": ocr_result.get("ocr_score", ocr_result["ocr_confidence"]),
                 "ocr_type": ocr_result["ocr_type"],
+                "ocr_label": ocr_result.get("ocr_label", ocr_result["ocr_type"]),
                 "final_student": cross.get("final_student"),
                 "final_confidence": cross.get("final_confidence"),
                 "ocr_enriched": cross.get("ocr_enriched", False),
@@ -2717,7 +2723,10 @@ def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
                     result["confidence"] = metadata["ai_confidence"]
                 metadata["ai_ocr_text"] = ocr_result["ocr_text"]
                 metadata["ai_ocr_confidence"] = ocr_result["ocr_confidence"]
+                metadata["ai_ocr_confidence_pct"] = ocr_result.get("ocr_confidence_pct", int(round(float(ocr_result["ocr_confidence"]) * 100)))
+                metadata["ai_ocr_score"] = ocr_result.get("ocr_score", ocr_result["ocr_confidence"])
                 metadata["ai_ocr_type"] = ocr_result["ocr_type"]
+                metadata["ai_ocr_label"] = ocr_result.get("ocr_label", ocr_result["ocr_type"])
                 cache.save_metadata(file_id, metadata)
                 print(f"[AI] resultado (face+ocr) salvo no cache metadata: {file_id}")
 
