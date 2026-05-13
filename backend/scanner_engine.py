@@ -431,9 +431,10 @@ def load_references(ref_path):
             if norm == 0:
                 continue
             emb = emb / norm
-            ref_name = Path(f).stem
+ref_name = Path(f).stem
             rel_parent = Path(os.path.relpath(full, ref_path)).parent.name
             class_name = rel_parent if rel_parent not in ("", ".") else "Sem turma"
+            print(f"[reference-import] arquivo={full} turma={class_name}")
             refs.append({"id": ref_name, "class_name": class_name, "emb": emb})
             ref_classes[ref_name.casefold()] = class_name
     if not refs:
@@ -761,15 +762,17 @@ def run_scanner_worker(req):
                                     (nome, p, x1, y1, x2, y2, photo_hash, b_score, b_status,
                                      fg_score, is_fg, f_ratio, c_score, bg_reason),
                                 )
-                                if p not in existing_photo_paths:
+if p not in existing_photo_paths:
                                     inserted_photo_paths.add(p)
                                     existing_photo_paths.add(p)
+                                detected_class = get_reference_class_name(nome)
+                                print(f"[db-save] aluno={nome} class_name={detected_class}")
                                 cur.execute(
                                     """
                                     INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path, class_name)
                                     VALUES (?, ?, ?)
                                     """,
-                                    (nome, "n/a", get_reference_class_name(nome)),
+                                    (nome, "n/a", detected_class),
                                 )
                                 
                                 current_time = time.time()
