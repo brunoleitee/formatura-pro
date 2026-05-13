@@ -72,13 +72,7 @@ def get_client_secrets_path() -> str:
         raise FileNotFoundError(
             f"Client secrets não encontrado em: {CLIENT_SECRETS_FILE}\n"
             f"Crie o arquivo em: {CLIENT_SECRETS_FILE}\n"
-            f"Formato: {{
-              'web': {{
-                'client_id': 'SEU_CLIENT_ID',
-                'client_secret': 'SEU_CLIENT_SECRET',
-                'redirect_uris': ['http://localhost:8000/api/cloud/google/callback']
-              }}
-            }}"
+            f"Formato: {json.dumps({'web': {'client_id': 'SEU_CLIENT_ID', 'client_secret': 'SEU_CLIENT_SECRET', 'redirect_uris': ['http://localhost:8000/api/cloud/google/callback']}}, indent=2)}"
         )
     return str(CLIENT_SECRETS_FILE)
 
