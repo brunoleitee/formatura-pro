@@ -10,7 +10,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from fastapi import HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, Response
 from PIL import ExifTags, Image
 
 _cfg = {}
@@ -616,6 +616,29 @@ def analyze_culling(aluno_id: str, catalog: str = ""):
 
 def get_image_thumb(path: str, size: int = 300, quality: int = 80):
     started = time.perf_counter()
+    
+    if path.startswith("cloud://"):
+        drive_file_id = path[8:]
+        try:
+            from cloud.drive_cache import cache, download_queue
+            from cloud import is_authenticated, drive_manager
+            thumb_path = cache.get_thumb_path(drive_file_id)
+            if cache.thumb_exists(drive_file_id):
+                return FileResponse(thumb_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+            if is_authenticated():
+                file_info = drive_manager.get_file_metadata(drive_file_id)
+                if file_info:
+                    download_queue.add_task(
+                        file_id=drive_file_id,
+                        file_type="thumb",
+                        url=file_info.thumbnailLink or f"https://drive.google.com/uc?id={drive_file_id}",
+                        dest_path=cache.get_thumb_dir(),
+                        priority=1
+                    )
+        except Exception as e:
+            _log_thumb_perf("cloud", drive_file_id, size, (time.perf_counter() - started) * 1000.0, "error", extra=str(e))
+        return Response(status_code=202)
+    
     decoded_path = _resolve_preview_path(path)
     log_info = _get("log_info")
     
