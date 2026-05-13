@@ -54,4 +54,9 @@ export const cloudApi = {
       `${API_BASE}/cloud/google/create-catalog?folder_id=${folderId}&catalog_name=${encodeURIComponent(catalogName)}&mode=${mode}`,
       {}
     ),
+
+  downloadFull: (fileId: string) =>
+    fetchJSON<{ success: boolean; status?: string; local_path?: string; url?: string; file_id?: string; error?: string }>(
+      `${API_BASE}/cloud/google/download-full?file_id=${fileId}`
+    ),
 };

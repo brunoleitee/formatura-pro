@@ -56,6 +56,8 @@ export default function CloudSyncView() {
   const [showExplorer, setShowExplorer] = useState(false);
   const pollingRef = useRef<number | null>(null);
   const [thumbTick, setThumbTick] = useState(0);
+  const [openingFileId, setOpeningFileId] = useState<string | null>(null);
+  const [previewFile, setPreviewFile] = useState<{ fileId: string; url: string; name: string } | null>(null);
 
   const loadFolders = useCallback(async (parentId: string = 'root') => {
     setLoading(true);
@@ -233,6 +235,39 @@ export default function CloudSyncView() {
     loadFolders(folderId);
   };
 
+  const handleOpenFile = useCallback(async (file: CloudFile) => {
+    console.log("[CloudOpen] opening file_id:", file.drive_file_id);
+    setOpeningFileId(file.drive_file_id);
+    try {
+      const result = await cloudApi.downloadFull(file.drive_file_id);
+      if (result.success && result.url) {
+        console.log("[CloudOpen] downloaded full:", result.url);
+        setPreviewFile({ fileId: file.drive_file_id, url: result.url, name: file.name });
+      } else if (result.status === "downloading") {
+        // Poll until ready
+        for (let i = 0; i < 30; i++) {
+          await new Promise(r => setTimeout(r, 1000));
+          const poll = await cloudApi.downloadFull(file.drive_file_id);
+          if (poll.success && poll.url) {
+            console.log("[CloudOpen] downloaded full (poll):", poll.url);
+            setPreviewFile({ fileId: file.drive_file_id, url: poll.url, name: file.name });
+            break;
+          }
+          if (poll.error) {
+            console.error("[CloudOpen] error:", poll.error);
+            break;
+          }
+        }
+      } else if (result.error) {
+        console.error("[CloudOpen] error:", result.error);
+      }
+    } catch (e) {
+      console.error("[CloudOpen] erro ao abrir:", e);
+    } finally {
+      setOpeningFileId(null);
+    }
+  }, []);
+
   return (
     <div className={styles.page}>
       <div className={styles.header}>
@@ -322,7 +357,11 @@ export default function CloudSyncView() {
               ) : files.length > 0 ? (
                 <div className={styles.filesGrid}>
                   {files.map((file) => (
-                    <div key={file.drive_file_id} className={styles.fileCard}>
+                    <div
+                      key={file.drive_file_id}
+                      className={styles.fileCard}
+                      onClick={() => handleOpenFile(file)}
+                    >
                       <div className={styles.fileThumb}>
                         {loadedThumbs.has(file.drive_file_id) ? (
                           <img
@@ -333,6 +372,11 @@ export default function CloudSyncView() {
                           />
                         ) : (
                           <div className={styles.filePlaceholder}>📷</div>
+                        )}
+                        {openingFileId === file.drive_file_id && (
+                          <div className={styles.fileLoadingOverlay}>
+                            <span className={styles.fileLoadingSpinner}></span>
+                          </div>
                         )}
                         <div className={styles.cloudBadge}>☁️</div>
                       </div>
@@ -482,6 +526,24 @@ export default function CloudSyncView() {
         <div className={styles.toast}>
           <span>{createResult.message}</span>
           <button onClick={() => setCreateResult(null)}>×</button>
+        </div>
+      )}
+
+      {previewFile && (
+        <div className={styles.viewerOverlay} onClick={() => setPreviewFile(null)}>
+          <div className={styles.viewerContent} onClick={e => e.stopPropagation()}>
+            <div className={styles.viewerHeader}>
+              <span className={styles.viewerFilename}>{previewFile.name}</span>
+              <button className={styles.viewerClose} onClick={() => setPreviewFile(null)}>×</button>
+            </div>
+            <div className={styles.viewerBody}>
+              <img
+                src={previewFile.url}
+                alt={previewFile.name}
+                className={styles.viewerImage}
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>

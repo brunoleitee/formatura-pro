@@ -2084,6 +2084,29 @@ def cloud_thumb(file_id: str = "", size: int = 200):
                         headers={"Cache-Control": "no-store, must-revalidate"})
 
 
+@app.get("/api/cloud/full")
+def cloud_full(file_id: str = ""):
+    try:
+        from cloud.drive_cache import cache, download_queue
+
+        if not file_id:
+            return {"error": "file_id obrigatório"}
+
+        original_path = cache.get_original_path(file_id)
+
+        if cache.original_exists(file_id):
+            print(f"[CloudFull] cache hit: {original_path}")
+            return FileResponse(original_path,
+                                headers={"Cache-Control": "public, max-age=86400"})
+
+        print(f"[CloudFull] cache miss: {file_id}")
+        return Response(status_code=202)
+
+    except Exception as e:
+        print(f"[CloudFull] erro: {e}")
+        return {"error": str(e)}
+
+
 @app.get("/api/cloud/google/files")
 def cloud_google_files(folder_id: str = "root"):
     try:
@@ -2227,9 +2250,13 @@ def cloud_google_download_full(file_id: str = ""):
             return {"error": "file_id obrigatório"}
 
         if cache.original_exists(file_id):
+            local_path = cache.get_original_path(file_id)
+            full_url = f"/api/cloud/full?file_id={file_id}"
+            print(f"[CloudFull] cache hit: {local_path}")
             return {
-                "status": "exists",
-                "path": cache.get_original_path(file_id),
+                "success": True,
+                "local_path": local_path,
+                "url": full_url,
                 "file_id": file_id
             }
 
@@ -2244,6 +2271,10 @@ def cloud_google_download_full(file_id: str = ""):
         if not metadata:
             return {"error": "Arquivo não indexado"}
 
+        if download_queue.is_downloading(file_id):
+            print(f"[CloudFull] ja esta baixando: {file_id}")
+            return {"success": False, "status": "downloading", "file_id": file_id}
+
         download_queue.add_task(
             file_id=file_id,
             file_type="original",
@@ -2252,9 +2283,11 @@ def cloud_google_download_full(file_id: str = ""):
             priority=3
         )
 
-        return {"status": "downloading", "file_id": file_id}
+        print(f"[CloudFull] downloading iniciado: {file_id}")
+        return {"success": False, "status": "downloading", "file_id": file_id}
 
     except Exception as e:
+        print(f"[CloudFull] erro: {e}")
         return {"error": str(e)}
 
 
