@@ -205,12 +205,12 @@ function ExportViewContent() {
     width: '100%',
     minHeight: 56,
     borderRadius: 12,
-    border: isSelected ? '1px solid rgba(96, 165, 250, 0.85)' : '1px solid rgba(255,255,255,0.04)',
+    border: isSelected ? '1px solid rgba(96, 165, 250, 0.9)' : '1px solid rgba(255,255,255,0.04)',
     background: isSelected
-      ? 'linear-gradient(180deg, rgba(37,99,235,0.18), rgba(37,99,235,0.10))'
+      ? 'linear-gradient(180deg, rgba(37,99,235,0.22), rgba(37,99,235,0.10))'
       : 'transparent',
     boxShadow: isSelected
-      ? '0 0 0 1px rgba(59,130,246,0.18) inset, 0 10px 24px rgba(37,99,235,0.14)'
+      ? '0 0 0 1px rgba(59,130,246,0.22) inset, 0 12px 28px rgba(37,99,235,0.16)'
       : 'none',
     padding: '10px 12px',
     display: 'flex',
@@ -219,7 +219,7 @@ function ExportViewContent() {
     gap: 12,
     textAlign: 'left' as const,
     cursor: 'pointer',
-    transition: 'background 140ms ease, border-color 140ms ease, box-shadow 140ms ease',
+    transition: 'border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease',
     outline: 'none',
   });
 
@@ -234,7 +234,7 @@ function ExportViewContent() {
     background: isSelected
       ? 'linear-gradient(180deg, rgba(96,165,250,0.26), rgba(59,130,246,0.16))'
       : 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))',
-    border: isSelected ? '1px solid rgba(96,165,250,0.32)' : '1px solid rgba(255,255,255,0.06)',
+    border: isSelected ? '1px solid rgba(96,165,250,0.36)' : '1px solid rgba(255,255,255,0.06)',
     color: isSelected ? '#dbeafe' : 'rgba(255,255,255,0.88)',
     fontSize: '0.78rem',
     fontWeight: 700,
@@ -249,11 +249,11 @@ function ExportViewContent() {
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
-    border: isSelected ? '1px solid rgba(96,165,250,0.44)' : '1px solid rgba(255,255,255,0.06)',
+    border: isSelected ? '1px solid rgba(96,165,250,0.52)' : '1px solid rgba(255,255,255,0.06)',
     background: isSelected ? 'rgba(59,130,246,0.18)' : 'rgba(255,255,255,0.02)',
-    color: isSelected ? '#bfdbfe' : 'transparent',
-    boxShadow: isSelected ? '0 0 14px rgba(59,130,246,0.16)' : 'none',
-    transition: 'all 140ms ease',
+    color: isSelected ? '#bfdbfe' : '#64748b',
+    boxShadow: isSelected ? '0 0 14px rgba(59,130,246,0.18)' : 'none',
+    transition: 'border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease',
   });
 
   return (

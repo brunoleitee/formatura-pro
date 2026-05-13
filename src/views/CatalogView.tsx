@@ -308,11 +308,12 @@ export default function CatalogView() {
                 onPhotoClick={toggleSelection}
                 onDoubleClick={setViewerPhoto}
                 onOpenDetails={setDetailsPhoto}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-                onFirstThumbLoad={handleFirstThumbLoad}
-                zoom={size}
-              />
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onFirstThumbLoad={handleFirstThumbLoad}
+              zoom={size}
+              selectionCount={selectedPaths.size}
+            />
             </>
           )}
         </div>
@@ -342,6 +343,7 @@ export default function CatalogView() {
           onDiscard={handleDiscardSelected}
           onRestore={handleRestoreSelected}
           onRemoveIdentification={handleRemoveIdentificationSelected}
+          onClearSelection={clearSelection}
         />
       )}
     </div>

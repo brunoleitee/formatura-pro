@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Users, RefreshCw, Edit2, Trash2, ChevronRight, Check, X } from 'lucide-react';
 import { api, type Person } from '../services/api';
 import { useApp } from '../context/AppContext';
+import styles from './PeopleView.module.css';
 
 interface PeopleViewProps {
   onRequestConfirm: (options: { title: string; message: string; confirmText: string; cancelText: string }) => Promise<boolean>;
@@ -103,9 +104,9 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
       ) : (
         <div className="people-grid">
           {filtered.map(person => (
-            <div key={person.id} className="person-card">
+            <div key={person.id} className={`person-card ${styles.personCard}`}>
               <div
-                className="person-avatar"
+                className={`person-avatar ${styles.personAvatar}`}
                 onClick={() => navigate('person-detail', person.id)}
               >
                 {person.cover_path ? (
@@ -141,9 +142,9 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
                         if (e.key === 'Escape') setRenamingId(null);
                       }}
                     />
-                    <button className="icon-btn success" onClick={() => handleRename(person.id)}><Check size={14} /></button>
-                    <button className="icon-btn" onClick={() => setRenamingId(null)}><X size={14} /></button>
-                  </div>
+                    <button className={`icon-btn success ${styles.actionBtn}`} onClick={() => handleRename(person.id)}><Check size={14} /></button>
+                    <button className={`icon-btn ${styles.actionBtn}`} onClick={() => setRenamingId(null)}><X size={14} /></button>
+                </div>
                 ) : (
                   <span className="person-name" title={person.name}>{person.name}</span>
                 )}
@@ -152,21 +153,21 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
 
               <div className="person-actions">
                 <button
-                  className="icon-btn"
+                  className={`icon-btn ${styles.actionBtn}`}
                   title="Ver fotos"
                   onClick={() => navigate('person-detail', person.id)}
                 >
                   <ChevronRight size={16} />
                 </button>
                 <button
-                  className="icon-btn"
+                  className={`icon-btn ${styles.actionBtn}`}
                   title="Renomear"
                   onClick={() => { setRenamingId(person.id); setRenameValue(person.name); }}
                 >
                   <Edit2 size={14} />
                 </button>
                 <button
-                  className="icon-btn danger"
+                  className={`icon-btn danger ${styles.actionBtn}`}
                   title="Excluir"
                   onClick={() => handleDelete(person)}
                 >

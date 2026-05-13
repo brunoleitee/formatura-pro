@@ -1,5 +1,5 @@
 import React from 'react';
-import { Trash, RotateCcw, UserMinus } from 'lucide-react';
+import { Trash, RotateCcw, UserMinus, X } from 'lucide-react';
 import styles from './PhotoBulkActionsBar.module.css';
 
 interface PhotoBulkActionsBarProps {
@@ -7,6 +7,7 @@ interface PhotoBulkActionsBarProps {
   onDiscard: () => void;
   onRestore: () => void;
   onRemoveIdentification: () => void;
+  onClearSelection?: () => void;
 }
 
 const PhotoBulkActionsBar: React.FC<PhotoBulkActionsBarProps> = ({
@@ -14,6 +15,7 @@ const PhotoBulkActionsBar: React.FC<PhotoBulkActionsBarProps> = ({
   onDiscard,
   onRestore,
   onRemoveIdentification,
+  onClearSelection,
 }) => {
   if (selectedCount === 0) return null;
 
@@ -61,6 +63,17 @@ const PhotoBulkActionsBar: React.FC<PhotoBulkActionsBarProps> = ({
               <span className={styles.main}>Remover identificação</span>
             </div>
           </button>
+
+          {onClearSelection && (
+            <button
+              type="button"
+              className={styles.clearBtn}
+              onClick={onClearSelection}
+              title="Limpar seleção"
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
       </div>
     </div>

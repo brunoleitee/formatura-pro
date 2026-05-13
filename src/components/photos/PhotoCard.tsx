@@ -1,4 +1,4 @@
-import React, { memo, useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { memo, useState, useEffect, useRef, useCallback } from 'react';
 import { Image as ImageIcon, MoreHorizontal } from 'lucide-react';
 import { api, type Photo } from '../../services/api';
 import { isPhotoBlurry, isPhotoAttention } from '../../utils/qualityUtils';
@@ -7,6 +7,7 @@ import { isPhotoMapped, isKnownFace } from '../../utils/personIdentity';
 interface PhotoCardProps {
   photo: Photo;
   isSelected: boolean;
+  selectionCount?: number;
   onClick: (photo: Photo, event: React.MouseEvent) => void;
   onDoubleClick?: (photo: Photo) => void;
   onOpenDetails: (photo: Photo) => void;
@@ -71,10 +72,12 @@ function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number,
   );
 }
 
-export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
+export function PhotoCard({ photo, isSelected, selectionCount = 1, onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [thumbSize, setThumbSize] = useState({ w: 0, h: 0 });
+  const [isHovered, setIsHovered] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
@@ -128,6 +131,7 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
       const dy = Math.abs(e.clientY - dragStartRef.current.y);
       if (dx + dy > 8) {
         isDraggingInternal.current = true;
+        setIsDragging(true);
         onDragStart?.(photo, e);
       }
     }
@@ -146,6 +150,7 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
     }
     dragStartRef.current = null;
     isDraggingInternal.current = false;
+    setIsDragging(false);
   };
 
   const handleImageLoad = useCallback(() => {
@@ -153,12 +158,25 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
     onFirstThumbLoad?.();
   }, [onFirstThumbLoad]);
 
-  const cardStyle = useMemo(() => ({
+  const cardStyle: React.CSSProperties = {
     userSelect: 'none' as const,
     touchAction: 'none' as const,
     contentVisibility: 'auto' as const,
     containIntrinsicSize: '320px 360px',
-  }), []) as React.CSSProperties;
+    transition: 'border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease',
+    transform: isHovered ? 'translateY(-2px)' : 'translateY(0)',
+    borderColor: isSelected ? 'rgba(96, 165, 250, 0.85)' : isHovered ? 'rgba(148, 163, 184, 0.18)' : undefined,
+    boxShadow: isSelected
+      ? '0 0 0 1px rgba(59, 130, 246, 0.26) inset, 0 12px 28px rgba(37, 99, 235, 0.14), 0 0 0 1px rgba(96, 165, 250, 0.08)'
+      : isHovered
+      ? '0 12px 24px rgba(0, 0, 0, 0.18)'
+      : undefined,
+    background: isSelected && isDiscarded
+      ? 'linear-gradient(180deg, rgba(127, 29, 29, 0.54), rgba(15, 23, 42, 0.92))'
+      : isSelected
+      ? 'linear-gradient(180deg, rgba(37, 99, 235, 0.12), rgba(15, 23, 42, 0.92))'
+      : undefined,
+  };
 
   return (
     <div
@@ -172,6 +190,8 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       style={cardStyle}
     >
       <div className="photo-img-placeholder" ref={containerRef}>
@@ -198,7 +218,7 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
               className="photo-card-details-btn"
               style={{
                 position: 'absolute',
-                top: '6px',
+                bottom: '6px',
                 right: '6px',
                 zIndex: 10,
                 background: 'rgba(0,0,0,0.6)',
@@ -218,11 +238,27 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
             >
               <MoreHorizontal size={16} />
             </button>
-        {isLoaded && thumbSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, idx) => (
+            {isLoaded && thumbSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, idx) => (
                 <React.Fragment key={face.rowid ?? idx}>
                   {renderFaceOverlay(face, thumbSize, photo.width!, photo.height!)}
                 </React.Fragment>
               ))}
+            <div
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: 'inherit',
+                pointerEvents: 'none',
+                background: isSelected
+                  ? 'linear-gradient(180deg, rgba(59, 130, 246, 0.10), rgba(59, 130, 246, 0.02) 42%, transparent 68%)'
+                  : isHovered
+                  ? 'linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 64%)'
+                  : 'transparent',
+                boxShadow: isSelected ? 'inset 0 0 0 1px rgba(96, 165, 250, 0.18)' : 'none',
+                zIndex: 2,
+              }}
+            />
           </>
         )}
         {!isLoaded && !hasError && <div className="photo-skeleton" />}
@@ -241,16 +277,40 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
         {isDiscarded && (
           <div className="discardBadge">DESCARTADA</div>
         )}
+        {isDragging && selectionCount > 1 && (
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              top: '8px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 25,
+              background: 'rgba(15, 23, 42, 0.92)',
+              border: '1px solid rgba(96, 165, 250, 0.26)',
+              color: '#dbeafe',
+              borderRadius: '999px',
+              padding: '4px 10px',
+              fontSize: '0.7rem',
+              fontWeight: 700,
+              letterSpacing: '0.01em',
+              boxShadow: '0 8px 20px rgba(15, 23, 42, 0.35)',
+              pointerEvents: 'none',
+            }}
+          >
+            {selectionCount} fotos
+          </div>
+        )}
         <div
           className={`photo-card-check ${isSelected ? 'photo-card-check-visible' : 'photo-card-check-hidden'}`}
           aria-hidden={!isSelected}
           style={{
             position: 'absolute',
-            left: '8px',
+            right: '8px',
             top: '8px',
             background: 'rgba(10, 17, 29, 0.88)',
             color: 'white',
-            border: '1px solid rgba(96, 165, 250, 0.22)',
+            border: '1px solid rgba(96, 165, 250, 0.30)',
             borderRadius: '999px',
             width: 'auto',
             height: '28px',

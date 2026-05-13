@@ -18,7 +18,8 @@ function Section({
   onDoubleClick, 
   onOpenDetails,
   onDragStart,
-  onDragEnd
+  onDragEnd,
+  selectionCount
 }: { 
   title: string; 
   items: Photo[]; 
@@ -29,6 +30,7 @@ function Section({
   onOpenDetails: (photo: Photo) => void;
   onDragStart: (photo: Photo, event: React.PointerEvent) => void;
   onDragEnd: (photo: Photo, event: React.PointerEvent) => void;
+  selectionCount: number;
 }) {
   if (items.length === 0) return null;
   return (
@@ -51,6 +53,7 @@ function Section({
               onOpenDetails={onOpenDetails}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
+              selectionCount={selectionCount}
             />
           );
         })}
@@ -226,6 +229,7 @@ export default function PersonDetailView() {
               onOpenDetails={setDetailsPhoto}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
+              selectionCount={selectedPaths.size}
             />
             <Section 
               title="Requer atenção" 
@@ -237,6 +241,7 @@ export default function PersonDetailView() {
               onOpenDetails={setDetailsPhoto}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
+              selectionCount={selectedPaths.size}
             />
             <Section 
               title="Desfocadas" 
@@ -248,6 +253,7 @@ export default function PersonDetailView() {
               onOpenDetails={setDetailsPhoto}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
+              selectionCount={selectedPaths.size}
             />
             <Section 
               title="Descartadas" 
@@ -259,6 +265,7 @@ export default function PersonDetailView() {
               onOpenDetails={setDetailsPhoto}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
+              selectionCount={selectedPaths.size}
             />
           </div>
 
@@ -288,6 +295,7 @@ export default function PersonDetailView() {
           onDiscard={handleDiscardSelected}
           onRestore={handleRestoreSelected}
           onRemoveIdentification={handleRemoveIdentificationSelected}
+          onClearSelection={clearSelection}
         />
       )}
     </div>

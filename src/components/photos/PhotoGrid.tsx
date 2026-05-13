@@ -14,6 +14,7 @@ interface PhotoGridProps {
   onDragEnd?: (photo: Photo, event: React.PointerEvent) => void;
   onFirstThumbLoad?: () => void;
   zoom?: number;
+  selectionCount?: number;
 }
 
 export const PhotoGrid = memo(function PhotoGrid({
@@ -26,6 +27,7 @@ export const PhotoGrid = memo(function PhotoGrid({
   onDragEnd,
   onFirstThumbLoad,
   zoom = 180,
+  selectionCount = 0,
 }: PhotoGridProps) {
   const gridStyle = useMemo(() => ({ '--grid-item-size': `${zoom}px` } as React.CSSProperties), [zoom]);
 
@@ -48,6 +50,7 @@ export const PhotoGrid = memo(function PhotoGrid({
             key={id}
             photo={photo}
             isSelected={selectedPaths.has(id)}
+            selectionCount={selectionCount}
             onClick={onPhotoClick}
             onDoubleClick={onDoubleClick}
             onOpenDetails={onOpenDetails}

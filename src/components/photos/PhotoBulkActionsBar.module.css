@@ -45,6 +45,7 @@
 .actions {
   display: flex;
   gap: 12px;
+  align-items: center;
 }
 
 .actionBtn {
@@ -63,6 +64,12 @@
 
 .actionBtn:hover {
   transform: translateY(-2px);
+}
+
+.actionBtn:focus-visible,
+.clearBtn:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.45);
+  outline-offset: 2px;
 }
 
 .btnIcon {
@@ -118,6 +125,29 @@
 
 .removeIdent:hover {
   background: rgba(59, 130, 246, 0.1);
+}
+
+.clearBtn {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: #cbd5e1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease;
+  flex-shrink: 0;
+}
+
+.clearBtn:hover {
+  transform: translateY(-1px);
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(96, 165, 250, 0.28);
+  color: #eff6ff;
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.12);
 }
 
 @keyframes slideUp {
