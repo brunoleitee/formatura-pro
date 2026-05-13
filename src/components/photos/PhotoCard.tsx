@@ -180,7 +180,6 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
 
   useEffect(() => {
     const shouldPromoteHigh = highUrl !== lowUrl && highSize > lowSize;
-    const alreadyLoadedLow = loadedSrcRef.current === lowUrl;
 
     if (promoteTimerRef.current != null) {
       window.clearTimeout(promoteTimerRef.current);
@@ -192,9 +191,8 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
     setHasError(false);
     setIsHighQuality(false);
     setDisplaySrc(lowUrl);
-    if (!alreadyLoadedLow) {
-      setIsLoaded(false);
-    }
+    setIsLoaded(false);
+    loadedSrcRef.current = null;
 
     if (!shouldPromoteHigh) {
       return () => {
@@ -206,6 +204,22 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
         promoteCancelRef.current = null;
       };
     }
+
+    return () => {
+      if (promoteTimerRef.current != null) {
+        window.clearTimeout(promoteTimerRef.current);
+        promoteTimerRef.current = null;
+      }
+      promoteCancelRef.current?.();
+      promoteCancelRef.current = null;
+    };
+  }, [lowUrl, highUrl, highSize, lowSize]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    const shouldPromoteHigh = highUrl !== lowUrl && highSize > lowSize;
+    if (!shouldPromoteHigh) return;
 
     promoteTimerRef.current = window.setTimeout(() => {
       promoteCancelRef.current = enqueueHighQualityLoad(
@@ -219,7 +233,7 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
         }
       );
       promoteTimerRef.current = null;
-    }, 150);
+    }, 180);
 
     return () => {
       if (promoteTimerRef.current != null) {
@@ -229,7 +243,7 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
       promoteCancelRef.current?.();
       promoteCancelRef.current = null;
     };
-  }, [lowUrl, highUrl, highSize, lowSize]);
+  }, [isLoaded, highUrl, lowUrl, highSize, lowSize]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -239,7 +253,6 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
       const rect = el.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) {
         setThumbSize({ w: rect.width, h: rect.height });
-        if (!isLoaded) setIsLoaded(true);
       }
     };
 

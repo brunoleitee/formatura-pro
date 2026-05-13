@@ -59,6 +59,7 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
 }: VirtualizedPhotoGridProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [viewportWidth, setViewportWidth] = useState(0);
+  const perfEnabled = typeof window !== 'undefined' && window.localStorage.getItem('formaturapro:perf') === '1';
 
   useEffect(() => {
     const el = parentRef.current;
@@ -110,10 +111,30 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
   });
 
   const virtualRows = rowVirtualizer.getVirtualItems();
+  const renderedCards = useMemo(() => {
+    return virtualRows.reduce((count, virtualRow) => {
+      const startIndex = virtualRow.index * columns;
+      const endIndex = Math.min(startIndex + columns, photos.length);
+      return count + Math.max(0, endIndex - startIndex);
+    }, 0);
+  }, [virtualRows, columns, photos.length]);
 
   useEffect(() => {
     rowVirtualizer.measure();
   }, [rowVirtualizer, cardWidth, thumbHeight, cardHeight, columns]);
+
+  useEffect(() => {
+    if (!perfEnabled) return;
+    // eslint-disable-next-line no-console
+    console.debug('[formaturapro][catalog-grid]', {
+      totalPhotos: photos.length,
+      columns,
+      cardHeight,
+      overscan: 6,
+      virtualRows: virtualRows.length,
+      renderedCards,
+    });
+  }, [perfEnabled, photos.length, columns, cardHeight, virtualRows.length, renderedCards]);
 
   if (photos.length === 0) {
     return (
@@ -163,7 +184,8 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
               {rowPhotos.map((photo, localIndex) => {
                 const id = getPhotoId(photo);
                 const globalIndex = startIndex + localIndex;
-                const eager = globalIndex < Math.max(12, columns * 2);
+                const eager = true;
+                const highPriority = globalIndex < Math.max(12, columns * 2);
 
                 return (
                   <MemoPhotoCard
@@ -177,7 +199,7 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
                     thumbTargetSize={thumbSize}
                     thumbLowTargetSize={thumbLowSize}
                     imgLoading={eager ? 'eager' : 'lazy'}
-                    imgFetchPriority={eager ? 'high' : 'low'}
+                    imgFetchPriority={highPriority ? 'high' : 'low'}
                     onClick={onPhotoClick}
                     onDoubleClick={onDoubleClick}
                     onOpenDetails={onOpenDetails}
