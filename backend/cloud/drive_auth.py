@@ -7,7 +7,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-BASE_DIR = Path(__file__).resolve().parents[2]
+CURRENT_FILE = Path(__file__).resolve()
+BASE_DIR = CURRENT_FILE.parents[2]
 DATA_DIR = BASE_DIR / "data" / "cloud"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -15,10 +16,20 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 CLIENT_SECRETS_FILE = DATA_DIR / "client_secrets.json"
 TOKEN_FILE = DATA_DIR / "google_token.json"
 
-print("[GoogleDrive] BASE_DIR:", BASE_DIR)
-print("[GoogleDrive] DATA_DIR:", DATA_DIR)
-print("[GoogleDrive] CLIENT_SECRETS_FILE:", CLIENT_SECRETS_FILE)
-print("[GoogleDrive] CLIENT_SECRETS exists:", CLIENT_SECRETS_FILE.exists())
+print("=" * 60)
+print(f"[GoogleDrive] CURRENT_FILE = {CURRENT_FILE}")
+print(f"[GoogleDrive] BASE_DIR = {BASE_DIR}")
+print(f"[GoogleDrive] DATA_DIR = {DATA_DIR}")
+print(f"[GoogleDrive] CLIENT_SECRETS_FILE = {CLIENT_SECRETS_FILE}")
+print(f"[GoogleDrive] CLIENT_SECRETS EXISTS = {CLIENT_SECRETS_FILE.exists()}")
+if CLIENT_SECRETS_FILE.exists():
+    try:
+        with open(CLIENT_SECRETS_FILE) as f:
+            data = json.load(f)
+            print(f"[GoogleDrive] CLIENT_SECRETS keys = {list(data.keys())}")
+    except Exception as e:
+        print(f"[GoogleDrive] Error reading: {e}")
+print("=" * 60)
 
 SCOPES = [
     "https://www.googleapis.com/auth/drive.readonly",
