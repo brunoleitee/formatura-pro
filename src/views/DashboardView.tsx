@@ -234,7 +234,7 @@ export default function DashboardView() {
         <div className={styles.header}>
           <div>
             <h1 className={styles.title}>Painel</h1>
-            <p className={styles.subtitle}>{currentCatalog || 'Nenhum catalogo carregado'}</p>
+            <p className={styles.subtitle}>{(currentCatalog || 'Nenhum catalogo carregado').replace('·', '-').replace('Â', '')}</p>
           </div>
           <div className={styles.headerMeta}>
             <span className={styles.metaPill}><Users size={14} /> 0 alunos</span>
@@ -257,7 +257,7 @@ export default function DashboardView() {
         <div className={styles.header}>
           <div>
             <h1 className={styles.title}>Painel</h1>
-            <p className={styles.subtitle}>{currentCatalog || 'Nenhum catalogo carregado'}</p>
+            <p className={styles.subtitle}>{(currentCatalog || 'Nenhum catalogo carregado').replace('·', '-').replace('Â', '')}</p>
           </div>
           <div className={styles.headerMeta}>
             <span className={styles.metaPill}><Users size={14} /> {summary ? formatNumber(summary.students.length) : '0'} alunos</span>
@@ -283,7 +283,7 @@ export default function DashboardView() {
       <div className={styles.header}>
         <div>
           <h1 className={styles.title}>Painel</h1>
-          <p className={styles.subtitle}>{currentCatalog || 'Nenhum catalogo carregado'}</p>
+          <p className={styles.subtitle}>{(currentCatalog || 'Nenhum catalogo carregado').replace('·', '-').replace('Â', '')}</p>
         </div>
         <div className={styles.headerMeta}>
           <span className={styles.metaPill}><Users size={14} /> {formatNumber(dashboard.students.length)} alunos</span>
