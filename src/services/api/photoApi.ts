@@ -33,6 +33,8 @@ export const photoApi = {
   // Thumbnails
   thumbUrl: (path: string, size = 300, q = 80) =>
     `${API_BASE}/image_thumb?path=${encodeURIComponent(path)}&size=${size}&q=${q}`,
+  previewUrl: (path: string, maxSize = 1920) =>
+    `${API_BASE}/image_preview?path=${encodeURIComponent(path)}&max_size=${maxSize}`,
   fullResUrl: (path: string) =>
     `${API_BASE}/image/resized?path=${encodeURIComponent(path)}&max_size=2200`,
   faceThumbUrl: (path: string, x1: number, y1: number, x2: number, y2: number, size = 120, expand = 0, q = 80) =>

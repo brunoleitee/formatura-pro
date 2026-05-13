@@ -49,6 +49,12 @@ export default function CatalogView() {
   const [detailsPhoto, setDetailsPhoto] = useState<Photo | null>(null);
   const firstThumbLoadStartRef = useRef<number | null>(null);
   const firstThumbLoggedRef = useRef(false);
+  const selectionCountRef = useRef(0);
+  const getSelectionCount = useCallback(() => selectionCountRef.current, []);
+
+  useEffect(() => {
+    selectionCountRef.current = selectedPaths.size;
+  }, [selectedPaths.size]);
 
   const handleDiscardSelected = useCallback(async () => {
     if (selectedPaths.size === 0) return;
@@ -307,12 +313,12 @@ export default function CatalogView() {
                 selectedPaths={selectedPaths}
                 onPhotoClick={toggleSelection}
                 onDoubleClick={setViewerPhoto}
-                onOpenDetails={setDetailsPhoto}
+              onOpenDetails={setDetailsPhoto}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               onFirstThumbLoad={handleFirstThumbLoad}
               zoom={size}
-              selectionCount={selectedPaths.size}
+              getSelectionCount={getSelectionCount}
             />
             </>
           )}

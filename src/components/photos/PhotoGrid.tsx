@@ -7,6 +7,7 @@ import { getPhotoId } from '../../hooks/usePhotoSelection';
 interface PhotoGridProps {
   photos: Photo[];
   selectedPaths: Set<string>;
+  getSelectionCount?: () => number;
   onPhotoClick: (photo: Photo, event: React.MouseEvent) => void;
   onDoubleClick?: (photo: Photo) => void;
   onOpenDetails: (photo: Photo) => void;
@@ -14,7 +15,6 @@ interface PhotoGridProps {
   onDragEnd?: (photo: Photo, event: React.PointerEvent) => void;
   onFirstThumbLoad?: () => void;
   zoom?: number;
-  selectionCount?: number;
 }
 
 export const PhotoGrid = memo(function PhotoGrid({
@@ -27,7 +27,7 @@ export const PhotoGrid = memo(function PhotoGrid({
   onDragEnd,
   onFirstThumbLoad,
   zoom = 180,
-  selectionCount = 0,
+  getSelectionCount,
 }: PhotoGridProps) {
   const gridStyle = useMemo(() => ({ '--grid-item-size': `${zoom}px` } as React.CSSProperties), [zoom]);
 
@@ -43,14 +43,17 @@ export const PhotoGrid = memo(function PhotoGrid({
 
   return (
     <div className="photo-grid" style={gridStyle}>
-      {photos.map((photo) => {
+      {photos.map((photo, index) => {
         const id = getPhotoId(photo);
+        const eager = index < 12;
         return (
           <MemoPhotoCard
             key={id}
             photo={photo}
             isSelected={selectedPaths.has(id)}
-            selectionCount={selectionCount}
+            getSelectionCount={getSelectionCount}
+            imgLoading={eager ? 'eager' : 'lazy'}
+            imgFetchPriority={eager ? 'high' : 'low'}
             onClick={onPhotoClick}
             onDoubleClick={onDoubleClick}
             onOpenDetails={onOpenDetails}

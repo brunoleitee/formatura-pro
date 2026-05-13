@@ -7,7 +7,9 @@ import { isPhotoMapped, isKnownFace } from '../../utils/personIdentity';
 interface PhotoCardProps {
   photo: Photo;
   isSelected: boolean;
-  selectionCount?: number;
+  getSelectionCount?: () => number;
+  imgLoading?: 'eager' | 'lazy';
+  imgFetchPriority?: 'high' | 'low' | 'auto';
   onClick: (photo: Photo, event: React.MouseEvent) => void;
   onDoubleClick?: (photo: Photo) => void;
   onOpenDetails: (photo: Photo) => void;
@@ -72,12 +74,13 @@ function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number,
   );
 }
 
-export function PhotoCard({ photo, isSelected, selectionCount = 1, onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
+export function PhotoCard({ photo, isSelected, getSelectionCount, imgLoading = 'lazy', imgFetchPriority = 'auto', onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [thumbSize, setThumbSize] = useState({ w: 0, h: 0 });
   const [isHovered, setIsHovered] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [dragSelectionCount, setDragSelectionCount] = useState(0);
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
@@ -132,6 +135,7 @@ export function PhotoCard({ photo, isSelected, selectionCount = 1, onClick, onDo
       if (dx + dy > 8) {
         isDraggingInternal.current = true;
         setIsDragging(true);
+        setDragSelectionCount(getSelectionCount?.() ?? 1);
         onDragStart?.(photo, e);
       }
     }
@@ -151,6 +155,7 @@ export function PhotoCard({ photo, isSelected, selectionCount = 1, onClick, onDo
     dragStartRef.current = null;
     isDraggingInternal.current = false;
     setIsDragging(false);
+    setDragSelectionCount(0);
   };
 
   const handleImageLoad = useCallback(() => {
@@ -201,7 +206,8 @@ export function PhotoCard({ photo, isSelected, selectionCount = 1, onClick, onDo
               ref={imgRef}
               src={api.thumbUrl(photo.path, 300)}
               alt={photo.name}
-              loading="lazy"
+              loading={imgLoading}
+              fetchPriority={imgFetchPriority}
               decoding="async"
               draggable={false}
               style={{ opacity: isLoaded ? 1 : 0, userSelect: 'none', pointerEvents: 'none' }}
@@ -277,7 +283,7 @@ export function PhotoCard({ photo, isSelected, selectionCount = 1, onClick, onDo
         {isDiscarded && (
           <div className="discardBadge">DESCARTADA</div>
         )}
-        {isDragging && selectionCount > 1 && (
+        {isDragging && dragSelectionCount > 1 && (
           <div
             aria-hidden="true"
             style={{
@@ -298,7 +304,7 @@ export function PhotoCard({ photo, isSelected, selectionCount = 1, onClick, onDo
               pointerEvents: 'none',
             }}
           >
-            {selectionCount} fotos
+            {dragSelectionCount} fotos
           </div>
         )}
         <div

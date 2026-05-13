@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ArrowLeft, RefreshCw, Image as ImageIcon } from 'lucide-react';
 import { api, type Photo } from '../services/api';
 import { useApp } from '../context/AppContext';
@@ -19,7 +19,7 @@ function Section({
   onOpenDetails,
   onDragStart,
   onDragEnd,
-  selectionCount
+  getSelectionCount
 }: { 
   title: string; 
   items: Photo[]; 
@@ -30,7 +30,7 @@ function Section({
   onOpenDetails: (photo: Photo) => void;
   onDragStart: (photo: Photo, event: React.PointerEvent) => void;
   onDragEnd: (photo: Photo, event: React.PointerEvent) => void;
-  selectionCount: number;
+  getSelectionCount: () => number;
 }) {
   if (items.length === 0) return null;
   return (
@@ -53,7 +53,7 @@ function Section({
               onOpenDetails={onOpenDetails}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
-              selectionCount={selectionCount}
+              getSelectionCount={getSelectionCount}
             />
           );
         })}
@@ -72,6 +72,12 @@ export default function PersonDetailView() {
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(photos);
   const [bulkBarVisible, setBulkBarVisible] = useState(false);
   const [, setIsDraggingPhoto] = useState(false);
+  const selectionCountRef = useRef(0);
+  const getSelectionCount = useCallback(() => selectionCountRef.current, []);
+
+  useEffect(() => {
+    selectionCountRef.current = selectedPaths.size;
+  }, [selectedPaths.size]);
 
   const load = useCallback(async () => {
     if (!selectedPersonId || !currentCatalog) return;
@@ -229,7 +235,7 @@ export default function PersonDetailView() {
               onOpenDetails={setDetailsPhoto}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
-              selectionCount={selectedPaths.size}
+              getSelectionCount={getSelectionCount}
             />
             <Section 
               title="Requer atenção" 
@@ -241,7 +247,7 @@ export default function PersonDetailView() {
               onOpenDetails={setDetailsPhoto}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
-              selectionCount={selectedPaths.size}
+              getSelectionCount={getSelectionCount}
             />
             <Section 
               title="Desfocadas" 
@@ -253,7 +259,7 @@ export default function PersonDetailView() {
               onOpenDetails={setDetailsPhoto}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
-              selectionCount={selectedPaths.size}
+              getSelectionCount={getSelectionCount}
             />
             <Section 
               title="Descartadas" 
@@ -265,7 +271,7 @@ export default function PersonDetailView() {
               onOpenDetails={setDetailsPhoto}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
-              selectionCount={selectedPaths.size}
+              getSelectionCount={getSelectionCount}
             />
           </div>
 

@@ -65,8 +65,9 @@ export function PhotoViewerModal({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
-  const VIEWER_PREVIEW_SIZE = 1800;
-  const [currentSrc, setCurrentSrc] = useState(api.thumbUrl(photo.path, VIEWER_PREVIEW_SIZE, 92));
+  const VIEWER_PREVIEW_SIZE = 1920;
+  const PRELOAD_PREVIEW_SIZE = 1400;
+  const [currentSrc, setCurrentSrc] = useState(api.previewUrl(photo.path, VIEWER_PREVIEW_SIZE));
   const navigationPhotos = (contextPhotos?.length ? contextPhotos : allPhotos);
   const viewerTransitionRef = useRef<'open' | 'next' | 'prev'>('open');
   const viewerLoadStartRef = useRef<number | null>(null);
@@ -76,7 +77,7 @@ export function PhotoViewerModal({
   useEffect(() => {
     viewerLoadStartRef.current = perfNow();
     setIsLoaded(false);
-    setCurrentSrc(api.thumbUrl(photo.path, VIEWER_PREVIEW_SIZE, 92));
+    setCurrentSrc(api.previewUrl(photo.path, VIEWER_PREVIEW_SIZE));
     viewerLoggedRef.current = false;
     if (viewerMountedRef.current) {
       logPerf(`viewer switch ${viewerTransitionRef.current}`, viewerLoadStartRef.current, photo.path);
@@ -267,13 +268,19 @@ export function PhotoViewerModal({
   }, [photo.path]);
 
   useEffect(() => {
-    const targets = [navigationPhotos[currentIndex - 1], navigationPhotos[currentIndex], navigationPhotos[currentIndex + 1]]
+    const targets = [
+      navigationPhotos[currentIndex - 2],
+      navigationPhotos[currentIndex - 1],
+      navigationPhotos[currentIndex + 1],
+      navigationPhotos[currentIndex + 2],
+    ]
       .filter((item): item is Photo => Boolean(item));
     const preloads = targets
         .filter((item) => item.path && item.path !== photo.path)
         .map((item) => {
         const img = new window.Image();
-        img.src = api.thumbUrl(item.path, 1200, 90);
+        img.decoding = 'async';
+        img.src = api.previewUrl(item.path, PRELOAD_PREVIEW_SIZE);
         return img;
       });
     return () => {
@@ -637,11 +644,11 @@ export function PhotoViewerModal({
               }}
             >
               <div className={styles.photoImageWrap} ref={imageWrapRef}>
-                <img
-                  ref={imageRef}
-                  src={currentSrc}
-                  alt={photo.name}
-                  className={styles.mainImage}
+                  <img
+                    ref={imageRef}
+                    src={currentSrc}
+                    alt={photo.name}
+                    className={styles.mainImage}
                   style={{ 
                     opacity: isLoaded ? 1 : 0,
                     imageRendering: zoom >= 1 ? 'auto' : 'auto'
@@ -673,7 +680,7 @@ export function PhotoViewerModal({
                     }
                   }}
                   onError={() => {
-                    setCurrentSrc(api.thumbUrl(photo.path, VIEWER_PREVIEW_SIZE, 92));
+                    setCurrentSrc(api.previewUrl(photo.path, VIEWER_PREVIEW_SIZE));
                     if (viewerLoadStartRef.current !== null && !viewerLoggedRef.current) {
                       viewerLoggedRef.current = true;
                       logPerf(`viewer loaded ${viewerTransitionRef.current}`, viewerLoadStartRef.current, photo.path);
