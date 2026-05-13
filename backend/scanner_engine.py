@@ -8,6 +8,8 @@ import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
+from onnx_provider_utils import get_onnx_providers, mark_cuda_failed
+
 _cfg = {
     "log_debug": lambda msg: None,
     "log_info": lambda msg: None,
@@ -303,39 +305,19 @@ def _provider_config(provider_name):
 
 
 def get_available_ai_provider():
-    available = ["CPUExecutionProvider"]
-    ort_version = ""
-    provider_error = ""
-    preload_error = ""
-
-    try:
-        import onnxruntime as ort
-
-        available = ort.get_available_providers()
-        ort_version = getattr(ort, "__version__", "")
-
-        if "CUDAExecutionProvider" in available:
-            try:
-                ort.preload_dlls(cuda=True, cudnn=True, msvc=True, directory="")
-            except Exception as e:
-                preload_error = str(e)
-                _cfg["log_info"](f"[AI] CUDA disponível, mas falhou ao pré-carregar DLLs: {e}")
-    except Exception as e:
-        provider_error = str(e)
-        _cfg["log_debug"](f"Erro verificando providers: {e}")
-        available = ["CPUExecutionProvider"]
-
-    _cfg["log_info"](f"[AI] ONNXRuntime providers disponíveis: {available}")
-
-    candidates = [_provider_config(provider) for provider in AI_PROVIDER_PRIORITY if provider in available]
+    provider_info = get_onnx_providers(
+        log_info=_cfg["log_info"],
+        log_debug=_cfg["log_debug"],
+    )
+    available = provider_info["available_providers"]
+    candidates = [_provider_config(provider) for provider in AI_PROVIDER_PRIORITY if provider in provider_info["providers"]]
     if not candidates:
         candidates = [_provider_config("CPUExecutionProvider")]
 
     return {
         "available_providers": available,
-        "ort_version": ort_version,
-        "provider_error": provider_error,
-        "preload_error": preload_error,
+        "provider_error": provider_info.get("provider_error", ""),
+        "preload_error": "",
         "selected_provider": candidates[0]["provider"],
         "selected_label": candidates[0]["label"],
         "candidates": candidates,
@@ -388,7 +370,11 @@ def ensure_face_engine():
             break
         except Exception as e:
             errors.append(f"{candidate['provider']}: {e}")
-            _cfg["log_info"](f"[AI] Falha ao carregar {candidate['provider']}: {e}")
+            if candidate["provider"] == "CUDAExecutionProvider":
+                mark_cuda_failed(log_info=_cfg["log_info"])
+                _cfg["log_debug"](f"Falha CUDA detectada, alternando para CPU: {e}")
+            else:
+                _cfg["log_debug"](f"Falha ao carregar {candidate['provider']}: {e}")
             app_face = None
     else:
         raise RuntimeError("Falha ao inicializar InsightFace em todos os providers candidatos.")

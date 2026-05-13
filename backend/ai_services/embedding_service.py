@@ -31,6 +31,8 @@ try:
 except Exception:  # pragma: no cover - runtime opcional
     CLIPTokenizerFast = None
 
+from onnx_provider_utils import get_onnx_providers, mark_cuda_failed
+
 
 @dataclass
 class EmbeddingConfig:
@@ -118,12 +120,19 @@ class PhotoEmbeddingService:
     def _load_session(self, model_path: Optional[str]):
         if not model_path or ort is None or not os.path.exists(model_path):
             return None
+        provider_info = get_onnx_providers(log_info=self._log_info, log_debug=self._log_debug)
+        providers = provider_info["providers"]
         try:
-            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-            available = ort.get_available_providers() if hasattr(ort, "get_available_providers") else []
-            providers = [p for p in providers if p in available] or ["CPUExecutionProvider"]
             return ort.InferenceSession(model_path, providers=providers)
         except Exception as exc:
+            if providers and providers[0] == "CUDAExecutionProvider":
+                mark_cuda_failed(log_info=self._log_info)
+                self._log_debug(f"Falha CUDA ao carregar ONNX '{model_path}': {exc}")
+                try:
+                    return ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+                except Exception as cpu_exc:
+                    self._log_debug(f"Falha ao carregar ONNX '{model_path}' em CPU: {cpu_exc}")
+                    return None
             self._log_debug(f"Falha ao carregar ONNX '{model_path}': {exc}")
             return None
 

@@ -8,6 +8,7 @@ import logging
 from app.models import Face, Photo
 from app.services.image_service import generate_face_crop
 from app.core.config import settings
+from onnx_provider_utils import get_onnx_providers, mark_cuda_failed
 
 logger = logging.getLogger(__name__)
 
@@ -20,23 +21,32 @@ class FaceService:
 
     def _init_face_engine(self):
         try:
-            import onnxruntime as ort
-            available = ort.get_available_providers()
-            logger.info(f"Providers disponíveis: {available}")
-            
             from insightface.app import FaceAnalysis
-            
-            providers = ["CPUExecutionProvider"]
-            if "CUDAExecutionProvider" in available:
-                providers.insert(0, "CUDAExecutionProvider")
-            
+
+            provider_info = get_onnx_providers(log_info=logger.info, log_debug=logger.debug)
+            providers = provider_info["providers"]
             self.face_engine = FaceAnalysis(
                 name="buffalo_l",
-                providers=providers
+                providers=providers,
+                provider_options=provider_info["provider_options"],
             )
-            self.face_engine.prepare(ctx_id=0, det_size=(640, 640))
+            self.face_engine.prepare(ctx_id=provider_info["ctx_id"], det_size=(640, 640))
             logger.info("InsightFace carregado com sucesso")
         except Exception as e:
+            if "CUDAExecutionProvider" in str(e) or "onnxruntime_providers_cuda" in str(e).lower():
+                mark_cuda_failed(log_info=logger.info)
+                try:
+                    self.face_engine = FaceAnalysis(
+                        name="buffalo_l",
+                        providers=["CPUExecutionProvider"],
+                    )
+                    self.face_engine.prepare(ctx_id=-1, det_size=(640, 640))
+                    logger.info("InsightFace carregado com sucesso")
+                    return
+                except Exception as cpu_exc:
+                    logger.warning(f"InsightFace não disponível: {cpu_exc}")
+                    self.face_engine = None
+                    return
             logger.warning(f"InsightFace não disponível: {e}")
             self.face_engine = None
 
