@@ -203,11 +203,14 @@ class DownloadQueue:
                     try:
                         print(f"[CloudThumb] download via URL: {task.file_id}")
                         with urllib.request.urlopen(task.url, timeout=30) as resp:
+                            ct = resp.headers.get('Content-Type', '')
+                            if not ct.startswith('image/'):
+                                raise Exception(f"Content-Type nao e imagem: {ct}")
                             with open(dest_file, "wb") as f:
                                 f.write(resp.read())
                         if os.path.getsize(dest_file) > 100:
                             downloaded = True
-                            print(f"[CloudThumb] download via URL OK: {task.file_id} ({os.path.getsize(dest_file)} bytes)")
+                            print(f"[CloudThumb] download via URL OK: {task.file_id} ({os.path.getsize(dest_file)} bytes, {ct})")
                     except Exception as e:
                         print(f"[CloudThumb] URL download falhou, fallback get_media: {e}")
 

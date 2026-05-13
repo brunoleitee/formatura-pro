@@ -2088,9 +2088,11 @@ def cloud_thumb(file_id: str = "", size: int = 200):
 def cloud_full(file_id: str = ""):
     try:
         from cloud.drive_cache import cache, download_queue
+        from cloud import is_authenticated, drive_manager
 
         if not file_id:
-            return {"error": "file_id obrigatório"}
+            return Response(content=PLACEHOLDER_SVG, media_type="image/svg+xml",
+                            headers={"Cache-Control": "no-store, must-revalidate"})
 
         original_path = cache.get_original_path(file_id)
 
@@ -2100,11 +2102,24 @@ def cloud_full(file_id: str = ""):
                                 headers={"Cache-Control": "public, max-age=86400"})
 
         print(f"[CloudFull] cache miss: {file_id}")
-        return Response(status_code=202)
+
+        if is_authenticated() and not download_queue.is_downloading(file_id):
+            download_queue.add_task(
+                file_id=file_id,
+                file_type="original",
+                url=f"https://drive.google.com/uc?id={file_id}",
+                dest_path=cache.get_original_dir(),
+                priority=3
+            )
+            print(f"[CloudFull] download iniciado: {file_id}")
+
+        return Response(content=PLACEHOLDER_SVG, media_type="image/svg+xml",
+                        headers={"Cache-Control": "no-store, must-revalidate"})
 
     except Exception as e:
         print(f"[CloudFull] erro: {e}")
-        return {"error": str(e)}
+        return Response(content=PLACEHOLDER_SVG, media_type="image/svg+xml",
+                        headers={"Cache-Control": "no-store, must-revalidate"})
 
 
 @app.get("/api/cloud/google/files")
