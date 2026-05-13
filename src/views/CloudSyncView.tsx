@@ -235,22 +235,31 @@ export default function CloudSyncView() {
     loadFolders(folderId);
   };
 
+  function toAbsoluteUrl(url: string): string {
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    return `http://127.0.0.1:8000${url.startsWith('/') ? url : '/' + url}`;
+  }
+
   const handleOpenFile = useCallback(async (file: CloudFile) => {
     console.log("[CloudOpen] opening file_id:", file.drive_file_id);
     setOpeningFileId(file.drive_file_id);
     try {
       const result = await cloudApi.downloadFull(file.drive_file_id);
       if (result.success && result.url) {
+        const fullUrl = toAbsoluteUrl(result.url);
         console.log("[CloudOpen] downloaded full:", result.url);
-        setPreviewFile({ fileId: file.drive_file_id, url: result.url, name: file.name });
+        console.log("[CloudOpen] previewUrl final:", fullUrl);
+        setPreviewFile({ fileId: file.drive_file_id, url: fullUrl, name: file.name });
       } else if (result.status === "downloading") {
         // Poll until ready
         for (let i = 0; i < 30; i++) {
           await new Promise(r => setTimeout(r, 1000));
           const poll = await cloudApi.downloadFull(file.drive_file_id);
           if (poll.success && poll.url) {
+            const fullUrl = toAbsoluteUrl(poll.url);
             console.log("[CloudOpen] downloaded full (poll):", poll.url);
-            setPreviewFile({ fileId: file.drive_file_id, url: poll.url, name: file.name });
+            console.log("[CloudOpen] previewUrl final:", fullUrl);
+            setPreviewFile({ fileId: file.drive_file_id, url: fullUrl, name: file.name });
             break;
           }
           if (poll.error) {
