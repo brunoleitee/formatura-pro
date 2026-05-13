@@ -15,6 +15,7 @@ class CentralAIPipeline:
     def process_photo(self, photo_id: int, catalog: str):
         """
         Executa o pipeline completo para uma única foto.
+        Usa PhotoSource como camada universal de acesso a imagens.
         """
         try:
             with self.get_db(catalog) as db:
@@ -25,15 +26,20 @@ class CentralAIPipeline:
                     return False
                 
                 photo = dict(photo)
-                img_path = photo["original_path"]
-                
-                if not os.path.exists(img_path):
+
+                # Resolver caminho via PhotoSource (suporta local e cloud)
+                from services.photo_loader import load_photo_for_ai
+                img_path = load_photo_for_ai(photo)
+
+                if not img_path or not os.path.exists(img_path):
+                    print(f"[CentralPipeline] caminho nao resolvido: photo_id={photo_id}")
                     return False
-                
+
+                print(f"[CentralPipeline] processando: {img_path}")
+
                 # 1. Carregar imagem
                 img = cv2.imread(img_path)
                 if img is None:
-                    # Fallback para caminhos com caracteres especiais se necessário
                     from PIL import Image
                     pil_img = Image.open(img_path).convert("RGB")
                     img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)

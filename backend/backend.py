@@ -2395,6 +2395,36 @@ def photo_source_full(path: str = ""):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/ai/process-photo")
+def ai_process_photo(photo_id: int, catalog: str = ""):
+    try:
+        if not catalog:
+            return {"error": "catalog obrigatorio"}
+
+        import sqlite3
+        BASE_DIR = Path(__file__).resolve().parents[1]
+        catalogs_dir = BASE_DIR / "data" / "catalogs"
+        catalog_path = catalogs_dir / f"{catalog}.db"
+
+        if not catalog_path.exists():
+            return {"error": f"Catalogo nao encontrado: {catalog}"}
+
+        def get_db(cat):
+            conn = sqlite3.connect(str(catalogs_dir / f"{cat}.db"))
+            conn.row_factory = sqlite3.Row
+            return conn
+
+        from ai_services.central_pipeline import CentralAIPipeline
+        pipeline = CentralAIPipeline(get_db=get_db)
+        result = pipeline.process_photo(photo_id, catalog)
+
+        return {"success": result, "photo_id": photo_id, "catalog": catalog}
+
+    except Exception as e:
+        print(f"[AIProcess] erro: {e}")
+        return {"error": str(e)}
+
+
 @app.get("/")
 def root_handler(code: str = Query(None), state: str = Query(None)):
     if code:
