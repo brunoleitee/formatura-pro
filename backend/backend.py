@@ -1239,6 +1239,7 @@ def bulk_manual_identify(req: BulkManualIdentifyReq):
     return rm.bulk_manual_identify(req)
 
 AssignUnknownClusterRequest = rm.AssignUnknownClusterRequest
+IgnoreUnknownClusterRequest = rm.IgnoreUnknownClusterRequest
 GraduationAnalysisRequest = rm.GraduationAnalysisRequest
 
 @app.post("/api/review/unknown-clusters/assign")
@@ -1265,6 +1266,23 @@ def assign_cluster(req: AssignUnknownClusterRequest):
             content={
                 "ok": False,
                 "error": "assign_unknown_cluster_failed",
+                "detail": str(e),
+            },
+        )
+
+@app.post("/api/review/unknown-clusters/ignore")
+def ignore_cluster(req: IgnoreUnknownClusterRequest):
+    try:
+        return rm.ignore_cluster(req)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.getLogger(__name__).exception("[ignore_unknown_cluster] erro")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "ok": False,
+                "error": "ignore_unknown_cluster_failed",
                 "detail": str(e),
             },
         )

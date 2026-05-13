@@ -34,6 +34,12 @@ export const reviewApi = {
     payload: { cluster_id: string; aluno_id: string | null; nome_formando: string | null }
   ) => post<AssignClusterResponse>(`${API_BASE}/review/unknown-clusters/assign`, { catalog, ...payload }),
 
+  ignoreCluster: (catalog: string, cluster_id: string) =>
+    post<{ ok: boolean; success: boolean; cluster_id: string; status: string }>(
+      `${API_BASE}/review/unknown-clusters/ignore`,
+      { catalog, cluster_id }
+    ),
+
   startGraduationAnalysis: (catalog: string) =>
     post<{ status: string; catalog: string }>(`${API_BASE}/review/graduation-analysis/start`, { catalog }),
 

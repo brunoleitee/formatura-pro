@@ -116,6 +116,7 @@ function ReviewViewContent() {
   const [viewerContextLoading, setViewerContextLoading] = useState(false);
   const [assignmentState, setAssignmentState] = useState<{ clusterId: string; studentName: string; status: string } | null>(null);
   const [assignmentToast, setAssignmentToast] = useState<string | null>(null);
+  const [reviewToast, setReviewToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null);
   const wasGraduationRunningRef = useRef(false);
   const detailRequestRef = useRef(0);
 
@@ -243,7 +244,13 @@ function ReviewViewContent() {
   useEffect(() => {
     return () => {
       setAssignmentToast(null);
+      setReviewToast(null);
     };
+  }, []);
+
+  const showReviewToast = useCallback((message: string, variant: 'success' | 'error' = 'success') => {
+    setReviewToast({ message, variant });
+    window.setTimeout(() => setReviewToast(null), 1800);
   }, []);
 
   const handleAssigned = useCallback((result: AssignClusterResponse) => {
@@ -263,11 +270,46 @@ function ReviewViewContent() {
     setAssignmentState(null);
   }, [clusters]);
 
-  const handleSkip = useCallback(() => {
-    if (!selectedId) return;
-    const idx = clusters.findIndex((cluster) => cluster.cluster_id === selectedId);
-    setSelectedId(clusters[idx + 1]?.cluster_id ?? clusters[idx - 1]?.cluster_id ?? null);
-  }, [selectedId, clusters]);
+  const handleSkip = useCallback(async () => {
+    if (!currentCatalog || !selectedId) return;
+    const currentClusterId = selectedId;
+    const currentIndex = clusters.findIndex((cluster) => cluster.cluster_id === currentClusterId);
+    if (currentIndex < 0) {
+      setSelectedId(null);
+      setSelected(null);
+      return;
+    }
+
+    const nextSelectedId = clusters[currentIndex + 1]?.cluster_id ?? clusters[currentIndex - 1]?.cluster_id ?? null;
+    const previousClusters = clusters;
+    const previousTotal = totalClusters;
+    const previousSelected = selected;
+    const previousSelectedId = selectedId;
+    const previousAssignmentState = assignmentState;
+
+    detailRequestRef.current += 1;
+    setLoadingDetail(false);
+    setClusters((prev) => prev.filter((cluster) => cluster.cluster_id !== currentClusterId));
+    setTotalClusters((value) => Math.max(0, value - 1));
+    setSelected((current) => (current?.cluster_id === currentClusterId ? null : current));
+    setSelectedId(nextSelectedId);
+    setAssignmentState(null);
+
+    try {
+      await api.ignoreCluster(currentCatalog, currentClusterId);
+      showReviewToast('Grupo ignorado com sucesso');
+    } catch (error) {
+      console.error('[ignoreCluster] erro:', error);
+      detailRequestRef.current += 1;
+      setClusters(previousClusters);
+      setTotalClusters(previousTotal);
+      setSelected(previousSelected);
+      setSelectedId(previousSelectedId);
+      setAssignmentState(previousAssignmentState);
+      setLoadingDetail(false);
+      showReviewToast('Não foi possível ignorar o grupo. Tente novamente.', 'error');
+    }
+  }, [assignmentState, clusters, currentCatalog, selected, selectedId, showReviewToast, totalClusters]);
 
   const handleClusterUpdate = useCallback((next: RichCluster) => {
     setClusters((prev) => prev.map((cluster) => (
@@ -444,6 +486,12 @@ function ReviewViewContent() {
 
       {assignmentToast && (
         <div className={styles.assignmentToast}>{assignmentToast}</div>
+      )}
+
+      {reviewToast && (
+        <div className={`${styles.assignmentToast} ${reviewToast.variant === 'error' ? styles.assignmentToastError : ''}`}>
+          {reviewToast.message}
+        </div>
       )}
     </div>
   );

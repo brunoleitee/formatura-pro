@@ -181,6 +181,12 @@
   backdrop-filter: blur(12px);
 }
 
+.assignmentToastError {
+  border-color: rgba(239, 68, 68, 0.26);
+  color: #fecaca;
+  background: rgba(15, 23, 42, 0.92);
+}
+
 .blockHidden {
   display: none;
 }

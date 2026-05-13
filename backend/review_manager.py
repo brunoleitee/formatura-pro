@@ -388,6 +388,11 @@ class AssignUnknownClusterRequest(BaseModel):
     nome_formando: str | None = None
 
 
+class IgnoreUnknownClusterRequest(BaseModel):
+    catalog: str = ""
+    cluster_id: str
+
+
 class GraduationAnalysisRequest(BaseModel):
     catalog: str = ""
 
@@ -639,6 +644,34 @@ def _sync_unknown_face_clusters(cur, clusters: list[dict]):
             """,
             rows,
         )
+
+
+def _ensure_ignored_review_clusters_table(cur):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ignored_review_clusters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            catalog TEXT NOT NULL,
+            cluster_id TEXT NOT NULL,
+            created_at REAL DEFAULT (strftime('%s','now')),
+            UNIQUE(catalog, cluster_id)
+        )
+        """
+    )
+
+
+def _ignored_review_cluster_filter(catalog: str) -> tuple[str, list[str]]:
+    return (
+        """
+        NOT EXISTS (
+            SELECT 1
+            FROM ignored_review_clusters i
+            WHERE i.catalog = ?
+              AND i.cluster_id = u.cluster_id
+        )
+        """,
+        [catalog],
+    )
 
 
 def _is_review_unknown_label(aluno_id: str | None) -> bool:
@@ -1690,6 +1723,46 @@ def assign_cluster(req: AssignUnknownClusterRequest):
     }
 
 
+def ignore_cluster(req: IgnoreUnknownClusterRequest):
+    get_db = _get("get_db")
+    catalog = _sanitize_catalog_name(req.catalog or _current_catalog())
+    cluster_id = str(req.cluster_id or "").strip()
+    if not catalog:
+        raise HTTPException(status_code=400, detail="Nenhum catalogo selecionado")
+    if not cluster_id:
+        raise HTTPException(status_code=400, detail="cluster_id e obrigatorio.")
+
+    with get_db(catalog) as conn:
+        cur = conn.cursor()
+        _ensure_ignored_review_clusters_table(cur)
+        cur.execute(
+            "INSERT OR IGNORE INTO ignored_review_clusters (catalog, cluster_id) VALUES (?, ?)",
+            (catalog, cluster_id),
+        )
+        _ensure_action_logs_table(cur)
+        cur.execute(
+            "INSERT INTO action_logs (action, details) VALUES (?, ?)",
+            (
+                "unknown_cluster_ignored",
+                json.dumps(
+                    {
+                        "catalog": catalog,
+                        "cluster_id": cluster_id,
+                    },
+                    ensure_ascii=False,
+                ),
+            ),
+        )
+        conn.commit()
+
+    return {
+        "ok": True,
+        "success": True,
+        "cluster_id": cluster_id,
+        "status": "ignored",
+    }
+
+
 def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster_size: int = 2, limit: int = 80):
     get_db = _get("get_db")
     cat = catalog or _current_catalog()
@@ -1945,8 +2018,17 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
     with get_db(cat) as conn:
         cur = conn.cursor()
         cache_info = _ensure_review_cluster_cache(cur)
+        _ensure_ignored_review_clusters_table(cur)
+        ignored_filter_sql, ignored_filter_params = _ignored_review_cluster_filter(cat)
 
-        cur.execute("SELECT COUNT(DISTINCT cluster_id) AS cnt FROM unknown_face_clusters")
+        cur.execute(
+            f"""
+            SELECT COUNT(DISTINCT u.cluster_id) AS cnt
+            FROM unknown_face_clusters u
+            WHERE {ignored_filter_sql}
+            """,
+            ignored_filter_params,
+        )
         total = int((cur.fetchone() or {"cnt": 0})["cnt"] or 0)
         if total == 0:
             conn.commit()
@@ -1973,7 +2055,7 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
 
         query_started_at = time.perf_counter()
         cur.execute(
-            """
+            f"""
             SELECT u.cluster_id,
                    COUNT(*) AS face_count,
                    COUNT(DISTINCT o.foto_path) AS photo_count,
@@ -1982,11 +2064,12 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                    MIN(u.id) AS first_id
             FROM unknown_face_clusters u
             JOIN ocorrencias o ON o.rowid = u.face_id
+            WHERE {ignored_filter_sql}
             GROUP BY u.cluster_id
             ORDER BY max_graduation_score DESC, avg_confidence DESC, face_count DESC, first_id ASC
             LIMIT ? OFFSET ?
             """,
-            (limit, offset),
+            ignored_filter_params + [limit, offset],
         )
         summary_rows = cur.fetchall()
         query_duration_ms = round((time.perf_counter() - query_started_at) * 1000, 2)
@@ -2008,9 +2091,10 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                 FROM unknown_face_clusters u
                 JOIN ocorrencias o ON o.rowid = u.face_id
                 WHERE u.cluster_id IN ({placeholders})
+                  AND {ignored_filter_sql}
                 ORDER BY u.id ASC
                 """,
-                cluster_ids,
+                cluster_ids + ignored_filter_params,
             )
             for row in cur.fetchall():
                 grouped_items[str(row["cluster_id"])].append(_row_to_review_item(row))
@@ -2068,8 +2152,10 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
     with get_db(cat) as conn:
         cur = conn.cursor()
         cache_info = _ensure_review_cluster_cache(cur)
+        _ensure_ignored_review_clusters_table(cur)
+        ignored_filter_sql, ignored_filter_params = _ignored_review_cluster_filter(cat)
         cur.execute(
-            """
+            f"""
             SELECT u.cluster_id,
                    o.rowid, o.aluno_id, o.foto_path, o.x1, o.y1, o.x2, o.y2,
                    o.blur_status, o.blur_score, o.closed_eyes,
@@ -2081,9 +2167,10 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
             FROM unknown_face_clusters u
             JOIN ocorrencias o ON o.rowid = u.face_id
             WHERE u.cluster_id = ?
+              AND {ignored_filter_sql}
             ORDER BY u.id ASC
             """,
-            (cluster_id,),
+            [cluster_id] + ignored_filter_params,
         )
         rows = cur.fetchall()
         if not rows:
@@ -2092,17 +2179,19 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
 
         comp_items = [_row_to_review_item(row) for row in rows]
         cur.execute(
-            """
+            f"""
             SELECT u.cluster_id
             FROM unknown_face_clusters u
             JOIN ocorrencias o ON o.rowid = u.face_id
+            WHERE {ignored_filter_sql}
             GROUP BY u.cluster_id
             ORDER BY
                 MAX(COALESCE(o.graduation_score, 0)) DESC,
                 AVG(COALESCE(u.confidence, 0)) DESC,
                 COUNT(*) DESC,
                 MIN(u.id) ASC
-            """
+            """,
+            ignored_filter_params,
         )
         ordered_cluster_ids = [str(row["cluster_id"]) for row in cur.fetchall()]
         try:
