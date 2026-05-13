@@ -64,6 +64,14 @@ export default function CloudSyncView() {
   const previewFileRef = useRef<{ fileId: string; url: string; name: string } | null>(null);
   const [aiStatus, setAiStatus] = useState<'idle' | 'pending' | 'processing' | 'completed' | 'error'>('idle');
   const aiPollRef = useRef<number | null>(null);
+  const [aiDetails, setAiDetails] = useState<{
+    processed?: boolean; face_detected?: boolean; embedding_ready?: boolean;
+    possible_student?: string | null; face_confidence?: number | null;
+    suggestions?: { student: string; confidence: number }[];
+    detected_objects?: string[]; catalog?: string;
+    ocr_text?: string; ocr_confidence?: number;
+  } | null>(null);
+  const [aiDetailsLoading, setAiDetailsLoading] = useState(false);
 
   const loadFolders = useCallback(async (parentId: string = 'root') => {
     setLoading(true);
@@ -245,6 +253,21 @@ export default function CloudSyncView() {
     return `http://127.0.0.1:8000/api/photo-source/full?path=cloud://${fileId}&_t=${Date.now()}`;
   }
 
+  const fetchAiDetails = useCallback(async (fileId: string) => {
+    setAiDetailsLoading(true);
+    try {
+      console.log("[AI Panel] loading details for:", fileId);
+      const resp = await fetch(`/api/ai/photo-details?foto_path=cloud://${fileId}`);
+      const data = await resp.json();
+      setAiDetails(data);
+      console.log("[AI Panel] details loaded:", data);
+    } catch (e) {
+      console.error("[AI Panel] error:", e);
+    } finally {
+      setAiDetailsLoading(false);
+    }
+  }, []);
+
   const triggerAiProcessing = useCallback(async (fileId: string) => {
     console.log("[AIViewer] processing requested:", fileId);
     setAiStatus('pending');
@@ -254,6 +277,7 @@ export default function CloudSyncView() {
       if (data.success) {
         setAiStatus('completed');
         console.log("[AIViewer] processing completed:", fileId);
+        fetchAiDetails(fileId);
       } else {
         setAiStatus('processing');
         console.log("[AIViewer] processing started:", fileId);
@@ -264,6 +288,7 @@ export default function CloudSyncView() {
             if (sd.has_full) {
               setAiStatus('completed');
               console.log("[AIViewer] download completed:", fileId);
+              fetchAiDetails(fileId);
             } else {
               aiPollRef.current = window.setTimeout(poll, 1500);
             }
@@ -277,7 +302,7 @@ export default function CloudSyncView() {
       console.error("[AIViewer] error:", e);
       setAiStatus('error');
     }
-  }, []);
+  }, [fetchAiDetails]);
 
   const handleOpenFile = useCallback(async (file: CloudFile) => {
     if (openingFileId === file.drive_file_id) return;
@@ -651,23 +676,75 @@ export default function CloudSyncView() {
                 </div>
               )}
               {previewFile && !previewLoading && (
-                <img
-                  src={previewFile.url}
-                  alt={previewFile.name}
-                  className={styles.viewerImage}
-                  onLoad={() => {
-                    console.log("[CloudOpen] imagem carregada com sucesso:", previewFile.url);
-                    previewLoadedRef.current = true;
-                    setPreviewError(null);
-                    setPreviewLoading(false);
-                  }}
-                  onError={(e) => {
-                    console.error("[CloudOpen] erro ao carregar full image:", previewFile.url);
-                    previewLoadedRef.current = false;
-                    setPreviewError("Falha ao carregar imagem. Tente novamente.");
-                    setPreviewLoading(false);
-                  }}
-                />
+                <div className={styles.viewerImageWrap}>
+                  <img
+                    src={previewFile.url}
+                    alt={previewFile.name}
+                    className={styles.viewerImage}
+                    onLoad={() => {
+                      console.log("[CloudOpen] imagem carregada com sucesso:", previewFile.url);
+                      previewLoadedRef.current = true;
+                      setPreviewError(null);
+                      setPreviewLoading(false);
+                    }}
+                    onError={(e) => {
+                      console.error("[CloudOpen] erro ao carregar full image:", previewFile.url);
+                      previewLoadedRef.current = false;
+                      setPreviewError("Falha ao carregar imagem. Tente novamente.");
+                      setPreviewLoading(false);
+                    }}
+                  />
+                </div>
+              )}
+              {previewFile && !previewLoading && !previewError && (
+                <div className={styles.aiPanel}>
+                  <h4 className={styles.aiPanelTitle}>IA</h4>
+                  {aiDetailsLoading ? (
+                    <div className={styles.aiPanelLoading}>
+                      <span className={styles.fileLoadingSpinner}></span>
+                      <p>Carregando...</p>
+                    </div>
+                  ) : aiDetails ? (
+                    <div className={styles.aiPanelContent}>
+                      <div className={styles.aiPanelSection}>
+                        <span className={aiDetails.face_detected ? styles.aiStatusOk : styles.aiStatusMuted}>
+                          {aiDetails.face_detected ? '✓ Rosto detectado' : '— Rosto'}
+                        </span>
+                        <span className={aiDetails.embedding_ready ? styles.aiStatusOk : styles.aiStatusMuted}>
+                          {aiDetails.embedding_ready ? '✓ Embedding criado' : '— Embedding'}
+                        </span>
+                      </div>
+                      {aiDetails.possible_student && (
+                        <div className={styles.aiPanelSection}>
+                          <label className={styles.aiLabel}>Aluno sugerido</label>
+                          <span className={styles.aiValue}>{aiDetails.possible_student}</span>
+                        </div>
+                      )}
+                      {aiDetails.face_confidence && (
+                        <div className={styles.aiPanelSection}>
+                          <label className={styles.aiLabel}>Confiança</label>
+                          <span className={styles.aiValue}>{(aiDetails.face_confidence * 100).toFixed(0)}%</span>
+                        </div>
+                      )}
+                      {aiDetails.suggestions && aiDetails.suggestions.length > 1 && (
+                        <div className={styles.aiPanelSection}>
+                          <label className={styles.aiLabel}>Sugestões</label>
+                          {aiDetails.suggestions.map((s, i) => (
+                            <div key={i} className={styles.aiSuggestionRow}>
+                              <span className={styles.aiSuggestionName}>{s.student}</span>
+                              <span className={styles.aiSuggestionConf}>{(s.confidence * 100).toFixed(0)}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {!aiDetails.face_detected && !aiDetails.embedding_ready && !aiDetails.possible_student && (
+                        <p className={styles.aiPanelEmpty}>Nenhum dado IA disponível</p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className={styles.aiPanelEmpty}>Nenhum dado IA disponível</p>
+                  )}
+                </div>
               )}
             </div>
           </div>

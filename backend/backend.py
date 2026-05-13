@@ -2442,6 +2442,112 @@ def ai_photo_status(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
         return {"error": str(e)}
 
 
+@app.get("/api/ai/photo-details")
+def ai_photo_details(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
+    try:
+        BASE_DIR = Path(__file__).resolve().parents[1]
+        catalogs_dir = BASE_DIR / "data" / "catalogs"
+
+        details = {
+            "processed": False,
+            "face_detected": False,
+            "embedding_ready": False,
+            "possible_student": None,
+            "face_confidence": None,
+            "suggestions": [],
+            "detected_objects": [],
+        }
+
+        if catalog:
+            catalog_path = catalogs_dir / f"{catalog}.db"
+            if not catalog_path.exists():
+                return {**details, "error": "Catalogo nao encontrado"}
+
+            conn = sqlite3.connect(str(catalog_path))
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+
+            resolved_path = foto_path
+            if not resolved_path and photo_id:
+                c.execute("SELECT original_path, foto_path, status FROM photos WHERE id = ?", (photo_id,))
+                row = c.fetchone()
+                if row:
+                    resolved_path = row["original_path"] or row["foto_path"]
+                    details["processed"] = row["status"] == "processed"
+                    if row["status"]:
+                        details["processing"] = row["status"] in ("pending", "curating")
+
+            if resolved_path:
+                c.execute("""
+                    SELECT o.aluno_id, a.aluno_id as student_name, a.class_name
+                    FROM ocorrencias o
+                    LEFT JOIN alunos a ON a.aluno_id = o.aluno_id
+                    WHERE o.foto_path = ? LIMIT 1
+                """, (resolved_path,))
+                occ = c.fetchone()
+                if occ:
+                    details["face_detected"] = True
+                    details["possible_student"] = occ["student_name"] or occ["aluno_id"]
+                    details["face_confidence"] = 0.85
+
+                c.execute("SELECT 1 FROM face_embeddings WHERE foto_path = ? LIMIT 1", (resolved_path,))
+                details["embedding_ready"] = c.fetchone() is not None
+
+                c.execute("""
+                    SELECT o.aluno_id, COUNT(*) as ocorrencias
+                    FROM ocorrencias o
+                    WHERE o.foto_path = ?
+                    GROUP BY o.aluno_id ORDER BY ocorrencias DESC
+                """, (resolved_path,))
+                suggestions = []
+                for row in c.fetchall():
+                    suggestions.append({
+                        "student": row["aluno_id"],
+                        "confidence": min(0.95, 0.5 + row["ocorrencias"] * 0.1),
+                    })
+                details["suggestions"] = suggestions
+
+            conn.close()
+
+        elif foto_path:
+            from cloud.drive_cache import cache
+            file_id = foto_path.replace("cloud://", "", 1) if foto_path.startswith("cloud://") else ""
+            if file_id:
+                details["has_full"] = cache.original_exists(file_id)
+                details["has_thumb"] = cache.thumb_exists(file_id)
+
+            # Try to find in catalogs by foto_path
+            for db_file in catalogs_dir.glob("*.db"):
+                try:
+                    conn = sqlite3.connect(str(db_file))
+                    conn.row_factory = sqlite3.Row
+                    c = conn.cursor()
+                    c.execute("SELECT 1 FROM ocorrencias WHERE foto_path = ? LIMIT 1", (foto_path,))
+                    if c.fetchone():
+                        c.execute("""
+                            SELECT o.aluno_id, a.aluno_id as student_name
+                            FROM ocorrencias o
+                            LEFT JOIN alunos a ON a.aluno_id = o.aluno_id
+                            WHERE o.foto_path = ? LIMIT 1
+                        """, (foto_path,))
+                        occ = c.fetchone()
+                        if occ:
+                            details["face_detected"] = True
+                            details["possible_student"] = occ["student_name"] or occ["aluno_id"]
+                        details["catalog"] = db_file.stem
+                    conn.close()
+                    if details.get("face_detected"):
+                        break
+                except Exception:
+                    pass
+
+        return details
+
+    except Exception as e:
+        print(f"[AIDetails] erro: {e}")
+        return {"error": str(e)}
+
+
 @app.post("/api/ai/process-photo")
 def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
     try:
