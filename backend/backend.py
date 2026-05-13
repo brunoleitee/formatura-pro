@@ -2516,6 +2516,15 @@ def ai_photo_details(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
                 details["has_full"] = cache.original_exists(file_id)
                 details["has_thumb"] = cache.thumb_exists(file_id)
 
+                # Ler resultados de IA do cache metadata
+                metadata = cache.load_metadata(file_id)
+                if metadata:
+                    if metadata.get("ai_face_detected"):
+                        details["face_detected"] = True
+                        details["face_confidence"] = metadata.get("ai_confidence")
+                        details["embedding_ready"] = metadata.get("ai_embedding_ready", False)
+                        details["ai_processed_at"] = metadata.get("ai_processed_at")
+
             # Try to find in catalogs by foto_path
             for db_file in catalogs_dir.glob("*.db"):
                 try:
@@ -2535,8 +2544,12 @@ def ai_photo_details(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
                             details["face_detected"] = True
                             details["possible_student"] = occ["student_name"] or occ["aluno_id"]
                         details["catalog"] = db_file.stem
+
+                        c.execute("SELECT 1 FROM face_embeddings WHERE foto_path = ? LIMIT 1", (foto_path,))
+                        if c.fetchone():
+                            details["embedding_ready"] = True
                     conn.close()
-                    if details.get("face_detected"):
+                    if details.get("embedding_ready"):
                         break
                 except Exception:
                     pass
@@ -2581,9 +2594,99 @@ def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
             photo = {"foto_path": foto_path, "source_type": "google_drive"}
             from services.photo_loader import load_photo_for_ai
             local_path = load_photo_for_ai(photo)
-            if local_path:
-                return {"success": True, "local_path": local_path, "status": "downloaded"}
-            return {"success": False, "status": "downloading", "foto_path": foto_path}
+            if not local_path or not os.path.exists(local_path):
+                return {"success": False, "status": "downloading", "foto_path": foto_path}
+
+            print(f"[AI] resolved local_path: {local_path}")
+            print(f"[AI] file exists: {os.path.exists(local_path)}")
+            file_size = os.path.getsize(local_path)
+            print(f"[AI] file size: {file_size}")
+            if file_size == 0:
+                return {"success": False, "error": "Arquivo vazio"}
+
+            import cv2
+            img = cv2.imread(local_path)
+            if img is None:
+                return {"success": False, "error": "Falha ao ler imagem"}
+            print(f"[AI] image size: {img.shape[1]}x{img.shape[0]}")
+
+            from scanner_engine import ensure_face_engine, get_app_face
+            ensure_face_engine()
+            app_face = get_app_face()
+            faces = []
+            if app_face:
+                with _suppress_stdout():
+                    faces = app_face.get(img) or []
+            print(f"[AI] faces detected count: {len(faces)}")
+
+            result = {
+                "success": True,
+                "local_path": local_path,
+                "face_detected": len(faces) > 0,
+                "faces_count": len(faces),
+            }
+
+            root_dir = Path(__file__).resolve().parents[1]
+
+            # Salvar no catalogo SQLite se existir ocorrencia
+            file_id = foto_path.replace("cloud://", "", 1) if foto_path.startswith("cloud://") else ""
+            saved_to_catalog = False
+            for db_file in (root_dir / "data" / "catalogs").glob("*.db"):
+                try:
+                    conn = sqlite3.connect(str(db_file))
+                    c = conn.cursor()
+                    c.execute("SELECT rowid FROM ocorrencias WHERE foto_path = ? LIMIT 1", (foto_path,))
+                    occ_row = c.fetchone()
+                    if occ_row:
+                        rowid = occ_row[0]
+                        if len(faces) > 0:
+                            face = faces[0]
+                            emb = face.embedding.astype("float32")
+                            import numpy as np
+                            norm = float(np.linalg.norm(emb))
+                            c.execute("""
+                                INSERT OR REPLACE INTO face_embeddings
+                                (occurrence_rowid, foto_path, x1, y1, x2, y2, embedding, mtime_ns, size)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                rowid, foto_path,
+                                int(face.bbox[0]), int(face.bbox[1]),
+                                int(face.bbox[2]), int(face.bbox[3]),
+                                emb.tobytes(),
+                                int(os.path.getmtime(local_path) * 1e9) if os.path.exists(local_path) else 0,
+                                os.path.getsize(local_path) if os.path.exists(local_path) else 0,
+                            ))
+                            result["embedding_ready"] = norm > 0
+                            result["embedding_norm"] = round(norm, 4)
+                            result["confidence"] = float(face.det_score) if hasattr(face, "det_score") else 0.0
+                        conn.commit()
+                        saved_to_catalog = True
+                        break
+                    conn.close()
+                except Exception:
+                    pass
+
+            # Se nao salvou em catalogo e tem file_id, salvar no metadata do cache
+            if not saved_to_catalog and file_id:
+                from cloud.drive_cache import cache
+                metadata = cache.load_metadata(file_id) or {}
+                metadata["ai_face_detected"] = len(faces) > 0
+                metadata["ai_faces_count"] = len(faces)
+                if len(faces) > 0:
+                    face = faces[0]
+                    import numpy as np
+                    emb = face.embedding.astype("float32")
+                    norm = float(np.linalg.norm(emb))
+                    metadata["ai_embedding_ready"] = norm > 0
+                    metadata["ai_confidence"] = float(face.det_score) if hasattr(face, "det_score") else 0.0
+                    metadata["ai_processed_at"] = time.time()
+                    result["embedding_ready"] = norm > 0
+                    result["confidence"] = metadata["ai_confidence"]
+                cache.save_metadata(file_id, metadata)
+                print(f"[AI] resultado salvo no cache metadata: {file_id}")
+
+            print(f"[AI] resultado: {result}")
+            return result
 
         return {"error": "forneca photo_id+catalog ou foto_path"}
 
