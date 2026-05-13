@@ -2395,30 +2395,91 @@ def photo_source_full(path: str = ""):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/ai/process-photo")
-def ai_process_photo(photo_id: int, catalog: str = ""):
+@app.get("/api/ai/photo-status")
+def ai_photo_status(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
     try:
-        if not catalog:
-            return {"error": "catalog obrigatorio"}
-
-        import sqlite3
         BASE_DIR = Path(__file__).resolve().parents[1]
         catalogs_dir = BASE_DIR / "data" / "catalogs"
-        catalog_path = catalogs_dir / f"{catalog}.db"
 
-        if not catalog_path.exists():
-            return {"error": f"Catalogo nao encontrado: {catalog}"}
-
-        def get_db(cat):
-            conn = sqlite3.connect(str(catalogs_dir / f"{cat}.db"))
+        if catalog:
+            catalog_path = catalogs_dir / f"{catalog}.db"
+            if not catalog_path.exists():
+                return {"error": "Catalogo nao encontrado"}
+            conn = sqlite3.connect(str(catalog_path))
             conn.row_factory = sqlite3.Row
-            return conn
+            c = conn.cursor()
 
-        from ai_services.central_pipeline import CentralAIPipeline
-        pipeline = CentralAIPipeline(get_db=get_db)
-        result = pipeline.process_photo(photo_id, catalog)
+            status = {"processing": False, "ocr": False, "embedding": False, "face_detected": False}
 
-        return {"success": result, "photo_id": photo_id, "catalog": catalog}
+            if photo_id:
+                c.execute("SELECT status FROM photos WHERE id = ?", (photo_id,))
+                row = c.fetchone()
+                if row:
+                    is_processed = row["status"] == "processed"
+                    status["processing"] = row["status"] in ("pending", "curating")
+                    status["ocr"] = is_processed
+                    c.execute("SELECT 1 FROM faces WHERE photo_id = ? LIMIT 1", (photo_id,))
+                    status["face_detected"] = c.fetchone() is not None
+                    status["embedding"] = status["face_detected"]
+
+            conn.close()
+            return status
+
+        if foto_path:
+            from cloud.drive_cache import cache
+            file_id = foto_path.replace("cloud://", "", 1) if foto_path.startswith("cloud://") else ""
+            if file_id:
+                return {
+                    "has_full": cache.original_exists(file_id),
+                    "has_thumb": cache.thumb_exists(file_id),
+                }
+            return {"has_full": False, "has_thumb": False}
+
+        return {"error": "forneca photo_id+catalog ou foto_path"}
+
+    except Exception as e:
+        print(f"[AIStatus] erro: {e}")
+        return {"error": str(e)}
+
+
+@app.post("/api/ai/process-photo")
+def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
+    try:
+        from services.ai_processing_queue import ai_processing_queue
+
+        if catalog and photo_id:
+            BASE_DIR = Path(__file__).resolve().parents[1]
+            catalogs_dir = BASE_DIR / "data" / "catalogs"
+            catalog_path = catalogs_dir / f"{catalog}.db"
+            if not catalog_path.exists():
+                return {"error": f"Catalogo nao encontrado: {catalog}"}
+
+            conn = sqlite3.connect(str(catalog_path))
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+            c.execute("SELECT * FROM photos WHERE id = ?", (photo_id,))
+            photo = c.fetchone()
+            conn.close()
+
+            if not photo:
+                return {"error": "Foto nao encontrada no catalogo"}
+
+            ai_processing_queue.enqueue(
+                photo_id=photo_id,
+                catalog=catalog,
+                photo=dict(photo),
+            )
+            return {"success": True, "photo_id": photo_id, "catalog": catalog, "status": "queued"}
+
+        if foto_path:
+            photo = {"foto_path": foto_path, "source_type": "google_drive"}
+            from services.photo_loader import load_photo_for_ai
+            local_path = load_photo_for_ai(photo)
+            if local_path:
+                return {"success": True, "local_path": local_path, "status": "downloaded"}
+            return {"success": False, "status": "downloading", "foto_path": foto_path}
+
+        return {"error": "forneca photo_id+catalog ou foto_path"}
 
     except Exception as e:
         print(f"[AIProcess] erro: {e}")

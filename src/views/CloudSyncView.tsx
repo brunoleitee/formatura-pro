@@ -62,6 +62,8 @@ export default function CloudSyncView() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const previewLoadedRef = useRef(false);
   const previewFileRef = useRef<{ fileId: string; url: string; name: string } | null>(null);
+  const [aiStatus, setAiStatus] = useState<'idle' | 'pending' | 'processing' | 'completed' | 'error'>('idle');
+  const aiPollRef = useRef<number | null>(null);
 
   const loadFolders = useCallback(async (parentId: string = 'root') => {
     setLoading(true);
@@ -243,6 +245,40 @@ export default function CloudSyncView() {
     return `http://127.0.0.1:8000/api/photo-source/full?path=cloud://${fileId}&_t=${Date.now()}`;
   }
 
+  const triggerAiProcessing = useCallback(async (fileId: string) => {
+    console.log("[AIViewer] processing requested:", fileId);
+    setAiStatus('pending');
+    try {
+      const resp = await fetch(`/api/ai/process-photo?foto_path=cloud://${fileId}`, { method: 'POST' });
+      const data = await resp.json();
+      if (data.success) {
+        setAiStatus('completed');
+        console.log("[AIViewer] processing completed:", fileId);
+      } else {
+        setAiStatus('processing');
+        console.log("[AIViewer] processing started:", fileId);
+        const poll = async () => {
+          try {
+            const sr = await fetch(`/api/ai/photo-status?foto_path=cloud://${fileId}`);
+            const sd = await sr.json();
+            if (sd.has_full) {
+              setAiStatus('completed');
+              console.log("[AIViewer] download completed:", fileId);
+            } else {
+              aiPollRef.current = window.setTimeout(poll, 1500);
+            }
+          } catch {
+            aiPollRef.current = window.setTimeout(poll, 1500);
+          }
+        };
+        aiPollRef.current = window.setTimeout(poll, 1500);
+      }
+    } catch (e) {
+      console.error("[AIViewer] error:", e);
+      setAiStatus('error');
+    }
+  }, []);
+
   const handleOpenFile = useCallback(async (file: CloudFile) => {
     if (openingFileId === file.drive_file_id) return;
     previewLoadedRef.current = false;
@@ -250,6 +286,7 @@ export default function CloudSyncView() {
     setOpeningFileId(file.drive_file_id);
     setPreviewError(null);
     setPreviewLoading(true);
+    setAiStatus('idle');
     try {
       const result = await cloudApi.downloadFull(file.drive_file_id);
       if (result.success && result.url) {
@@ -259,6 +296,7 @@ export default function CloudSyncView() {
         const pf = { fileId: file.drive_file_id, url: fullUrl, name: file.name };
         previewFileRef.current = pf;
         setPreviewFile(pf);
+        triggerAiProcessing(file.drive_file_id);
       } else if (result.status === "downloading") {
         for (let i = 0; i < 30; i++) {
           await new Promise(r => setTimeout(r, 1000));
@@ -271,6 +309,7 @@ export default function CloudSyncView() {
             const pf = { fileId: file.drive_file_id, url: fullUrl, name: file.name };
             previewFileRef.current = pf;
             setPreviewFile(pf);
+            triggerAiProcessing(file.drive_file_id);
             break;
           }
           if (poll.error) {
@@ -296,7 +335,7 @@ export default function CloudSyncView() {
     } finally {
       setOpeningFileId(null);
     }
-  }, [openingFileId]);
+  }, [openingFileId, triggerAiProcessing]);
 
   return (
     <div className={styles.page}>
@@ -566,13 +605,25 @@ export default function CloudSyncView() {
       )}
 
       {(previewFile || previewLoading) && (
-        <div className={styles.viewerOverlay} onClick={() => { setPreviewFile(null); setPreviewError(null); }}>
+        <div className={styles.viewerOverlay} onClick={() => {
+          if (aiPollRef.current) { clearTimeout(aiPollRef.current); aiPollRef.current = null; }
+          setPreviewFile(null); setPreviewError(null); setAiStatus('idle');
+        }}>
           <div className={styles.viewerContent} onClick={e => e.stopPropagation()}>
             <div className={styles.viewerHeader}>
               <span className={styles.viewerFilename}>
                 {previewFile?.name || "Abrindo..."}
               </span>
-              <button className={styles.viewerClose} onClick={() => { setPreviewFile(null); setPreviewError(null); }}>×</button>
+              <div className={styles.viewerHeaderRight}>
+                {aiStatus === 'pending' && <span className={styles.aiBadge}>⏳ Analisando...</span>}
+                {aiStatus === 'processing' && <span className={styles.aiBadge}>⏳ Analisando...</span>}
+                {aiStatus === 'completed' && <span className={styles.aiBadgeDone}>✅ IA pronto</span>}
+                {aiStatus === 'error' && <span className={styles.aiBadgeError}>⚠️ IA falhou</span>}
+              </div>
+              <button className={styles.viewerClose} onClick={() => {
+                if (aiPollRef.current) { clearTimeout(aiPollRef.current); aiPollRef.current = null; }
+                setPreviewFile(null); setPreviewError(null); setAiStatus('idle');
+              }}>×</button>
             </div>
             <div className={styles.viewerBody}>
               {previewLoading && (
