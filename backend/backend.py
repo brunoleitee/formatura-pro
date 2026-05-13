@@ -148,24 +148,31 @@ except ImportError:
 
 app = FastAPI(title="Formatura PRO API")
 
-THUMB_SEMAPHORE = threading.Semaphore(4)
+THUMB_SEMAPHORE_SMALL = threading.Semaphore(8)
+THUMB_SEMAPHORE_LARGE = threading.Semaphore(2)
+THUMB_SLOT_LOCAL = threading.local()
 THUMB_QUEUE = []
 THUMB_QUEUE_LOCK = threading.Lock()
 THUMB_MAX_QUEUE = 50
 
-def get_thumb_slot(timeout=0.5):
-    acquired = THUMB_SEMAPHORE.acquire(timeout=timeout)
+def get_thumb_slot(size=300, timeout=0.5):
+    semaphore = THUMB_SEMAPHORE_SMALL if int(size or 0) <= 400 else THUMB_SEMAPHORE_LARGE
+    acquired = semaphore.acquire(timeout=timeout)
     if not acquired:
         with THUMB_QUEUE_LOCK:
             if len(THUMB_QUEUE) < THUMB_MAX_QUEUE:
                 THUMB_QUEUE.append(time.time())
             else:
                 raise HTTPException(429, "Too many thumbnail requests. Please wait.")
+    THUMB_SLOT_LOCAL.current = semaphore
     return True
 
 def release_thumb_slot():
     try:
-        THUMB_SEMAPHORE.release()
+        semaphore = getattr(THUMB_SLOT_LOCAL, "current", None)
+        if semaphore is not None:
+            semaphore.release()
+            THUMB_SLOT_LOCAL.current = None
     except:
         pass
 
@@ -1440,7 +1447,7 @@ def get_photo_info(path: str, catalog: str = ""):
 @app.get("/api/image_thumb")
 def get_image_thumb(path: str, size: int = 300, q: int = 80):
     try:
-        get_thumb_slot()
+        get_thumb_slot(size=size)
         return mm.get_image_thumb(path, size, q)
     finally:
         release_thumb_slot()
@@ -1448,7 +1455,7 @@ def get_image_thumb(path: str, size: int = 300, q: int = 80):
 @app.get("/api/thumb")
 def get_thumb(path: str, x1: int, y1: int, x2: int, y2: int, size: int = 120, expand: float = 0.35, q: int = 80):
     try:
-        get_thumb_slot()
+        get_thumb_slot(size=size)
         return mm.get_thumb(path, x1, y1, x2, y2, size, expand, q)
     finally:
         release_thumb_slot()
@@ -1803,7 +1810,7 @@ def search_similar_faces(rowid: int, catalog: str = "", limit: int = 50):
 @app.get("/api/faces/thumb")
 def get_face_thumb(rowid: int, catalog: str = "", size: int = 180):
     try:
-        get_thumb_slot()
+        get_thumb_slot(size=size)
         with get_db(catalog) as conn:
             cur = conn.cursor()
             cur.execute(

@@ -3,6 +3,7 @@ import { Download, FolderOpen, RefreshCw, Check, Users } from 'lucide-react';
 import { api, type Person, type ExportStatus, type ExportSummary } from '../services/api';
 import { useApp } from '../context/AppContext';
 import ExportFinishModal from '../components/ExportFinishModal';
+import { getAvatarThumbUrl } from '../utils/imageUrls';
 
 type ExportMode = 'copy' | 'move';
 type ConflictStrategy = 'copy' | 'skip' | 'overwrite';
@@ -31,7 +32,7 @@ const ExportAvatar = memo(function ExportAvatar({ person, index }: { person: Per
 
   return (
     <img
-      src={api.thumbUrl(avatarPath, 160)}
+      src={getAvatarThumbUrl(avatarPath) ?? ''}
       alt={person.name}
       loading="eager"
       decoding="async"

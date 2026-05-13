@@ -19,8 +19,8 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { api } from '../../services/api';
 import type { ScanRecentFace, ScanStatus } from '../../services/api';
+import { getGridHighThumbUrl, getGridThumbUrl } from '../../utils/imageUrls';
 import styles from './ScanProcessingCenter.module.css';
 
 export interface ScanTimelineEntry {
@@ -172,8 +172,8 @@ const LiveFaceCard = memo(function LiveFaceCard({
 }) {
   const label = faceLabel(face);
   const hint = faceHint(face);
-  const thumbUrl = api.thumbUrl(face.path, 400, 88);
-  const previewUrl = api.previewUrl(face.path, 600);
+  const thumbUrl = getGridThumbUrl(face.path, 400) ?? '';
+  const previewUrl = getGridHighThumbUrl(face.path, 600) ?? '';
   const [src, setSrc] = useState(thumbUrl);
   const [triedPreview, setTriedPreview] = useState(false);
   const [loaded, setLoaded] = useState(false);

@@ -2,6 +2,7 @@ import { memo, useState } from 'react';
 import { Check } from 'lucide-react';
 import type { RichClusterFace } from '../../services/api';
 import { API_BASE } from '../../services/api/core';
+import { getGridThumbUrl } from '../../utils/imageUrls';
 import styles from './PhotoCard.module.css';
 
 // expand=0.4 → backend adiciona 40% horizontal e 50% vertical ao redor do bbox do rosto
@@ -11,11 +12,11 @@ const FACE_EXPAND = 0.4;
 function thumbUrl(face: RichClusterFace, size: number, mode: 'photo' | 'face') {
   if (!face.path) return '';
   if (mode === 'photo') {
-    return `${API_BASE}/image_thumb?path=${encodeURIComponent(face.path)}&size=${size}`;
+    return getGridThumbUrl(face.path, size) ?? '';
   }
   if (!face.box || face.box.length < 4) {
     // sem bbox: fallback para foto completa
-    return `${API_BASE}/image_thumb?path=${encodeURIComponent(face.path)}&size=${size}`;
+    return getGridThumbUrl(face.path, size) ?? '';
   }
   const [x1, y1, x2, y2] = face.box;
   return `${API_BASE}/thumb?path=${encodeURIComponent(face.path)}&x1=${x1}&y1=${y1}&x2=${x2}&y2=${y2}&size=${size}&expand=${FACE_EXPAND}`;

@@ -1,5 +1,6 @@
-import { api, type Photo } from '../../services/api';
+import { type Photo } from '../../services/api';
 import { isKnownFace } from '../../utils/personIdentity';
+import { getGridHighThumbUrl } from '../../utils/imageUrls';
 
 interface PhotoDetailPanelProps {
   photo: Photo;
@@ -14,7 +15,7 @@ export function PhotoDetailPanel({ photo, onClose }: PhotoDetailPanelProps) {
         <button className="icon-btn" onClick={onClose}>✕</button>
       </div>
       <img
-        src={api.thumbUrl(photo.path, 600)}
+        src={getGridHighThumbUrl(photo.path, 600) ?? ''}
         alt={photo.name}
         style={{ width: '100%', borderRadius: 8, marginBottom: 12, objectFit: 'contain' }}
       />

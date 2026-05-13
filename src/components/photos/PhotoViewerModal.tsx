@@ -4,6 +4,7 @@ import { api, type Photo } from '../../services/api';
 import { isKnownFace } from '../../utils/personIdentity';
 import { useApp } from '../../context/AppContext';
 import { logPerf, perfNow } from '../../utils/perf';
+import { getGridHighThumbUrl, getGridThumbUrl, getViewerPreviewUrl } from '../../utils/imageUrls';
 import styles from './PhotoViewerModal.module.css';
 
 interface PhotoViewerModalProps {
@@ -39,14 +40,14 @@ type ViewerPhoto = Photo & {
 
 function getViewerImageUrl(photo: Photo, maxSize = 1920) {
   const extended = photo as ViewerPhoto;
-  const sourcePath = extended.original_path || photo.path;
-  return extended.preview_path || api.previewUrl(sourcePath, maxSize);
+  const sourcePath = extended.preview_path || extended.original_path || photo.path;
+  return extended.preview_path || getViewerPreviewUrl(sourcePath, maxSize) || '';
 }
 
 function getViewerFallbackUrl(photo: Photo) {
   const extended = photo as ViewerPhoto;
-  const sourcePath = extended.original_path || photo.path;
-  return extended.thumb_path || api.thumbUrl(sourcePath, 1200);
+  const sourcePath = extended.thumb_path || extended.original_path || photo.path;
+  return extended.thumb_path || getGridHighThumbUrl(sourcePath, 1200) || '';
 }
 
 export function PhotoViewerModal({
@@ -146,7 +147,7 @@ export function PhotoViewerModal({
   const displayIndex = navigationPhotos.findIndex((p) => p.path === visiblePhoto.path);
   const displayCounter = displayIndex >= 0 ? displayIndex + 1 : 1;
   const isDiscarded = visiblePhoto.discarded;
-  const currentPhotoKey = (visiblePhoto as ViewerPhoto).id ?? (visiblePhoto as ViewerPhoto).original_path ?? visiblePhoto.path;
+  const currentPhotoKey = (visiblePhoto as ViewerPhoto).original_path ?? visiblePhoto.path;
 
   const getViewerPhotoKey = useCallback((item: Photo) => (
     (item as ViewerPhoto).id ?? (item as ViewerPhoto).original_path ?? item.path
@@ -735,7 +736,7 @@ export function PhotoViewerModal({
 
   const getFaceThumbUrl = (result: SimilarResult) => {
     if (similarViewMode === 'photo') {
-      return result.photo_path ? api.thumbUrl(result.photo_path, 400) : '';
+      return getGridThumbUrl(result.photo_path, 400) ?? '';
     }
     if (result.box && result.box.length >= 4 && result.photo_path) {
       const [x1, y1, x2, y2] = result.box;
@@ -744,7 +745,7 @@ export function PhotoViewerModal({
         return api.faceThumbUrl(result.photo_path, x1, y1, x2, y2, 200, 0.4);
       }
     }
-    return result.photo_path ? api.thumbUrl(result.photo_path, 200) : '';
+    return getGridThumbUrl(result.photo_path, 200) ?? '';
   };
 
   const getFaceImageStyle = (result: SimilarResult): React.CSSProperties => {
@@ -1017,7 +1018,7 @@ export function PhotoViewerModal({
                         title={item.name}
                       >
                         <img
-                          src={api.thumbUrl(item.path, 180, 84)}
+                          src={getGridThumbUrl(item.path, 180) ?? ''}
                           alt=""
                           loading="lazy"
                           decoding="async"

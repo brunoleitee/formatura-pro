@@ -2,6 +2,7 @@
 import { Users, RefreshCw, Edit2, Trash2, ChevronRight, Check, X } from 'lucide-react';
 import { api, type Person } from '../services/api';
 import { useApp } from '../context/AppContext';
+import { getAvatarThumbUrl } from '../utils/imageUrls';
 import styles from './PeopleView.module.css';
 
 interface PeopleViewProps {
@@ -26,7 +27,7 @@ const PersonAvatar = memo(function PersonAvatar({ person }: { person: Person }) 
 
   return (
     <img
-      src={api.thumbUrl(avatarPath, 160)}
+      src={getAvatarThumbUrl(avatarPath) ?? ''}
       alt={person.name}
       loading="eager"
       decoding="async"

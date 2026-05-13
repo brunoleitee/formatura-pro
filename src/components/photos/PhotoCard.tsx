@@ -1,8 +1,10 @@
 import React, { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Image as ImageIcon, MoreHorizontal } from 'lucide-react';
-import { api, type Photo } from '../../services/api';
+import { type Photo } from '../../services/api';
 import { isPhotoBlurry, isPhotoAttention } from '../../utils/qualityUtils';
 import { isPhotoMapped, isKnownFace } from '../../utils/personIdentity';
+import { getGridHighThumbUrl, getGridThumbUrl } from '../../utils/imageUrls';
+import { isPerfLoggingEnabled, logPerf, perfNow } from '../../utils/perf';
 
 interface PhotoCardProps {
   photo: Photo;
@@ -152,8 +154,8 @@ function enqueueHighQualityLoad(url: string, onLoad: () => void, onError: () => 
 export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thumbHeight, cardHeight, thumbTargetSize, thumbLowTargetSize, imgLoading = 'lazy', imgFetchPriority = 'auto', onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
   const lowSize = thumbLowTargetSize ?? 400;
   const highSize = thumbTargetSize ?? lowSize;
-  const lowUrl = useMemo(() => api.thumbUrl(photo.path, lowSize), [photo.path, lowSize]);
-  const highUrl = useMemo(() => api.thumbUrl(photo.path, highSize), [photo.path, highSize]);
+  const lowUrl = useMemo(() => getGridThumbUrl(photo.path, lowSize) ?? '', [photo.path, lowSize]);
+  const highUrl = useMemo(() => getGridHighThumbUrl(photo.path, highSize) ?? '', [photo.path, highSize]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [isHighQuality, setIsHighQuality] = useState(false);
@@ -169,6 +171,10 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
   const isDraggingInternal = useRef(false);
   const promoteCancelRef = useRef<(() => void) | null>(null);
   const promoteTimerRef = useRef<number | null>(null);
+  const imageLoadStartedAtRef = useRef<number | null>(null);
+  const imageContext = useMemo(() => {
+    return `photo=${photo.path} low=${lowSize} high=${highSize}`;
+  }, [photo.path, lowSize, highSize]);
 
   const isMapped = isPhotoMapped(photo);
   const isDiscarded = photo.discarded === true;
@@ -193,6 +199,7 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
     setDisplaySrc(lowUrl);
     setIsLoaded(false);
     loadedSrcRef.current = null;
+    imageLoadStartedAtRef.current = perfNow();
 
     if (!shouldPromoteHigh) {
       return () => {
@@ -263,6 +270,17 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    const img = imgRef.current;
+    if (!img) return;
+    if (img.complete && img.naturalWidth > 0) {
+      setIsLoaded(true);
+      if (displaySrc) {
+        loadedSrcRef.current = displaySrc;
+      }
+    }
+  }, [displaySrc, lowUrl, highUrl]);
+
   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return; // Only left click
     
@@ -313,8 +331,15 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
       loadedSrcRef.current = displaySrc;
     }
     setIsLoaded(true);
+    if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) {
+      setIsLoaded(true);
+    }
+    if (isPerfLoggingEnabled() && imageLoadStartedAtRef.current != null) {
+      logPerf('catalog image load', imageLoadStartedAtRef.current, imageContext);
+      imageLoadStartedAtRef.current = null;
+    }
     onFirstThumbLoad?.();
-  }, [displaySrc, onFirstThumbLoad]);
+  }, [displaySrc, onFirstThumbLoad, imageContext]);
 
   const cardStyle: React.CSSProperties = {
     width: cardWidth ? `${cardWidth}px` : '100%',
@@ -364,7 +389,7 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
           <>
             <img
               ref={imgRef}
-              src={displaySrc || api.thumbUrl(photo.path, thumbLowTargetSize ?? 400)}
+              src={displaySrc || getGridThumbUrl(photo.path, thumbLowTargetSize ?? 400) || ''}
               alt={photo.name}
               loading={imgLoading}
               fetchPriority={imgFetchPriority}
@@ -380,6 +405,10 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
               onError={() => {
                 if (!loadedSrcRef.current) {
                   setHasError(true);
+                  if (isPerfLoggingEnabled() && imageLoadStartedAtRef.current != null) {
+                    logPerf('catalog image error', imageLoadStartedAtRef.current, imageContext);
+                    imageLoadStartedAtRef.current = null;
+                  }
                 } else {
                   setDisplaySrc(loadedSrcRef.current);
                   setIsHighQuality(false);
