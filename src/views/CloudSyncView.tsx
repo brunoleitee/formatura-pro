@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { cloudApi } from '../services/cloudApi';
 import styles from './CloudSyncView.module.css';
 
@@ -53,9 +53,62 @@ export default function CloudSyncView() {
   const [indexCount, setIndexCount] = useState<number | null>(null);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [loadedThumbs, setLoadedThumbs] = useState<Set<string>>(new Set());
+  const [showExplorer, setShowExplorer] = useState(false);
+  const pollingRef = useRef<number | null>(null);
+
+  const loadFolders = useCallback(async (parentId: string = 'root') => {
+    setLoading(true);
+    try {
+      const result = await cloudApi.getGoogleFolders(parentId);
+      setFolders(result.folders || []);
+      setCurrentFolder(parentId);
+    } catch (e) {
+      console.error('Erro ao carregar pastas:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const checkGoogleStatus = useCallback(async () => {
+    try {
+      const status = await cloudApi.getGoogleStatus();
+      if (status.connected) {
+        setConnectedProvider('google-drive');
+        setUserEmail(status.email || '');
+        setSelectedProvider('google-drive');
+        setShowExplorer(true);
+        loadFolders('root');
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.error('Erro ao verificar status:', e);
+      return false;
+    }
+  }, [loadFolders]);
 
   useEffect(() => {
     checkGoogleStatus();
+  }, [checkGoogleStatus]);
+
+  const startPolling = useCallback(() => {
+    let attempts = 0;
+    const poll = async () => {
+      attempts++;
+      const ok = await checkGoogleStatus();
+      if (!ok && attempts < 15) {
+        pollingRef.current = window.setTimeout(poll, 2000);
+      }
+    };
+    poll();
+  }, [checkGoogleStatus]);
+
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current !== null) {
+        clearTimeout(pollingRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -72,22 +125,10 @@ export default function CloudSyncView() {
           clearInterval(timer);
           return prev;
         });
-      }, 200);
+      }, 300);
       return () => clearInterval(timer);
     }
   }, [indexCount, files]);
-
-  const checkGoogleStatus = async () => {
-    try {
-      const status = await cloudApi.getGoogleStatus();
-      if (status.connected) {
-        setConnectedProvider('google-drive');
-        setUserEmail(status.email || '');
-      }
-    } catch (e) {
-      console.error('Erro ao verificar status:', e);
-    }
-  };
 
   const handleConnect = async (providerId: string) => {
     if (providerId !== 'google-drive') {
@@ -99,7 +140,7 @@ export default function CloudSyncView() {
       const result = await cloudApi.getGoogleAuthUrl();
       if (result.auth_url) {
         window.open(result.auth_url, '_blank', 'width=600,height=700');
-        setTimeout(checkGoogleStatus, 3000);
+        startPolling();
       } else if (result.error) {
         alert(result.error);
       }
@@ -123,33 +164,12 @@ export default function CloudSyncView() {
       setSelectedFolderName('');
       setIndexCount(null);
       setLoadedThumbs(new Set());
+      setShowExplorer(false);
+      setSelectedProvider(null);
     } catch (e) {
       console.error('Erro ao desconectar:', e);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleProviderSelect = async (providerId: string) => {
-    if (providerId !== 'google-drive') return;
-    if (selectedProvider === providerId) {
-      setSelectedProvider(null);
-      return;
-    }
-    setSelectedProvider(providerId);
-    setFiles([]);
-    setIndexCount(null);
-    setSelectedFolderId(null);
-    if (connectedProvider === 'google-drive') {
-      setLoading(true);
-      try {
-        const result = await cloudApi.getGoogleFolders('root');
-        setFolders(result.folders || []);
-      } catch (e) {
-        console.error('Erro ao carregar pastas:', e);
-      } finally {
-        setLoading(false);
-      }
     }
   };
 
@@ -203,14 +223,7 @@ export default function CloudSyncView() {
     setSelectedFolderName('');
     setFiles([]);
     setIndexCount(null);
-    setLoading(true);
-    cloudApi.getGoogleFolders(folderId).then(result => {
-      setFolders(result.folders || []);
-    }).catch(e => {
-      console.error('Erro ao navegar:', e);
-    }).finally(() => {
-      setLoading(false);
-    });
+    loadFolders(folderId);
   };
 
   const selectedStyle = (id: string) =>
@@ -243,7 +256,12 @@ export default function CloudSyncView() {
             <div
               key={provider.id}
               className={`${styles.providerCard} ${selectedProvider === provider.id ? styles.selected : ''}`}
-              onClick={() => handleProviderSelect(provider.id)}
+              onClick={() => {
+                if (connectedProvider === provider.id) {
+                  setShowExplorer(v => !v);
+                  if (!showExplorer) loadFolders('root');
+                }
+              }}
             >
               <div className={styles.providerIcon}>{provider.icon}</div>
               <div className={styles.providerInfo}>
@@ -267,10 +285,10 @@ export default function CloudSyncView() {
         </div>
       </section>
 
-      {selectedProvider === 'google-drive' && connectedProvider === 'google-drive' && (
+      {showExplorer && connectedProvider === 'google-drive' && (
         <section className={styles.foldersSection}>
           <div className={styles.folderSectionHeader}>
-            <h2>Pastas do Google Drive</h2>
+            <h2>Google Drive Explorer</h2>
           </div>
 
           {loading && !folders.length ? (
@@ -280,9 +298,8 @@ export default function CloudSyncView() {
           ) : files.length > 0 || indexCount !== null ? (
             <>
               <div className={styles.breadcrumb}>
-                <button onClick={() => handleNavigateFolder('root')}>
-                  {selectedFolderName || 'Raiz'}
-                </button>
+                <button onClick={() => handleNavigateFolder('root')}>Raiz</button>
+                {selectedFolderName && <span> / {selectedFolderName}</span>}
               </div>
 
               {indexCount !== null && (
@@ -316,11 +333,11 @@ export default function CloudSyncView() {
                     </div>
                   ))}
                 </div>
-              ) : (
+              ) : indexCount !== null ? (
                 <div className={styles.folderSelector}>
-                  <p className={styles.placeholder}>Nenhum arquivo encontrado nesta pasta.</p>
+                  <p className={styles.placeholder}>Nenhum arquivo encontrado.</p>
                 </div>
-              )}
+              ) : null}
 
               {files.length > 0 && (
                 <div className={styles.createCatalogSection}>
@@ -344,10 +361,11 @@ export default function CloudSyncView() {
                   <span className={styles.folderBreadcrumbItem}> / {selectedFolderName}</span>
                 )}
               </div>
+
               <div className={styles.folderList}>
                 {currentFolder !== 'root' && (
                   <div className={styles.folderItem} onClick={() => handleNavigateFolder('root')}>
-                    <span>⬆️ Voltar</span>
+                    <span>⬆️ Voltar (Raiz)</span>
                   </div>
                 )}
                 {folders.map((folder) => (
@@ -377,7 +395,7 @@ export default function CloudSyncView() {
                         Indexando...
                       </span>
                     ) : (
-                      `Indexar pasta "${selectedFolderName}"`
+                      `Indexar "${selectedFolderName}"`
                     )}
                   </button>
                 </div>
@@ -452,16 +470,6 @@ export default function CloudSyncView() {
           <button onClick={() => setCreateResult(null)}>×</button>
         </div>
       )}
-
-      <section className={styles.syncSection}>
-        <h2>Sincronização</h2>
-        <div className={styles.syncActions}>
-          <button className={styles.syncBtn} disabled={!selectedProvider || files.length === 0}>
-            Sincronizar agora
-          </button>
-          <button className={styles.settingsBtn}>Configurações</button>
-        </div>
-      </section>
     </div>
   );
 }
