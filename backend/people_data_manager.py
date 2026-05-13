@@ -127,6 +127,7 @@ def get_people(unknown: bool = False):
                 aluno_id = row["aluno_id"]
                 cover_path = None
                 cover_box = None
+                class_name = "Sem turma"
                 try:
                     cur.execute("SELECT foto_path, x1, y1, x2, y2 FROM ocorrencias WHERE aluno_id = ? LIMIT 1", (aluno_id,))
                     cover_row = cur.fetchone()
@@ -134,19 +135,22 @@ def get_people(unknown: bool = False):
                         cover_path = cover_row["foto_path"]
                         if cover_row["x1"] is not None:
                             cover_box = [cover_row["x1"], cover_row["y1"], cover_row["x2"], cover_row["y2"]]
-                    cur.execute("SELECT face_cache_path FROM alunos WHERE aluno_id = ?", (aluno_id,))
+                    cur.execute("SELECT face_cache_path, class_name FROM alunos WHERE aluno_id = ?", (aluno_id,))
                     ref_row = cur.fetchone()
                     if ref_row and ref_row["face_cache_path"]:
                         ref_path = ref_row["face_cache_path"]
                         if os.path.exists(ref_path):
                             cover_path = ref_path
                             cover_box = None
+                    if ref_row and ref_row["class_name"]:
+                        class_name = str(ref_row["class_name"]).strip() or "Sem turma"
                 except:
                     pass
 
                 results.append({
                     "id": aluno_id,
                     "name": aluno_id,
+                    "class_name": class_name,
                     "total_photos": row["total"],
                     "cover_path": cover_path,
                     "cover_box": cover_box,

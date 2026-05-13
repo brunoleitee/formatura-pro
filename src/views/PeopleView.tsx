@@ -148,7 +148,9 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
                 ) : (
                   <span className="person-name" title={person.name}>{person.name}</span>
                 )}
-                <span className="person-count">{person.total_photos} foto{person.total_photos !== 1 ? 's' : ''}</span>
+                <span className="person-count">
+                  {(person.class_name || 'Sem turma')} · {person.total_photos} foto{person.total_photos !== 1 ? 's' : ''}
+                </span>
               </div>
 
               <div className="person-actions">

@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode, useState, useEffect, useCallback } from 'react';
+import { Component, type ErrorInfo, type ReactNode, useState, useEffect, useCallback, useMemo } from 'react';
 import { Download, FolderOpen, RefreshCw, Check, Users } from 'lucide-react';
 import { api, type Person, type ExportStatus, type ExportSummary } from '../services/api';
 import { useApp } from '../context/AppContext';
@@ -51,6 +51,8 @@ function ExportViewContent() {
   const [finishModalData, setFinishModalData] = useState<{ exportDir: string; pdfPath: string } | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectedClass, setSelectedClass] = useState('all');
+  const [organizeByClass, setOrganizeByClass] = useState(false);
   const [destPath, setDestPath] = useState('');
   const [mode, setMode] = useState<ExportMode>('copy');
   const [conflict, setConflict] = useState<ConflictStrategy>('copy');
@@ -81,6 +83,8 @@ function ExportViewContent() {
     setFinishModalOpen(false);
     setFinishModalData(null);
     setSearch('');
+    setSelectedClass('all');
+    setOrganizeByClass(false);
     setError('');
   }, [currentCatalog]);
 
@@ -168,6 +172,13 @@ function ExportViewContent() {
     return api.thumbUrl(person.cover_path, 96);
   };
 
+  const classOptions = useMemo(() => {
+    const values = new Set(
+      people.map((person) => (person.class_name || 'Sem turma').trim() || 'Sem turma')
+    );
+    return ['all', ...Array.from(values).sort((a, b) => a.localeCompare(b))];
+  }, [people]);
+
   const selectAll = () => setSelected(new Set(filtered.map(getPersonId)));
   const clearAll = () => setSelected(new Set());
 
@@ -178,7 +189,7 @@ function ExportViewContent() {
     setFinishModalOpen(false);
     setFinishModalData(null);
     try {
-      await api.startExport([...selected], destPath, mode, conflict, includeQuality, includeDescarte);
+      await api.startExport([...selected], destPath, mode, conflict, includeQuality, includeDescarte, organizeByClass);
       setPolling(true);
       const st = await api.getExportStatus().catch(() => null);
       if (st) setStatus(st);
@@ -186,7 +197,8 @@ function ExportViewContent() {
   };
 
   const filtered = people.filter(p =>
-    !search || p.name.toLowerCase().includes(search.toLowerCase())
+    (!search || p.name.toLowerCase().includes(search.toLowerCase())) &&
+    (selectedClass === 'all' || (p.class_name || 'Sem turma').trim() === selectedClass)
   );
 
   const isExporting = status?.is_exporting ?? false;
@@ -409,6 +421,21 @@ function ExportViewContent() {
           </div>
 
           <div className="config-section">
+            <label className="config-label">Turma</label>
+            <select
+              className="config-input"
+              value={selectedClass}
+              onChange={e => setSelectedClass(e.target.value)}
+            >
+              {classOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option === 'all' ? 'Todas as turmas' : option}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="config-section">
             <label className="config-label">Modo de exportação</label>
             <div className="radio-group">
               {([['copy', 'Copiar (mantém originais)'], ['move', 'Mover (remove originais)']] as const).map(([val, label]) => (
@@ -455,6 +482,17 @@ function ExportViewContent() {
                 onChange={e => setIncludeQuality(e.target.checked)}
               />
               Incluir relatório de qualidade
+            </label>
+          </div>
+
+          <div className="config-section">
+            <label className="config-toggle">
+              <input
+                type="checkbox"
+                checked={organizeByClass}
+                onChange={e => setOrganizeByClass(e.target.checked)}
+              />
+              Organizar por turma
             </label>
           </div>
 

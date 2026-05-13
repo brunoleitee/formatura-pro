@@ -67,6 +67,7 @@ export default function PersonDetailView() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(false);
   const [detailsPhoto, setDetailsPhoto] = useState<Photo | null>(null);
+  const [personInfo, setPersonInfo] = useState<{ name: string; class_name: string } | null>(null);
 
   const { selectedPaths, toggleSelection, clearSelection } = usePhotoSelection(photos);
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(photos);
@@ -83,8 +84,21 @@ export default function PersonDetailView() {
     if (!selectedPersonId || !currentCatalog) return;
     setLoading(true);
     try {
-      const data = await api.getPersonPhotos(selectedPersonId);
+      const [data, people] = await Promise.all([
+        api.getPersonPhotos(selectedPersonId),
+        api.getPeople(false).catch(() => []),
+      ]);
       setPhotos(data);
+      const matched = (people as Array<{ id?: string; name?: string; class_name?: string }>).find(
+        (person) => person.id === selectedPersonId || person.name === selectedPersonId
+      );
+      setPersonInfo(matched ? {
+        name: matched.name || selectedPersonId,
+        class_name: (matched.class_name || 'Sem turma').trim() || 'Sem turma',
+      } : {
+        name: selectedPersonId,
+        class_name: 'Sem turma',
+      });
     } catch (e) {
       console.error(e);
     } finally {
@@ -201,6 +215,7 @@ export default function PersonDetailView() {
           <div>
             <h1>{selectedPersonId}</h1>
             <p className="view-subtitle">
+              <strong>{personInfo?.class_name || 'Sem turma'}</strong> Â·{' '}
               {photos.length} foto{photos.length !== 1 ? 's' : ''} no total
             </p>
           </div>

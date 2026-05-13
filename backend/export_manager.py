@@ -30,6 +30,7 @@ class ExportReq(BaseModel):
     conflict_strategy: str = "copy"
     include_quality: bool = False
     include_descarte: bool = True
+    organize_by_class: bool = False
 
 
 def load_export_history():
@@ -142,9 +143,20 @@ def _export_folder_name(aid, sanitize_folder_name):
     return sanitize_folder_name(aid)
 
 
+def _student_export_dir(dest_path: str, aid: str, class_name: str, sanitize_folder_name, organize_by_class: bool):
+    student_dir = sanitize_folder_name(aid)
+    if not organize_by_class:
+        return os.path.join(dest_path, student_dir)
+    safe_class = sanitize_folder_name(str(class_name or "").strip() or "Sem turma")
+    return os.path.join(dest_path, safe_class, student_dir)
+
+
 def build_export_worklist(conn, req: ExportReq):
     cur = conn.cursor()
     image_ext = _get("image_extensions", ())
+
+    cur.execute("SELECT aluno_id, class_name FROM alunos")
+    student_classes = {r["aluno_id"]: (r["class_name"] or "Sem turma") for r in cur.fetchall()}
 
     cur.execute("SELECT foto_path FROM discarded_photos")
     discarded_manual = {r["foto_path"] for r in cur.fetchall()}
@@ -182,7 +194,7 @@ def build_export_worklist(conn, req: ExportReq):
     for aid in req.ids:
         cur.execute("SELECT DISTINCT foto_path FROM ocorrencias WHERE aluno_id = ?", (aid,))
         fotos = [r[0] for r in cur.fetchall() if r[0] and r[0] not in discarded_manual]
-        p_al = os.path.join(req.dest_path, aid)
+        p_al = _student_export_dir(req.dest_path, aid, student_classes.get(aid, "Sem turma"), _get("sanitize_folder_name"), bool(getattr(req, "organize_by_class", False)))
         for f in fotos:
             if os.path.exists(f):
                 worklist.append((aid, f, p_al))

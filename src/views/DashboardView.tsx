@@ -16,8 +16,17 @@ export const DEFAULT_PHOTOS_GOAL = 50;
 
 type DashboardStudent = {
   name: string;
+  className: string;
   photos: number;
   goal: number;
+};
+
+type DashboardClassCoverage = {
+  className: string;
+  students: number;
+  photos: number;
+  avgPhotos: number;
+  goalPercent: number;
 };
 
 type DashboardSummary = {
@@ -27,6 +36,7 @@ type DashboardSummary = {
   pendingPhotos: number;
   completionPercent: number;
   students: DashboardStudent[];
+  classCoverage: DashboardClassCoverage[];
   stats: (Stats & {
     total_photos?: number;
     avg_photos_per_person?: number;
@@ -106,9 +116,31 @@ export default function DashboardView() {
           .sort((a, b) => b.total_photos - a.total_photos || a.name.localeCompare(b.name))
           .map((person) => ({
             name: person.name,
+            className: (person.class_name || 'Sem turma').trim() || 'Sem turma',
             photos: person.total_photos,
             goal: DEFAULT_PHOTOS_GOAL,
           }));
+
+        const classCoverageMap = new Map<string, { students: number; photos: number }>();
+        for (const person of people as Person[]) {
+          const className = (person.class_name || 'Sem turma').trim() || 'Sem turma';
+          const current = classCoverageMap.get(className) || { students: 0, photos: 0 };
+          classCoverageMap.set(className, {
+            students: current.students + 1,
+            photos: current.photos + person.total_photos,
+          });
+        }
+        const classCoverage = Array.from(classCoverageMap.entries())
+          .map(([className, value]) => ({
+            className,
+            students: value.students,
+            photos: value.photos,
+            avgPhotos: value.students > 0 ? value.photos / value.students : 0,
+            goalPercent: value.students > 0
+              ? Math.round((value.photos / (value.students * DEFAULT_PHOTOS_GOAL)) * 100)
+              : 0,
+          }))
+          .sort((a, b) => b.photos - a.photos || a.className.localeCompare(b.className));
 
         setSummary({
           catalog: currentCatalog,
@@ -117,6 +149,7 @@ export default function DashboardView() {
           pendingPhotos,
           completionPercent,
           students,
+          classCoverage,
           stats: typedStats,
         });
       })
@@ -308,6 +341,38 @@ export default function DashboardView() {
               );
             })
           )}
+        </div>
+      </section>
+
+      <section className={styles.classCoverageSection}>
+        <div className={styles.coverageHeader}>
+          <div>
+            <h2>Cobertura por turma</h2>
+            <p>Fotos, alunos e meta média por classe</p>
+          </div>
+        </div>
+
+        <div className={styles.classCoverageGrid}>
+          {(dashboard.classCoverage.length === 0 ? [{ className: 'Sem turma', students: 0, photos: 0, avgPhotos: 0, goalPercent: 0 }] : dashboard.classCoverage).map((group) => (
+            <article key={group.className} className={styles.classCoverageCard}>
+              <div className={styles.classCoverageTop}>
+                <strong>{group.className}</strong>
+                <span>{formatNumber(group.goalPercent)}%</span>
+              </div>
+              <div className={styles.classCoverageMeta}>
+                <span>{formatNumber(group.students)} alunos</span>
+                <span>{formatNumber(group.photos)} fotos</span>
+                <span>{formatNumber(Math.round(group.avgPhotos))} média</span>
+              </div>
+              <div className={styles.coverageBar}>
+                <div
+                  className={styles.coverageBarFill}
+                  data-complete={group.goalPercent >= 100 ? 'true' : 'false'}
+                  style={{ width: `${Math.min(group.goalPercent, 100)}%` }}
+                />
+              </div>
+            </article>
+          ))}
         </div>
       </section>
 

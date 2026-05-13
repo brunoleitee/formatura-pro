@@ -36,6 +36,7 @@ _cfg = {
     "det_size": (640, 640),
     "faiss_index": None,
     "ref_ids": [],
+    "ref_classes": {},
     "cluster_centers": [],
     "cluster_names": [],
     "cluster_counts": {},
@@ -407,6 +408,7 @@ def load_references(ref_path):
     faiss_index = None
     ref_ids = []
     refs = []
+    ref_classes = {}
     if not ref_path or not os.path.isdir(ref_path):
         return
     _cfg["log_info"](f"Carregando referências de: {ref_path}")
@@ -429,7 +431,11 @@ def load_references(ref_path):
             if norm == 0:
                 continue
             emb = emb / norm
-            refs.append({"id": Path(f).stem, "emb": emb})
+            ref_name = Path(f).stem
+            rel_parent = Path(os.path.relpath(full, ref_path)).parent.name
+            class_name = rel_parent if rel_parent not in ("", ".") else "Sem turma"
+            refs.append({"id": ref_name, "class_name": class_name, "emb": emb})
+            ref_classes[ref_name.casefold()] = class_name
     if not refs:
         return
     ref_embs = np.array([r["emb"] for r in refs], dtype="float32")
@@ -443,6 +449,7 @@ def load_references(ref_path):
         faiss_index = ref_embs
     _cfg["faiss_index"] = faiss_index
     _cfg["ref_ids"] = ref_ids
+    _cfg["ref_classes"] = ref_classes
 
 
 def find_best_reference(emb):
@@ -462,6 +469,14 @@ def find_best_reference(emb):
     if idx < 0 or idx >= len(ref_ids):
         return None, 0.0
     return ref_ids[idx], score
+
+
+def get_reference_class_name(ref_name: str | None) -> str:
+    ref_classes = _cfg.get("ref_classes") or {}
+    key = str(ref_name or "").strip().casefold()
+    if not key:
+        return "Sem turma"
+    return ref_classes.get(key, "Sem turma")
 
 
 def find_or_create_cluster(emb):
@@ -749,7 +764,13 @@ def run_scanner_worker(req):
                                 if p not in existing_photo_paths:
                                     inserted_photo_paths.add(p)
                                     existing_photo_paths.add(p)
-                                cur.execute("INSERT OR IGNORE INTO alunos VALUES (?, ?)", (nome, "n/a"))
+                                cur.execute(
+                                    """
+                                    INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path, class_name)
+                                    VALUES (?, ?, ?)
+                                    """,
+                                    (nome, "n/a", get_reference_class_name(nome)),
+                                )
                                 
                                 current_time = time.time()
                                 if current_time - last_face_update_time > 0.5:
@@ -778,7 +799,13 @@ def run_scanner_worker(req):
                         catalog_root = os.path.commonpath([os.path.abspath(req.ori_path), os.path.abspath(req.ref_path)])
                 except Exception:
                     catalog_root = req.ori_path
-                cur.execute("INSERT OR REPLACE INTO alunos VALUES (?, ?)", ("system_catalog", catalog_root))
+                cur.execute(
+                    """
+                    INSERT OR REPLACE INTO alunos (aluno_id, face_cache_path, class_name)
+                    VALUES (?, ?, ?)
+                    """,
+                    ("system_catalog", catalog_root, "Sem turma"),
+                )
                 conn.commit()
             finally:
                 pass

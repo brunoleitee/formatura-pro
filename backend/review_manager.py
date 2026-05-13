@@ -93,6 +93,28 @@ def _safe_filename(name: str) -> str:
     return cleaned or "Sem_Nome"
 
 
+def _ensure_aluno_row(cur, aluno_id: str, face_cache_path: str = "n/a", class_name: str | None = None):
+    resolved_class = str(class_name or "").strip() or "Sem turma"
+    cur.execute("SELECT face_cache_path, class_name FROM alunos WHERE aluno_id = ? LIMIT 1", (aluno_id,))
+    row = cur.fetchone()
+    if row:
+        existing_class = str(row["class_name"] or "").strip()
+        if resolved_class and existing_class in ("", "Sem turma"):
+            cur.execute("UPDATE alunos SET class_name = ? WHERE aluno_id = ?", (resolved_class, aluno_id))
+        existing_face = str(row["face_cache_path"] or "").strip()
+        if face_cache_path and existing_face in ("", "n/a"):
+            cur.execute("UPDATE alunos SET face_cache_path = ? WHERE aluno_id = ?", (face_cache_path, aluno_id))
+        return
+
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path, class_name)
+        VALUES (?, ?, ?)
+        """,
+        (aluno_id, face_cache_path or "n/a", resolved_class),
+    )
+
+
 def _base_reference_max_side() -> int:
     value = _get("base_reference_max_side", 512)
     try:
@@ -241,7 +263,10 @@ def _ensure_person_reference(conn, catalog: str, aluno_id: str, force: bool = Fa
         else:
             if not _save_resized_reference(dest, img_np):
                 shutil.copy2(candidate_path, dest)
-        cur.execute("INSERT OR REPLACE INTO alunos (aluno_id, face_cache_path) VALUES (?, ?)", (aluno_id, dest))
+        cur.execute(
+            "INSERT OR REPLACE INTO alunos (aluno_id, face_cache_path, class_name) VALUES (?, ?, ?)",
+            (aluno_id, dest, "Sem turma"),
+        )
         conn.commit()
         return dest
     except Exception as e:
@@ -419,7 +444,7 @@ def manual_identify(req: ManualIdentifyReq):
     Atualiza o aluno_id da ocorrência facial e cria entrada na tabela alunos se necessário.
     """
     def update_single_face(cur, foto_path, x1, y1, x2, y2, new_name):
-        cur.execute("INSERT OR IGNORE INTO alunos VALUES (?, ?)", (new_name, "n/a"))
+        _ensure_aluno_row(cur, new_name)
         cur.execute(
             """
             UPDATE ocorrencias SET aluno_id = ?
@@ -454,13 +479,13 @@ def manual_identify(req: ManualIdentifyReq):
         old_id = row["aluno_id"] if row else None
 
         if old_id and old_id.startswith("Pessoa ") and new_name != "Desconhecido":
-            cur.execute("INSERT OR IGNORE INTO alunos VALUES (?, ?)", (new_name, "n/a"))
+            _ensure_aluno_row(cur, new_name)
             cur.execute("UPDATE ocorrencias SET aluno_id = ? WHERE aluno_id = ?", (new_name, old_id))
             cur.execute("DELETE FROM alunos WHERE aluno_id = ?", (old_id,))
         elif old_id:
             update_single_face(cur, req.foto_path, x1, y1, x2, y2, new_name)
         else:
-            cur.execute("INSERT OR IGNORE INTO alunos VALUES (?, ?)", (new_name, "n/a"))
+            _ensure_aluno_row(cur, new_name)
             cur.execute(
                 """
                 INSERT OR IGNORE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2)
@@ -489,7 +514,7 @@ def bulk_manual_identify(req: BulkManualIdentifyReq):
     updated = 0
     with get_db(req.catalog) as conn:
         cur = conn.cursor()
-        cur.execute("INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path) VALUES (?, ?)", (new_name, "n/a"))
+        _ensure_aluno_row(cur, new_name)
         for i in range(0, len(rowids), 900):
             chunk = rowids[i:i + 900]
             placeholders = ",".join(["?"] * len(chunk))
@@ -604,19 +629,13 @@ def _resolve_assign_aluno(cur, aluno_id: str | None, nome_formando: str | None) 
     if resolved_aluno_id:
         existing = _find_existing_aluno_id(cur, [resolved_aluno_id])
         resolved_aluno_id = existing or resolved_aluno_id
-        cur.execute(
-            "INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path) VALUES (?, ?)",
-            (resolved_aluno_id, "n/a"),
-        )
+        _ensure_aluno_row(cur, resolved_aluno_id)
         return resolved_aluno_id, normalized_name or resolved_aluno_id
 
     generated_aluno_id = _build_stable_aluno_id(normalized_name)
     existing = _find_existing_aluno_id(cur, [normalized_name, generated_aluno_id])
     resolved_aluno_id = existing or generated_aluno_id
-    cur.execute(
-        "INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path) VALUES (?, ?)",
-        (resolved_aluno_id, "n/a"),
-    )
+    _ensure_aluno_row(cur, resolved_aluno_id)
     return resolved_aluno_id, normalized_name
 
 
@@ -2709,7 +2728,7 @@ def merge_people(req: MergePeopleReq):
         cur = conn.cursor()
         
         # 1. Garantir que o alvo exista na tabela alunos
-        cur.execute("INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path) VALUES (?, ?)", (target_name, "n/a"))
+        _ensure_aluno_row(cur, target_name)
         
         # 2. Atualizar todas as ocorrências dos IDs de origem para o ID de destino
         placeholders = ",".join(["?"] * len(req.source_ids))
@@ -3152,7 +3171,7 @@ def rename_person(req: RenameReq):
         cur.execute("SELECT face_cache_path FROM alunos WHERE aluno_id = ?", (req.old_id,))
         old_row = cur.fetchone()
         old_ref_path = str(old_row["face_cache_path"]) if old_row and old_row["face_cache_path"] else ""
-        cur.execute("INSERT OR IGNORE INTO alunos VALUES (?, ?)", (req.new_id, "n/a"))
+        _ensure_aluno_row(cur, req.new_id)
         cur.execute("UPDATE ocorrencias SET aluno_id = ? WHERE aluno_id = ?", (req.new_id, req.old_id))
         cur.execute("DELETE FROM alunos WHERE aluno_id = ?", (req.old_id,))
         conn.commit()

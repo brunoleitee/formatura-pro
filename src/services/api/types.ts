@@ -8,6 +8,7 @@ export interface CatalogsResponse {
 export interface Person {
   id: string;
   name: string;
+  class_name: string;
   total_photos: number;
   cover_path: string | null;
   cover_box: [number, number, number, number] | null;

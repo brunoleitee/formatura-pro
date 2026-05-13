@@ -258,6 +258,20 @@ def is_safe_path(path):
 def validate_destination_path(dest_path):
     if not is_safe_path(dest_path):
         raise HTTPException(400, "Caminho de destino é protegido. Escolha outra pasta.")
+
+
+def ensure_alunos_class_column(conn):
+    cur = conn.cursor()
+    try:
+        cur.execute("PRAGMA table_info(alunos)")
+        cols = [row[1] for row in cur.fetchall()]
+        if "class_name" not in cols:
+            cur.execute("ALTER TABLE alunos ADD COLUMN class_name TEXT DEFAULT 'Sem turma'")
+        cur.execute("UPDATE alunos SET class_name = COALESCE(NULLIF(TRIM(class_name), ''), 'Sem turma')")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     return True
 
 def sanitize_folder_name(name):
@@ -881,9 +895,11 @@ class DbConnection:
         c.execute("""
             CREATE TABLE IF NOT EXISTS alunos (
                 aluno_id TEXT PRIMARY KEY,
-                face_cache_path TEXT
+                face_cache_path TEXT,
+                class_name TEXT DEFAULT 'Sem turma'
             )
         """)
+        ensure_alunos_class_column(self.conn)
         c.execute("""
             CREATE TABLE IF NOT EXISTS discarded_photos (
                 foto_path TEXT PRIMARY KEY,
