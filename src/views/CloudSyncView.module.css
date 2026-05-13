@@ -390,6 +390,124 @@
   margin: 0;
 }
 
+.explorerContainer {
+  background: rgba(15, 20, 30, 0.98);
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.explorerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid #1f2937;
+}
+
+.explorerTitle {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #f9fafb;
+}
+
+.explorerRefresh {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #1f2937;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.explorerRefresh:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.explorerBody {
+  max-height: 480px;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.explorerBody::-webkit-scrollbar {
+  width: 6px;
+}
+
+.explorerBody::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.explorerBody::-webkit-scrollbar-thumb {
+  background: #1f2937;
+  border-radius: 3px;
+}
+
+.explorerBody::-webkit-scrollbar-thumb:hover {
+  background: #374151;
+}
+
+.folderGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.folderCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 12px 12px;
+  background: rgba(20, 26, 38, 0.6);
+  border: 1px solid #1f2937;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.folderCard:hover {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.06);
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.08);
+}
+
+.folderCardSelected {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 24px rgba(59, 130, 246, 0.12);
+}
+
+.folderCardIcon {
+  font-size: 2.2rem;
+  line-height: 1;
+  margin-bottom: 4px;
+  opacity: 0.85;
+}
+
+.folderCardName {
+  font-size: 0.82rem;
+  color: #e5e7eb;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.folderCardBadge {
+  font-size: 0.65rem;
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.15);
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-top: 2px;
+}
+
 .folderList {
   display: flex;
   flex-direction: column;

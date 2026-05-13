@@ -226,9 +226,6 @@ export default function CloudSyncView() {
     loadFolders(folderId);
   };
 
-  const selectedStyle = (id: string) =>
-    selectedFolderId === id ? styles.folderSelected : '';
-
   return (
     <div className={styles.page}>
       <div className={styles.header}>
@@ -351,56 +348,61 @@ export default function CloudSyncView() {
               )}
             </>
           ) : folders.length > 0 ? (
-            <>
-              <div className={styles.folderBreadcrumb}>
-                <span
-                  className={styles.folderBreadcrumbItem}
-                  onClick={() => handleNavigateFolder('root')}
-                >Raiz</span>
-                {currentFolder !== 'root' && selectedFolderName && (
-                  <span className={styles.folderBreadcrumbItem}> / {selectedFolderName}</span>
-                )}
+            <div className={styles.explorerContainer}>
+              <div className={styles.explorerHeader}>
+                <span className={styles.explorerTitle}>
+                  {currentFolder === 'root' ? 'Raiz' : selectedFolderName}
+                </span>
+                <button
+                  className={styles.explorerRefresh}
+                  onClick={() => handleNavigateFolder(currentFolder)}
+                >
+                  🔄 Atualizar
+                </button>
               </div>
-
-              <div className={styles.folderList}>
-                {currentFolder !== 'root' && (
-                  <div className={styles.folderItem} onClick={() => handleNavigateFolder('root')}>
-                    <span>⬆️ Voltar (Raiz)</span>
-                  </div>
-                )}
-                {folders.map((folder) => (
-                  <div
-                    key={folder.id}
-                    className={`${styles.folderItem} ${selectedStyle(folder.id)}`}
-                    onClick={() => handleSelectFolder(folder.id, folder.name)}
-                  >
-                    <span>📁 {folder.name}</span>
-                    {selectedFolderId === folder.id && (
-                      <span className={styles.folderSelectedBadge}>Selecionado</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {selectedFolderId && (
-                <div className={styles.indexActions}>
-                  <button
-                    className={styles.indexBtn}
-                    onClick={handleIndex}
-                    disabled={isIndexing}
-                  >
-                    {isIndexing ? (
-                      <span className={styles.indexingContent}>
-                        <span className={styles.spinner}></span>
-                        Indexando...
-                      </span>
-                    ) : (
-                      `Indexar "${selectedFolderName}"`
-                    )}
-                  </button>
+              <div className={styles.explorerBody}>
+                <div className={styles.folderGrid}>
+                  {currentFolder !== 'root' && (
+                    <div className={styles.folderCard} onClick={() => handleNavigateFolder('root')}>
+                      <span className={styles.folderCardIcon}>⬆️</span>
+                      <span className={styles.folderCardName}>Voltar (Raiz)</span>
+                    </div>
+                  )}
+                  {folders.map((folder) => (
+                    <div
+                      key={folder.id}
+                      className={`${styles.folderCard} ${selectedFolderId === folder.id ? styles.folderCardSelected : ''}`}
+                      onClick={() => handleSelectFolder(folder.id, folder.name)}
+                    >
+                      <span className={styles.folderCardIcon}>📁</span>
+                      <span className={styles.folderCardName}>{folder.name}</span>
+                      {selectedFolderId === folder.id && (
+                        <span className={styles.folderCardBadge}>Selecionado</span>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              )}
-            </>
+
+                {selectedFolderId && (
+                  <div className={styles.indexActions}>
+                    <button
+                      className={styles.indexBtn}
+                      onClick={handleIndex}
+                      disabled={isIndexing}
+                    >
+                      {isIndexing ? (
+                        <span className={styles.indexingContent}>
+                          <span className={styles.spinner}></span>
+                          Indexando...
+                        </span>
+                      ) : (
+                        `Indexar "${selectedFolderName}"`
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           ) : (
             <div className={styles.folderSelector}>
               <p className={styles.placeholder}>Nenhuma pasta encontrada.</p>
