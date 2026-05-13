@@ -119,6 +119,7 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
                 left: 0,
                 width: '100%',
                 transform: `translateY(${virtualRow.start}px)`,
+                height: `${rowHeight}px`,
                 display: 'grid',
                 gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
                 gap: `${GRID_GAP}px`,
