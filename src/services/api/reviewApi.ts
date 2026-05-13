@@ -34,11 +34,29 @@ export const reviewApi = {
     payload: { cluster_id: string; aluno_id: string | null; nome_formando: string | null }
   ) => post<AssignClusterResponse>(`${API_BASE}/review/unknown-clusters/assign`, { catalog, ...payload }),
 
-  ignoreCluster: (catalog: string, cluster_id: string) =>
-    post<{ ok: boolean; success: boolean; cluster_id: string; status: string }>(
+  ignoreCluster: async (catalog: string, cluster_id: string, rowids: number[] = []) => {
+    const payload = { catalog, cluster_id, rowids };
+    const routes = [
       `${API_BASE}/review/unknown-clusters/ignore`,
-      { catalog, cluster_id }
-    ),
+      `${API_BASE}/review/ignore`,
+      `${API_BASE}/unknown-clusters/ignore`,
+      `${API_BASE}/review/cluster/ignore`,
+      `${API_BASE}/review/bulk-ignore`,
+    ];
+
+    let lastError: unknown = null;
+    for (const route of routes) {
+      try {
+        return await post<{ ok: boolean; success: boolean; cluster_id: string; status: string; ignored?: number }>(route, payload);
+      } catch (error) {
+        lastError = error;
+        const status = (error as { status?: number } | null)?.status;
+        if (status && status !== 404) throw error;
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error('Falha ao ignorar grupo.');
+  },
 
   startGraduationAnalysis: (catalog: string) =>
     post<{ status: string; catalog: string }>(`${API_BASE}/review/graduation-analysis/start`, { catalog }),

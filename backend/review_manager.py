@@ -391,6 +391,7 @@ class AssignUnknownClusterRequest(BaseModel):
 class IgnoreUnknownClusterRequest(BaseModel):
     catalog: str = ""
     cluster_id: str
+    rowids: list[int] = []
 
 
 class GraduationAnalysisRequest(BaseModel):
@@ -1735,6 +1736,7 @@ def ignore_cluster(req: IgnoreUnknownClusterRequest):
     with get_db(catalog) as conn:
         cur = conn.cursor()
         _ensure_ignored_review_clusters_table(cur)
+        rowids = [int(v) for v in (req.rowids or []) if str(v).strip()]
         cur.execute(
             "INSERT OR IGNORE INTO ignored_review_clusters (catalog, cluster_id) VALUES (?, ?)",
             (catalog, cluster_id),
@@ -1748,6 +1750,8 @@ def ignore_cluster(req: IgnoreUnknownClusterRequest):
                     {
                         "catalog": catalog,
                         "cluster_id": cluster_id,
+                        "rowids": rowids,
+                        "ignored": len(rowids),
                     },
                     ensure_ascii=False,
                 ),
@@ -1759,6 +1763,7 @@ def ignore_cluster(req: IgnoreUnknownClusterRequest):
         "ok": True,
         "success": True,
         "cluster_id": cluster_id,
+        "ignored": len(req.rowids or []),
         "status": "ignored",
     }
 

@@ -281,6 +281,9 @@ function ReviewViewContent() {
     }
 
     const nextSelectedId = clusters[currentIndex + 1]?.cluster_id ?? clusters[currentIndex - 1]?.cluster_id ?? null;
+    const ignoredRowids = selected?.faces
+      ?.map((face) => face.rowid)
+      .filter((rowid): rowid is number => Number.isFinite(rowid)) ?? [];
     const previousClusters = clusters;
     const previousTotal = totalClusters;
     const previousSelected = selected;
@@ -296,7 +299,7 @@ function ReviewViewContent() {
     setAssignmentState(null);
 
     try {
-      await api.ignoreCluster(currentCatalog, currentClusterId);
+      await api.ignoreCluster(currentCatalog, currentClusterId, ignoredRowids);
       showReviewToast('Grupo ignorado com sucesso');
     } catch (error) {
       console.error('[ignoreCluster] erro:', error);

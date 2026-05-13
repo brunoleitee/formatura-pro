@@ -1271,6 +1271,10 @@ def assign_cluster(req: AssignUnknownClusterRequest):
         )
 
 @app.post("/api/review/unknown-clusters/ignore")
+@app.post("/api/review/ignore")
+@app.post("/api/unknown-clusters/ignore")
+@app.post("/api/review/cluster/ignore")
+@app.post("/api/review/bulk-ignore")
 def ignore_cluster(req: IgnoreUnknownClusterRequest):
     try:
         return rm.ignore_cluster(req)
