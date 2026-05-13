@@ -5,6 +5,8 @@ import time
 from fastapi import HTTPException
 from pydantic import BaseModel
 
+from onnx_provider_utils import get_onnx_providers
+
 _cfg = {}
 
 
@@ -22,16 +24,17 @@ def _value(name, default=None):
 
 
 def gpu_diagnostics():
+    provider_info = get_onnx_providers()
+    available = provider_info.get("available_providers", ["CPUExecutionProvider"])
+    selected_providers = provider_info.get("providers", ["CPUExecutionProvider"])
+    cuda_failed = bool(provider_info.get("cuda_failed", False))
     ort_version = ""
+    provider_error = provider_info.get("provider_error", "")
     try:
         import onnxruntime as ort
-        available = ort.get_available_providers()
         ort_version = getattr(ort, "__version__", "")
-    except Exception as e:
-        available = []
-        provider_error = str(e)
-    else:
-        provider_error = ""
+    except Exception:
+        pass
     scan_state = _get("scan_state", {})
     active_provider = _value("face_engine_provider", "") or scan_state.get("provider") or ""
     active_device = (
@@ -40,21 +43,27 @@ def gpu_diagnostics():
         or scan_state.get("device")
         or "Não inicializado"
     )
-    preferred_provider = (
+    ai_device = "GPU" if selected_providers and selected_providers[0] == "CUDAExecutionProvider" else "CPU"
+    preferred_provider = provider_info.get("provider") or (
         "CUDAExecutionProvider"
         if "CUDAExecutionProvider" in available else
         "DmlExecutionProvider"
         if "DmlExecutionProvider" in available else
         "CPUExecutionProvider"
     )
+    status_message = "CUDA ativa" if ai_device == "GPU" and not cuda_failed else "CUDA indisponível. IA rodando em CPU."
     return {
         "available_providers": available,
-        "cuda_available": "CUDAExecutionProvider" in available,
+        "selected_providers": selected_providers,
+        "cuda_failed": cuda_failed,
+        "cuda_available": "CUDAExecutionProvider" in available and not cuda_failed,
         "directml_available": "DmlExecutionProvider" in available,
         "preferred_provider": preferred_provider,
         "active_provider": active_provider,
         "active_device": active_device,
-        "gpu_error": _value("face_engine_gpu_error", "") or scan_state.get("gpu_error") or provider_error,
+        "ai_device": ai_device,
+        "message": status_message,
+        "gpu_error": _value("face_engine_gpu_error", "") or scan_state.get("gpu_error") or ("" if not cuda_failed else status_message) or provider_error,
         "onnxruntime": ort_version,
     }
 
