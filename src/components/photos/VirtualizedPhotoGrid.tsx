@@ -58,7 +58,9 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
   resetScrollKey,
 }: VirtualizedPhotoGridProps) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const [viewportWidth, setViewportWidth] = useState(0);
+  const [viewportWidth, setViewportWidth] = useState(() => 
+    typeof window !== 'undefined' ? window.innerWidth - 320 : 0
+  );
   const perfEnabled = typeof window !== 'undefined' && window.localStorage.getItem('formaturapro:perf') === '1';
 
   useEffect(() => {
