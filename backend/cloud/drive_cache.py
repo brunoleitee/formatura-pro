@@ -1,10 +1,19 @@
 import os
+import json
 import logging
-from typing import Optional, List, Dict, Any
+import threading
+import time
+from typing import Optional, List, Dict, Any, Set
+from datetime import datetime
+from queue import Queue, PriorityQueue
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
 CACHE_DIR = "data/.cache/drive"
+MAX_ACTIVE_DOWNLOADS = 4
+THUMB_SIZE = 200
+PREVIEW_SIZE = 800
 
 
 def get_cache_dir() -> str:
@@ -108,3 +117,100 @@ class DriveCache:
 
 
 cache = DriveCache()
+
+
+@dataclass(order=True)
+class DownloadTask:
+    priority: int
+    file_id: str = field(compare=False)
+    file_type: str = field(compare=False)
+    url: str = field(compare=False)
+    dest_path: str = field(compare=False)
+    timestamp: float = field(compare=False)
+
+
+class DownloadQueue:
+    def __init__(self):
+        self.queue: PriorityQueue = PriorityQueue()
+        self.active: Set[str] = set()
+        self.lock = threading.Lock()
+        self.running = False
+
+    def add_task(self, file_id: str, file_type: str, url: str, dest_path: str, priority: int = 5) -> None:
+        with self.lock:
+            if file_id in self.active:
+                return
+            task = DownloadTask(
+                priority=priority,
+                file_id=file_id,
+                file_type=file_type,
+                url=url,
+                dest_path=os.path.dirname(dest_path),
+                timestamp=time.time()
+            )
+            self.queue.put(task)
+            if not self.running:
+                self.start()
+
+    def start(self) -> None:
+        if self.running:
+            return
+        self.running = True
+        threading.Thread(target=self._worker, daemon=True).start()
+
+    def _worker(self) -> None:
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+        from cloud import load_token
+
+        while self.running and len(self.active) < MAX_ACTIVE_DOWNLOADS:
+            try:
+                task = self.queue.get(timeout=1)
+            except:
+                break
+
+            with self.lock:
+                if task.file_id in self.active:
+                    continue
+                self.active.add(task.file_id)
+
+            try:
+                token_data = load_token()
+                if not token_data:
+                    continue
+
+                credentials = Credentials(
+                    token=token_data.get("token"),
+                    refresh_token=token_data.get("refresh_token"),
+                    token_uri=token_data.get("token_uri"),
+                    client_id=token_data.get("client_id"),
+                    client_secret=token_data.get("client_secret"),
+                    scopes=token_data.get("scopes", []),
+                )
+
+                service = build("drive", "v3", credentials=credentials, cache_discovery=False)
+
+                os.makedirs(task.dest_path, exist_ok=True)
+
+                request = service.files().get_media(fileId=task.file_id)
+                with open(os.path.join(task.dest_path, f"{task.file_id}.jpg"), "wb") as f:
+                    from googleapiclient.media import MediaIoBaseDownload
+                    downloader = MediaIoBaseDownload(f, request)
+                    done = False
+                    while not done:
+                        _, done = downloader.next_chunk()
+
+                logger.info(f"Download concluído: {task.file_type} - {task.file_id}")
+
+            except Exception as e:
+                logger.error(f"Erro no download {task.file_id}: {e}")
+            finally:
+                with self.lock:
+                    self.active.discard(task.file_id)
+
+        with self.lock:
+            if not self.active and self.queue.empty():
+                self.running = False
+
+
+download_queue = DownloadQueue()

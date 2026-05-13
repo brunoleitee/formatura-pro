@@ -182,3 +182,77 @@
   border-color: #3b82f6;
   color: #3b82f6;
 }
+
+.breadcrumb {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: rgba(15, 20, 30, 0.98);
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.breadcrumb button {
+  background: none;
+  border: none;
+  color: #3b82f6;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.breadcrumb button:hover {
+  text-decoration: underline;
+}
+
+.filesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.fileCard {
+  background: rgba(15, 20, 30, 0.98);
+  border: 1px solid #1f2937;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.fileCard:hover {
+  transform: translateY(-2px);
+  border-color: #3b82f6;
+}
+
+.fileThumb {
+  width: 100%;
+  aspect-ratio: 1;
+  background: #0a0d14;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.fileThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.filePlaceholder {
+  font-size: 2rem;
+  opacity: 0.5;
+}
+
+.fileInfo {
+  padding: 8px;
+}
+
+.fileName {
+  font-size: 0.75rem;
+  color: #e5e7eb;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -38,4 +38,14 @@ export const cloudApi = {
 
   getGoogleFolders: (parentId: string = "root") =>
     fetchJSON<FoldersResponse>(`${API_BASE}/cloud/google/folders?parent_id=${parentId}`),
+
+  indexFolder: (folderId: string = "root") =>
+    fetchJSON<{ files: unknown[]; count: number; error?: string }>(
+      `${API_BASE}/cloud/google/index?folder_id=${folderId}`
+    ),
+
+  getFiles: (folderId: string = "root") =>
+    fetchJSON<{ files: unknown[]; count: number; error?: string }>(
+      `${API_BASE}/cloud/google/files?folder_id=${folderId}`
+    ),
 };

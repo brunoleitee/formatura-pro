@@ -10,24 +10,30 @@ interface CloudProvider {
 
 interface SyncStatus {
   is_online: boolean;
-  pending_uploads: number;
-  pending_downloads: number;
-  last_sync?: string;
-  sync_progress: number;
 }
 
 interface Folder {
   id: string;
   name: string;
   parent?: string;
-  modifiedTime?: string;
+}
+
+interface CloudFile {
+  drive_file_id: string;
+  name: string;
+  mime_type: string;
+  modified_time?: string;
+  size?: number;
+  has_thumb?: boolean;
+  has_preview?: boolean;
+  has_full?: boolean;
 }
 
 export default function CloudSyncView() {
   const [providers] = useState<CloudProvider[]>([
     { id: 'google-drive', name: 'Google Drive', icon: '🎯' },
-    { id: 'dropbox', name: 'Dropbox', icon: '📦', },
-    { id: 'onedrive', name: 'OneDrive', icon: '☁️', },
+    { id: 'dropbox', name: 'Dropbox', icon: '📦' },
+    { id: 'onedrive', name: 'OneDrive', icon: '☁️' },
   ]);
 
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
@@ -35,12 +41,9 @@ export default function CloudSyncView() {
   const [userEmail, setUserEmail] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [folders, setFolders] = useState<Folder[]>([]);
-  const [syncStatus] = useState<SyncStatus>({
-    is_online: true,
-    pending_uploads: 0,
-    pending_downloads: 0,
-    sync_progress: 1,
-  });
+  const [files, setFiles] = useState<CloudFile[]>([]);
+  const [currentFolder, setCurrentFolder] = useState<string>('root');
+  const [syncStatus] = useState<SyncStatus>({ is_online: true });
 
   useEffect(() => {
     checkGoogleStatus();
@@ -82,15 +85,31 @@ export default function CloudSyncView() {
 
   const handleDisconnect = async (providerId: string) => {
     if (providerId !== 'google-drive') return;
-
     setLoading(true);
     try {
       await cloudApi.googleLogout();
       setConnectedProvider(null);
       setUserEmail('');
       setFolders([]);
+      setFiles([]);
     } catch (e) {
       console.error('Erro ao desconectar:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSelectFolder = async (folderId: string) => {
+    setCurrentFolder(folderId);
+    setLoading(true);
+    try {
+      const result = await cloudApi.indexFolder(folderId);
+      if (!result.error) {
+        const filesResult = await cloudApi.getFiles(folderId);
+        setFiles(filesResult.files as CloudFile[] || []);
+      }
+    } catch (e) {
+      console.error('Erro ao indexar pasta:', e);
     } finally {
       setLoading(false);
     }
@@ -105,6 +124,7 @@ export default function CloudSyncView() {
     }
 
     setSelectedProvider(providerId);
+    setFiles([]);
 
     if (connectedProvider === 'google-drive') {
       setLoading(true);
@@ -117,6 +137,10 @@ export default function CloudSyncView() {
         setLoading(false);
       }
     }
+  };
+
+  const navigateToFolder = (folderId: string) => {
+    handleSelectFolder(folderId);
   };
 
   return (
@@ -132,9 +156,7 @@ export default function CloudSyncView() {
           <span>{syncStatus.is_online ? 'Online' : 'Offline'}</span>
         </div>
         {connectedProvider === 'google-drive' && userEmail && (
-          <span className={styles.lastSync}>
-            Conectado: {userEmail}
-          </span>
+          <span className={styles.lastSync}>Conectado: {userEmail}</span>
         )}
       </div>
 
@@ -176,17 +198,45 @@ export default function CloudSyncView() {
             <div className={styles.folderSelector}>
               <p className={styles.placeholder}>Carregando...</p>
             </div>
+          ) : files.length > 0 ? (
+            <>
+              <div className={styles.breadcrumb}>
+                <button onClick={() => handleSelectFolder('root')}>Raiz</button>
+                {currentFolder !== 'root' && <span> / {currentFolder}</span>}
+              </div>
+              <div className={styles.filesGrid}>
+                {files.map((file) => (
+                  <div key={file.drive_file_id} className={styles.fileCard}>
+                    <div className={styles.fileThumb}>
+                      {file.has_thumb ? (
+                        <img src={`/api/cloud/thumb?file_id=${file.drive_file_id}`} alt={file.name} />
+                      ) : (
+                        <div className={styles.filePlaceholder}>📷</div>
+                      )}
+                    </div>
+                    <div className={styles.fileInfo}>
+                      <span className={styles.fileName}>{file.name}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           ) : folders.length > 0 ? (
             <div className={styles.folderList}>
+              {currentFolder !== 'root' && (
+                <div className={styles.folderItem} onClick={() => navigateToFolder('root')}>
+                  <span>⬆️ Voltar</span>
+                </div>
+              )}
               {folders.map((folder) => (
-                <div key={folder.id} className={styles.folderItem}>
+                <div key={folder.id} className={styles.folderItem} onClick={() => handleSelectFolder(folder.id)}>
                   <span>📁 {folder.name}</span>
                 </div>
               ))}
             </div>
           ) : (
             <div className={styles.folderSelector}>
-              <p className={styles.placeholder}>Nenhuma pasta encontrada</p>
+              <p className={styles.placeholder}>Nenhuma pasta encontrada. Selecione uma pasta para indexar.</p>
             </div>
           )}
         </section>
@@ -195,12 +245,10 @@ export default function CloudSyncView() {
       <section className={styles.syncSection}>
         <h2>Sincronização</h2>
         <div className={styles.syncActions}>
-          <button className={styles.syncBtn} disabled={!selectedProvider}>
+          <button className={styles.syncBtn} disabled={!selectedProvider || files.length === 0}>
             Sincronizar agora
           </button>
-          <button className={styles.settingsBtn}>
-            Configurações
-          </button>
+          <button className={styles.settingsBtn}>Configurações</button>
         </div>
       </section>
     </div>

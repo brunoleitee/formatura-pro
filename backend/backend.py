@@ -1978,6 +1978,101 @@ def cloud_google_folders(parent_id: str = "root"):
         return {"error": str(e), "folders": []}
 
 
+@app.get("/api/cloud/google/index")
+def cloud_google_index(folder_id: str = "root"):
+    try:
+        from cloud import is_authenticated, drive_manager
+        from cloud.drive_cache import cache
+
+        if not is_authenticated():
+            return {"error": "Não conectado", "files": []}
+
+        files = drive_manager.list_files(folder_id, page_size=500)
+        indexed = []
+
+        for f in files:
+            metadata = {
+                "drive_file_id": f.id,
+                "name": f.name,
+                "mime_type": f.mimeType,
+                "modified_time": str(f.modifiedTime) if f.modifiedTime else None,
+                "size": f.size,
+                "parent_folder": folder_id,
+                "cached": cache.thumb_exists(f.id),
+                "downloaded_full": cache.original_exists(f.id),
+            }
+            cache.save_metadata(f.id, metadata)
+            metadata["thumb_path"] = cache.get_thumb_path(f.id) if cache.thumb_exists(f.id) else None
+            indexed.append(metadata)
+
+        return {"files": indexed, "count": len(indexed)}
+    except Exception as e:
+        return {"error": str(e), "files": []}
+
+
+@app.get("/api/cloud/thumb")
+def cloud_thumb(file_id: str = "", size: int = 200):
+    try:
+        from cloud.drive_cache import cache, download_queue
+
+        if not file_id:
+            return {"error": "file_id obrigatório"}
+
+        thumb_path = cache.get_thumb_path(file_id)
+
+        if cache.thumb_exists(file_id):
+            return FileResponse(thumb_path, media_type="image/jpeg")
+
+        from cloud import is_authenticated, drive_manager
+        if not is_authenticated():
+            return {"error": "Não conectado"}
+
+        metadata = cache.load_metadata(file_id)
+        if not metadata:
+            return {"error": "Arquivo não indexado"}
+
+        file_info = drive_manager.get_file_metadata(file_id)
+        if not file_info:
+            return {"error": "Arquivo não encontrado no Drive"}
+
+        download_queue.add_task(
+            file_id=file_id,
+            file_type="thumb",
+            url=file_info.thumbnailLink or f"https://drive.google.com/uc?id={file_id}",
+            dest_path=cache.get_thumb_dir(),
+            priority=1
+        )
+
+        return {"status": "downloading", "file_id": file_id}
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/cloud/google/files")
+def cloud_google_files(folder_id: str = "root"):
+    try:
+        from cloud.drive_cache import cache
+
+        if not os.path.exists(cache.metadata_dir):
+            return {"files": [], "error": "Nenhuma pasta indexada"}
+
+        files = []
+        for filename in os.listdir(cache.metadata_dir):
+            if filename.endswith('.json'):
+                file_id = filename[:-5]
+                metadata = cache.load_metadata(file_id)
+                if metadata and metadata.get('parent_folder') == folder_id:
+                    metadata['has_thumb'] = cache.thumb_exists(file_id)
+                    metadata['has_preview'] = cache.preview_exists(file_id)
+                    metadata['has_full'] = cache.original_exists(file_id)
+                    files.append(metadata)
+
+        return {"files": files, "count": len(files)}
+    except Exception as e:
+        return {"error": str(e), "files": []}
+
+
 configure_modules()
 
 import webbrowser
