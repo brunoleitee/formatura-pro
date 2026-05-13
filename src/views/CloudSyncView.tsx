@@ -748,6 +748,19 @@ export default function CloudSyncView() {
                           ))}
                         </div>
                       )}
+                      {aiDetails.ocr_text && (
+                        <div className={styles.aiPanelSection}>
+                          <span className={styles.aiStatusOk}>✓ OCR detectado</span>
+                          <label className={styles.aiLabel}>OCR</label>
+                          <span className={styles.aiValue}>{aiDetails.ocr_text}</span>
+                          {aiDetails.ocr_confidence > 0 && (
+                            <>
+                              <label className={styles.aiLabel}>Confiança OCR</label>
+                              <span className={styles.aiValue}>{(aiDetails.ocr_confidence * 100).toFixed(0)}%</span>
+                            </>
+                          )}
+                        </div>
+                      )}
                       {!aiDetails.face_detected && (
                         <div className={styles.aiPanelSection}>
                           <span className={styles.aiStatusFail}>Rosto não detectado</span>
