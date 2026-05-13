@@ -1929,16 +1929,19 @@ def cloud_google_auth_start():
         return {"error": str(e)}
 
 
-@app.get("/api/cloud/google/auth/callback")
-def cloud_google_auth_callback(code: str = ""):
+@app.get("/api/cloud/google/callback")
+def cloud_google_callback(code: str = ""):
+    print(f"[GoogleDrive] CALLBACK RECEBIDO code={code[:20]}...")
     try:
         from cloud import exchange_code_for_token, get_user_info
         token = exchange_code_for_token(code)
         if not token:
             return {"error": "Falha ao obter token"}
         user_info = get_user_info() or {}
+        print(f"[GoogleDrive] Callback OK email={user_info.get('email')}")
         return {"status": "ok", "email": user_info.get("email"), "name": user_info.get("name")}
     except Exception as e:
+        print(f"[GoogleDrive] Callback ERROR: {e}")
         return {"error": str(e)}
 
 

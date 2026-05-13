@@ -33,7 +33,7 @@ print("=" * 60)
 
 SCOPES = [
     "https://www.googleapis.com/auth/drive.readonly",
-    "https://www.googleapis.com/auth/drive.file",
+    
 ]
 
 
@@ -89,15 +89,12 @@ def get_client_secrets_path() -> str:
 
 
 def get_auth_url() -> str:
-    from google_auth_oauthlib import Flow
+    from google_auth_oauthlib.flow import Flow
     from app.core.config import settings
 
     flow = Flow.from_client_secrets_file(
         get_client_secrets_path(),
-        scopes=[
-            "https://www.googleapis.com/auth/drive.readonly",
-            "https://www.googleapis.com/auth/drive.file",
-        ],
+        scopes=SCOPES,
     )
 
     flow.redirect_uri = settings.BACKEND_URL + "/api/cloud/google/callback"
@@ -107,14 +104,14 @@ def get_auth_url() -> str:
 
 
 def exchange_code_for_token(code: str) -> Optional[Dict[str, Any]]:
-    from google_auth_oauthlib import Flow
+    from google_auth_oauthlib.flow import Flow
 
     try:
         flow = Flow.from_client_secrets_file(
             get_client_secrets_path(),
             scopes=[
                 "https://www.googleapis.com/auth/drive.readonly",
-                "https://www.googleapis.com/auth/drive.file",
+                
             ],
         )
 
