@@ -107,8 +107,10 @@ def exchange_code_for_token(code: str) -> Optional[Dict[str, Any]]:
     try:
         from google_auth_oauthlib.flow import Flow
 
-        print(f"[OAuth] exchange_code: code={code[:30]}...")
+        print(f"[OAuth] exchange_code: code={code[:40]}...")
         print(f"[OAuth] redirect_uri={REDIRECT_URI}")
+        print(f"[OAuth] client_secrets={CLIENT_SECRETS_FILE}")
+        print(f"[OAuth] scopes={SCOPES}")
 
         flow = Flow.from_client_secrets_file(
             get_client_secrets_path(),
@@ -135,10 +137,20 @@ def exchange_code_for_token(code: str) -> Optional[Dict[str, Any]]:
         print(f"[OAuth] token saved to {TOKEN_FILE}")
         return token_data
 
-    except Exception as e:
-        print(f"[OAuth] exchange_code ERROR: {e}")
-        logger.error(f"Erro ao trocar código por token: {e}")
-        return None
+    except Exception:
+        import traceback
+        print("=" * 80)
+        print("[Google OAuth] ERRO FETCH TOKEN")
+        print(f"code = {code[:40]}...")
+        print(f"redirect_uri = {REDIRECT_URI}")
+        print(f"client_secrets = {CLIENT_SECRETS_FILE}")
+        print(f"scopes = {SCOPES}")
+        traceback.print_exc()
+        print("=" * 80)
+        import sys as _sys
+        _sys.stdout.flush()
+        logger.error(f"Erro ao trocar código por token", exc_info=True)
+        raise
 
 
 def get_login_url() -> Optional[str]:
