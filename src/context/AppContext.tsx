@@ -8,7 +8,8 @@ export type ViewName =
   | 'person-detail'
   | 'review'
   | 'export'
-  | 'settings';
+  | 'settings'
+  | 'cloud-sync';
 
 interface AppContextValue {
   currentCatalog: string;

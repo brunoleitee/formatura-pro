@@ -15,6 +15,9 @@ import ExportView from '../../views/ExportView';
 import SettingsView from '../../views/SettingsView';
 import { Sidebar } from './Sidebar';
 import { logPerf, perfNow } from '../../utils/perf';
+import { lazy, Suspense } from 'react';
+
+const CloudSyncView = lazy(() => import('../../views/CloudSyncView'));
 
 interface ScanSessionMeta {
   catalogName: string;
@@ -332,7 +335,7 @@ export function AppShell() {
 
   const canOpenReview = Boolean(scanStatus?.scan_summary) || (scanStatus?.total_clusters ?? 0) > 0;
 
-  const renderView = () => {
+const renderView = () => {
     switch (activeView) {
       case 'dashboard':    return <DashboardView />;
       case 'photos':        return <CatalogView />;
@@ -341,6 +344,7 @@ export function AppShell() {
       case 'review':        return <ReviewView />;
       case 'export':        return <ExportView />;
       case 'settings':      return <SettingsView />;
+      case 'cloud-sync':     return <Suspense fallback={<div style={{padding:40,color:'#9ca3af'}}>Carregando...</div>}><CloudSyncView /></Suspense>;
       default:              return <CatalogView />;
     }
   };

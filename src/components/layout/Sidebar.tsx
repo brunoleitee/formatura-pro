@@ -3,7 +3,7 @@ import {
   FolderOpen, ChevronDown, ChevronRight, Trash2,
   Image as ImageIcon, Users, UserCheck, Download, LayoutDashboard,
   Settings, Search, ScanLine, Loader, Users as UsersIcon,
-  Folder,
+  Folder, Cloud,
 } from 'lucide-react';
 import { useApp, type ViewName } from '../../context/AppContext';
 import { api } from '../../services/api';
@@ -71,8 +71,9 @@ export function Sidebar({
     { view: 'review',  icon: <UserCheck size={17} />, label: 'Revisão IA' },
   ];
 
-  const toolItems: { view: ViewName; icon: React.ReactNode; label: string }[] = [
+const toolItems: { view: ViewName; icon: React.ReactNode; label: string }[] = [
     { view: 'export',   icon: <Download size={17} />,  label: 'Exportador' },
+    { view: 'cloud-sync', icon: <Cloud size={17} />,  label: 'Sincronização na Nuvem' },
     { view: 'settings', icon: <Settings size={17} />,  label: 'Configurações' },
   ];
 
