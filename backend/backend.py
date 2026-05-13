@@ -390,6 +390,9 @@ export_state = {
     "processed_files": 0,
     "eta_seconds": 0,
     "export_summary": None,
+    "export_id": "",
+    "export_dir": "",
+    "pdf_path": "",
     "undo_available": False
 }
 
@@ -1619,6 +1622,9 @@ def clear_export_summary():
 class OpenFolderReq(BaseModel):
     path: str
 
+class OpenPathReq(BaseModel):
+    path: str
+
 @app.post("/api/open-folder")
 def open_folder(req: OpenFolderReq):
     return im.open_folder(req.path)
@@ -1630,6 +1636,15 @@ def open_photoshop(req: OpenFolderReq):
 @app.post("/api/open-file")
 def open_file(req: OpenFolderReq):
     return im.open_file(req.path)
+
+@app.post("/api/system/open-path")
+def open_path(req: OpenPathReq):
+    target = os.path.abspath(os.path.normpath(os.path.expanduser(os.path.expandvars(req.path or ""))))
+    if not target or not os.path.exists(target):
+        raise HTTPException(status_code=404, detail="Caminho nao encontrado")
+    if not is_safe_path(target):
+        raise HTTPException(status_code=400, detail="Caminho protegido nao pode ser aberto")
+    return im.open_path(target)
 
 @app.get("/api/faces/similar")
 def search_similar_faces(rowid: int, catalog: str = "", limit: int = 50):

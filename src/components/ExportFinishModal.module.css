@@ -1,0 +1,302 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+  background: rgba(5, 8, 14, 0.58);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 2100;
+}
+
+.modal {
+  position: relative;
+  width: min(100%, 760px);
+  max-height: min(88vh, 760px);
+  overflow: auto;
+  padding: 28px 28px 26px;
+  border-radius: 24px;
+  color: #eef4fb;
+  background:
+    linear-gradient(180deg, rgba(18, 24, 34, 0.98) 0%, rgba(11, 15, 22, 0.98) 100%);
+  border: 1px solid rgba(37, 48, 68, 0.96);
+  box-shadow:
+    0 36px 110px rgba(0, 0, 0, 0.66),
+    0 0 0 1px rgba(255, 255, 255, 0.02),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.modal::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 4px;
+  border-radius: 24px 24px 0 0;
+  background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%);
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.34);
+}
+
+.closeBtn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(132, 146, 168, 0.16);
+  background: rgba(14, 18, 26, 0.92);
+  color: rgba(235, 242, 250, 0.72);
+  cursor: pointer;
+  transition: transform 0.16s ease, background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+}
+
+.closeBtn:hover {
+  transform: translateY(-1px);
+  background: rgba(21, 27, 38, 0.98);
+  color: #ffffff;
+  border-color: rgba(96, 165, 250, 0.24);
+}
+
+.iconWrap {
+  width: 88px;
+  height: 88px;
+  margin: 10px auto 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #4ade80;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(74, 222, 128, 0.18) 0%, rgba(74, 222, 128, 0.08) 46%, rgba(74, 222, 128, 0) 72%),
+    rgba(16, 22, 20, 0.96);
+  border: 1px solid rgba(74, 222, 128, 0.34);
+  box-shadow:
+    0 0 0 8px rgba(74, 222, 128, 0.06),
+    0 18px 34px rgba(0, 0, 0, 0.28);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.9rem;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #f7fbff;
+}
+
+.message {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.55;
+  color: rgba(214, 224, 235, 0.8);
+}
+
+.pathGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.pathCard {
+  border-radius: 16px;
+  border: 1px solid rgba(37, 48, 68, 0.86);
+  background: linear-gradient(180deg, rgba(16, 21, 31, 0.92), rgba(12, 16, 23, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 12px 26px rgba(0, 0, 0, 0.18);
+  padding: 14px 14px 13px;
+  min-width: 0;
+}
+
+.pathCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.pathLabel {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #93c5fd;
+}
+
+.copyBtn {
+  min-height: 30px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  background: rgba(59, 130, 246, 0.08);
+  color: #dbeafe;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.copyBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(96, 165, 250, 0.36);
+  color: #ffffff;
+}
+
+.copyBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pathValue {
+  min-height: 54px;
+  padding: 12px 12px 11px;
+  border-radius: 12px;
+  border: 1px solid rgba(71, 85, 105, 0.62);
+  background: rgba(8, 12, 18, 0.82);
+  color: #e5eef8;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.errorBox {
+  margin-top: 14px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(248, 113, 113, 0.22);
+  background: rgba(127, 29, 29, 0.22);
+  color: #fecaca;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.primaryBtn,
+.secondaryBtn,
+.ghostBtn {
+  min-height: 50px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 18px;
+  font-size: 0.96rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease, background 0.16s ease, color 0.16s ease;
+}
+
+.primaryBtn:hover:not(:disabled),
+.secondaryBtn:hover:not(:disabled),
+.ghostBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.primaryBtn {
+  color: #f8fbff;
+  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  box-shadow: 0 16px 30px rgba(59, 130, 246, 0.2);
+}
+
+.primaryBtn:hover:not(:disabled) {
+  box-shadow: 0 18px 34px rgba(59, 130, 246, 0.28);
+}
+
+.secondaryBtn {
+  color: #dbeafe;
+  border-color: rgba(96, 165, 250, 0.22);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.secondaryBtn:hover:not(:disabled) {
+  border-color: rgba(96, 165, 250, 0.38);
+  background: rgba(59, 130, 246, 0.16);
+}
+
+.ghostBtn {
+  min-width: 90px;
+  color: rgba(233, 239, 246, 0.88);
+  border-color: rgba(148, 163, 184, 0.14);
+  background: rgba(14, 18, 26, 0.9);
+}
+
+.ghostBtn:hover:not(:disabled) {
+  border-color: rgba(203, 213, 225, 0.22);
+  background: rgba(21, 27, 38, 0.98);
+}
+
+.primaryBtn:disabled,
+.secondaryBtn:disabled,
+.ghostBtn:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 720px) {
+  .overlay {
+    padding: 14px;
+  }
+
+  .modal {
+    padding: 24px 16px 18px;
+    border-radius: 20px;
+  }
+
+  .title {
+    font-size: 1.5rem;
+  }
+
+  .pathGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .actions {
+    grid-template-columns: 1fr;
+  }
+
+  .ghostBtn {
+    min-width: 0;
+  }
+}

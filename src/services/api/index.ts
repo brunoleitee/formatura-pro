@@ -31,6 +31,7 @@ export const api = {
   openFolder: (path: string) => post(`${API_BASE}/open-folder`, { path }),
   openPhotoshop: (path: string) => post(`${API_BASE}/open-photoshop`, { path }),
   openFile: (path: string) => post(`${API_BASE}/open-file`, { path }),
+  openSystemPath: (path: string) => post(`${API_BASE}/system/open-path`, { path }),
 };
 
 export * from './types';

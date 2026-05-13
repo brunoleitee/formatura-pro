@@ -134,6 +134,22 @@ def open_file(path: str):
     return {"status": "ok"}
 
 
+def open_path(path: str):
+    path = os.path.abspath(urllib.parse.unquote(path or ""))
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Caminho nao encontrado")
+    try:
+        if os.name == "nt":
+            os.startfile(path)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"status": "ok", "path": path, "kind": "folder" if os.path.isdir(path) else "file"}
+
+
 def select_folder():
     import tkinter as tk
     from tkinter import filedialog

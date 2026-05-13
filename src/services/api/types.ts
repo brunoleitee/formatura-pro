@@ -96,6 +96,20 @@ export interface QualityAuditStatus {
   status_text: string;
 }
 
+export interface ExportSummary {
+  export_id?: string;
+  export_dir?: string;
+  pdf_path?: string;
+  dest_path?: string;
+  report_path?: string;
+  pdf_report_path?: string;
+  time_seconds?: number;
+  time_str?: string;
+  folder_count?: number;
+  photo_count?: number;
+  mode?: string;
+}
+
 export interface ExportStatus {
   is_exporting: boolean;
   progress: number;
@@ -103,7 +117,10 @@ export interface ExportStatus {
   total_files: number;
   processed_files: number;
   eta_seconds: number;
-  export_summary: unknown | null;
+  export_id?: string;
+  export_dir?: string;
+  pdf_path?: string;
+  export_summary: ExportSummary | null;
 }
 
 export interface GraduationAnalysisStatus {

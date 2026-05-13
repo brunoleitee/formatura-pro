@@ -650,6 +650,8 @@ def run_export_worker(req: ExportReq, catalog_name: str):
     export_state["processed_files"] = 0
     export_state["eta_seconds"] = 0
     export_state["export_summary"] = None
+    export_state["export_dir"] = ""
+    export_state["pdf_path"] = ""
     log_info(f"Worker: Iniciando exportacao para o catalogo: {catalog_name}")
     log_info(f"Worker: Iniciando exportacao para {catalog_name}. Destino: {req.dest_path}")
 
@@ -828,6 +830,9 @@ def run_export_worker(req: ExportReq, catalog_name: str):
                         pdf_report_path = ""
 
                 export_state["export_summary"] = {
+                    "export_id": export_state.get("export_id", ""),
+                    "export_dir": req.dest_path,
+                    "pdf_path": pdf_report_path,
                     "dest_path": req.dest_path,
                     "report_path": report_path,
                     "pdf_report_path": pdf_report_path,
@@ -837,10 +842,14 @@ def run_export_worker(req: ExportReq, catalog_name: str):
                     "photo_count": destination_photo_total,
                     "mode": req.mode,
                 }
+                export_state["export_dir"] = req.dest_path
+                export_state["pdf_path"] = pdf_report_path
 
                 append_export_history({
                     "catalog": catalog_name,
+                    "export_id": export_state.get("export_id", ""),
                     "dest_path": req.dest_path,
+                    "export_dir": req.dest_path,
                     "mode": req.mode,
                     "time_str": _format_duration(elapsed_total),
                     "time_seconds": int(elapsed_total),
@@ -848,11 +857,15 @@ def run_export_worker(req: ExportReq, catalog_name: str):
                     "photo_count": destination_photo_total,
                     "report_path": report_path,
                     "pdf_report_path": pdf_report_path,
+                    "pdf_path": pdf_report_path,
                     "created_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
                 })
             except Exception as e:
                 log_info(f"Worker: Erro ao gerar resumo/relatorios: {e}")
                 export_state["export_summary"] = {
+                    "export_id": export_state.get("export_id", ""),
+                    "export_dir": req.dest_path,
+                    "pdf_path": "",
                     "dest_path": req.dest_path,
                     "report_path": "",
                     "pdf_report_path": "",
@@ -888,6 +901,11 @@ def start_export(req: ExportReq):
     backup_catalog_db(catalog_name, "antes_exportar")
     export_state["is_exporting"] = True
     export_state["progress"] = 0
+    export_id = str(uuid.uuid4())
+    export_state["export_id"] = export_id
+    export_state["export_dir"] = ""
+    export_state["pdf_path"] = ""
+    export_state["export_summary"] = None
     threading.Thread(target=run_export_worker, args=(req, catalog_name), daemon=True).start()
     return {"message": "Export iniciada."}
 

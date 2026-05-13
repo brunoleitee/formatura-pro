@@ -1,7 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode, useState, useEffect, useCallback } from 'react';
 import { Download, FolderOpen, RefreshCw, Check, Users } from 'lucide-react';
-import { api, type Person, type ExportStatus } from '../services/api';
+import { api, type Person, type ExportStatus, type ExportSummary } from '../services/api';
 import { useApp } from '../context/AppContext';
+import ExportFinishModal from '../components/ExportFinishModal';
 
 type ExportMode = 'copy' | 'move';
 type ConflictStrategy = 'copy' | 'skip' | 'overwrite';
@@ -46,6 +47,8 @@ export default function ExportView() {
 
 function ExportViewContent() {
   const { currentCatalog } = useApp();
+  const [finishModalOpen, setFinishModalOpen] = useState(false);
+  const [finishModalData, setFinishModalData] = useState<{ exportDir: string; pdfPath: string } | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [destPath, setDestPath] = useState('');
@@ -75,6 +78,8 @@ function ExportViewContent() {
     setSelected(new Set());
     setStatus(null);
     setPolling(false);
+    setFinishModalOpen(false);
+    setFinishModalData(null);
     setSearch('');
     setError('');
   }, [currentCatalog]);
@@ -92,6 +97,27 @@ function ExportViewContent() {
     }
     return () => clearInterval(interval);
   }, [polling]);
+
+  useEffect(() => {
+    if (!status || status.is_exporting) return;
+
+    const summary = status.export_summary as ExportSummary | null;
+    if (!summary) return;
+
+    const exportId = status.export_id || summary.export_id;
+    if (!exportId || typeof window === 'undefined') return;
+
+    const storageKey = 'formaturapro:last-export-modal';
+    const seenExportId = window.sessionStorage.getItem(storageKey);
+    if (seenExportId === exportId) return;
+
+    window.sessionStorage.setItem(storageKey, exportId);
+    setFinishModalData({
+      exportDir: status.export_dir || summary.export_dir || summary.dest_path || '',
+      pdfPath: status.pdf_path || summary.pdf_path || summary.pdf_report_path || '',
+    });
+    setFinishModalOpen(true);
+  }, [status]);
 
   const handleSelectFolder = async () => {
     try {
@@ -149,6 +175,8 @@ function ExportViewContent() {
     if (!destPath) { setError('Selecione a pasta de destino.'); return; }
     if (selected.size === 0) { setError('Selecione ao menos uma pessoa.'); return; }
     setError('');
+    setFinishModalOpen(false);
+    setFinishModalData(null);
     try {
       await api.startExport([...selected], destPath, mode, conflict, includeQuality, includeDescarte);
       setPolling(true);
@@ -165,6 +193,13 @@ function ExportViewContent() {
   const selectionSummary = `${selected.size} de ${people.length} selecionado${selected.size !== 1 ? 's' : ''}`;
   const exportButtonLabel = isExporting ? 'Exportando...' : `Exportar${selected.size > 0 ? ` (${selected.size})` : ''}`;
   const exportSuccessLabel = 'Exportação concluída com sucesso!';
+
+  const finishExportDir = finishModalData?.exportDir ?? '';
+  const finishPdfPath = finishModalData?.pdfPath ?? '';
+
+  const handleOpenFinishPath = useCallback(async (path: string) => {
+    await api.openSystemPath(path);
+  }, []);
 
   const getRowStyle = (isSelected: boolean) => ({
     width: '100%',
@@ -437,6 +472,14 @@ function ExportViewContent() {
           </button>
         </div>
       </div>
+
+      <ExportFinishModal
+        open={finishModalOpen}
+        exportDir={finishExportDir}
+        pdfPath={finishPdfPath}
+        onClose={() => setFinishModalOpen(false)}
+        onOpenPath={handleOpenFinishPath}
+      />
     </div>
   );
 }
