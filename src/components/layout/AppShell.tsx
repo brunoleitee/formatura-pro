@@ -14,6 +14,7 @@ import ReviewView from '../../views/ReviewView';
 import ExportView from '../../views/ExportView';
 import SettingsView from '../../views/SettingsView';
 import { Sidebar } from './Sidebar';
+import { logPerf, perfNow } from '../../utils/perf';
 
 interface ScanSessionMeta {
   catalogName: string;
@@ -92,11 +93,22 @@ export function AppShell() {
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const prevScanStatusRef = useRef<ScanStatus | null>(null);
   const scanCenterDismissedRef = useRef(false);
+  const activeViewPaintStartRef = useRef<number | null>(null);
   const scanCompleted = isScanCompleted(scanStatus);
 
   useEffect(() => {
     refreshCatalogs();
   }, [refreshCatalogs]);
+
+  useEffect(() => {
+    activeViewPaintStartRef.current = perfNow();
+    const raf = window.requestAnimationFrame(() => {
+      if (activeViewPaintStartRef.current !== null) {
+        logPerf(`tab ${activeView}`, activeViewPaintStartRef.current);
+      }
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [activeView]);
 
   useEffect(() => {
     if (!currentCatalog && catalogs.length === 0) {

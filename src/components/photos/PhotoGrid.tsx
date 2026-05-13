@@ -1,6 +1,7 @@
+import { memo, useMemo } from 'react';
 import { Image as ImageIcon } from 'lucide-react';
 import type { Photo } from '../../services/api';
-import { PhotoCard } from './PhotoCard';
+import { MemoPhotoCard } from './PhotoCard';
 import { getPhotoId } from '../../hooks/usePhotoSelection';
 
 interface PhotoGridProps {
@@ -11,10 +12,23 @@ interface PhotoGridProps {
   onOpenDetails: (photo: Photo) => void;
   onDragStart?: (photo: Photo, event: React.PointerEvent) => void;
   onDragEnd?: (photo: Photo, event: React.PointerEvent) => void;
+  onFirstThumbLoad?: () => void;
   zoom?: number;
 }
 
-export function PhotoGrid({ photos, selectedPaths, onPhotoClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, zoom = 180 }: PhotoGridProps) {
+export const PhotoGrid = memo(function PhotoGrid({
+  photos,
+  selectedPaths,
+  onPhotoClick,
+  onDoubleClick,
+  onOpenDetails,
+  onDragStart,
+  onDragEnd,
+  onFirstThumbLoad,
+  zoom = 180,
+}: PhotoGridProps) {
+  const gridStyle = useMemo(() => ({ '--grid-item-size': `${zoom}px` } as React.CSSProperties), [zoom]);
+
   if (photos.length === 0) {
     return (
       <div className="empty-state">
@@ -26,11 +40,11 @@ export function PhotoGrid({ photos, selectedPaths, onPhotoClick, onDoubleClick, 
   }
 
   return (
-    <div className="photo-grid" style={{ '--grid-item-size': `${zoom}px` } as React.CSSProperties}>
+    <div className="photo-grid" style={gridStyle}>
       {photos.map((photo) => {
         const id = getPhotoId(photo);
         return (
-          <PhotoCard
+          <MemoPhotoCard
             key={id}
             photo={photo}
             isSelected={selectedPaths.has(id)}
@@ -39,9 +53,10 @@ export function PhotoGrid({ photos, selectedPaths, onPhotoClick, onDoubleClick, 
             onOpenDetails={onOpenDetails}
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
+            onFirstThumbLoad={onFirstThumbLoad}
           />
         );
       })}
     </div>
   );
-}
+});

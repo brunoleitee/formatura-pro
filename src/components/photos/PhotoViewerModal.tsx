@@ -3,6 +3,7 @@ import { X, ChevronLeft, ChevronRight, Search, UserCheck, UserMinus, Plus, Arrow
 import { api, type Photo } from '../../services/api';
 import { isKnownFace } from '../../utils/personIdentity';
 import { useApp } from '../../context/AppContext';
+import { logPerf, perfNow } from '../../utils/perf';
 import styles from './PhotoViewerModal.module.css';
 
 interface PhotoViewerModalProps {
@@ -74,6 +75,10 @@ export function PhotoViewerModal({
   const navigationPhotos = (contextPhotos?.length ? contextPhotos : allPhotos);
   const originalSrc = api.fullResUrl(photo.path);
   const originalLoadTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const viewerTransitionRef = useRef<'open' | 'next' | 'prev'>('open');
+  const viewerLoadStartRef = useRef<number | null>(null);
+  const viewerMountedRef = useRef(false);
+  const viewerLoggedRef = useRef(false);
 
   const clearOriginalLoadTimeout = useCallback(() => {
     if (originalLoadTimeoutRef.current !== null) {
@@ -98,6 +103,7 @@ export function PhotoViewerModal({
 
   useEffect(() => {
     // Reset quando troca de foto
+    viewerLoadStartRef.current = perfNow();
     setIsLoaded(false);
     setUseHighRes(false);
     setHighResLoaded(false);
@@ -105,6 +111,12 @@ export function PhotoViewerModal({
     setHighResError(null);
     setCurrentSrc(api.thumbUrl(photo.path, 1200, 90));
     clearOriginalLoadTimeout();
+    viewerLoggedRef.current = false;
+    if (viewerMountedRef.current) {
+      logPerf(`viewer switch ${viewerTransitionRef.current}`, viewerLoadStartRef.current, photo.path);
+    } else {
+      viewerMountedRef.current = true;
+    }
   }, [clearOriginalLoadTimeout, photo.path]);
 
   useEffect(() => {
@@ -124,6 +136,10 @@ export function PhotoViewerModal({
 
     if (img.complete) {
       finishOriginalLoad();
+      if (viewerLoadStartRef.current !== null && !viewerLoggedRef.current) {
+        viewerLoggedRef.current = true;
+        logPerf(`viewer loaded ${viewerTransitionRef.current}`, viewerLoadStartRef.current, photo.path);
+      }
     }
   }, [currentSrc, finishOriginalLoad, originalSrc]);
 
@@ -371,8 +387,10 @@ export function PhotoViewerModal({
         e.preventDefault();
         handleDiscard();
       } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        viewerTransitionRef.current = 'prev';
         if (currentIndex > 0) onNavigate(navigationPhotos[currentIndex - 1]);
       } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        viewerTransitionRef.current = 'next';
         if (currentIndex < total - 1) onNavigate(navigationPhotos[currentIndex + 1]);
       } else if (e.key === 'Escape') {
         if (isManualMode) {
@@ -492,11 +510,13 @@ export function PhotoViewerModal({
 
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();
+    viewerTransitionRef.current = 'prev';
     if (currentIndex > 0) onNavigate(navigationPhotos[currentIndex - 1]);
   };
 
   const handleNext = (e: React.MouseEvent) => {
     e.stopPropagation();
+    viewerTransitionRef.current = 'next';
     if (currentIndex < total - 1) onNavigate(navigationPhotos[currentIndex + 1]);
   };
 
@@ -738,6 +758,10 @@ export function PhotoViewerModal({
                     setIsLoaded(true);
                     if (img.src === originalSrc || currentSrc === originalSrc) {
                       finishOriginalLoad();
+                      if (viewerLoadStartRef.current !== null && !viewerLoggedRef.current) {
+                        viewerLoggedRef.current = true;
+                        logPerf(`viewer loaded ${viewerTransitionRef.current}`, viewerLoadStartRef.current, photo.path);
+                      }
                     }
                   }}
                   onError={() => {

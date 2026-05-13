@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { api, type Photo } from '../services/api';
 import { useApp } from '../context/AppContext';
+import { timed } from '../utils/perf';
 
 export function useCatalogPhotos() {
   const { currentCatalog, refreshKey } = useApp();
@@ -11,7 +12,7 @@ export function useCatalogPhotos() {
     if (!currentCatalog) return;
     setLoading(true);
     try {
-      const arr = await api.getAllPhotos(currentCatalog);
+      const arr = await timed('catalog photos load', () => api.getAllPhotos(currentCatalog), currentCatalog);
       setPhotos(arr);
     } catch (e) {
       console.error(e);

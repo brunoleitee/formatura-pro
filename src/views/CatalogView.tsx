@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { RefreshCw, ShieldCheck } from 'lucide-react';
 import { api, type Photo, type QualityAuditStatus } from '../services/api';
 import { useApp } from '../context/AppContext';
@@ -13,6 +13,7 @@ import { PhotoFilters } from '../components/photos/PhotoFilters';
 import { ZoomControl } from '../components/photos/ZoomControl';
 import PhotoBulkActionsBar from '../components/photos/PhotoBulkActionsBar';
 import { extractSubfolders } from '../utils/pathUtils';
+import { logPerf, perfNow } from '../utils/perf';
 
 const ZOOM_MIN = 100;
 const ZOOM_MAX = 300;
@@ -46,6 +47,8 @@ export default function CatalogView() {
   const [auditStatus, setAuditStatus] = useState<QualityAuditStatus | null>(null);
   const [auditStarting, setAuditStarting] = useState(false);
   const [detailsPhoto, setDetailsPhoto] = useState<Photo | null>(null);
+  const firstThumbLoadStartRef = useRef<number | null>(null);
+  const firstThumbLoggedRef = useRef(false);
 
   const handleDiscardSelected = useCallback(async () => {
     if (selectedPaths.size === 0) return;
@@ -149,6 +152,19 @@ export default function CatalogView() {
     const subfolders = extractSubfolders(photos);
     setCatalogSubfolders(subfolders);
   }, [photos, setCatalogSubfolders]);
+
+  useEffect(() => {
+    if (loading) {
+      firstThumbLoadStartRef.current = perfNow();
+      firstThumbLoggedRef.current = false;
+    }
+  }, [loading, currentCatalog]);
+
+  const handleFirstThumbLoad = useCallback(() => {
+    if (firstThumbLoggedRef.current || firstThumbLoadStartRef.current == null) return;
+    firstThumbLoggedRef.current = true;
+    logPerf('catalog first thumbnail', firstThumbLoadStartRef.current);
+  }, []);
 
   const startQualityAudit = useCallback(async () => {
     if (!currentCatalog || auditStarting) return;
@@ -294,6 +310,7 @@ export default function CatalogView() {
                 onOpenDetails={setDetailsPhoto}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
+                onFirstThumbLoad={handleFirstThumbLoad}
                 zoom={size}
               />
             </>

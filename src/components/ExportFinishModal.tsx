@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CheckCircle2, Copy, FileText, FolderOpen, Loader2, X } from 'lucide-react';
+import { logPerf, perfNow } from '../utils/perf';
 import styles from './ExportFinishModal.module.css';
 
 export interface ExportFinishModalProps {
@@ -22,15 +23,22 @@ export default function ExportFinishModal({
   onOpenPath,
 }: ExportFinishModalProps) {
   const closeBtnRef = useRef<HTMLButtonElement>(null);
+  const openStartRef = useRef<number | null>(null);
   const [copyTarget, setCopyTarget] = useState<CopyTarget>(null);
   const [openTarget, setOpenTarget] = useState<OpenTarget>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!open) return;
+    openStartRef.current = perfNow();
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    const frame = window.requestAnimationFrame(() => closeBtnRef.current?.focus());
+    const frame = window.requestAnimationFrame(() => {
+      closeBtnRef.current?.focus();
+      if (openStartRef.current !== null) {
+        logPerf('modal export finish open', openStartRef.current);
+      }
+    });
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {

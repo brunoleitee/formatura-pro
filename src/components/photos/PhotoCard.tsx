@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { memo, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Image as ImageIcon, MoreHorizontal } from 'lucide-react';
 import { api, type Photo } from '../../services/api';
 import { isPhotoBlurry, isPhotoAttention } from '../../utils/qualityUtils';
@@ -12,6 +12,7 @@ interface PhotoCardProps {
   onOpenDetails: (photo: Photo) => void;
   onDragStart?: (photo: Photo, event: React.PointerEvent) => void;
   onDragEnd?: (photo: Photo, event: React.PointerEvent) => void;
+  onFirstThumbLoad?: () => void;
 }
 
 function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number, h: number }, photoWidth: number, photoHeight: number) {
@@ -41,7 +42,7 @@ function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number,
 
   return (
     <div
-      key={face.rowid ?? Math.random()}
+      key={face.rowid ?? `${face.x1}-${face.y1}-${face.x2}-${face.y2}`}
       style={{
         position: 'absolute',
         left: `${x1}px`,
@@ -70,7 +71,7 @@ function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number,
   );
 }
 
-export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd }: PhotoCardProps) {
+export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [thumbSize, setThumbSize] = useState({ w: 0, h: 0 });
@@ -147,6 +148,18 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
     isDraggingInternal.current = false;
   };
 
+  const handleImageLoad = useCallback(() => {
+    setIsLoaded(true);
+    onFirstThumbLoad?.();
+  }, [onFirstThumbLoad]);
+
+  const cardStyle = useMemo(() => ({
+    userSelect: 'none' as const,
+    touchAction: 'none' as const,
+    contentVisibility: 'auto' as const,
+    containIntrinsicSize: '320px 360px',
+  }), []) as React.CSSProperties;
+
   return (
     <div
       className={`photo-card ${isSelected ? 'selected' : ''} ${isDiscarded ? 'discarded' : ''}`}
@@ -159,7 +172,7 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
-      style={{ userSelect: 'none', touchAction: 'none' }}
+      style={cardStyle}
     >
       <div className="photo-img-placeholder" ref={containerRef}>
         {!hasError && (
@@ -172,6 +185,7 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
               decoding="async"
               draggable={false}
               style={{ opacity: isLoaded ? 1 : 0, userSelect: 'none', pointerEvents: 'none' }}
+              onLoad={handleImageLoad}
               onError={() => setHasError(true)}
             />
             <button
@@ -269,3 +283,5 @@ export function PhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDet
     </div>
   );
 }
+
+export const MemoPhotoCard = memo(PhotoCard);
