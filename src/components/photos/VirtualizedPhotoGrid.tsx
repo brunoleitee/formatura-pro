@@ -24,6 +24,15 @@ const GRID_GAP = 10;
 const MIN_COL_WIDTH = 140;
 const CARD_INFO_HEIGHT = 72;
 
+function getColumnsByZoom(zoom: number) {
+  if (zoom >= 300) return 2;
+  if (zoom >= 260) return 3;
+  if (zoom >= 220) return 4;
+  if (zoom >= 180) return 5;
+  if (zoom >= 140) return 6;
+  return 8;
+}
+
 export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
   photos,
   selectedPaths,
@@ -62,12 +71,16 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
 
   const columns = useMemo(() => {
     const safeWidth = Math.max(0, viewportWidth);
-    const cardWidth = Math.max(MIN_COL_WIDTH, Math.round(zoom));
-    const rawColumns = Math.floor((safeWidth + GRID_GAP) / (cardWidth + GRID_GAP));
-    return Math.max(1, rawColumns || 1);
+    const widthCap = Math.max(2, Math.floor((safeWidth + GRID_GAP) / (MIN_COL_WIDTH + GRID_GAP)));
+    const zoomTarget = getColumnsByZoom(zoom);
+    return zoom >= 300 ? 2 : Math.max(2, Math.min(zoomTarget, widthCap));
   }, [viewportWidth, zoom]);
 
-  const cardWidth = useMemo(() => Math.max(MIN_COL_WIDTH, Math.round(zoom)), [zoom]);
+  const cardWidth = useMemo(() => {
+    const safeWidth = Math.max(0, viewportWidth);
+    const availableWidth = Math.max(0, safeWidth - GRID_GAP * Math.max(0, columns - 1));
+    return Math.max(MIN_COL_WIDTH, Math.floor(availableWidth / columns));
+  }, [viewportWidth, columns]);
   const thumbHeight = useMemo(() => Math.max(120, Math.round(cardWidth * 0.66)), [cardWidth]);
   const cardHeight = useMemo(() => thumbHeight + CARD_INFO_HEIGHT, [thumbHeight]);
   const rowCount = useMemo(() => Math.ceil(photos.length / columns), [photos.length, columns]);
