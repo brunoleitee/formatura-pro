@@ -2221,6 +2221,25 @@ def cloud_google_download_full(file_id: str = ""):
         return {"error": str(e)}
 
 
+@app.get("/")
+def root_handler(code: str = Query(None), state: str = Query(None)):
+    if code:
+        print(f"[OAuth] Root callback received code={code[:30]}...")
+        from cloud import exchange_code_for_token, get_user_info
+        token = exchange_code_for_token(code)
+        if token:
+            user_info = get_user_info() or {}
+            print(f"[OAuth] Root callback OK email={user_info.get('email')}")
+            return {"status": "ok", "email": user_info.get("email")}
+        return {"error": "Falha ao obter token"}
+    from fastapi.responses import FileResponse
+    ui_dir = os.path.join(RUNTIME_DIR, "main", "dist")
+    index = os.path.join(ui_dir, "index.html")
+    if os.path.exists(index):
+        return FileResponse(index, media_type="text/html")
+    return {"error": "frontend not found"}
+
+
 configure_modules()
 
 import webbrowser

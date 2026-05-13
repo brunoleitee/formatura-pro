@@ -33,8 +33,9 @@ print("=" * 60)
 
 SCOPES = [
     "https://www.googleapis.com/auth/drive.readonly",
-    
 ]
+
+REDIRECT_URI = "http://localhost:8000/"
 
 
 def get_token_path() -> str:
@@ -95,28 +96,28 @@ def get_auth_url() -> str:
     flow = Flow.from_client_secrets_file(
         get_client_secrets_path(),
         scopes=SCOPES,
+        redirect_uri=settings.BACKEND_URL + "/",
     )
-
-    flow.redirect_uri = settings.BACKEND_URL + "/api/cloud/google/callback"
 
     auth_url, _ = flow.authorization_url(prompt="consent")
     return auth_url
 
 
 def exchange_code_for_token(code: str) -> Optional[Dict[str, Any]]:
-    from google_auth_oauthlib.flow import Flow
-
     try:
+        from google_auth_oauthlib.flow import Flow
+
+        print(f"[OAuth] exchange_code: code={code[:30]}...")
+        print(f"[OAuth] redirect_uri={REDIRECT_URI}")
+
         flow = Flow.from_client_secrets_file(
             get_client_secrets_path(),
-            scopes=[
-                "https://www.googleapis.com/auth/drive.readonly",
-                
-            ],
+            scopes=SCOPES,
+            redirect_uri=REDIRECT_URI,
         )
 
-        flow.redirect_uri = "http://localhost:8000/api/cloud/google/callback"
         flow.fetch_token(code=code)
+        print(f"[OAuth] fetch_token OK")
 
         credentials = flow.credentials
 
@@ -131,9 +132,11 @@ def exchange_code_for_token(code: str) -> Optional[Dict[str, Any]]:
         }
 
         save_token(token_data)
+        print(f"[OAuth] token saved to {TOKEN_FILE}")
         return token_data
 
     except Exception as e:
+        print(f"[OAuth] exchange_code ERROR: {e}")
         logger.error(f"Erro ao trocar código por token: {e}")
         return None
 
@@ -142,14 +145,17 @@ def get_login_url() -> Optional[str]:
     try:
         from google_auth_oauthlib.flow import Flow
 
-        secrets_path = get_client_secrets_path()
-
-        flow = Flow.from_client_secrets_file(secrets_path, scopes=SCOPES)
-        flow.redirect_uri = "http://localhost:8000/api/cloud/google/callback"
+        flow = Flow.from_client_secrets_file(
+            get_client_secrets_path(),
+            scopes=SCOPES,
+            redirect_uri=REDIRECT_URI,
+        )
 
         auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
+        print(f"[OAuth] login_url generated redirect_uri={REDIRECT_URI}")
         return auth_url
     except Exception as e:
+        print(f"[OAuth] get_login_url ERROR: {e}")
         logger.error(f"Erro ao gerar URL de login: {e}")
         return None
 
