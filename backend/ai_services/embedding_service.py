@@ -31,7 +31,7 @@ try:
 except Exception:  # pragma: no cover - runtime opcional
     CLIPTokenizerFast = None
 
-from onnx_provider_utils import get_onnx_providers, mark_cuda_failed
+from onnx_provider_utils import get_onnx_providers, get_session_providers, mark_cuda_failed
 
 
 @dataclass
@@ -120,16 +120,31 @@ class PhotoEmbeddingService:
     def _load_session(self, model_path: Optional[str]):
         if not model_path or ort is None or not os.path.exists(model_path):
             return None
-        provider_info = get_onnx_providers(log_info=self._log_info, log_debug=self._log_debug)
-        providers = provider_info["providers"]
+        provider_info = get_onnx_providers(log_debug=self._log_debug)
+        providers = provider_info["selected_providers"]
         try:
-            return ort.InferenceSession(model_path, providers=providers)
-        except Exception as exc:
-            if providers and providers[0] == "CUDAExecutionProvider":
-                mark_cuda_failed(log_info=self._log_info)
-                self._log_debug(f"Falha CUDA ao carregar ONNX '{model_path}': {exc}")
+            session = ort.InferenceSession(model_path, providers=providers)
+            real_providers = get_session_providers(session)
+            if provider_info["provider"] == "CUDAExecutionProvider" and "CUDAExecutionProvider" not in real_providers:
+                mark_cuda_failed()
+                self._log_info("[AI] CUDA indisponível, usando CPU")
                 try:
-                    return ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+                    fallback = get_onnx_providers(log_debug=self._log_debug)
+                    return ort.InferenceSession(model_path, providers=fallback["selected_providers"])
+                except Exception as cpu_exc:
+                    self._log_debug(f"Falha ao carregar ONNX '{model_path}' em CPU: {cpu_exc}")
+                    return session
+            return session
+        except Exception as exc:
+            if providers and providers[0] != "CPUExecutionProvider":
+                if providers[0] == "CUDAExecutionProvider":
+                    mark_cuda_failed()
+                    self._log_info("[AI] CUDA indisponível, usando CPU")
+                else:
+                    self._log_info("[AI] Provider indisponível, usando CPU")
+                try:
+                    fallback = get_onnx_providers(log_debug=self._log_debug)
+                    return ort.InferenceSession(model_path, providers=fallback["selected_providers"])
                 except Exception as cpu_exc:
                     self._log_debug(f"Falha ao carregar ONNX '{model_path}' em CPU: {cpu_exc}")
                     return None

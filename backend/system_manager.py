@@ -43,7 +43,8 @@ def gpu_diagnostics():
         or scan_state.get("device")
         or "Não inicializado"
     )
-    ai_device = "GPU" if selected_providers and selected_providers[0] == "CUDAExecutionProvider" else "CPU"
+    ai_provider = provider_info.get("provider", "CPUExecutionProvider")
+    ai_device = "GPU" if ai_provider in {"CUDAExecutionProvider", "DmlExecutionProvider"} else "CPU"
     preferred_provider = provider_info.get("provider") or (
         "CUDAExecutionProvider"
         if "CUDAExecutionProvider" in available else
@@ -51,7 +52,12 @@ def gpu_diagnostics():
         if "DmlExecutionProvider" in available else
         "CPUExecutionProvider"
     )
-    status_message = "CUDA ativa" if ai_device == "GPU" and not cuda_failed else "CUDA indisponível. IA rodando em CPU."
+    if ai_provider == "CUDAExecutionProvider" and not cuda_failed:
+        status_message = "CUDA ativa"
+    elif ai_device == "GPU":
+        status_message = "IA rodando em GPU"
+    else:
+        status_message = "CUDA indisponível. IA rodando em CPU."
     return {
         "available_providers": available,
         "selected_providers": selected_providers,

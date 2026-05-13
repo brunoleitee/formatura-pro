@@ -8,7 +8,7 @@ import logging
 from app.models import Face, Photo
 from app.services.image_service import generate_face_crop
 from app.core.config import settings
-from onnx_provider_utils import get_onnx_providers, mark_cuda_failed
+from onnx_provider_utils import get_onnx_providers, get_session_providers, mark_cuda_failed
 
 logger = logging.getLogger(__name__)
 
@@ -20,35 +20,58 @@ class FaceService:
         self._init_face_engine()
 
     def _init_face_engine(self):
+        provider_info = get_onnx_providers(log_debug=logger.debug)
         try:
             from insightface.app import FaceAnalysis
 
-            provider_info = get_onnx_providers(log_info=logger.info, log_debug=logger.debug)
-            providers = provider_info["providers"]
+            providers = provider_info["selected_providers"]
             self.face_engine = FaceAnalysis(
                 name="buffalo_l",
                 providers=providers,
                 provider_options=provider_info["provider_options"],
             )
             self.face_engine.prepare(ctx_id=provider_info["ctx_id"], det_size=(640, 640))
+            real_providers = get_session_providers(self.face_engine)
+            real_provider = real_providers[0] if real_providers else provider_info["provider"]
+            if provider_info["provider"] == "CUDAExecutionProvider" and "CUDAExecutionProvider" not in real_providers:
+                mark_cuda_failed()
+                logger.info("[AI] CUDA indisponível, usando CPU")
+                logger.info("[AI] Provider ativo: CPUExecutionProvider")
+            else:
+                if real_provider == "CUDAExecutionProvider":
+                    logger.info("[AI] CUDA ativa")
+                logger.info(f"[AI] Provider ativo: {real_provider}")
             logger.info("InsightFace carregado com sucesso")
         except Exception as e:
-            if "CUDAExecutionProvider" in str(e) or "onnxruntime_providers_cuda" in str(e).lower():
-                mark_cuda_failed(log_info=logger.info)
-                try:
-                    self.face_engine = FaceAnalysis(
-                        name="buffalo_l",
-                        providers=["CPUExecutionProvider"],
-                    )
-                    self.face_engine.prepare(ctx_id=-1, det_size=(640, 640))
-                    logger.info("InsightFace carregado com sucesso")
-                    return
-                except Exception as cpu_exc:
-                    logger.warning(f"InsightFace não disponível: {cpu_exc}")
-                    self.face_engine = None
-                    return
-            logger.warning(f"InsightFace não disponível: {e}")
-            self.face_engine = None
+            if provider_info["provider"] == "CUDAExecutionProvider":
+                mark_cuda_failed()
+                logger.info("[AI] CUDA indisponível, usando CPU")
+            elif provider_info["provider"] != "CPUExecutionProvider":
+                logger.info("[AI] Provider indisponível, usando CPU")
+            else:
+                logger.warning(f"InsightFace não disponível: {e}")
+                self.face_engine = None
+                return
+
+            try:
+                fallback = get_onnx_providers(log_debug=logger.debug)
+                self.face_engine = FaceAnalysis(
+                    name="buffalo_l",
+                    providers=fallback["selected_providers"],
+                    provider_options=fallback["provider_options"],
+                )
+                self.face_engine.prepare(ctx_id=fallback["ctx_id"], det_size=(640, 640))
+                real_providers = get_session_providers(self.face_engine)
+                real_provider = real_providers[0] if real_providers else "CPUExecutionProvider"
+                if real_provider == "CUDAExecutionProvider":
+                    logger.info("[AI] CUDA ativa")
+                logger.info(f"[AI] Provider ativo: {real_provider}")
+                logger.info("InsightFace carregado com sucesso")
+                return
+            except Exception as cpu_exc:
+                logger.warning(f"InsightFace não disponível: {cpu_exc}")
+                self.face_engine = None
+                return
 
     def detect_faces(self, photo: Photo, event_id: int) -> List[Face]:
         if not self.face_engine:

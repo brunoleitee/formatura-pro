@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+import os
 import threading
 from typing import Any, Dict, List, Optional
 
 try:
     import onnxruntime as ort
-except Exception:  # pragma: no cover - runtime opcional
+except Exception:  # pragma: no cover - optional runtime dependency
     ort = None
 
 _cuda_failed = False
-_last_provider_mode: Optional[str] = None
 _state_lock = threading.Lock()
+FORCE_CPU_ONNX = os.environ.get("FORCE_CPU_ONNX", "0") == "1"
 
 
 def _build_cuda_provider_options() -> List[Dict[str, Any]]:
@@ -25,51 +26,75 @@ def _build_cuda_provider_options() -> List[Dict[str, Any]]:
     ]
 
 
-def _log_provider_mode(mode: str, log_info=None) -> None:
-    global _last_provider_mode
-    if log_info is None:
-        return
-    with _state_lock:
-        if _last_provider_mode == mode:
-            return
-        _last_provider_mode = mode
-    if mode == "cuda":
-        log_info("[AI] CUDA ativa")
-    else:
-        log_info("[AI] CUDA indisponível, usando CPU")
-
-
-def mark_cuda_failed(log_info=None) -> None:
+def mark_cuda_failed() -> None:
     global _cuda_failed
     with _state_lock:
-        already_failed = _cuda_failed
         _cuda_failed = True
-        global _last_provider_mode
-        _last_provider_mode = "cpu"
-    if not already_failed:
-        _log_provider_mode("cpu", log_info=log_info)
 
 
-def get_onnx_providers(log_info=None, log_debug=None) -> Dict[str, Any]:
+def get_session_providers(target: Any) -> List[str]:
+    if target is None:
+        return []
+
+    candidates = [target]
+    models = getattr(target, "models", None)
+    if isinstance(models, dict):
+        candidates.extend(models.values())
+    elif models is not None:
+        candidates.append(models)
+
+    for candidate in candidates:
+        try:
+            session = getattr(candidate, "session", None)
+            if session is not None and hasattr(session, "get_providers"):
+                providers = list(session.get_providers() or [])
+                if providers:
+                    return providers
+            if hasattr(candidate, "get_providers"):
+                providers = list(candidate.get_providers() or [])
+                if providers:
+                    return providers
+        except Exception:
+            continue
+
+    return []
+
+
+def get_onnx_providers(log_debug=None) -> Dict[str, Any]:
     available_providers: List[str] = ["CPUExecutionProvider"]
     provider_error = ""
 
     if ort is not None:
         try:
-            available_providers = list(ort.get_available_providers())
-        except Exception as exc:  # pragma: no cover - depende do runtime local
+            available_providers = list(ort.get_available_providers() or [])
+        except Exception as exc:  # pragma: no cover - runtime specific
             provider_error = str(exc)
             if log_debug is not None:
                 log_debug(f"Erro verificando providers ONNX: {exc}")
             available_providers = ["CPUExecutionProvider"]
 
     with _state_lock:
-        cuda_allowed = (not _cuda_failed) and ("CUDAExecutionProvider" in available_providers)
+        cuda_failed = _cuda_failed
 
-    if cuda_allowed:
-        _log_provider_mode("cuda", log_info=log_info)
+    if FORCE_CPU_ONNX or cuda_failed:
         return {
             "available_providers": available_providers,
+            "selected_providers": ["CPUExecutionProvider"],
+            "providers": ["CPUExecutionProvider"],
+            "provider_options": None,
+            "provider": "CPUExecutionProvider",
+            "ctx_id": -1,
+            "device": "CPU",
+            "label": "CPU",
+            "cuda_allowed": False,
+            "cuda_failed": True,
+            "provider_error": provider_error,
+        }
+
+    if "CUDAExecutionProvider" in available_providers:
+        return {
+            "available_providers": available_providers,
+            "selected_providers": ["CUDAExecutionProvider", "CPUExecutionProvider"],
             "providers": ["CUDAExecutionProvider", "CPUExecutionProvider"],
             "provider_options": _build_cuda_provider_options(),
             "provider": "CUDAExecutionProvider",
@@ -81,9 +106,24 @@ def get_onnx_providers(log_info=None, log_debug=None) -> Dict[str, Any]:
             "provider_error": provider_error,
         }
 
-    _log_provider_mode("cpu", log_info=log_info)
+    if "DmlExecutionProvider" in available_providers:
+        return {
+            "available_providers": available_providers,
+            "selected_providers": ["DmlExecutionProvider", "CPUExecutionProvider"],
+            "providers": ["DmlExecutionProvider", "CPUExecutionProvider"],
+            "provider_options": None,
+            "provider": "DmlExecutionProvider",
+            "ctx_id": 0,
+            "device": "GPU",
+            "label": "GPU DirectML",
+            "cuda_allowed": False,
+            "cuda_failed": False,
+            "provider_error": provider_error,
+        }
+
     return {
         "available_providers": available_providers,
+        "selected_providers": ["CPUExecutionProvider"],
         "providers": ["CPUExecutionProvider"],
         "provider_options": None,
         "provider": "CPUExecutionProvider",
@@ -91,6 +131,6 @@ def get_onnx_providers(log_info=None, log_debug=None) -> Dict[str, Any]:
         "device": "CPU",
         "label": "CPU",
         "cuda_allowed": False,
-        "cuda_failed": _cuda_failed,
+        "cuda_failed": False,
         "provider_error": provider_error,
     }
