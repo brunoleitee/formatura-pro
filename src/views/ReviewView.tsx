@@ -118,7 +118,6 @@ function ReviewViewContent() {
   const [assignmentToast, setAssignmentToast] = useState<string | null>(null);
   const wasGraduationRunningRef = useRef(false);
   const detailRequestRef = useRef(0);
-  const assignmentTimeoutRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
     if (!currentCatalog) return;
@@ -206,10 +205,6 @@ function ReviewViewContent() {
     setSelected(null);
     setSelectedId(null);
     setAssignmentState(null);
-    if (assignmentTimeoutRef.current != null) {
-      window.clearTimeout(assignmentTimeoutRef.current);
-      assignmentTimeoutRef.current = null;
-    }
     detailRequestRef.current += 1;
     load();
     refreshGraduationStatus();
@@ -247,15 +242,6 @@ function ReviewViewContent() {
 
   useEffect(() => {
     return () => {
-      if (assignmentTimeoutRef.current != null) {
-        window.clearTimeout(assignmentTimeoutRef.current);
-        assignmentTimeoutRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    return () => {
       setAssignmentToast(null);
     };
   }, []);
@@ -263,60 +249,19 @@ function ReviewViewContent() {
   const handleAssigned = useCallback((result: AssignClusterResponse) => {
     const clusterId = result.cluster_id;
     const studentName = result.student_name ?? result.nome_formando ?? result.aluno_id ?? 'Identificado';
-    const status = result.status || 'identified';
-
-    if (assignmentTimeoutRef.current != null) {
-      window.clearTimeout(assignmentTimeoutRef.current);
-      assignmentTimeoutRef.current = null;
-    }
     setAssignmentToast(`Formando vinculado com sucesso: ${studentName}`);
     window.setTimeout(() => setAssignmentToast(null), 1800);
+    const assignedIndex = clusters.findIndex((cluster) => cluster.cluster_id === clusterId);
+    const nextSelectedId = assignedIndex >= 0
+      ? clusters[assignedIndex + 1]?.cluster_id ?? clusters[assignedIndex - 1]?.cluster_id ?? null
+      : null;
 
-    setClusters((prev) => {
-      const updated = prev.map((cluster) => (
-        cluster.cluster_id === clusterId
-          ? {
-              ...cluster,
-              status,
-              aluno_id: result.aluno_id ?? cluster.aluno_id ?? null,
-              student_name: studentName,
-              nome_formando: studentName,
-            }
-          : cluster
-      ));
-
-      const assignedIndex = updated.findIndex((cluster) => cluster.cluster_id === clusterId);
-      const nextSelectedId = updated[assignedIndex + 1]?.cluster_id ?? updated[assignedIndex - 1]?.cluster_id ?? null;
-
-      setSelectedId(clusterId);
-      setSelected((current) => (
-        current && current.cluster_id === clusterId
-          ? {
-              ...current,
-              status,
-              aluno_id: result.aluno_id ?? null,
-              student_name: studentName,
-              nome_formando: studentName,
-            } as RichCluster
-          : current
-      ));
-      setAssignmentState({ clusterId, studentName, status });
-      setTotalClusters((value) => Math.max(0, value - 1));
-
-      assignmentTimeoutRef.current = window.setTimeout(() => {
-        setClusters((latest) => latest.filter((cluster) => cluster.cluster_id !== clusterId));
-        setSelectedId((currentId) => {
-          if (currentId !== clusterId) return currentId;
-          return nextSelectedId;
-        });
-        setSelected((current) => (current?.cluster_id === clusterId ? null : current));
-        setAssignmentState(null);
-        assignmentTimeoutRef.current = null;
-      }, 850);
-
-      return updated;
-    });
-  }, []);
+    setClusters((prev) => prev.filter((cluster) => cluster.cluster_id !== clusterId));
+    setTotalClusters((value) => (assignedIndex >= 0 ? Math.max(0, value - 1) : value));
+    setSelectedId((currentId) => (currentId === clusterId ? nextSelectedId : currentId));
+    setSelected((current) => (current?.cluster_id === clusterId ? null : current));
+    setAssignmentState(null);
+  }, [clusters]);
 
   const handleSkip = useCallback(() => {
     if (!selectedId) return;
