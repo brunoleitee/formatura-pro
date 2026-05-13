@@ -45,6 +45,6 @@ export const photoApi = {
     fetchJSON<{ results: Array<{ rowid: number; photo_path: string; thumb_url: string; score: number; aluno_id: string | null; box?: number[]; image_width?: number; image_height?: number }> }>(
       `${API_BASE}/faces/similar?rowid=${face_rowid}&catalog=${encodeURIComponent(catalog)}&limit=${limit}`
     ),
-  addManualFace: (data: { photo_id: number; photo_path: string; aluno_id: string; bbox: { x1: number; y1: number; x2: number; y2: number }; source: string }) =>
-    post(`${API_BASE}/faces/manual`, data),
+  addManualFace: (data: { foto_path: string; catalog: string; box: number[]; new_name: string }) =>
+    post(`${API_BASE}/manual_identify`, data),
 };

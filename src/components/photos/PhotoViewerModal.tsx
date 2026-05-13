@@ -294,11 +294,10 @@ export function PhotoViewerModal({
     if (!manualAlunoId.trim() || !showManualModal) return;
     try {
       await api.addManualFace({
-        photo_id: (photo as any).rowid ?? 0,
-        photo_path: photo.path,
-        aluno_id: manualAlunoId.trim(),
-        bbox: showManualModal,
-        source: 'manual'
+        foto_path: photo.path,
+        catalog: currentCatalog,
+        box: [showManualModal.x1, showManualModal.y1, showManualModal.x2, showManualModal.y2],
+        new_name: manualAlunoId.trim(),
       });
       showFeedbackMsg("Rosto manual adicionado");
       setShowManualModal(null);
@@ -363,7 +362,7 @@ export function PhotoViewerModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [photo, currentIndex, total, onNavigate, onClose, isManualMode, showRenameModal, similarResults.length, showManualModal, handleRestore, handleDiscard]);
 
-  function handleWheelZoom(e: React.WheelEvent) {
+  function handleWheelZoom(e: WheelEvent | React.WheelEvent) {
     if (isManualMode || showRenameModal !== null || similarResults.length > 0 || showManualModal) return;
     
     e.preventDefault();
@@ -452,6 +451,18 @@ export function PhotoViewerModal({
       window.removeEventListener('mouseup', onUp);
     };
   }, [isDragging, dragStartPos]);
+
+  useEffect(() => {
+    const stage = imageStageRef.current;
+    if (!stage) return;
+
+    const onWheel = (event: WheelEvent) => handleWheelZoom(event);
+    stage.addEventListener('wheel', onWheel, { passive: false });
+
+    return () => {
+      stage.removeEventListener('wheel', onWheel);
+    };
+  }, [handleWheelZoom, photo.path]);
 
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -658,7 +669,6 @@ export function PhotoViewerModal({
           <div
             ref={imageStageRef}
             className={`${styles.imageStage} ${isManualMode ? styles.crosshair : ''}`}
-            onWheel={handleWheelZoom}
             onMouseDown={handleZoomMouseDown}
             onDoubleClick={handleDoubleClickZoom}
             style={{
