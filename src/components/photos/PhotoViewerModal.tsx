@@ -30,6 +30,16 @@ interface SimilarResult {
   image_height?: number;
 }
 
+type ViewerPhoto = Photo & {
+  preview_path?: string | null;
+  thumb_path?: string | null;
+};
+
+function getViewerImageUrl(photo: Photo, maxSize = 1920) {
+  const extended = photo as ViewerPhoto;
+  return extended.preview_path || extended.thumb_path || api.previewUrl(photo.path, maxSize);
+}
+
 export function PhotoViewerModal({
   photo,
   allPhotos,
@@ -66,18 +76,18 @@ export function PhotoViewerModal({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
   const VIEWER_PREVIEW_SIZE = 1920;
-  const PRELOAD_PREVIEW_SIZE = 1400;
-  const [currentSrc, setCurrentSrc] = useState(api.previewUrl(photo.path, VIEWER_PREVIEW_SIZE));
+  const [displayedSrc, setDisplayedSrc] = useState(() => getViewerImageUrl(photo, VIEWER_PREVIEW_SIZE));
   const navigationPhotos = (contextPhotos?.length ? contextPhotos : allPhotos);
   const viewerTransitionRef = useRef<'open' | 'next' | 'prev'>('open');
   const viewerLoadStartRef = useRef<number | null>(null);
   const viewerMountedRef = useRef(false);
   const viewerLoggedRef = useRef(false);
+  const loadTokenRef = useRef(0);
+  const loadedUrlsRef = useRef(new Set<string>());
+  const loadingUrlsRef = useRef(new Set<string>());
 
   useEffect(() => {
     viewerLoadStartRef.current = perfNow();
-    setIsLoaded(false);
-    setCurrentSrc(api.previewUrl(photo.path, VIEWER_PREVIEW_SIZE));
     viewerLoggedRef.current = false;
     if (viewerMountedRef.current) {
       logPerf(`viewer switch ${viewerTransitionRef.current}`, viewerLoadStartRef.current, photo.path);
@@ -268,26 +278,93 @@ export function PhotoViewerModal({
   }, [photo.path]);
 
   useEffect(() => {
+    const token = ++loadTokenRef.current;
+    const currentUrl = getViewerImageUrl(photo, VIEWER_PREVIEW_SIZE);
+    const preloadImage = (targetPhoto: Photo, activate = false) => {
+      const targetUrl = getViewerImageUrl(targetPhoto, VIEWER_PREVIEW_SIZE);
+      if (!targetUrl) return;
+
+      if (loadedUrlsRef.current.has(targetUrl)) {
+        if (activate && token === loadTokenRef.current) {
+          setDisplayedSrc(targetUrl);
+          setIsLoaded(true);
+        }
+        return;
+      }
+
+      if (loadingUrlsRef.current.has(targetUrl)) return;
+      loadingUrlsRef.current.add(targetUrl);
+
+      const fallbackUrl = api.thumbUrl(targetPhoto.path, VIEWER_PREVIEW_SIZE);
+      const img = new window.Image();
+      img.decoding = 'async';
+      img.onload = () => {
+        loadingUrlsRef.current.delete(targetUrl);
+        loadedUrlsRef.current.add(targetUrl);
+        if (activate && token === loadTokenRef.current) {
+          setDisplayedSrc(targetUrl);
+          setIsLoaded(true);
+        }
+      };
+      img.onerror = () => {
+        loadingUrlsRef.current.delete(targetUrl);
+        if (fallbackUrl && fallbackUrl !== targetUrl) {
+          if (loadedUrlsRef.current.has(fallbackUrl)) {
+            if (activate && token === loadTokenRef.current) {
+              setDisplayedSrc(fallbackUrl);
+              setIsLoaded(true);
+            }
+            return;
+          }
+          if (loadingUrlsRef.current.has(fallbackUrl)) return;
+          loadingUrlsRef.current.add(fallbackUrl);
+          const fallbackImg = new window.Image();
+          fallbackImg.decoding = 'async';
+          fallbackImg.onload = () => {
+            loadingUrlsRef.current.delete(fallbackUrl);
+            loadedUrlsRef.current.add(fallbackUrl);
+            if (activate && token === loadTokenRef.current) {
+              setDisplayedSrc(fallbackUrl);
+              setIsLoaded(true);
+            }
+          };
+          fallbackImg.onerror = () => {
+            loadingUrlsRef.current.delete(fallbackUrl);
+            if (activate && token === loadTokenRef.current) {
+              setDisplayedSrc(fallbackUrl);
+              setIsLoaded(true);
+            }
+          };
+          fallbackImg.src = fallbackUrl;
+          return;
+        }
+
+        if (activate && token === loadTokenRef.current) {
+          setDisplayedSrc(targetUrl);
+          setIsLoaded(true);
+        }
+      };
+      img.src = targetUrl;
+    };
+
+    if (loadedUrlsRef.current.has(currentUrl)) {
+      setDisplayedSrc(currentUrl);
+      setIsLoaded(true);
+    } else {
+      preloadImage(photo, true);
+    }
+
     const targets = [
+      navigationPhotos[currentIndex],
       navigationPhotos[currentIndex - 2],
       navigationPhotos[currentIndex - 1],
       navigationPhotos[currentIndex + 1],
       navigationPhotos[currentIndex + 2],
     ]
       .filter((item): item is Photo => Boolean(item));
-    const preloads = targets
-        .filter((item) => item.path && item.path !== photo.path)
-        .map((item) => {
-        const img = new window.Image();
-        img.decoding = 'async';
-        img.src = api.previewUrl(item.path, PRELOAD_PREVIEW_SIZE);
-        return img;
-      });
-    return () => {
-      preloads.forEach((img) => {
-        img.src = '';
-      });
-    };
+    targets
+      .filter((item) => item.path && item.path !== photo.path)
+      .forEach((item) => preloadImage(item, false));
   }, [navigationPhotos, currentIndex, photo.path]);
 
   useEffect(() => {
@@ -646,7 +723,7 @@ export function PhotoViewerModal({
               <div className={styles.photoImageWrap} ref={imageWrapRef}>
                   <img
                     ref={imageRef}
-                    src={currentSrc}
+                    src={displayedSrc}
                     alt={photo.name}
                     className={styles.mainImage}
                   style={{ 
@@ -654,9 +731,11 @@ export function PhotoViewerModal({
                     imageRendering: zoom >= 1 ? 'auto' : 'auto'
                   }}
                   loading="eager"
+                  fetchPriority="high"
                   decoding="async"
                   onLoad={(e) => {
                     const img = e.currentTarget;
+                    loadedUrlsRef.current.add(img.currentSrc);
                     const stage = imageStageRef.current;
                     const maxW = stage?.clientWidth || 800;
                     const maxH = stage?.clientHeight || window.innerHeight - 130;
@@ -680,7 +759,10 @@ export function PhotoViewerModal({
                     }
                   }}
                   onError={() => {
-                    setCurrentSrc(api.previewUrl(photo.path, VIEWER_PREVIEW_SIZE));
+                    const fallback = api.thumbUrl(photo.path, VIEWER_PREVIEW_SIZE);
+                    loadedUrlsRef.current.add(fallback);
+                    setDisplayedSrc(fallback);
+                    setIsLoaded(true);
                     if (viewerLoadStartRef.current !== null && !viewerLoggedRef.current) {
                       viewerLoggedRef.current = true;
                       logPerf(`viewer loaded ${viewerTransitionRef.current}`, viewerLoadStartRef.current, photo.path);
