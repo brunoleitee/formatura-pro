@@ -31,8 +31,10 @@ interface SimilarResult {
 }
 
 type ViewerPhoto = Photo & {
+  id?: string | number | null;
   preview_path?: string | null;
   thumb_path?: string | null;
+  original_path?: string | null;
 };
 
 function getViewerImageUrl(photo: Photo, maxSize = 1920) {
@@ -91,6 +93,10 @@ export function PhotoViewerModal({
   const loadTokenRef = useRef(0);
   const loadedUrlsRef = useRef(new Set<string>());
   const loadingUrlsRef = useRef(new Set<string>());
+  const filmstripRef = useRef<HTMLDivElement | null>(null);
+  const thumbRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const filmstripScrollTimerRef = useRef<number | null>(null);
+  const filmstripUserScrollRef = useRef(false);
 
   useEffect(() => {
     viewerLoadStartRef.current = perfNow();
@@ -109,6 +115,11 @@ export function PhotoViewerModal({
   const total = navigationPhotos.length;
   const displayIndex = currentIndex >= 0 ? currentIndex + 1 : 1;
   const isDiscarded = photo.discarded;
+  const currentPhotoKey = (photo as ViewerPhoto).id ?? (photo as ViewerPhoto).original_path ?? photo.path;
+
+  const getViewerPhotoKey = useCallback((item: Photo) => (
+    (item as ViewerPhoto).id ?? (item as ViewerPhoto).original_path ?? item.path
+  ), []);
 
   const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
   const clamp01 = (val: number) => clamp(val, 0, 1);
@@ -371,6 +382,36 @@ export function PhotoViewerModal({
       .filter((item) => item.path && item.path !== photo.path)
       .forEach((item) => preloadImage(item, false));
   }, [navigationPhotos, currentIndex, photo.path]);
+
+  useEffect(() => {
+    const container = filmstripRef.current;
+    const currentId = currentPhotoKey;
+    const el = thumbRefs.current[currentId];
+    if (!container || !el) return;
+
+    if (filmstripUserScrollRef.current) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const thumbRect = el.getBoundingClientRect();
+    const targetLeft =
+      container.scrollLeft +
+      (thumbRect.left - containerRect.left) -
+      (container.clientWidth / 2) +
+      (thumbRect.width / 2);
+
+    container.scrollTo({
+      left: Math.max(0, targetLeft),
+      behavior: 'smooth',
+    });
+  }, [currentPhotoKey, currentIndex]);
+
+  useEffect(() => {
+    return () => {
+      if (filmstripScrollTimerRef.current) {
+        window.clearTimeout(filmstripScrollTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -845,14 +886,31 @@ export function PhotoViewerModal({
               {contextBadge && <div className={styles.contextBadge}>{contextBadge}</div>}
               {contextLoading && <div className={styles.contextLoading}>Carregando contexto...</div>}
               {total > 1 && (
-                <div className={styles.filmstrip}>
-                  {navigationPhotos.map((item, index) => {
+                <div
+                  ref={filmstripRef}
+                  className={styles.filmstrip}
+                  onScroll={() => {
+                    filmstripUserScrollRef.current = true;
+                    if (filmstripScrollTimerRef.current) {
+                      window.clearTimeout(filmstripScrollTimerRef.current);
+                    }
+                    filmstripScrollTimerRef.current = window.setTimeout(() => {
+                      filmstripUserScrollRef.current = false;
+                      filmstripScrollTimerRef.current = null;
+                    }, 180);
+                  }}
+                >
+                  {navigationPhotos.map((item) => {
                     const isActive = item.path === photo.path;
+                    const itemKey = getViewerPhotoKey(item);
                     return (
                       <button
-                        key={`${item.path}-${index}`}
+                        key={itemKey}
                         type="button"
                         className={`${styles.filmstripItem} ${isActive ? styles.filmstripItemActive : ''}`}
+                        ref={(node) => {
+                          thumbRefs.current[itemKey] = node;
+                        }}
                         onClick={() => onNavigate(item)}
                         title={item.name}
                       >
