@@ -181,6 +181,29 @@ def get_reference_root(conn) -> str:
     return ""
 
 
+def build_class_map_from_reference_root(reference_root: str) -> dict:
+    class_map = {}
+    if not reference_root or not os.path.isdir(reference_root):
+        return class_map
+
+    image_exts = (".jpg", ".jpeg", ".png", ".webp")
+    for root, dirs, files in os.walk(reference_root):
+        for filename in files:
+            if not filename.lower().endswith(image_exts):
+                continue
+            full_path = os.path.join(root, filename)
+            try:
+                rel = os.path.relpath(full_path, reference_root)
+                parts = rel.replace("\\", "/").split("/")
+                class_name = parts[0].strip() if len(parts) >= 2 and parts[0].strip() else "Sem turma"
+                student_name = os.path.splitext(filename)[0].strip()
+                class_map[student_name] = class_name
+            except Exception:
+                continue
+
+    return class_map
+
+
 def build_export_worklist(conn, req: ExportReq):
     cur = conn.cursor()
     image_ext = _get("image_extensions", ())
@@ -190,7 +213,10 @@ def build_export_worklist(conn, req: ExportReq):
     organize_by_class = bool(getattr(req, "organize_by_class", False))
     reference_root = get_reference_root(conn)
     log_info(f"[export] organize_by_class = {organize_by_class}")
-    log_info(f"[export] reference_root = {reference_root}")
+    log_info(f"[class-map] reference_root = {reference_root}")
+
+    class_map = build_class_map_from_reference_root(reference_root)
+    log_info(f"[class-map] built {len(class_map)} entries: {list(class_map.keys())[:20]}")
 
     cur.execute("SELECT aluno_id, class_name, face_cache_path FROM alunos")
     students_data = {}
@@ -198,9 +224,14 @@ def build_export_worklist(conn, req: ExportReq):
         aid = r["aluno_id"]
         class_name = r["class_name"] or "Sem turma"
         ref_path = r["face_cache_path"] or ""
-        if class_name == "Sem turma" and ref_path and reference_root:
+
+        if class_name == "Sem turma" and aid in class_map:
+            class_name = class_map[aid]
+            log_info(f"[export-class-final] student={aid} class_name={class_name} class_map_hit=True")
+        elif class_name == "Sem turma" and ref_path and reference_root:
             class_name = detect_class_from_reference_path(reference_root, ref_path)
-            log_info(f"[export-class-debug] aluno={aid} reference_root={reference_root} reference_path={ref_path} class_name={class_name}")
+            log_info(f"[export-class-debug] student={aid} class_name={class_name} class_map_hit=False")
+
         students_data[aid] = {
             "class_name": class_name,
             "reference_path": ref_path
