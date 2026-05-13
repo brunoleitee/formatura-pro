@@ -1,0 +1,184 @@
+.page {
+  min-height: 100%;
+  padding: 24px;
+  background: linear-gradient(180deg, #0a0d14 0%, #090c12 100%);
+  color: #e5e7eb;
+}
+
+.header {
+  margin-bottom: 24px;
+}
+
+.header h1 {
+  font-size: 1.5rem;
+  color: #f9fafb;
+  margin: 0 0 8px;
+}
+
+.header p {
+  color: #9ca3af;
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: rgba(15, 20, 30, 0.98);
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+
+.statusIndicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+}
+
+.statusIndicator[data-online="true"] .statusDot {
+  background: #22c55e;
+}
+
+.lastSync {
+  color: #9ca3af;
+  font-size: 0.85rem;
+}
+
+.providersSection,
+.foldersSection,
+.syncSection {
+  margin-bottom: 32px;
+}
+
+.providersSection h2,
+.foldersSection h2,
+.syncSection h2 {
+  font-size: 1.1rem;
+  color: #f9fafb;
+  margin: 0 0 16px;
+}
+
+.providersGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.providerCard {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: rgba(15, 20, 30, 0.98);
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+}
+
+.providerIcon {
+  font-size: 2rem;
+}
+
+.providerInfo {
+  flex: 1;
+}
+
+.providerInfo h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #f9fafb;
+}
+
+.providerStatus {
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.connectBtn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid #3b82f6;
+  background: transparent;
+  color: #3b82f6;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.connectBtn:hover {
+  background: #3b82f6;
+  color: white;
+}
+
+.connectBtn.disconnect {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.connectBtn.disconnect:hover {
+  background: #ef4444;
+  color: white;
+}
+
+.folderSelector {
+  padding: 24px;
+  background: rgba(15, 20, 30, 0.98);
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+}
+
+.placeholder {
+  color: #9ca3af;
+  text-align: center;
+  margin: 0;
+}
+
+.syncActions {
+  display: flex;
+  gap: 12px;
+}
+
+.syncBtn {
+  padding: 12px 24px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #3b82f6, #6d5efc);
+  border: none;
+  color: white;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.syncBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.syncBtn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.settingsBtn {
+  padding: 12px 24px;
+  border-radius: 10px;
+  background: transparent;
+  border: 1px solid #1f2937;
+  color: #9ca3af;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.settingsBtn:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
