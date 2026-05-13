@@ -151,17 +151,62 @@ def _student_export_dir(dest_path: str, aid: str, class_name: str, sanitize_fold
     return os.path.join(dest_path, safe_class, student_dir)
 
 
+def detect_class_from_reference_path(reference_root: str, reference_path: str) -> str:
+    if not reference_root or not reference_path:
+        return "Sem turma"
+    try:
+        root = os.path.abspath(reference_root)
+        path = os.path.abspath(reference_path)
+        rel = os.path.relpath(path, root)
+        parts = rel.replace("\\", "/").split("/")
+        if len(parts) >= 2:
+            turma = parts[0].strip()
+            return turma or "Sem turma"
+        return "Sem turma"
+    except Exception:
+        return "Sem turma"
+
+
+def get_reference_root(conn) -> str:
+    cur = conn.cursor()
+    cur.execute("SELECT face_cache_path FROM alunos WHERE aluno_id = ?", ("system_catalog",))
+    res = cur.fetchone()
+    if res and res[0] and os.path.isdir(res[0]):
+        return res[0]
+    cur.execute("SELECT ori_path, ref_path FROM scan_checkpoints LIMIT 1")
+    row = cur.fetchone()
+    if row and row[1]:
+        return row[1]
+    return ""
+
+
 def build_export_worklist(conn, req: ExportReq):
     cur = conn.cursor()
     image_ext = _get("image_extensions", ())
     log_info = _get("log_info", print)
-
-    cur.execute("SELECT aluno_id, class_name FROM alunos")
-    student_classes = {r["aluno_id"]: (r["class_name"] or "Sem turma") for r in cur.fetchall()}
+    sanitize_folder_name = _get("sanitize_folder_name")
 
     organize_by_class = bool(getattr(req, "organize_by_class", False))
+    reference_root = get_reference_root(conn)
     log_info(f"[export] organize_by_class = {organize_by_class}")
-    log_info(f"[export] turmas do banco: {dict(list(student_classes.items())[:10])}")
+    log_info(f"[export] reference_root = {reference_root}")
+
+    cur.execute("SELECT aluno_id, class_name, face_cache_path FROM alunos")
+    students_data = {}
+    for r in cur.fetchall():
+        aid = r["aluno_id"]
+        class_name = r["class_name"] or "Sem turma"
+        ref_path = r["face_cache_path"] or ""
+        if class_name == "Sem turma" and ref_path and reference_root:
+            class_name = detect_class_from_reference_path(reference_root, ref_path)
+            log_info(f"[export-class-debug] aluno={aid} reference_root={reference_root} reference_path={ref_path} class_name={class_name}")
+        students_data[aid] = {
+            "class_name": class_name,
+            "reference_path": ref_path
+        }
+
+    student_classes = {aid: data["class_name"] for aid, data in students_data.items()}
+    log_info(f"[export] turmas detectadas: {dict(list(student_classes.items())[:10])}")
 
     cur.execute("SELECT foto_path FROM discarded_photos")
     discarded_manual = {r["foto_path"] for r in cur.fetchall()}
