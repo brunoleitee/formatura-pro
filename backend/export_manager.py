@@ -145,10 +145,11 @@ def _export_folder_name(aid, sanitize_folder_name):
 
 def _student_export_dir(dest_path: str, aid: str, class_name: str, sanitize_folder_name, organize_by_class: bool):
     student_dir = sanitize_folder_name(aid)
+    export_base = os.path.join(dest_path, "Exportação")
     if not organize_by_class:
-        return os.path.join(dest_path, student_dir)
+        return os.path.join(export_base, student_dir)
     safe_class = sanitize_folder_name(str(class_name or "").strip() or "Sem turma")
-    return os.path.join(dest_path, safe_class, student_dir)
+    return os.path.join(export_base, safe_class, student_dir)
 
 
 def detect_class_from_reference_path(reference_root: str, reference_path: str) -> str:
