@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import type { Photo } from '../services/api';
 
 export function getPhotoId(photo: any) {
@@ -17,44 +17,65 @@ export function getPhotoId(photo: any) {
   return id;
 }
 
-export function usePhotoSelection(_photos: Photo[]) {
+export function usePhotoSelection(photos: Photo[]) {
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const lastSelectedIdRef = useRef<string | null>(null);
+  const orderedIdsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    orderedIdsRef.current = photos.map(getPhotoId);
+    if (lastSelectedIdRef.current && !orderedIdsRef.current.includes(lastSelectedIdRef.current)) {
+      lastSelectedIdRef.current = null;
+    }
+  }, [photos]);
 
   const toggleSelection = useCallback((photo: Photo, event: React.MouseEvent | React.KeyboardEvent) => {
+    const id = getPhotoId(photo);
+    const orderedIds = orderedIdsRef.current;
+    const currentIndex = orderedIds.indexOf(id);
+    const anchorId = lastSelectedIdRef.current;
+    const anchorIndex = anchorId ? orderedIds.indexOf(anchorId) : -1;
+    const hasRange = Boolean(event.shiftKey && anchorIndex >= 0 && currentIndex >= 0);
+
     setSelectedPaths(prev => {
       const next = new Set(prev);
-      const path = getPhotoId(photo);
+
+      if (hasRange) {
+        const [from, to] = anchorIndex < currentIndex ? [anchorIndex, currentIndex] : [currentIndex, anchorIndex];
+        for (const itemId of orderedIds.slice(from, to + 1)) {
+          next.add(itemId);
+        }
+        return next;
+      }
 
       if (event.ctrlKey || event.metaKey) {
-        if (next.has(path)) next.delete(path);
-        else next.add(path);
-      } else if (event.shiftKey) {
-        console.warn('[Catalog] Shift range selection temporarily disabled');
-        // Fallback para clique normal
-        if (next.has(path) && next.size === 1) {
-          next.clear();
-        } else {
-          next.clear();
-          next.add(path);
-        }
-      } else {
-        if (next.has(path) && next.size === 1) {
-          next.clear();
-        } else {
-          next.clear();
-          next.add(path);
-        }
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
       }
+
+      if (next.has(id) && next.size === 1) {
+        next.clear();
+      } else {
+        next.clear();
+        next.add(id);
+      }
+
       return next;
     });
+
+    lastSelectedIdRef.current = id;
   }, []);
 
-  const clearSelection = useCallback(() => setSelectedPaths(new Set()), []);
+  const clearSelection = useCallback(() => {
+    lastSelectedIdRef.current = null;
+    setSelectedPaths(new Set());
+  }, []);
 
   return {
     selectedPaths,
     setSelectedPaths,
     toggleSelection,
-    clearSelection
+    clearSelection,
   };
 }
