@@ -60,7 +60,8 @@ export default function CloudSyncView() {
   const [previewFile, setPreviewFile] = useState<{ fileId: string; url: string; name: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const [previewVersion, setPreviewVersion] = useState(0);
+  const previewLoadedRef = useRef(false);
+  const previewFileRef = useRef<{ fileId: string; url: string; name: string } | null>(null);
 
   const loadFolders = useCallback(async (parentId: string = 'root') => {
     setLoading(true);
@@ -245,28 +246,34 @@ export default function CloudSyncView() {
 
   const handleOpenFile = useCallback(async (file: CloudFile) => {
     if (openingFileId === file.drive_file_id) return;
+    previewLoadedRef.current = false;
     console.log("[CloudOpen] opening file_id:", file.drive_file_id);
     setOpeningFileId(file.drive_file_id);
-    setPreviewLoading(true);
     setPreviewError(null);
+    setPreviewLoading(true);
     try {
       const result = await cloudApi.downloadFull(file.drive_file_id);
       if (result.success && result.url) {
-        const fullUrl = `${toAbsoluteUrl(result.url)}&v=${previewVersion}`;
+        const fullUrl = `${toAbsoluteUrl(result.url)}&_t=${Date.now()}`;
         console.log("[CloudOpen] downloaded full:", result.url);
         console.log("[CloudOpen] previewUrl final:", fullUrl);
         setPreviewLoading(false);
-        setPreviewFile({ fileId: file.drive_file_id, url: fullUrl, name: file.name });
+        const pf = { fileId: file.drive_file_id, url: fullUrl, name: file.name };
+        previewFileRef.current = pf;
+        setPreviewFile(pf);
       } else if (result.status === "downloading") {
         for (let i = 0; i < 30; i++) {
           await new Promise(r => setTimeout(r, 1000));
+          if (previewLoadedRef.current) break;
           const poll = await cloudApi.downloadFull(file.drive_file_id);
           if (poll.success && poll.url) {
-            const fullUrl = `${toAbsoluteUrl(poll.url)}&v=${previewVersion}`;
+            const fullUrl = `${toAbsoluteUrl(poll.url)}&_t=${Date.now()}`;
             console.log("[CloudOpen] downloaded full (poll):", poll.url);
             console.log("[CloudOpen] previewUrl final:", fullUrl);
             setPreviewLoading(false);
-            setPreviewFile({ fileId: file.drive_file_id, url: fullUrl, name: file.name });
+            const pf = { fileId: file.drive_file_id, url: fullUrl, name: file.name };
+            previewFileRef.current = pf;
+            setPreviewFile(pf);
             break;
           }
           if (poll.error) {
@@ -276,7 +283,7 @@ export default function CloudSyncView() {
             break;
           }
         }
-        if (!previewFile) {
+        if (!previewFileRef.current && !previewLoadedRef.current) {
           setPreviewError("Tempo limite excedido ao baixar imagem");
           setPreviewLoading(false);
         }
@@ -292,7 +299,7 @@ export default function CloudSyncView() {
     } finally {
       setOpeningFileId(null);
     }
-  }, [openingFileId, previewVersion, previewFile]);
+  }, [openingFileId]);
 
   return (
     <div className={styles.page}>
@@ -575,11 +582,13 @@ export default function CloudSyncView() {
                 <div className={styles.viewerError}>
                   <p>{previewError}</p>
                   <button className={styles.viewerRetry} onClick={() => {
-                    setPreviewVersion(v => v + 1);
-                    if (previewFile?.fileId) {
+                    const fid = previewFileRef.current?.fileId;
+                    if (fid) {
                       setPreviewFile(null);
                       setPreviewError(null);
-                      const file = files.find(f => f.drive_file_id === previewFile.fileId);
+                      previewFileRef.current = null;
+                      previewLoadedRef.current = false;
+                      const file = files.find(f => f.drive_file_id === fid);
                       if (file) handleOpenFile(file);
                     }
                   }}>
@@ -592,10 +601,17 @@ export default function CloudSyncView() {
                   src={previewFile.url}
                   alt={previewFile.name}
                   className={styles.viewerImage}
+                  onLoad={() => {
+                    console.log("[CloudOpen] imagem carregada com sucesso:", previewFile.url);
+                    previewLoadedRef.current = true;
+                    setPreviewError(null);
+                    setPreviewLoading(false);
+                  }}
                   onError={(e) => {
                     console.error("[CloudOpen] erro ao carregar full image:", previewFile.url);
+                    previewLoadedRef.current = false;
                     setPreviewError("Falha ao carregar imagem. Tente novamente.");
-                    setPreviewFile(null);
+                    setPreviewLoading(false);
                   }}
                 />
               )}
