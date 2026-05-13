@@ -37,6 +37,8 @@ SCOPES = [
 
 REDIRECT_URI = "http://localhost:8000/"
 
+_oauth_states: Dict[str, str] = {}
+
 
 def get_token_path() -> str:
     return str(TOKEN_FILE)
@@ -103,9 +105,13 @@ def get_auth_url() -> str:
     return auth_url
 
 
-def exchange_code_for_token(code: str) -> Optional[Dict[str, Any]]:
+def exchange_code_for_token(code: str, state: str = None) -> Optional[Dict[str, Any]]:
     try:
         from google_auth_oauthlib.flow import Flow
+
+        code_verifier = _oauth_states.pop(state, None)
+        if state:
+            print(f"[OAuth] state={state[:20]}... code_verifier={'found' if code_verifier else 'MISSING'}")
 
         print(f"[OAuth] exchange_code: code={code[:40]}...")
         print(f"[OAuth] redirect_uri={REDIRECT_URI}")
@@ -117,6 +123,9 @@ def exchange_code_for_token(code: str) -> Optional[Dict[str, Any]]:
             scopes=SCOPES,
             redirect_uri=REDIRECT_URI,
         )
+
+        if code_verifier:
+            flow.code_verifier = code_verifier
 
         flow.fetch_token(code=code)
         print(f"[OAuth] fetch_token OK")
@@ -163,8 +172,9 @@ def get_login_url() -> Optional[str]:
             redirect_uri=REDIRECT_URI,
         )
 
-        auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
-        print(f"[OAuth] login_url generated redirect_uri={REDIRECT_URI}")
+        auth_url, state = flow.authorization_url(prompt="consent", access_type="offline")
+        _oauth_states[state] = flow.code_verifier
+        print(f"[OAuth] login_url generated redirect_uri={REDIRECT_URI} state={state[:20]}...")
         return auth_url
     except Exception as e:
         print(f"[OAuth] get_login_url ERROR: {e}")

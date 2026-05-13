@@ -1930,11 +1930,11 @@ def cloud_google_auth_start():
 
 
 @app.get("/api/cloud/google/callback")
-def cloud_google_callback(code: str = ""):
+def cloud_google_callback(code: str = "", state: str = ""):
     print(f"[GoogleDrive] CALLBACK RECEBIDO code={code[:20]}...")
     try:
         from cloud import exchange_code_for_token, get_user_info
-        result = exchange_code_for_token(code)
+        result = exchange_code_for_token(code, state)
         if result is None:
             return {"error": "Falha ao obter token"}
         token, user_info = result, get_user_info() or {}
@@ -2223,10 +2223,10 @@ def cloud_google_download_full(file_id: str = ""):
 @app.get("/")
 def root_handler(code: str = Query(None), state: str = Query(None)):
     if code:
-        print(f"[OAuth] Root callback received code={code[:30]}...")
+        print(f"[OAuth] Root callback received code={code[:30]}... state={state[:20] if state else 'N/A'}...")
         try:
             from cloud import exchange_code_for_token, get_user_info
-            result = exchange_code_for_token(code)
+            result = exchange_code_for_token(code, state)
             if result is None:
                 return {"error": "Falha ao obter token"}
             user_info = get_user_info() or {}
