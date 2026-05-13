@@ -37,7 +37,12 @@ type ViewerPhoto = Photo & {
 
 function getViewerImageUrl(photo: Photo, maxSize = 1920) {
   const extended = photo as ViewerPhoto;
-  return extended.preview_path || extended.thumb_path || api.previewUrl(photo.path, maxSize);
+  return extended.preview_path || api.previewUrl(photo.path, maxSize);
+}
+
+function getViewerFallbackUrl(photo: Photo) {
+  const extended = photo as ViewerPhoto;
+  return extended.thumb_path || api.thumbUrl(photo.path, 1600);
 }
 
 export function PhotoViewerModal({
@@ -76,6 +81,7 @@ export function PhotoViewerModal({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
   const VIEWER_PREVIEW_SIZE = 1920;
+  const VIEWER_FALLBACK_SIZE = 1600;
   const [displayedSrc, setDisplayedSrc] = useState(() => getViewerImageUrl(photo, VIEWER_PREVIEW_SIZE));
   const navigationPhotos = (contextPhotos?.length ? contextPhotos : allPhotos);
   const viewerTransitionRef = useRef<'open' | 'next' | 'prev'>('open');
@@ -282,6 +288,7 @@ export function PhotoViewerModal({
     const currentUrl = getViewerImageUrl(photo, VIEWER_PREVIEW_SIZE);
     const preloadImage = (targetPhoto: Photo, activate = false) => {
       const targetUrl = getViewerImageUrl(targetPhoto, VIEWER_PREVIEW_SIZE);
+      const fallbackUrl = (targetPhoto as ViewerPhoto).thumb_path || api.thumbUrl(targetPhoto.path, VIEWER_FALLBACK_SIZE);
       if (!targetUrl) return;
 
       if (loadedUrlsRef.current.has(targetUrl)) {
@@ -294,8 +301,6 @@ export function PhotoViewerModal({
 
       if (loadingUrlsRef.current.has(targetUrl)) return;
       loadingUrlsRef.current.add(targetUrl);
-
-      const fallbackUrl = api.thumbUrl(targetPhoto.path, VIEWER_PREVIEW_SIZE);
       const img = new window.Image();
       img.decoding = 'async';
       img.onload = () => {
@@ -340,7 +345,7 @@ export function PhotoViewerModal({
         }
 
         if (activate && token === loadTokenRef.current) {
-          setDisplayedSrc(targetUrl);
+          setDisplayedSrc(getViewerFallbackUrl(targetPhoto));
           setIsLoaded(true);
         }
       };
@@ -759,7 +764,7 @@ export function PhotoViewerModal({
                     }
                   }}
                   onError={() => {
-                    const fallback = api.thumbUrl(photo.path, VIEWER_PREVIEW_SIZE);
+                    const fallback = getViewerFallbackUrl(photo);
                     loadedUrlsRef.current.add(fallback);
                     setDisplayedSrc(fallback);
                     setIsLoaded(true);

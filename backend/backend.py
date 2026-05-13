@@ -1450,8 +1450,12 @@ def get_image_resized(path: str = Query(...), max_size: int = 1200):
     return mm.get_image_resized(path, max_size)
 
 @app.get("/api/image_preview")
-def get_image_preview(path: str = Query(...), max_size: int = 1920):
-    return mm.get_image_resized(path, max_size)
+def get_image_preview(
+    path: str = Query(...),
+    size: int = Query(1920),
+    max_size: int | None = Query(None),
+):
+    return mm.get_image_resized(path, max_size or size)
 
 @app.get("/api/explorer/ls")
 def explorer_ls(path: str = "", catalog: str = ""):
