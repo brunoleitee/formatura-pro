@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { cloudApi } from '../services/cloudApi';
 import styles from './CloudSyncView.module.css';
 
+const BACKEND_BASE = 'http://127.0.0.1:8000';
+
 interface CloudProvider {
   id: string;
   name: string;
@@ -253,11 +255,17 @@ export default function CloudSyncView() {
     return `http://127.0.0.1:8000/api/photo-source/full?path=cloud://${fileId}&_t=${Date.now()}`;
   }
 
+  function absUrl(path: string): string {
+    return `${BACKEND_BASE}${path}`;
+  }
+
   const fetchAiDetails = useCallback(async (fileId: string) => {
     setAiDetailsLoading(true);
     try {
-      console.log("[AI Panel] loading details for:", fileId);
-      const resp = await fetch(`/api/ai/photo-details?foto_path=cloud://${fileId}`);
+      const fotoPath = `cloud://${fileId}`;
+      const url = absUrl(`/api/ai/photo-details?foto_path=${encodeURIComponent(fotoPath)}`);
+      console.log("[AI Panel] loading details for:", url);
+      const resp = await fetch(url);
       const data = await resp.json();
       setAiDetails(data);
       console.log("[AI Panel] details loaded:", data);
@@ -272,7 +280,9 @@ export default function CloudSyncView() {
     console.log("[AIViewer] processing requested:", fileId);
     setAiStatus('pending');
     try {
-      const resp = await fetch(`/api/ai/process-photo?foto_path=cloud://${fileId}`, { method: 'POST' });
+      const fotoPath = `cloud://${fileId}`;
+      const url = absUrl(`/api/ai/process-photo?foto_path=${encodeURIComponent(fotoPath)}`);
+      const resp = await fetch(url, { method: 'POST' });
       const data = await resp.json();
       if (data.success) {
         setAiStatus('completed');
@@ -283,7 +293,8 @@ export default function CloudSyncView() {
         console.log("[AIViewer] processing started:", fileId);
         const poll = async () => {
           try {
-            const sr = await fetch(`/api/ai/photo-status?foto_path=cloud://${fileId}`);
+            const pollUrl = absUrl(`/api/ai/photo-status?foto_path=${encodeURIComponent(fotoPath)}`);
+            const sr = await fetch(pollUrl);
             const sd = await sr.json();
             if (sd.has_full) {
               setAiStatus('completed');
@@ -745,11 +756,15 @@ export default function CloudSyncView() {
                             onClick={async () => {
                               setAiDetailsLoading(true);
                               try {
-                                const resp = await fetch(`/api/ai/retry-face-detection?foto_path=cloud://${previewFile?.fileId}`, { method: 'POST' });
+                                const fileId = previewFile?.fileId || '';
+                                const fotoPath = `cloud://${fileId}`;
+                                const url = absUrl(`/api/ai/retry-face-detection?foto_path=${encodeURIComponent(fotoPath)}`);
+                                console.log("[AI Panel] retry face detection:", url);
+                                const resp = await fetch(url, { method: 'POST' });
                                 const data = await resp.json();
                                 if (data.face_detected) {
                                   setAiStatus('completed');
-                                  fetchAiDetails(previewFile?.fileId || '');
+                                  fetchAiDetails(fileId);
                                 } else {
                                   alert('Nenhum rosto detectado mesmo após fallback.');
                                 }
