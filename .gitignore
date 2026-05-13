@@ -45,6 +45,8 @@ backend/catalogos/
 backend/backups/
 backend/thumb_cache/
 backend/embedding_cache_v2.db
+data/.cache/
+data/cloud/
 backend/export_history.json
 backend/debug_timing.txt
 backend/app_settings.json
