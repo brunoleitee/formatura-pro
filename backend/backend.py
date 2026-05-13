@@ -1455,7 +1455,9 @@ def get_image_preview(
     size: int = Query(1920),
     max_size: int | None = Query(None),
 ):
-    return mm.get_image_resized(path, max_size or size)
+    safe_size = max_size or size or 1920
+    safe_size = max(1, min(int(safe_size), 2560))
+    return mm.get_image_preview(path, safe_size)
 
 @app.get("/api/explorer/ls")
 def explorer_ls(path: str = "", catalog: str = ""):

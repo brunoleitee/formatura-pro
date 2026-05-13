@@ -139,6 +139,28 @@ def load_pil_with_orientation(path):
     return img
 
 
+def _resolve_preview_path(path: str) -> str:
+    decoded_path = urllib.parse.unquote(path or "").strip()
+    if not decoded_path:
+        raise HTTPException(status_code=400, detail="Caminho inválido")
+
+    try:
+        path_parts = Path(decoded_path).parts
+        if any(part == ".." for part in path_parts):
+            raise HTTPException(status_code=400, detail="Caminho inválido")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail="Caminho inválido")
+
+    normalized_path = os.path.abspath(os.path.normpath(decoded_path))
+    if not os.path.exists(normalized_path):
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+    if os.path.isdir(normalized_path):
+        raise HTTPException(status_code=400, detail="Caminho inválido")
+    return normalized_path
+
+
 def get_cached_thumb_path(decoded_path, kind, *params):
     thumb_dir = _get("thumb_cache_dir")
     stat = os.stat(decoded_path)
@@ -594,7 +616,7 @@ def analyze_culling(aluno_id: str, catalog: str = ""):
 
 def get_image_thumb(path: str, size: int = 300, quality: int = 80):
     started = time.perf_counter()
-    decoded_path = urllib.parse.unquote(path)
+    decoded_path = _resolve_preview_path(path)
     log_info = _get("log_info")
     
     mode = "unknown"
@@ -969,34 +991,37 @@ def get_thumb(path: str, x1: int, y1: int, x2: int, y2: int, size: int = 120, ex
 
 
 def get_image(path: str):
-    decoded_path = urllib.parse.unquote(path)
+    decoded_path = _resolve_preview_path(path)
     if os.path.exists(decoded_path):
         return FileResponse(decoded_path)
     raise HTTPException(status_code=404)
 
 def get_image_resized(path: str, max_size: int = 1200):
-    from io import BytesIO
-    decoded_path = urllib.parse.unquote(path)
+    decoded_path = _resolve_preview_path(path)
     try:
-        if not os.path.exists(decoded_path):
-            raise HTTPException(status_code=404)
-        
-        cache_path = get_cached_thumb_path(decoded_path, f"resized_{max_size}", max_size)
+        safe_size = max(1, min(int(max_size or 1200), 2560))
+        cache_path = get_cached_thumb_path(decoded_path, f"resized_{safe_size}", safe_size)
         
         if os.path.exists(cache_path):
             return FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
         
-        from PIL import Image
         with Image.open(decoded_path) as img:
-            img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+            img.thumbnail((safe_size, safe_size), Image.Resampling.LANCZOS)
             img.save(cache_path, format="JPEG", quality=85, optimize=True)
         
         return FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+    except HTTPException:
+        raise
     except Exception as e:
         log_info = _get("log_info")
         if log_info:
             log_info(f"Erro ao redimensionar imagem: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def get_image_preview(path: str, size: int = 1920):
+    safe_size = max(1, min(int(size or 1920), 2560))
+    return get_image_resized(path, safe_size)
 
 
 def explorer_entry_info(path, entry_type, name=None):

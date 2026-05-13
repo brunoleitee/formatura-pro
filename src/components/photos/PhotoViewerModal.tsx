@@ -39,12 +39,14 @@ type ViewerPhoto = Photo & {
 
 function getViewerImageUrl(photo: Photo, maxSize = 1920) {
   const extended = photo as ViewerPhoto;
-  return extended.preview_path || api.previewUrl(photo.path, maxSize);
+  const sourcePath = extended.original_path || photo.path;
+  return extended.preview_path || api.previewUrl(sourcePath, maxSize);
 }
 
 function getViewerFallbackUrl(photo: Photo) {
   const extended = photo as ViewerPhoto;
-  return extended.thumb_path || api.thumbUrl(photo.path, 1600);
+  const sourcePath = extended.original_path || photo.path;
+  return extended.thumb_path || api.thumbUrl(sourcePath, 1200);
 }
 
 export function PhotoViewerModal({
@@ -83,16 +85,15 @@ export function PhotoViewerModal({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
   const VIEWER_PREVIEW_SIZE = 1920;
-  const VIEWER_FALLBACK_SIZE = 1600;
-  const [displayedSrc, setDisplayedSrc] = useState(() => getViewerImageUrl(photo, VIEWER_PREVIEW_SIZE));
+  const [displayedSrc, setDisplayedSrc] = useState(() => getViewerFallbackUrl(photo));
   const navigationPhotos = (contextPhotos?.length ? contextPhotos : allPhotos);
   const viewerTransitionRef = useRef<'open' | 'next' | 'prev'>('open');
   const viewerLoadStartRef = useRef<number | null>(null);
   const viewerMountedRef = useRef(false);
   const viewerLoggedRef = useRef(false);
-  const loadTokenRef = useRef(0);
-  const loadedUrlsRef = useRef(new Set<string>());
-  const loadingUrlsRef = useRef(new Set<string>());
+  const previewTokenRef = useRef(0);
+  const previewStartRef = useRef<number | null>(null);
+  const imageCacheRef = useRef(new Map<string, { status: 'loading' | 'loaded' | 'error'; promise?: Promise<boolean> }>());
   const filmstripRef = useRef<HTMLDivElement | null>(null);
   const thumbRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const filmstripScrollTimerRef = useRef<number | null>(null);
@@ -151,6 +152,33 @@ export function PhotoViewerModal({
   const showFeedbackMsg = useCallback((text: string) => {
     setFeedback(text);
     setTimeout(() => setFeedback(null), 2000);
+  }, []);
+
+  const loadPreview = useCallback((url: string) => {
+    const existing = imageCacheRef.current.get(url);
+    if (existing?.status === 'loaded') {
+      return Promise.resolve(true);
+    }
+    if (existing?.promise) {
+      return existing.promise;
+    }
+
+    const promise = new Promise<boolean>((resolve) => {
+      const img = new window.Image();
+      img.decoding = 'async';
+      img.onload = () => {
+        imageCacheRef.current.set(url, { status: 'loaded' });
+        resolve(true);
+      };
+      img.onerror = () => {
+        imageCacheRef.current.set(url, { status: 'error' });
+        resolve(false);
+      };
+      img.src = url;
+    });
+
+    imageCacheRef.current.set(url, { status: 'loading', promise });
+    return promise;
   }, []);
 
   const handleDiscard = async () => {
@@ -295,79 +323,48 @@ export function PhotoViewerModal({
   }, [photo.path]);
 
   useEffect(() => {
-    const token = ++loadTokenRef.current;
+    const token = ++previewTokenRef.current;
+    previewStartRef.current = perfNow();
+    viewerLoggedRef.current = false;
     const currentUrl = getViewerImageUrl(photo, VIEWER_PREVIEW_SIZE);
-    const preloadImage = (targetPhoto: Photo, activate = false) => {
+    const fallbackUrl = getViewerFallbackUrl(photo);
+
+    const preloadImage = (targetPhoto: Photo) => {
       const targetUrl = getViewerImageUrl(targetPhoto, VIEWER_PREVIEW_SIZE);
-      const fallbackUrl = (targetPhoto as ViewerPhoto).thumb_path || api.thumbUrl(targetPhoto.path, VIEWER_FALLBACK_SIZE);
       if (!targetUrl) return;
 
-      if (loadedUrlsRef.current.has(targetUrl)) {
-        if (activate && token === loadTokenRef.current) {
-          setDisplayedSrc(targetUrl);
-          setIsLoaded(true);
-        }
+      const cached = imageCacheRef.current.get(targetUrl);
+      if (cached?.status === 'loaded') {
         return;
       }
 
-      if (loadingUrlsRef.current.has(targetUrl)) return;
-      loadingUrlsRef.current.add(targetUrl);
-      const img = new window.Image();
-      img.decoding = 'async';
-      img.onload = () => {
-        loadingUrlsRef.current.delete(targetUrl);
-        loadedUrlsRef.current.add(targetUrl);
-        if (activate && token === loadTokenRef.current) {
-          setDisplayedSrc(targetUrl);
-          setIsLoaded(true);
-        }
-      };
-      img.onerror = () => {
-        loadingUrlsRef.current.delete(targetUrl);
-        if (fallbackUrl && fallbackUrl !== targetUrl) {
-          if (loadedUrlsRef.current.has(fallbackUrl)) {
-            if (activate && token === loadTokenRef.current) {
-              setDisplayedSrc(fallbackUrl);
-              setIsLoaded(true);
-            }
-            return;
-          }
-          if (loadingUrlsRef.current.has(fallbackUrl)) return;
-          loadingUrlsRef.current.add(fallbackUrl);
-          const fallbackImg = new window.Image();
-          fallbackImg.decoding = 'async';
-          fallbackImg.onload = () => {
-            loadingUrlsRef.current.delete(fallbackUrl);
-            loadedUrlsRef.current.add(fallbackUrl);
-            if (activate && token === loadTokenRef.current) {
-              setDisplayedSrc(fallbackUrl);
-              setIsLoaded(true);
-            }
-          };
-          fallbackImg.onerror = () => {
-            loadingUrlsRef.current.delete(fallbackUrl);
-            if (activate && token === loadTokenRef.current) {
-              setDisplayedSrc(fallbackUrl);
-              setIsLoaded(true);
-            }
-          };
-          fallbackImg.src = fallbackUrl;
-          return;
-        }
-
-        if (activate && token === loadTokenRef.current) {
-          setDisplayedSrc(getViewerFallbackUrl(targetPhoto));
-          setIsLoaded(true);
-        }
-      };
-      img.src = targetUrl;
+      void loadPreview(targetUrl);
     };
 
-    if (loadedUrlsRef.current.has(currentUrl)) {
+    if (imageCacheRef.current.get(currentUrl)?.status === 'loaded') {
       setDisplayedSrc(currentUrl);
       setIsLoaded(true);
+      if (previewStartRef.current !== null) {
+        logPerf('viewer preview cache hit', previewStartRef.current, photo.path);
+      }
     } else {
-      preloadImage(photo, true);
+      void loadPreview(currentUrl).then((ok) => {
+        if (token !== previewTokenRef.current) return;
+
+        if (ok) {
+          setDisplayedSrc(currentUrl);
+          setIsLoaded(true);
+          if (previewStartRef.current !== null) {
+            logPerf('viewer preview cache miss', previewStartRef.current, photo.path);
+          }
+        } else {
+          setDisplayedSrc(fallbackUrl);
+          setIsLoaded(true);
+          if (previewStartRef.current !== null) {
+            logPerf('viewer preview fallback', previewStartRef.current, photo.path);
+          }
+        }
+      });
     }
 
     const targets = [
@@ -380,8 +377,8 @@ export function PhotoViewerModal({
       .filter((item): item is Photo => Boolean(item));
     targets
       .filter((item) => item.path && item.path !== photo.path)
-      .forEach((item) => preloadImage(item, false));
-  }, [navigationPhotos, currentIndex, photo.path]);
+      .forEach((item) => preloadImage(item));
+  }, [loadPreview, navigationPhotos, currentIndex, photo.path, (photo as ViewerPhoto).original_path, (photo as ViewerPhoto).preview_path]);
 
   useEffect(() => {
     const container = filmstripRef.current;
@@ -781,7 +778,6 @@ export function PhotoViewerModal({
                   decoding="async"
                   onLoad={(e) => {
                     const img = e.currentTarget;
-                    loadedUrlsRef.current.add(img.currentSrc);
                     const stage = imageStageRef.current;
                     const maxW = stage?.clientWidth || 800;
                     const maxH = stage?.clientHeight || window.innerHeight - 130;
@@ -806,7 +802,10 @@ export function PhotoViewerModal({
                   }}
                   onError={() => {
                     const fallback = getViewerFallbackUrl(photo);
-                    loadedUrlsRef.current.add(fallback);
+                    if (displayedSrc === fallback) {
+                      setIsLoaded(true);
+                      return;
+                    }
                     setDisplayedSrc(fallback);
                     setIsLoaded(true);
                     if (viewerLoadStartRef.current !== null && !viewerLoggedRef.current) {
