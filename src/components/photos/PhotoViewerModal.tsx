@@ -72,6 +72,29 @@ export function PhotoViewerModal({
   const [highResError, setHighResError] = useState<string | null>(null);
   const [currentSrc, setCurrentSrc] = useState(api.thumbUrl(photo.path, 1200, 90));
   const navigationPhotos = (contextPhotos?.length ? contextPhotos : allPhotos);
+  const originalSrc = api.fullResUrl(photo.path);
+  const originalLoadTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+
+  const clearOriginalLoadTimeout = useCallback(() => {
+    if (originalLoadTimeoutRef.current !== null) {
+      window.clearTimeout(originalLoadTimeoutRef.current);
+      originalLoadTimeoutRef.current = null;
+    }
+  }, []);
+
+  const finishOriginalLoad = useCallback(() => {
+    clearOriginalLoadTimeout();
+    setHighResLoaded(true);
+    setHighResLoading(false);
+  }, [clearOriginalLoadTimeout]);
+
+  const failOriginalLoad = useCallback((message: string) => {
+    clearOriginalLoadTimeout();
+    setHighResLoaded(false);
+    setHighResLoading(false);
+    setHighResError(message);
+    setCurrentSrc(api.thumbUrl(photo.path, 1200, 90));
+  }, [clearOriginalLoadTimeout, photo.path]);
 
   useEffect(() => {
     // Reset quando troca de foto
@@ -81,37 +104,62 @@ export function PhotoViewerModal({
     setHighResLoading(false);
     setHighResError(null);
     setCurrentSrc(api.thumbUrl(photo.path, 1200, 90));
-  }, [photo.path]);
+    clearOriginalLoadTimeout();
+  }, [clearOriginalLoadTimeout, photo.path]);
+
+  useEffect(() => {
+    if (!highResLoading) return;
+
+    clearOriginalLoadTimeout();
+    originalLoadTimeoutRef.current = window.setTimeout(() => {
+      setHighResLoading(false);
+    }, 8000);
+
+    return clearOriginalLoadTimeout;
+  }, [clearOriginalLoadTimeout, highResLoading, photo.path]);
+
+  useEffect(() => {
+    const img = imageRef.current;
+    if (!img || currentSrc !== originalSrc) return;
+
+    if (img.complete) {
+      finishOriginalLoad();
+    }
+  }, [currentSrc, finishOriginalLoad, originalSrc]);
 
   useEffect(() => {
     // Se zoom for alto, carregar original
     if (zoom >= 1.0 && !useHighRes && !highResLoaded && !highResLoading && !highResError) {
       setUseHighRes(true);
       setHighResLoading(true);
+      setHighResError(null);
+      clearOriginalLoadTimeout();
+      originalLoadTimeoutRef.current = window.setTimeout(() => {
+        setHighResLoading(false);
+      }, 8000);
+
       const img = new window.Image();
-      const highResUrl = api.fullResUrl(photo.path);
+      const highResUrl = originalSrc;
       let cancelled = false;
-      img.src = highResUrl;
       img.onload = () => {
         if (cancelled) return;
         setCurrentSrc(highResUrl);
         setHighResLoaded(true);
-        setHighResLoading(false);
+        finishOriginalLoad();
       };
       img.onerror = () => {
         if (cancelled) return;
-        setHighResLoaded(false);
-        setHighResLoading(false);
-        setHighResError('imagem original indisponível');
+        failOriginalLoad("Não foi possível carregar a imagem original");
       };
+      img.src = highResUrl;
       return () => {
         cancelled = true;
+        clearOriginalLoadTimeout();
         img.onload = null;
         img.onerror = null;
       };
     }
-  }, [zoom, photo.path, useHighRes, highResLoaded, highResLoading, highResError]);
-
+  }, [clearOriginalLoadTimeout, failOriginalLoad, finishOriginalLoad, highResError, highResLoaded, highResLoading, originalSrc, photo.path, useHighRes, zoom]);
   const imageRef = useRef<HTMLImageElement>(null);
   const imageStageRef = useRef<HTMLDivElement>(null);
   const currentIndex = navigationPhotos.findIndex((p) => p.path === photo.path);
@@ -655,6 +703,14 @@ export function PhotoViewerModal({
                     y: (maxH - h) / 2
                   });
                   setIsLoaded(true);
+                  if (img.src === originalSrc || currentSrc === originalSrc) {
+                    finishOriginalLoad();
+                  }
+                }}
+                onError={() => {
+                  if (currentSrc === originalSrc) {
+                    failOriginalLoad('Não foi possível carregar a imagem original');
+                  }
                 }}
               />
 
