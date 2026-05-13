@@ -2524,6 +2524,9 @@ def ai_photo_details(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
                         details["face_confidence"] = metadata.get("ai_confidence")
                         details["embedding_ready"] = metadata.get("ai_embedding_ready", False)
                         details["ai_processed_at"] = metadata.get("ai_processed_at")
+                    details["ocr_text"] = metadata.get("ai_ocr_text", "")
+                    details["ocr_confidence"] = metadata.get("ai_ocr_confidence", 0.0)
+                    details["ocr_type"] = metadata.get("ai_ocr_type", "none")
 
             # Try to find in catalogs by foto_path
             for db_file in catalogs_dir.glob("*.db"):
@@ -2619,11 +2622,41 @@ def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
                     faces = app_face.get(img) or []
             print(f"[AI] faces detected count: {len(faces)}")
 
+            # OCR hibrido
+            from services.ocr_pipeline import process_ocr, cross_reference_ocr_with_face
+            ocr_result = process_ocr(local_path)
+            face_student = None
+            for db in Path(__file__).resolve().parents[1].glob("data/catalogs/*.db"):
+                try:
+                    import sqlite3
+                    conn = sqlite3.connect(str(db))
+                    c = conn.cursor()
+                    c.execute("SELECT aluno_id FROM ocorrencias WHERE foto_path = ? LIMIT 1", (foto_path,))
+                    r = c.fetchone()
+                    if r:
+                        face_student = r[0]
+                    conn.close()
+                    break
+                except Exception:
+                    pass
+            cross = cross_reference_ocr_with_face(
+                ocr_text=ocr_result["ocr_text"],
+                ocr_confidence=ocr_result["ocr_confidence"],
+                face_student=face_student if len(faces) > 0 else None,
+                face_confidence=float(faces[0].det_score) if len(faces) > 0 and hasattr(faces[0], "det_score") else None,
+            )
+
             result = {
                 "success": True,
                 "local_path": local_path,
                 "face_detected": len(faces) > 0,
                 "faces_count": len(faces),
+                "ocr_text": ocr_result["ocr_text"],
+                "ocr_confidence": ocr_result["ocr_confidence"],
+                "ocr_type": ocr_result["ocr_type"],
+                "final_student": cross.get("final_student"),
+                "final_confidence": cross.get("final_confidence"),
+                "ocr_enriched": cross.get("ocr_enriched", False),
             }
 
             root_dir = Path(__file__).resolve().parents[1]
@@ -2682,8 +2715,11 @@ def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
                     metadata["ai_processed_at"] = time.time()
                     result["embedding_ready"] = norm > 0
                     result["confidence"] = metadata["ai_confidence"]
+                metadata["ai_ocr_text"] = ocr_result["ocr_text"]
+                metadata["ai_ocr_confidence"] = ocr_result["ocr_confidence"]
+                metadata["ai_ocr_type"] = ocr_result["ocr_type"]
                 cache.save_metadata(file_id, metadata)
-                print(f"[AI] resultado salvo no cache metadata: {file_id}")
+                print(f"[AI] resultado (face+ocr) salvo no cache metadata: {file_id}")
 
             print(f"[AI] resultado: {result}")
             return result
