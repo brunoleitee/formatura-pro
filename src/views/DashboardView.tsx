@@ -130,17 +130,29 @@ export default function DashboardView() {
             photos: current.photos + person.total_photos,
           });
         }
-        const classCoverage = Array.from(classCoverageMap.entries())
-          .map(([className, value]) => ({
-            className,
-            students: value.students,
-            photos: value.photos,
-            avgPhotos: value.students > 0 ? value.photos / value.students : 0,
-            goalPercent: value.students > 0
-              ? Math.round((value.photos / (value.students * DEFAULT_PHOTOS_GOAL)) * 100)
-              : 0,
-          }))
-          .sort((a, b) => b.photos - a.photos || a.className.localeCompare(b.className));
+        const backendClasses = (typedStats as { classes?: Array<{ class_name: string; students_count: number; photos_count: number; average_photos: number; completion_percent: number }> }).classes;
+        let classCoverage;
+        if (backendClasses && backendClasses.length > 0) {
+          classCoverage = backendClasses.map((c: { class_name: string; students_count: number; photos_count: number; average_photos: number; completion_percent: number }) => ({
+            className: c.class_name,
+            students: c.students_count,
+            photos: c.photos_count,
+            avgPhotos: c.average_photos,
+            goalPercent: c.completion_percent,
+          }));
+        } else {
+          classCoverage = Array.from(classCoverageMap.entries())
+            .map(([className, value]) => ({
+              className,
+              students: value.students,
+              photos: value.photos,
+              avgPhotos: value.students > 0 ? value.photos / value.students : 0,
+              goalPercent: value.students > 0
+                ? Math.round((value.photos / (value.students * DEFAULT_PHOTOS_GOAL)) * 100)
+                : 0,
+            }))
+            .sort((a, b) => b.photos - a.photos || a.className.localeCompare(b.className));
+        }
 
         setSummary({
           catalog: currentCatalog,

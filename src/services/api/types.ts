@@ -296,6 +296,15 @@ export interface Stats {
   total_people: number;
   total_occurrences: number;
   unknown_count: number;
+  classes?: {
+    class_name: string;
+    students_count: number;
+    photos_count: number;
+    goal_per_student: number;
+    target_photos: number;
+    average_photos: number;
+    completion_percent: number;
+  }[];
   [key: string]: unknown;
 }
 

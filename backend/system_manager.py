@@ -283,6 +283,63 @@ def get_stats(catalog: str = ""):
             if photos_per_person and total_people > 0:
                 avg_photos = sum(r["cnt"] for r in photos_per_person) / total_people
 
+            cur.execute("SELECT face_cache_path FROM alunos WHERE aluno_id = ?", ("system_catalog",))
+            res = cur.fetchone()
+            reference_root = res[0] if res and res[0] and os.path.isdir(res[0]) else ""
+            class_map = {}
+            if reference_root:
+                ignored_folders = {"#BASE", "BASE", "base", "referencias", "referências", "referencia", "referência"}
+                for root, dirs, files in os.walk(reference_root):
+                    for filename in files:
+                        if not filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+                            continue
+                        try:
+                            rel = os.path.relpath(os.path.join(root, filename), reference_root)
+                            parts = rel.replace("\\", "/").split("/")
+                            valid_parts = [p for p in parts[:-1] if p.strip() and p.strip().casefold() not in {f.casefold() for f in ignored_folders}]
+                            class_name = valid_parts[-1] if valid_parts else "Sem turma"
+                            student_name = os.path.splitext(filename)[0].strip()
+                            class_map[student_name] = class_name
+                        except Exception:
+                            continue
+
+            classes_data = {}
+            for r in photos_per_person:
+                aid = r["aluno_id"]
+                class_name = "Sem turma"
+                cur.execute("SELECT class_name FROM alunos WHERE aluno_id = ?", (aid,))
+                row = cur.fetchone()
+                if row and row[0] and row[0] != "Sem turma":
+                    class_name = row[0]
+                elif aid in class_map:
+                    class_name = class_map[aid]
+                if class_name not in classes_data:
+                    classes_data[class_name] = {"students_count": 0, "photos_count": 0}
+                classes_data[class_name]["students_count"] += 1
+                classes_data[class_name]["photos_count"] += r["cnt"]
+
+            goal_per_student = 50
+            classes_list = []
+            for class_name, data in classes_data.items():
+                target = data["students_count"] * goal_per_student
+                percent = round(data["photos_count"] / target * 100, 1) if target > 0 else 0
+                avg = round(data["photos_count"] / data["students_count"], 1) if data["students_count"] > 0 else 0
+                classes_list.append({
+                    "class_name": class_name,
+                    "students_count": data["students_count"],
+                    "photos_count": data["photos_count"],
+                    "goal_per_student": goal_per_student,
+                    "target_photos": target,
+                    "average_photos": avg,
+                    "completion_percent": percent,
+                })
+
+            def sort_key(c):
+                if c["class_name"] == "Sem turma":
+                    return ("zzz", c["class_name"])
+                return (c["class_name"], c["class_name"])
+            classes_list.sort(key=sort_key)
+
             return {
                 "total_occurrences": total_occurrences,
                 "photos_with_faces": photos_with_faces,
@@ -292,6 +349,7 @@ def get_stats(catalog: str = ""):
                 "discarded_photos": discarded_count,
                 "avg_photos_per_person": round(avg_photos, 1),
                 "top_people": [{"id": r["aluno_id"], "count": r["cnt"]} for r in photos_per_person[:10]],
+                "classes": classes_list,
             }
     except Exception as e:
         raise HTTPException(500, str(e))
