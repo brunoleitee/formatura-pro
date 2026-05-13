@@ -233,7 +233,6 @@ export default function DashboardView() {
       <div className={styles.page}>
         <div className={styles.header}>
           <div>
-            <div className={styles.kicker}>Painel</div>
             <h1 className={styles.title}>Painel</h1>
             <p className={styles.subtitle}>{currentCatalog || 'Nenhum catálogo carregado'}</p>
           </div>
@@ -257,7 +256,6 @@ export default function DashboardView() {
       <div className={styles.page}>
         <div className={styles.header}>
           <div>
-            <div className={styles.kicker}>Painel</div>
             <h1 className={styles.title}>Painel</h1>
             <p className={styles.subtitle}>{currentCatalog || 'Nenhum catálogo carregado'}</p>
           </div>
@@ -284,7 +282,6 @@ export default function DashboardView() {
     <div className={styles.page}>
       <div className={styles.header}>
         <div>
-          <div className={styles.kicker}>Painel</div>
           <h1 className={styles.title}>Painel</h1>
           <p className={styles.subtitle}>{currentCatalog || 'Nenhum catálogo carregado'}</p>
         </div>
