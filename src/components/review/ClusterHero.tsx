@@ -13,6 +13,7 @@ interface ClusterHeroProps {
   assignmentState?: {
     clusterId: string;
     studentName: string;
+    className: string;
     status: string;
   } | null;
   onAssigned: (payload: AssignClusterResponse) => void;
@@ -134,6 +135,11 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
             <span className={styles.assignedBadge}>
               <Check size={10} />
               <span>Identificado</span>
+            </span>
+          )}
+          {isAssigned && assignmentState?.className && (
+            <span className={styles.classBadge}>
+              <span>{assignmentState.className}</span>
             </span>
           )}
           <span className={styles.clusterBadge}>#{cluster.cluster_number}</span>

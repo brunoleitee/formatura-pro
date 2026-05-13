@@ -114,7 +114,7 @@ function ReviewViewContent() {
   const [viewerPhoto, setViewerPhoto] = useState<Photo | null>(null);
   const [viewerContext, setViewerContext] = useState<PhotoContextResponse | null>(null);
   const [viewerContextLoading, setViewerContextLoading] = useState(false);
-  const [assignmentState, setAssignmentState] = useState<{ clusterId: string; studentName: string; status: string } | null>(null);
+  const [assignmentState, setAssignmentState] = useState<{ clusterId: string; studentName: string; className: string; status: string } | null>(null);
   const [assignmentToast, setAssignmentToast] = useState<string | null>(null);
   const [reviewToast, setReviewToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null);
   const wasGraduationRunningRef = useRef(false);
@@ -256,8 +256,10 @@ function ReviewViewContent() {
   const handleAssigned = useCallback((result: AssignClusterResponse) => {
     const clusterId = result.cluster_id;
     const studentName = result.student_name ?? result.nome_formando ?? result.aluno_id ?? 'Identificado';
-    setAssignmentToast(`Formando vinculado com sucesso: ${studentName}`);
+    const className = result.class_name ?? 'Sem turma';
+    setAssignmentToast(`Formando vinculado com sucesso: ${studentName} · ${className}`);
     window.setTimeout(() => setAssignmentToast(null), 1800);
+    setAssignmentState({ clusterId, studentName, className, status: result.status || 'identified' });
     const assignedIndex = clusters.findIndex((cluster) => cluster.cluster_id === clusterId);
     const nextSelectedId = assignedIndex >= 0
       ? clusters[assignedIndex + 1]?.cluster_id ?? clusters[assignedIndex - 1]?.cluster_id ?? null
@@ -267,7 +269,7 @@ function ReviewViewContent() {
     setTotalClusters((value) => (assignedIndex >= 0 ? Math.max(0, value - 1) : value));
     setSelectedId((currentId) => (currentId === clusterId ? nextSelectedId : currentId));
     setSelected((current) => (current?.cluster_id === clusterId ? null : current));
-    setAssignmentState(null);
+    window.setTimeout(() => setAssignmentState(null), 1800);
   }, [clusters]);
 
   const handleSkip = useCallback(async () => {

@@ -22,6 +22,7 @@ interface ClusterDetailProps {
   assignmentState?: {
     clusterId: string;
     studentName: string;
+    className: string;
     status: string;
   } | null;
 }

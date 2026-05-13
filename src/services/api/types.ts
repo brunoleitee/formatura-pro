@@ -279,6 +279,7 @@ export interface AssignClusterResponse {
   cluster_id: string;
   aluno_id: string | null;
   student_name: string | null;
+  class_name?: string | null;
   status: string;
   updated_count: number;
   nome_formando?: string | null;

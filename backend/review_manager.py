@@ -1724,6 +1724,16 @@ def assign_cluster(req: AssignUnknownClusterRequest):
         if resolved_aluno_id and resolved_aluno_id != "Desconhecido":
             _ensure_person_reference(conn, catalog, resolved_aluno_id)
 
+        class_name = "Sem turma"
+        if resolved_aluno_id:
+            try:
+                cur.execute("SELECT class_name FROM alunos WHERE aluno_id = ? LIMIT 1", (resolved_aluno_id,))
+                row = cur.fetchone()
+                if row and row["class_name"]:
+                    class_name = str(row["class_name"]).strip() or "Sem turma"
+            except Exception:
+                class_name = "Sem turma"
+
     try:
         import people_data_manager as pdm
         pdm.invalidate_people_cache()
@@ -1737,6 +1747,7 @@ def assign_cluster(req: AssignUnknownClusterRequest):
         "aluno_id": resolved_aluno_id,
         "student_name": normalized_name or resolved_aluno_id,
         "nome_formando": normalized_name or resolved_aluno_id,
+        "class_name": class_name,
         "status": "identified",
         "updated_count": updated,
         "updated": updated,
