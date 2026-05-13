@@ -1661,7 +1661,37 @@ def start_export(req: ExportReq):
 
 @app.get("/api/export/status")
 def get_export_status():
-    return ex.get_export_status()
+    try:
+        status = ex.get_export_status()
+        if not isinstance(status, dict):
+            raise RuntimeError("export status indisponível")
+        is_exporting = bool(status.get("is_exporting") or status.get("running"))
+        text = str(status.get("status_text") or status.get("message") or ("Exportação em andamento" if is_exporting else "Nenhuma exportação em andamento"))
+        normalized = dict(status)
+        normalized["is_exporting"] = is_exporting
+        normalized["running"] = is_exporting
+        normalized["status"] = "running" if is_exporting else "idle"
+        normalized["progress"] = float(status.get("progress") or 0)
+        normalized["status_text"] = text
+        normalized["message"] = text
+        normalized["total_files"] = int(status.get("total_files") or 0)
+        normalized["processed_files"] = int(status.get("processed_files") or 0)
+        normalized["eta_seconds"] = int(status.get("eta_seconds") or 0)
+        return normalized
+    except Exception as e:
+        log_info(f"Falha ao consultar status da exportacao: {e}")
+        return {
+            "is_exporting": False,
+            "running": False,
+            "status": "idle",
+            "progress": 0,
+            "status_text": "Nenhuma exportação em andamento",
+            "message": "Nenhuma exportação em andamento",
+            "total_files": 0,
+            "processed_files": 0,
+            "eta_seconds": 0,
+            "export_summary": None,
+        }
 
 @app.post("/api/export/clear_summary")
 def clear_export_summary():

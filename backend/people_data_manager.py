@@ -168,6 +168,111 @@ def get_people(unknown: bool = False):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def get_people(unknown: bool = False):
+    cached = _get_cached_people(unknown)
+    if cached is not None:
+        return cached
+
+    try:
+        get_db = _get("get_db")
+        cat = current_catalog()
+        if not cat:
+            return []
+
+        with get_db() as conn:
+            cur = conn.cursor()
+            if unknown:
+                cur.execute("""
+                    SELECT aluno_id, COUNT(*) as total FROM ocorrencias
+                    WHERE lower(aluno_id) IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nÃ£o_mapeado', '__unknown__')
+                       OR aluno_id LIKE 'Pessoa%'
+                    GROUP BY aluno_id ORDER BY total DESC, aluno_id ASC
+                """)
+                rows = cur.fetchall()
+                results = [{
+                    "id": row["aluno_id"],
+                    "name": row["aluno_id"],
+                    "class_name": "Sem turma",
+                    "total_photos": row["total"],
+                    "cover_path": None,
+                    "cover_box": None,
+                    "avatar_path": None,
+                } for row in rows]
+            else:
+                cur.execute("""
+                    WITH counts AS (
+                        SELECT aluno_id, COUNT(*) AS total
+                        FROM ocorrencias
+                        WHERE lower(aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nÃ£o_mapeado', '__unknown__')
+                          AND aluno_id NOT LIKE 'Pessoa%'
+                        GROUP BY aluno_id
+                    ),
+                    first_rows AS (
+                        SELECT aluno_id, MIN(rowid) AS first_rowid
+                        FROM ocorrencias
+                        GROUP BY aluno_id
+                    ),
+                    covers AS (
+                        SELECT o.aluno_id, o.foto_path, o.x1, o.y1, o.x2, o.y2
+                        FROM ocorrencias o
+                        JOIN first_rows f
+                          ON f.aluno_id = o.aluno_id
+                         AND f.first_rowid = o.rowid
+                    )
+                    SELECT
+                        c.aluno_id,
+                        c.total,
+                        cov.foto_path AS cover_path,
+                        cov.x1,
+                        cov.y1,
+                        cov.x2,
+                        cov.y2,
+                        a.face_cache_path,
+                        a.class_name
+                    FROM counts c
+                    LEFT JOIN covers cov ON cov.aluno_id = c.aluno_id
+                    LEFT JOIN alunos a ON a.aluno_id = c.aluno_id
+                    ORDER BY c.aluno_id ASC
+                """)
+                rows = cur.fetchall()
+                results = []
+                for row in rows:
+                    cover_path = row["cover_path"]
+                    cover_box = None
+                    if cover_path and row["x1"] is not None:
+                        cover_box = [row["x1"], row["y1"], row["x2"], row["y2"]]
+
+                    face_cache_path = str(row["face_cache_path"] or "").strip()
+                    avatar_path = None
+                    if face_cache_path and os.path.exists(face_cache_path):
+                        avatar_path = face_cache_path
+                    elif cover_path and os.path.exists(cover_path):
+                        avatar_path = cover_path
+                    else:
+                        avatar_path = cover_path if cover_path else None
+
+                    results.append({
+                        "id": row["aluno_id"],
+                        "name": row["aluno_id"],
+                        "class_name": str(row["class_name"] or "").strip() or "Sem turma",
+                        "total_photos": row["total"],
+                        "cover_path": cover_path,
+                        "cover_box": cover_box,
+                        "avatar_path": avatar_path,
+                    })
+
+        with _people_cache_lock:
+            key = f"{cat}:{unknown}"
+            _people_cache[key] = (results, time.time())
+
+        return results
+    except Exception as e:
+        import traceback
+        print(f"ERRO em get_people (optimized): {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 def invalidate_people_cache():
     global _people_cache
     with _people_cache_lock:

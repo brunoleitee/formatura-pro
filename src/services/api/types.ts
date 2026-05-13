@@ -12,6 +12,7 @@ export interface Person {
   total_photos: number;
   cover_path: string | null;
   cover_box: [number, number, number, number] | null;
+  avatar_path?: string | null;
 }
 
 export interface PhotoFace {
@@ -113,8 +114,11 @@ export interface ExportSummary {
 
 export interface ExportStatus {
   is_exporting: boolean;
+  running?: boolean;
+  status?: string;
   progress: number;
   status_text: string;
+  message?: string;
   total_files: number;
   processed_files: number;
   eta_seconds: number;

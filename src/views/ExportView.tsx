@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode, useState, useEffect, useCallback, useMemo } from 'react';
+import { Component, type ErrorInfo, type ReactNode, useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
 import { Download, FolderOpen, RefreshCw, Check, Users } from 'lucide-react';
 import { api, type Person, type ExportStatus, type ExportSummary } from '../services/api';
 import { useApp } from '../context/AppContext';
@@ -6,6 +6,45 @@ import ExportFinishModal from '../components/ExportFinishModal';
 
 type ExportMode = 'copy' | 'move';
 type ConflictStrategy = 'copy' | 'skip' | 'overwrite';
+
+const ExportAvatar = memo(function ExportAvatar({ person, index }: { person: Person; index: number }) {
+  const [failed, setFailed] = useState(false);
+  const avatarPath = person.avatar_path || person.cover_path || '';
+
+  useEffect(() => {
+    setFailed(false);
+  }, [avatarPath]);
+
+  const initials = person.name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('');
+
+  const label = initials || String(index + 1).padStart(2, '0');
+
+  if (!avatarPath || failed) {
+    return <>{label}</>;
+  }
+
+  return (
+    <img
+      src={api.thumbUrl(avatarPath, 160)}
+      alt={person.name}
+      loading="eager"
+      decoding="async"
+      onError={() => setFailed(true)}
+      style={{
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        display: 'block',
+      }}
+    />
+  );
+});
 
 class ExportViewBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   state = { hasError: false };
@@ -61,6 +100,7 @@ function ExportViewContent() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<ExportStatus | null>(null);
   const [polling, setPolling] = useState(false);
+  const pollingFailuresRef = useRef(0);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
 
@@ -85,21 +125,43 @@ function ExportViewContent() {
     setSearch('');
     setSelectedClass('all');
     setOrganizeByClass(false);
+    pollingFailuresRef.current = 0;
     setError('');
   }, [currentCatalog]);
 
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-    if (polling) {
-      interval = setInterval(async () => {
-        const st = await api.getExportStatus().catch(() => null);
-        if (st) {
-          setStatus(st);
-          if (!st.is_exporting) setPolling(false);
+    if (!polling) return;
+
+    let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const st = await api.getExportStatus();
+        if (cancelled) return;
+        setStatus(st);
+        pollingFailuresRef.current = 0;
+        if (!st.is_exporting && !st.running) {
+          setPolling(false);
         }
-      }, 800);
-    }
-    return () => clearInterval(interval);
+      } catch {
+        if (cancelled) return;
+        pollingFailuresRef.current += 1;
+        if (pollingFailuresRef.current >= 3) {
+          setPolling(false);
+          setError('Não foi possível consultar o status da exportação. Verifique se o backend está ativo.');
+        }
+      }
+    };
+
+    poll();
+    interval = setInterval(poll, 800);
+
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
   }, [polling]);
 
   useEffect(() => {
@@ -141,37 +203,6 @@ function ExportViewContent() {
 
   const getPersonId = (person: Person) => person.id || person.name || 'Sem_Nome';
   const getPersonLabel = (person: Person) => person.name || person.id || 'Sem nome';
-  const initialsFromName = (name: string) => {
-    const parts = name
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2);
-    if (parts.length === 0) return '';
-    return parts.map((part) => part.charAt(0).toUpperCase()).join('');
-  };
-  const getAvatarLabel = (person: Person, index: number) => {
-    if (person.name) {
-      const initials = initialsFromName(person.name);
-      if (initials) return initials;
-    }
-    return String(index + 1).padStart(2, '0');
-  };
-  const getAvatarSrc = (person: Person) => {
-    if (!person.cover_path) return null;
-    if (person.cover_box) {
-      return api.faceThumbUrl(
-        person.cover_path,
-        person.cover_box[0],
-        person.cover_box[1],
-        person.cover_box[2],
-        person.cover_box[3],
-        96
-      );
-    }
-    return api.thumbUrl(person.cover_path, 96);
-  };
-
   const classOptions = useMemo(() => {
     const values = new Set(
       people.map((person) => (person.class_name || 'Sem turma').trim() || 'Sem turma')
@@ -188,6 +219,7 @@ function ExportViewContent() {
     setError('');
     setFinishModalOpen(false);
     setFinishModalData(null);
+    pollingFailuresRef.current = 0;
     try {
       await api.startExport([...selected], destPath, mode, conflict, includeQuality, includeDescarte, organizeByClass);
       setPolling(true);
@@ -332,8 +364,6 @@ function ExportViewContent() {
                 const personId = getPersonId(p);
                 const isSelected = selected.has(personId);
                 const photoCountLabel = `${p.total_photos} fotos`;
-                const avatarSrc = getAvatarSrc(p);
-                const avatarLabel = getAvatarLabel(p, index);
 
                 return (
                   <button
@@ -346,22 +376,7 @@ function ExportViewContent() {
                   >
                     <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
                       <span aria-hidden="true" style={{ ...getAvatarStyle(isSelected), overflow: 'hidden' }}>
-                        {avatarSrc ? (
-                          <img
-                            src={avatarSrc}
-                            alt=""
-                            loading="lazy"
-                            decoding="async"
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              objectFit: 'cover',
-                              display: 'block',
-                            }}
-                          />
-                        ) : (
-                          avatarLabel
-                        )}
+                        <ExportAvatar person={p} index={index} />
                       </span>
                       <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
                         <span

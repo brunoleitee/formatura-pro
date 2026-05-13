@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { memo, useState, useEffect, useCallback, useMemo } from 'react';
 import { Users, RefreshCw, Edit2, Trash2, ChevronRight, Check, X } from 'lucide-react';
 import { api, type Person } from '../services/api';
 import { useApp } from '../context/AppContext';
@@ -7,6 +7,113 @@ import styles from './PeopleView.module.css';
 interface PeopleViewProps {
   onRequestConfirm: (options: { title: string; message: string; confirmText: string; cancelText: string }) => Promise<boolean>;
 }
+
+const PersonAvatar = memo(function PersonAvatar({ person }: { person: Person }) {
+  const [failed, setFailed] = useState(false);
+  const avatarPath = person.avatar_path || person.cover_path || '';
+
+  useEffect(() => {
+    setFailed(false);
+  }, [avatarPath]);
+
+  if (!avatarPath || failed) {
+    return (
+      <div className="avatar-placeholder">
+        {person.name.charAt(0).toUpperCase()}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={api.thumbUrl(avatarPath, 160)}
+      alt={person.name}
+      loading="eager"
+      decoding="async"
+      onError={() => setFailed(true)}
+    />
+  );
+});
+
+const PeopleCard = memo(function PeopleCard({
+  person,
+  isRenaming,
+  renameValue,
+  onOpen,
+  onStartRename,
+  onCancelRename,
+  onRenameValue,
+  onConfirmRename,
+  onDelete,
+}: {
+  person: Person;
+  isRenaming: boolean;
+  renameValue: string;
+  onOpen: (id: string) => void;
+  onStartRename: (person: Person) => void;
+  onCancelRename: () => void;
+  onRenameValue: (value: string) => void;
+  onConfirmRename: (id: string) => void;
+  onDelete: (person: Person) => void;
+}) {
+  return (
+    <div className={`person-card ${styles.personCard}`}>
+      <div
+        className={`person-avatar ${styles.personAvatar}`}
+        onClick={() => onOpen(person.id)}
+      >
+        <PersonAvatar person={person} />
+      </div>
+
+      <div className="person-info">
+        {isRenaming ? (
+          <div className="rename-inline">
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={e => onRenameValue(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') onConfirmRename(person.id);
+                if (e.key === 'Escape') onCancelRename();
+              }}
+            />
+            <button className={`icon-btn success ${styles.actionBtn}`} onClick={() => onConfirmRename(person.id)}><Check size={14} /></button>
+            <button className={`icon-btn ${styles.actionBtn}`} onClick={onCancelRename}><X size={14} /></button>
+          </div>
+        ) : (
+          <span className="person-name" title={person.name}>{person.name}</span>
+        )}
+        <span className="person-count">
+          {(person.class_name || 'Sem turma')} Â· {person.total_photos} foto{person.total_photos !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      <div className="person-actions">
+        <button
+          className={`icon-btn ${styles.actionBtn}`}
+          title="Ver fotos"
+          onClick={() => onOpen(person.id)}
+        >
+          <ChevronRight size={16} />
+        </button>
+        <button
+          className={`icon-btn ${styles.actionBtn}`}
+          title="Renomear"
+          onClick={() => onStartRename(person)}
+        >
+          <Edit2 size={14} />
+        </button>
+        <button
+          className={`icon-btn danger ${styles.actionBtn}`}
+          title="Excluir"
+          onClick={() => onDelete(person)}
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
+    </div>
+  );
+});
 
 export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
   const { currentCatalog, navigate, refreshKey } = useApp();
@@ -32,11 +139,24 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
 
   useEffect(() => { load(); }, [load]);
 
-  const filtered = people.filter(p =>
-    !search || p.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const handleOpenPerson = useCallback((id: string) => {
+    navigate('person-detail', id);
+  }, [navigate]);
 
-  const handleRename = async (old_id: string) => {
+  const handleStartRename = useCallback((person: Person) => {
+    setRenamingId(person.id);
+    setRenameValue(person.name);
+  }, []);
+
+  const handleCancelRename = useCallback(() => {
+    setRenamingId(null);
+  }, []);
+
+  const handleRenameValue = useCallback((value: string) => {
+    setRenameValue(value);
+  }, []);
+
+  const handleRenameSubmit = useCallback(async (old_id: string) => {
     const trimmed = renameValue.trim();
     if (!trimmed || trimmed === old_id) { setRenamingId(null); return; }
     setError('');
@@ -47,12 +167,12 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
       setError('Erro ao renomear.');
     }
     setRenamingId(null);
-  };
+  }, [load, renameValue]);
 
-  const handleDelete = async (person: Person) => {
+  const handleDeletePerson = useCallback(async (person: Person) => {
     const confirmed = await onRequestConfirm({
       title: 'Excluir formando?',
-      message: `Excluir "${person.name}" e todas as suas ocorrências?`,
+      message: `Excluir "${person.name}" e todas as suas ocorrÃƒÂªncias?`,
       confirmText: 'Excluir',
       cancelText: 'Cancelar',
     });
@@ -63,7 +183,11 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
     } catch {
       setError('Erro ao excluir.');
     }
-  };
+  }, [load, onRequestConfirm]);
+
+  const filtered = useMemo(() => people.filter(p =>
+    !search || p.name.toLowerCase().includes(search.toLowerCase())
+  ), [people, search]);
 
   return (
     <div className="view-container">
@@ -71,7 +195,7 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
         <div>
           <h1>Formandos Identificados</h1>
           <p className="view-subtitle">
-            {currentCatalog && <><strong>{currentCatalog}</strong> · </>}
+            {currentCatalog && <><strong>{currentCatalog}</strong> Â· </>}
             {filtered.length === 1 ? '1 pessoa' : `${filtered.length} pessoas`}
           </p>
         </div>
@@ -103,83 +227,28 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
         </div>
       ) : (
         <div className="people-grid">
-          {filtered.map(person => (
-            <div key={person.id} className={`person-card ${styles.personCard}`}>
-              <div
-                className={`person-avatar ${styles.personAvatar}`}
-                onClick={() => navigate('person-detail', person.id)}
-              >
-                {person.cover_path ? (
-                  person.cover_box ? (
-                    <img
-                      src={api.faceThumbUrl(
-                        person.cover_path,
-                        person.cover_box[0], person.cover_box[1],
-                        person.cover_box[2], person.cover_box[3],
-                        160
-                      )}
-                      alt={person.name}
-                    />
-                  ) : (
-                    <img src={api.thumbUrl(person.cover_path, 160)} alt={person.name} />
-                  )
-                ) : (
-                  <div className="avatar-placeholder">
-                    {person.name.charAt(0).toUpperCase()}
-                  </div>
-                )}
-              </div>
-
-              <div className="person-info">
-                {renamingId === person.id ? (
-                  <div className="rename-inline">
-                    <input
-                      autoFocus
-                      value={renameValue}
-                      onChange={e => setRenameValue(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') handleRename(person.id);
-                        if (e.key === 'Escape') setRenamingId(null);
-                      }}
-                    />
-                    <button className={`icon-btn success ${styles.actionBtn}`} onClick={() => handleRename(person.id)}><Check size={14} /></button>
-                    <button className={`icon-btn ${styles.actionBtn}`} onClick={() => setRenamingId(null)}><X size={14} /></button>
-                </div>
-                ) : (
-                  <span className="person-name" title={person.name}>{person.name}</span>
-                )}
-                <span className="person-count">
-                  {(person.class_name || 'Sem turma')} · {person.total_photos} foto{person.total_photos !== 1 ? 's' : ''}
-                </span>
-              </div>
-
-              <div className="person-actions">
-                <button
-                  className={`icon-btn ${styles.actionBtn}`}
-                  title="Ver fotos"
-                  onClick={() => navigate('person-detail', person.id)}
-                >
-                  <ChevronRight size={16} />
-                </button>
-                <button
-                  className={`icon-btn ${styles.actionBtn}`}
-                  title="Renomear"
-                  onClick={() => { setRenamingId(person.id); setRenameValue(person.name); }}
-                >
-                  <Edit2 size={14} />
-                </button>
-                <button
-                  className={`icon-btn danger ${styles.actionBtn}`}
-                  title="Excluir"
-                  onClick={() => handleDelete(person)}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
+          {filtered.map((person) => (
+            <PeopleCard
+              key={person.id || person.name}
+              person={person}
+              isRenaming={renamingId === person.id}
+              renameValue={renameValue}
+              onOpen={handleOpenPerson}
+              onStartRename={handleStartRename}
+              onCancelRename={handleCancelRename}
+              onRenameValue={handleRenameValue}
+              onConfirmRename={handleRenameSubmit}
+              onDelete={handleDeletePerson}
+            />
           ))}
         </div>
       )}
     </div>
   );
 }
+
+
+
+
+
+
