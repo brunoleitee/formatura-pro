@@ -31,7 +31,7 @@ interface CloudFile {
 
 export default function CloudSyncView() {
   const [providers] = useState<CloudProvider[]>([
-    { id: 'google-drive', name: 'Google Drive', icon: '🎯' },
+    { id: 'google-drive', name: 'Google Drive', icon: '/google-drive.svg' },
     { id: 'dropbox', name: 'Dropbox', icon: '📦' },
     { id: 'onedrive', name: 'OneDrive', icon: '☁️' },
   ]);
@@ -335,7 +335,13 @@ export default function CloudSyncView() {
                 }
               }}
             >
-              <div className={styles.providerIcon}>{provider.icon}</div>
+              <div className={styles.providerIcon}>
+                {provider.icon.startsWith('/') ? (
+                  <img src={provider.icon} alt={provider.name} className={styles.providerIconImg} />
+                ) : (
+                  provider.icon
+                )}
+              </div>
               <div className={styles.providerInfo}>
                 <h3>{provider.name}</h3>
                 <span className={styles.providerStatus}>
