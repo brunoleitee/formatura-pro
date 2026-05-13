@@ -34,10 +34,14 @@ function getColumnsByZoom(zoom: number) {
 }
 
 function getThumbSizeForCard(cardWidth: number) {
-  if (cardWidth >= 700) return 1600;
-  if (cardWidth >= 500) return 1200;
+  if (cardWidth >= 700) return 1200;
+  if (cardWidth >= 500) return 1000;
   if (cardWidth >= 350) return 800;
   return 400;
+}
+
+function getLowThumbSizeForCard(cardWidth: number) {
+  return cardWidth >= 500 ? 600 : 400;
 }
 
 export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
@@ -91,6 +95,7 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
   const thumbHeight = useMemo(() => Math.max(120, Math.round(cardWidth * 0.66)), [cardWidth]);
   const cardHeight = useMemo(() => thumbHeight + CARD_INFO_HEIGHT, [thumbHeight]);
   const thumbSize = useMemo(() => getThumbSizeForCard(cardWidth), [cardWidth]);
+  const thumbLowSize = useMemo(() => getLowThumbSizeForCard(cardWidth), [cardWidth]);
   const rowCount = useMemo(() => Math.ceil(photos.length / columns), [photos.length, columns]);
   const totalRowsSize = useMemo(() => {
     if (rowCount === 0) return 0;
@@ -170,6 +175,7 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
                     thumbHeight={thumbHeight}
                     cardHeight={cardHeight}
                     thumbTargetSize={thumbSize}
+                    thumbLowTargetSize={thumbLowSize}
                     imgLoading={eager ? 'eager' : 'lazy'}
                     imgFetchPriority={eager ? 'high' : 'low'}
                     onClick={onPhotoClick}

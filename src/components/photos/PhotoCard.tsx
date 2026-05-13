@@ -1,4 +1,4 @@
-import React, { memo, useState, useEffect, useRef, useCallback } from 'react';
+import React, { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Image as ImageIcon, MoreHorizontal } from 'lucide-react';
 import { api, type Photo } from '../../services/api';
 import { isPhotoBlurry, isPhotoAttention } from '../../utils/qualityUtils';
@@ -12,6 +12,7 @@ interface PhotoCardProps {
   thumbHeight?: number;
   cardHeight?: number;
   thumbTargetSize?: number;
+  thumbLowTargetSize?: number;
   imgLoading?: 'eager' | 'lazy';
   imgFetchPriority?: 'high' | 'low' | 'auto';
   onClick: (photo: Photo, event: React.MouseEvent) => void;
@@ -78,17 +79,96 @@ function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number,
   );
 }
 
-export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thumbHeight, cardHeight, thumbTargetSize, imgLoading = 'lazy', imgFetchPriority = 'auto', onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
+const HIGH_HQ_CONCURRENCY = 4;
+type HighQueueEntry = {
+  url: string;
+  img: HTMLImageElement | null;
+  started: boolean;
+  cancelled: boolean;
+  onLoad: () => void;
+  onError: () => void;
+};
+
+const highQueue: HighQueueEntry[] = [];
+let activeHighLoads = 0;
+
+function pumpHighQueue() {
+  while (activeHighLoads < HIGH_HQ_CONCURRENCY && highQueue.length > 0) {
+    const entry = highQueue.shift();
+    if (!entry || entry.cancelled) continue;
+
+    activeHighLoads += 1;
+    entry.started = true;
+    const img = new window.Image();
+    entry.img = img;
+    img.decoding = 'async';
+    img.onload = () => {
+      activeHighLoads = Math.max(0, activeHighLoads - 1);
+      if (!entry.cancelled) entry.onLoad();
+      pumpHighQueue();
+    };
+    img.onerror = () => {
+      activeHighLoads = Math.max(0, activeHighLoads - 1);
+      if (!entry.cancelled) entry.onError();
+      pumpHighQueue();
+    };
+    img.src = entry.url;
+  }
+}
+
+function enqueueHighQualityLoad(url: string, onLoad: () => void, onError: () => void) {
+  const entry: HighQueueEntry = {
+    url,
+    img: null,
+    started: false,
+    cancelled: false,
+    onLoad,
+    onError,
+  };
+
+  highQueue.push(entry);
+  pumpHighQueue();
+
+  return () => {
+    if (entry.cancelled) return;
+    entry.cancelled = true;
+
+    const queuedIndex = highQueue.indexOf(entry);
+    if (queuedIndex >= 0) {
+      highQueue.splice(queuedIndex, 1);
+      return;
+    }
+
+    if (entry.started && entry.img) {
+      entry.img.onload = null;
+      entry.img.onerror = null;
+      entry.img.src = '';
+      activeHighLoads = Math.max(0, activeHighLoads - 1);
+      pumpHighQueue();
+    }
+  };
+}
+
+export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thumbHeight, cardHeight, thumbTargetSize, thumbLowTargetSize, imgLoading = 'lazy', imgFetchPriority = 'auto', onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
+  const lowSize = thumbLowTargetSize ?? 400;
+  const highSize = thumbTargetSize ?? lowSize;
+  const lowUrl = useMemo(() => api.thumbUrl(photo.path, lowSize), [photo.path, lowSize]);
+  const highUrl = useMemo(() => api.thumbUrl(photo.path, highSize), [photo.path, highSize]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [isHighQuality, setIsHighQuality] = useState(false);
+  const [displaySrc, setDisplaySrc] = useState(() => lowUrl);
   const [thumbSize, setThumbSize] = useState({ w: 0, h: 0 });
   const [isHovered, setIsHovered] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragSelectionCount, setDragSelectionCount] = useState(0);
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const loadedSrcRef = useRef<string | null>(null);
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
   const isDraggingInternal = useRef(false);
+  const promoteCancelRef = useRef<(() => void) | null>(null);
+  const promoteTimerRef = useRef<number | null>(null);
 
   const isMapped = isPhotoMapped(photo);
   const isDiscarded = photo.discarded === true;
@@ -97,6 +177,59 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
     .map((f) => f.aluno_id)
     .filter((v, idx, a) => a.indexOf(v) === idx);
   const firstName = knownNames.length > 0 ? knownNames.join(', ') : 'Não mapeada';
+
+  useEffect(() => {
+    const shouldPromoteHigh = highUrl !== lowUrl && highSize > lowSize;
+    const alreadyLoadedLow = loadedSrcRef.current === lowUrl;
+
+    if (promoteTimerRef.current != null) {
+      window.clearTimeout(promoteTimerRef.current);
+      promoteTimerRef.current = null;
+    }
+    promoteCancelRef.current?.();
+    promoteCancelRef.current = null;
+
+    setHasError(false);
+    setIsHighQuality(false);
+    setDisplaySrc(lowUrl);
+    if (!alreadyLoadedLow) {
+      setIsLoaded(false);
+    }
+
+    if (!shouldPromoteHigh) {
+      return () => {
+        if (promoteTimerRef.current != null) {
+          window.clearTimeout(promoteTimerRef.current);
+          promoteTimerRef.current = null;
+        }
+        promoteCancelRef.current?.();
+        promoteCancelRef.current = null;
+      };
+    }
+
+    promoteTimerRef.current = window.setTimeout(() => {
+      promoteCancelRef.current = enqueueHighQualityLoad(
+        highUrl,
+        () => {
+          setDisplaySrc(highUrl);
+          setIsHighQuality(true);
+        },
+        () => {
+          setIsHighQuality(false);
+        }
+      );
+      promoteTimerRef.current = null;
+    }, 150);
+
+    return () => {
+      if (promoteTimerRef.current != null) {
+        window.clearTimeout(promoteTimerRef.current);
+        promoteTimerRef.current = null;
+      }
+      promoteCancelRef.current?.();
+      promoteCancelRef.current = null;
+    };
+  }, [lowUrl, highUrl, highSize, lowSize]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -163,9 +296,12 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
   };
 
   const handleImageLoad = useCallback(() => {
+    if (displaySrc) {
+      loadedSrcRef.current = displaySrc;
+    }
     setIsLoaded(true);
     onFirstThumbLoad?.();
-  }, [onFirstThumbLoad]);
+  }, [displaySrc, onFirstThumbLoad]);
 
   const cardStyle: React.CSSProperties = {
     width: cardWidth ? `${cardWidth}px` : '100%',
@@ -215,15 +351,27 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
           <>
             <img
               ref={imgRef}
-              src={api.thumbUrl(photo.path, thumbTargetSize ?? 300)}
+              src={displaySrc || api.thumbUrl(photo.path, thumbLowTargetSize ?? 400)}
               alt={photo.name}
               loading={imgLoading}
               fetchPriority={imgFetchPriority}
               decoding="async"
               draggable={false}
-              style={{ opacity: isLoaded ? 1 : 0, userSelect: 'none', pointerEvents: 'none' }}
+              style={{
+                opacity: isLoaded ? 1 : 0,
+                userSelect: 'none',
+                pointerEvents: 'none',
+                filter: isHighQuality ? 'none' : 'blur(0.5px)',
+              }}
               onLoad={handleImageLoad}
-              onError={() => setHasError(true)}
+              onError={() => {
+                if (!loadedSrcRef.current) {
+                  setHasError(true);
+                } else {
+                  setDisplaySrc(loadedSrcRef.current);
+                  setIsHighQuality(false);
+                }
+              }}
             />
             <button
               data-interactive="true"
