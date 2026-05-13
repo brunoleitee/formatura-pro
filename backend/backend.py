@@ -2361,6 +2361,40 @@ def cloud_google_download_full(file_id: str = ""):
         return {"error": str(e)}
 
 
+@app.get("/api/photo-source/full")
+def photo_source_full(path: str = ""):
+    try:
+        if not path:
+            raise HTTPException(status_code=400, detail="path obrigatorio")
+
+        from photo_sources import resolve_photo_source
+        photo = {"foto_path": path}
+        source = resolve_photo_source(photo)
+        local_path = source.get_full_path(photo)
+
+        if local_path and os.path.exists(local_path):
+            print(f"[PhotoSource] full: {local_path}")
+            return FileResponse(
+                path=local_path,
+                media_type="image/jpeg",
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+
+        from photo_sources.google_drive_source import GoogleDrivePhotoSource
+        if isinstance(source, GoogleDrivePhotoSource):
+            source.trigger_download(photo)
+            print(f"[PhotoSource] download triggered for: {path}")
+            return Response(status_code=202, content='{"status":"downloading"}', media_type="application/json")
+
+        raise HTTPException(status_code=404, detail="Arquivo nao encontrado")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[PhotoSource] erro: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/")
 def root_handler(code: str = Query(None), state: str = Query(None)):
     if code:
