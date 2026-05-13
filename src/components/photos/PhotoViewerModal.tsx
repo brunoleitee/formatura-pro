@@ -65,117 +65,26 @@ export function PhotoViewerModal({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
-
-  // Alta qualidade dinÃ¢mica
-  const [useHighRes, setUseHighRes] = useState(false);
-  const [highResLoaded, setHighResLoaded] = useState(false);
-  const [highResLoading, setHighResLoading] = useState(false);
-  const [highResError, setHighResError] = useState<string | null>(null);
-  const [currentSrc, setCurrentSrc] = useState(api.thumbUrl(photo.path, 1200, 90));
+  const VIEWER_PREVIEW_SIZE = 1800;
+  const [currentSrc, setCurrentSrc] = useState(api.thumbUrl(photo.path, VIEWER_PREVIEW_SIZE, 92));
   const navigationPhotos = (contextPhotos?.length ? contextPhotos : allPhotos);
-  const originalSrc = api.fullResUrl(photo.path);
-  const originalLoadTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const viewerTransitionRef = useRef<'open' | 'next' | 'prev'>('open');
   const viewerLoadStartRef = useRef<number | null>(null);
   const viewerMountedRef = useRef(false);
   const viewerLoggedRef = useRef(false);
 
-  const clearOriginalLoadTimeout = useCallback(() => {
-    if (originalLoadTimeoutRef.current !== null) {
-      window.clearTimeout(originalLoadTimeoutRef.current);
-      originalLoadTimeoutRef.current = null;
-    }
-  }, []);
-
-  const finishOriginalLoad = useCallback(() => {
-    clearOriginalLoadTimeout();
-    setHighResLoaded(true);
-    setHighResLoading(false);
-  }, [clearOriginalLoadTimeout]);
-
-  const failOriginalLoad = useCallback((message: string) => {
-    clearOriginalLoadTimeout();
-    setHighResLoaded(false);
-    setHighResLoading(false);
-    setHighResError(message);
-    setCurrentSrc(api.thumbUrl(photo.path, 1200, 90));
-  }, [clearOriginalLoadTimeout, photo.path]);
-
   useEffect(() => {
-    // Reset quando troca de foto
     viewerLoadStartRef.current = perfNow();
     setIsLoaded(false);
-    setUseHighRes(false);
-    setHighResLoaded(false);
-    setHighResLoading(false);
-    setHighResError(null);
-    setCurrentSrc(api.thumbUrl(photo.path, 1200, 90));
-    clearOriginalLoadTimeout();
+    setCurrentSrc(api.thumbUrl(photo.path, VIEWER_PREVIEW_SIZE, 92));
     viewerLoggedRef.current = false;
     if (viewerMountedRef.current) {
       logPerf(`viewer switch ${viewerTransitionRef.current}`, viewerLoadStartRef.current, photo.path);
     } else {
       viewerMountedRef.current = true;
     }
-  }, [clearOriginalLoadTimeout, photo.path]);
+  }, [photo.path]);
 
-  useEffect(() => {
-    if (!highResLoading) return;
-
-    clearOriginalLoadTimeout();
-    originalLoadTimeoutRef.current = window.setTimeout(() => {
-      setHighResLoading(false);
-    }, 8000);
-
-    return clearOriginalLoadTimeout;
-  }, [clearOriginalLoadTimeout, highResLoading, photo.path]);
-
-  useEffect(() => {
-    const img = imageRef.current;
-    if (!img || currentSrc !== originalSrc) return;
-
-    if (img.complete) {
-      finishOriginalLoad();
-      if (viewerLoadStartRef.current !== null && !viewerLoggedRef.current) {
-        viewerLoggedRef.current = true;
-        logPerf(`viewer loaded ${viewerTransitionRef.current}`, viewerLoadStartRef.current, photo.path);
-      }
-    }
-  }, [currentSrc, finishOriginalLoad, originalSrc]);
-
-  useEffect(() => {
-    // Se zoom for alto, carregar original
-    if (zoom >= 1.0 && !useHighRes && !highResLoaded && !highResLoading && !highResError) {
-      setUseHighRes(true);
-      setHighResLoading(true);
-      setHighResError(null);
-      clearOriginalLoadTimeout();
-      originalLoadTimeoutRef.current = window.setTimeout(() => {
-        setHighResLoading(false);
-      }, 8000);
-
-      const img = new window.Image();
-      const highResUrl = originalSrc;
-      let cancelled = false;
-      img.onload = () => {
-        if (cancelled) return;
-        setCurrentSrc(highResUrl);
-        setHighResLoaded(true);
-        finishOriginalLoad();
-      };
-      img.onerror = () => {
-        if (cancelled) return;
-        failOriginalLoad("Não foi possível carregar a imagem original");
-      };
-      img.src = highResUrl;
-      return () => {
-        cancelled = true;
-        clearOriginalLoadTimeout();
-        img.onload = null;
-        img.onerror = null;
-      };
-    }
-  }, [clearOriginalLoadTimeout, failOriginalLoad, finishOriginalLoad, highResError, highResLoaded, highResLoading, originalSrc, photo.path, useHighRes, zoom]);
   const imageRef = useRef<HTMLImageElement>(null);
   const imageWrapRef = useRef<HTMLDivElement>(null);
   const imageStageRef = useRef<HTMLDivElement>(null);
@@ -361,10 +270,10 @@ export function PhotoViewerModal({
     const targets = [navigationPhotos[currentIndex - 1], navigationPhotos[currentIndex], navigationPhotos[currentIndex + 1]]
       .filter((item): item is Photo => Boolean(item));
     const preloads = targets
-      .filter((item) => item.path && item.path !== photo.path)
-      .map((item) => {
+        .filter((item) => item.path && item.path !== photo.path)
+        .map((item) => {
         const img = new window.Image();
-        img.src = api.thumbUrl(item.path, 500, 88);
+        img.src = api.thumbUrl(item.path, 1200, 90);
         return img;
       });
     return () => {
@@ -737,6 +646,8 @@ export function PhotoViewerModal({
                     opacity: isLoaded ? 1 : 0,
                     imageRendering: zoom >= 1 ? 'auto' : 'auto'
                   }}
+                  loading="eager"
+                  decoding="async"
                   onLoad={(e) => {
                     const img = e.currentTarget;
                     const stage = imageStageRef.current;
@@ -756,31 +667,19 @@ export function PhotoViewerModal({
                       y: (maxH - h) / 2
                     });
                     setIsLoaded(true);
-                    if (img.src === originalSrc || currentSrc === originalSrc) {
-                      finishOriginalLoad();
-                      if (viewerLoadStartRef.current !== null && !viewerLoggedRef.current) {
-                        viewerLoggedRef.current = true;
-                        logPerf(`viewer loaded ${viewerTransitionRef.current}`, viewerLoadStartRef.current, photo.path);
-                      }
+                    if (viewerLoadStartRef.current !== null && !viewerLoggedRef.current) {
+                      viewerLoggedRef.current = true;
+                      logPerf(`viewer loaded ${viewerTransitionRef.current}`, viewerLoadStartRef.current, photo.path);
                     }
                   }}
                   onError={() => {
-                    if (currentSrc === originalSrc) {
-                      failOriginalLoad('Não foi possível carregar a imagem original');
+                    setCurrentSrc(api.thumbUrl(photo.path, VIEWER_PREVIEW_SIZE, 92));
+                    if (viewerLoadStartRef.current !== null && !viewerLoggedRef.current) {
+                      viewerLoggedRef.current = true;
+                      logPerf(`viewer loaded ${viewerTransitionRef.current}`, viewerLoadStartRef.current, photo.path);
                     }
                   }}
                 />
-
-                {highResLoading && (
-                  <div className={styles.highResIndicator}>
-                    <div className={styles.highResSpinner} />
-                    <span>Carregando original...</span>
-                  </div>
-                )}
-
-                {highResError && !highResLoading && (
-                  <div className={styles.highResError}>{highResError}</div>
-                )}
 
                 {isDiscarded && <div className={styles.discardBadge}>DESCARTADA</div>}
 
@@ -1104,3 +1003,4 @@ export function PhotoViewerModal({
     </div>
   );
 }
+
