@@ -239,9 +239,8 @@ export default function CloudSyncView() {
     loadFolders(folderId);
   };
 
-  function toAbsoluteUrl(url: string): string {
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
-    return `http://127.0.0.1:8000${url.startsWith('/') ? url : '/' + url}`;
+  function buildPhotoSourceUrl(fileId: string): string {
+    return `http://127.0.0.1:8000/api/photo-source/full?path=cloud://${fileId}&_t=${Date.now()}`;
   }
 
   const handleOpenFile = useCallback(async (file: CloudFile) => {
@@ -254,9 +253,8 @@ export default function CloudSyncView() {
     try {
       const result = await cloudApi.downloadFull(file.drive_file_id);
       if (result.success && result.url) {
-        const fullUrl = `${toAbsoluteUrl(result.url)}&_t=${Date.now()}`;
-        console.log("[CloudOpen] downloaded full:", result.url);
-        console.log("[CloudOpen] previewUrl final:", fullUrl);
+        const fullUrl = buildPhotoSourceUrl(file.drive_file_id);
+        console.log("[Viewer] usando PhotoSource full:", fullUrl);
         setPreviewLoading(false);
         const pf = { fileId: file.drive_file_id, url: fullUrl, name: file.name };
         previewFileRef.current = pf;
@@ -267,9 +265,8 @@ export default function CloudSyncView() {
           if (previewLoadedRef.current) break;
           const poll = await cloudApi.downloadFull(file.drive_file_id);
           if (poll.success && poll.url) {
-            const fullUrl = `${toAbsoluteUrl(poll.url)}&_t=${Date.now()}`;
-            console.log("[CloudOpen] downloaded full (poll):", poll.url);
-            console.log("[CloudOpen] previewUrl final:", fullUrl);
+            const fullUrl = buildPhotoSourceUrl(file.drive_file_id);
+            console.log("[Viewer] usando PhotoSource full (poll):", fullUrl);
             setPreviewLoading(false);
             const pf = { fileId: file.drive_file_id, url: fullUrl, name: file.name };
             previewFileRef.current = pf;
