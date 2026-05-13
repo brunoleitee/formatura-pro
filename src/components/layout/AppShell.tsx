@@ -7,6 +7,7 @@ import CatalogModal from '../CatalogModal';
 import ScanModal from '../ScanModal';
 import { ScanProcessingCenter, type ScanTimelineEntry } from '../scan/ScanProcessingCenter';
 import CatalogView from '../../views/CatalogView';
+import DashboardView from '../../views/DashboardView';
 import PeopleView from '../../views/PeopleView';
 import PersonDetailView from '../../views/PersonDetailView';
 import ReviewView from '../../views/ReviewView';
@@ -321,6 +322,7 @@ export function AppShell() {
 
   const renderView = () => {
     switch (activeView) {
+      case 'dashboard':    return <DashboardView />;
       case 'photos':        return <CatalogView />;
       case 'people':        return <PeopleView onRequestConfirm={requestConfirm} />;
       case 'person-detail': return <PersonDetailView />;

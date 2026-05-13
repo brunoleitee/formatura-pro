@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, type ReactNode } from
 import { api } from '../services/api';
 
 export type ViewName =
+  | 'dashboard'
   | 'photos'
   | 'people'
   | 'person-detail'

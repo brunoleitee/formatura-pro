@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   FolderOpen, ChevronDown, ChevronRight, Trash2,
-  Image as ImageIcon, Users, UserCheck, Download,
+  Image as ImageIcon, Users, UserCheck, Download, LayoutDashboard,
   Settings, Search, ScanLine, Loader, Users as UsersIcon,
   Folder,
 } from 'lucide-react';
@@ -65,6 +65,7 @@ export function Sidebar({
   };
 
   const navItems: { view: ViewName; icon: React.ReactNode; label: string }[] = [
+    { view: 'dashboard', icon: <LayoutDashboard size={17} />, label: 'Painel' },
     { view: 'photos',  icon: <ImageIcon size={17} />, label: 'Catálogo' },
     { view: 'people',  icon: <Users size={17} />,     label: 'Identificados' },
     { view: 'review',  icon: <UserCheck size={17} />, label: 'Revisão IA' },
