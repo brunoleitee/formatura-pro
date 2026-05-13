@@ -2047,9 +2047,16 @@ def cloud_thumb(file_id: str = "", size: int = 200):
         thumb_path = cache.get_thumb_path(file_id)
 
         if cache.thumb_exists(file_id):
-            print(f"[CloudThumb] cache hit: {thumb_path}")
-            return FileResponse(thumb_path, media_type="image/jpeg",
-                                headers={"Cache-Control": "public, max-age=86400"})
+            if _is_valid_image_file(thumb_path):
+                print(f"[CloudThumb] cache hit: {thumb_path}")
+                return FileResponse(thumb_path, media_type="image/jpeg",
+                                    headers={"Cache-Control": "public, max-age=86400"})
+            else:
+                print(f"[CloudThumb] cache corrompido, removendo: {thumb_path}")
+                try:
+                    os.remove(thumb_path)
+                except Exception:
+                    pass
 
         print(f"[CloudThumb] cache miss: {file_id}")
 
@@ -2084,6 +2091,25 @@ def cloud_thumb(file_id: str = "", size: int = 200):
                         headers={"Cache-Control": "no-store, must-revalidate"})
 
 
+IMAGE_MAGIC_BYTES = {
+    b'\xff\xd8\xff': 'image/jpeg',
+    b'\x89PNG': 'image/png',
+    b'GIF8': 'image/gif',
+    b'RIFF': 'image/webp',
+}
+
+def _is_valid_image_file(path: str) -> bool:
+    try:
+        with open(path, 'rb') as f:
+            header = f.read(8)
+        for magic in IMAGE_MAGIC_BYTES:
+            if header.startswith(magic):
+                return True
+        return False
+    except Exception:
+        return False
+
+
 @app.get("/api/cloud/full")
 def cloud_full(file_id: str = ""):
     try:
@@ -2091,15 +2117,34 @@ def cloud_full(file_id: str = ""):
         from cloud import is_authenticated, drive_manager
 
         if not file_id:
+            print("[CloudFull] file_id vazio")
             return Response(content=PLACEHOLDER_SVG, media_type="image/svg+xml",
                             headers={"Cache-Control": "no-store, must-revalidate"})
 
+        print(f"[CloudFull] file_id = {file_id}")
         original_path = cache.get_original_path(file_id)
+        print(f"[CloudFull] local_path = {original_path}")
 
-        if cache.original_exists(file_id):
-            print(f"[CloudFull] cache hit: {original_path}")
-            return FileResponse(original_path,
-                                headers={"Cache-Control": "public, max-age=86400"})
+        local_path_obj = Path(original_path)
+
+        if local_path_obj.exists():
+            file_size = local_path_obj.stat().st_size
+            is_valid = _is_valid_image_file(original_path)
+            print(f"[CloudFull] exists = True, size = {file_size}, is_valid_image = {is_valid}")
+
+            if is_valid:
+                print(f"[CloudFull] cache hit valido: {original_path}")
+                return FileResponse(
+                    path=str(local_path_obj),
+                    media_type="image/jpeg",
+                    headers={"Cache-Control": "public, max-age=86400"}
+                )
+            else:
+                print(f"[CloudFull] cache corrompido, removendo e redisponibilizando: {original_path}")
+                try:
+                    local_path_obj.unlink()
+                except Exception:
+                    pass
 
         print(f"[CloudFull] cache miss: {file_id}")
 
