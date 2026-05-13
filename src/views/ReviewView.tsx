@@ -117,8 +117,9 @@ function ReviewViewContent() {
   const [assignmentState, setAssignmentState] = useState<{ clusterId: string; studentName: string; className: string; status: string } | null>(null);
   const [assignmentToast, setAssignmentToast] = useState<string | null>(null);
   const [reviewToast, setReviewToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null);
-  const wasGraduationRunningRef = useRef(false);
+const wasGraduationRunningRef = useRef(false);
   const detailRequestRef = useRef(0);
+  const clusterCacheRef = useRef<Map<string, { cluster: RichCluster; review_ready: boolean }>>(new Map());
 
   const load = useCallback(async () => {
     if (!currentCatalog) return;
@@ -170,6 +171,14 @@ function ReviewViewContent() {
 
   const loadClusterDetail = useCallback(async (clusterId: string) => {
     if (!currentCatalog || !clusterId) return;
+
+    const cached = clusterCacheRef.current.get(clusterId);
+    if (cached) {
+      setSelected(cached.cluster);
+      setReviewReady(Boolean(cached.review_ready));
+      return;
+    }
+
     const requestId = detailRequestRef.current + 1;
     detailRequestRef.current = requestId;
     setSelected((current) => (current?.cluster_id === clusterId ? current : null));
@@ -177,6 +186,9 @@ function ReviewViewContent() {
     try {
       const data = await api.getReviewClusterDetail(currentCatalog, clusterId);
       if (detailRequestRef.current !== requestId) return;
+      if (data?.cluster) {
+        clusterCacheRef.current.set(clusterId, { cluster: data.cluster, review_ready: data.review_ready ?? true });
+      }
       setSelected(data?.cluster ?? null);
       setReviewReady(Boolean(data?.review_ready ?? true));
     } catch {
