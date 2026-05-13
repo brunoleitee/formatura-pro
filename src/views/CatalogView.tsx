@@ -6,12 +6,12 @@ import { useCatalogPhotos } from '../hooks/useCatalogPhotos';
 import { usePhotoFilters } from '../hooks/usePhotoFilters';
 import { usePhotoSelection, getPhotoId } from '../hooks/usePhotoSelection';
 import { usePhotoViewer } from '../hooks/usePhotoViewer';
-import { PhotoGrid } from '../components/photos/PhotoGrid';
 import { PhotoDetailPanel } from '../components/photos/PhotoDetailPanel';
 import { PhotoViewerModal } from '../components/photos/PhotoViewerModal';
 import { PhotoFilters } from '../components/photos/PhotoFilters';
 import { ZoomControl } from '../components/photos/ZoomControl';
 import PhotoBulkActionsBar from '../components/photos/PhotoBulkActionsBar';
+import { VirtualizedPhotoGrid } from '../components/photos/VirtualizedPhotoGrid';
 import { extractSubfolders } from '../utils/pathUtils';
 import { logPerf, perfNow } from '../utils/perf';
 
@@ -308,18 +308,19 @@ export default function CatalogView() {
             </div>
           ) : (
             <>
-              <PhotoGrid
+              <VirtualizedPhotoGrid
                 photos={filteredPhotos}
                 selectedPaths={selectedPaths}
                 onPhotoClick={toggleSelection}
                 onDoubleClick={setViewerPhoto}
-              onOpenDetails={setDetailsPhoto}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-              onFirstThumbLoad={handleFirstThumbLoad}
-              zoom={size}
-              getSelectionCount={getSelectionCount}
-            />
+                onOpenDetails={setDetailsPhoto}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                onFirstThumbLoad={handleFirstThumbLoad}
+                zoom={size}
+                getSelectionCount={getSelectionCount}
+                resetScrollKey={`${currentCatalog}|${catalogSubfolder ?? ''}|${filter}|${hideDiscarded ? '1' : '0'}`}
+              />
             </>
           )}
         </div>
