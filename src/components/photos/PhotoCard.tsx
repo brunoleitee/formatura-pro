@@ -11,6 +11,7 @@ interface PhotoCardProps {
   cardWidth?: number;
   thumbHeight?: number;
   cardHeight?: number;
+  thumbTargetSize?: number;
   imgLoading?: 'eager' | 'lazy';
   imgFetchPriority?: 'high' | 'low' | 'auto';
   onClick: (photo: Photo, event: React.MouseEvent) => void;
@@ -77,7 +78,7 @@ function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number,
   );
 }
 
-export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thumbHeight, cardHeight, imgLoading = 'lazy', imgFetchPriority = 'auto', onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
+export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thumbHeight, cardHeight, thumbTargetSize, imgLoading = 'lazy', imgFetchPriority = 'auto', onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [thumbSize, setThumbSize] = useState({ w: 0, h: 0 });
@@ -214,7 +215,7 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
           <>
             <img
               ref={imgRef}
-              src={api.thumbUrl(photo.path, 300)}
+              src={api.thumbUrl(photo.path, thumbTargetSize ?? 300)}
               alt={photo.name}
               loading={imgLoading}
               fetchPriority={imgFetchPriority}
