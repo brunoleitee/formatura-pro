@@ -63,6 +63,12 @@ class DriveCache:
     def get_original_path(self, file_id: str) -> str:
         return os.path.join(self.originals_dir, f"{file_id}.jpg")
 
+    def get_thumb_dir(self) -> str:
+        return self.thumb_dir
+
+    def get_preview_dir(self) -> str:
+        return self.preview_dir
+
     def get_original_dir(self) -> str:
         return self.originals_dir
 
