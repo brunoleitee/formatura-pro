@@ -1917,9 +1917,13 @@ def get_discard_candidates(catalog: str = ""):
 def cloud_google_auth_start():
     try:
         from cloud import get_login_url
+        from cloud.drive_auth import CLIENT_SECRETS_FILE
+        print(f"[auth/start] CLIENT_SECRETS_FILE={CLIENT_SECRETS_FILE} exists={CLIENT_SECRETS_FILE.exists()}")
+        if not CLIENT_SECRETS_FILE.exists():
+            return {"error": f"client_secrets.json não encontrado em: {CLIENT_SECRETS_FILE}"}
         auth_url = get_login_url()
         if not auth_url:
-            return {"error": "Client secrets não encontrado. Crie data/cloud/client_secrets.json"}
+            return {"error": "get_login_url() retornou None. Verifique logs do terminal."}
         return {"auth_url": auth_url}
     except Exception as e:
         return {"error": str(e)}
