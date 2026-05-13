@@ -172,6 +172,28 @@ const LiveFaceCard = memo(function LiveFaceCard({
 }) {
   const label = faceLabel(face);
   const hint = faceHint(face);
+  const thumbUrl = api.thumbUrl(face.path, 400, 88);
+  const previewUrl = api.previewUrl(face.path, 600);
+  const [src, setSrc] = useState(thumbUrl);
+  const [triedPreview, setTriedPreview] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setSrc(thumbUrl);
+    setTriedPreview(false);
+    setLoaded(false);
+    setFailed(false);
+  }, [thumbUrl, face.path]);
+
+  const handleError = () => {
+    if (!triedPreview && src !== previewUrl) {
+      setTriedPreview(true);
+      setSrc(previewUrl);
+      return;
+    }
+    setFailed(true);
+  };
 
   return (
     <motion.article
@@ -183,13 +205,22 @@ const LiveFaceCard = memo(function LiveFaceCard({
       transition={{ duration: 0.18, ease: 'easeOut' }}
     >
       <div className={styles.faceImageWrap}>
-        <img
-          className={styles.faceImage}
-          src={api.thumbUrl(face.path, 520, 90)}
-          alt={label}
-          loading="lazy"
-          decoding="async"
-        />
+        {!failed ? (
+          <img
+            className={`${styles.faceImage} ${loaded ? styles.faceImageLoaded : styles.faceImageLoading}`}
+            src={src}
+            alt={label}
+            loading="eager"
+            decoding="async"
+            fetchPriority="high"
+            onLoad={() => setLoaded(true)}
+            onError={handleError}
+          />
+        ) : (
+          <div className={styles.faceImageFallback} aria-label={label}>
+            <ScanFace size={18} />
+          </div>
+        )}
       </div>
       <div className={styles.faceMeta}>
         <span className={styles.faceLabel}>{photoSequenceLabel(face.path)}</span>
