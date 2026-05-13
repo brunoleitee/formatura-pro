@@ -2,12 +2,17 @@ import os
 import json
 import logging
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 TOKEN_FILE = "data/cloud/google_token.json"
+CLIENT_SECRETS_FILE = "data/cloud/client_secrets.json"
+SCOPES = [
+    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/drive.file",
+]
 
 
 def get_token_path() -> str:
@@ -102,4 +107,55 @@ def exchange_code_for_token(code: str) -> Optional[Dict[str, Any]]:
 
     except Exception as e:
         logger.error(f"Erro ao trocar código por token: {e}")
+        return None
+
+
+def get_login_url() -> Optional[str]:
+    try:
+        from google_auth_oauthlib.flow import Flow
+
+        if not os.path.exists(CLIENT_SECRETS_FILE):
+            logger.error(f"Arquivo de client secrets não encontrado: {CLIENT_SECRETS_FILE}")
+            return None
+
+        flow = Flow.from_client_secrets_file(CLIENT_SECRETS_FILE, scopes=SCOPES)
+        flow.redirect_uri = "http://localhost:8000/api/cloud/google/auth/callback"
+
+        auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
+        return auth_url
+    except Exception as e:
+        logger.error(f"Erro ao gerar URL de login: {e}")
+        return None
+
+
+def get_user_info() -> Optional[Dict[str, Any]]:
+    if not is_authenticated():
+        return None
+    try:
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+
+        token_data = load_token()
+        if not token_data:
+            return None
+
+        credentials = Credentials(
+            token=token_data.get("token"),
+            refresh_token=token_data.get("refresh_token"),
+            token_uri=token_data.get("token_uri"),
+            client_id=token_data.get("client_id"),
+            client_secret=token_data.get("client_secret"),
+            scopes=token_data.get("scopes", []),
+        )
+
+        service = build("oauth2", "v2", credentials=credentials)
+        user_info = service.userinfo().get().execute()
+
+        return {
+            "email": user_info.get("email"),
+            "name": user_info.get("name"),
+            "picture": user_info.get("picture"),
+        }
+    except Exception as e:
+        logger.error(f"Erro ao buscar info do usuário: {e}")
         return None

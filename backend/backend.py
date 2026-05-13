@@ -1908,6 +1908,76 @@ def get_drafts(catalog: str = "", path: str = ""):
 def get_discard_candidates(catalog: str = ""):
     return mm.get_discard_candidates(catalog)
 
+
+# =====================
+# Cloud / Google Drive
+# =====================
+
+@app.get("/api/cloud/google/auth/start")
+def cloud_google_auth_start():
+    try:
+        from cloud import get_login_url
+        auth_url = get_login_url()
+        if not auth_url:
+            return {"error": "Client secrets não encontrado. Crie data/cloud/client_secrets.json"}
+        return {"auth_url": auth_url}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/cloud/google/auth/callback")
+def cloud_google_auth_callback(code: str = ""):
+    try:
+        from cloud import exchange_code_for_token, get_user_info
+        token = exchange_code_for_token(code)
+        if not token:
+            return {"error": "Falha ao obter token"}
+        user_info = get_user_info() or {}
+        return {"status": "ok", "email": user_info.get("email"), "name": user_info.get("name")}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/cloud/google/status")
+def cloud_google_status():
+    try:
+        from cloud import is_authenticated, load_token, get_user_info
+        if not is_authenticated():
+            return {"connected": False}
+        token_data = load_token()
+        user_info = get_user_info() or {}
+        return {
+            "connected": True,
+            "email": user_info.get("email", "Unknown"),
+            "name": user_info.get("name", "Unknown"),
+            "expires_at": token_data.get("expires_at") if token_data else None,
+        }
+    except Exception as e:
+        return {"connected": False, "error": str(e)}
+
+
+@app.post("/api/cloud/google/logout")
+def cloud_google_logout():
+    try:
+        from cloud import clear_token
+        clear_token()
+        return {"status": "ok"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/cloud/google/folders")
+def cloud_google_folders(parent_id: str = "root"):
+    try:
+        from cloud import is_authenticated, drive_manager
+        if not is_authenticated():
+            return {"error": "Não conectado ao Google Drive", "folders": []}
+        folders = drive_manager.list_folders(parent_id)
+        return {"folders": [f.model_dump() for f in folders]}
+    except Exception as e:
+        return {"error": str(e), "folders": []}
+
+
 configure_modules()
 
 import webbrowser

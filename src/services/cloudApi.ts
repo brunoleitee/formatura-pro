@@ -1,32 +1,41 @@
 import { API_BASE, fetchJSON, post } from './api/core';
 
+interface GoogleDriveStatus {
+  connected: boolean;
+  email?: string;
+  name?: string;
+  expires_at?: number;
+  error?: string;
+}
+
+interface Folder {
+  id: string;
+  name: string;
+  parent?: string;
+  modifiedTime?: string;
+}
+
+interface FoldersResponse {
+  folders: Folder[];
+  error?: string;
+}
+
 export const cloudApi = {
-  getAuthUrl: (provider: string) =>
-    fetchJSON<{ auth_url: string }>(`${API_BASE}/cloud/${provider}/auth-url`),
+  getGoogleAuthUrl: () =>
+    fetchJSON<{ auth_url: string; error?: string }>(`${API_BASE}/cloud/google/auth/start`),
 
-  getCallback: (provider: string, code: string) =>
-    post(`${API_BASE}/cloud/${provider}/callback`, { code }),
-
-  disconnect: (provider: string) =>
-    post(`${API_BASE}/cloud/${provider}/disconnect`, {}),
-
-  listFolders: (provider: string, folderId?: string) =>
-    fetchJSON<{ folders: unknown[] }>(
-      `${API_BASE}/cloud/${provider}/folders${folderId ? `?parent=${folderId}` : ''}`
+  googleCallback: (code: string) =>
+    post<{ status: string; email?: string; name?: string; error?: string }>(
+      `${API_BASE}/cloud/google/auth/callback?code=${encodeURIComponent(code)}`,
+      {}
     ),
 
-  getSyncStatus: () =>
-    fetchJSON<{
-      is_online: boolean;
-      pending_uploads: number;
-      pending_downloads: number;
-      last_sync: string;
-      sync_progress: number;
-    }>(`${API_BASE}/cloud/status`),
+  getGoogleStatus: () =>
+    fetchJSON<GoogleDriveStatus>(`${API_BASE}/cloud/google/status`),
 
-  startSync: (folderId: string) =>
-    post(`${API_BASE}/cloud/sync/start`, { folder_id: folderId }),
+  googleLogout: () =>
+    post<{ status: string; error?: string }>(`${API_BASE}/cloud/google/logout`, {}),
 
-  getThumb: (provider: string, fileId: string, size?: number) =>
-    `${API_BASE}/cloud/${provider}/thumb?file_id=${fileId}${size ? `&size=${size}` : ''}`,
+  getGoogleFolders: (parentId: string = "root") =>
+    fetchJSON<FoldersResponse>(`${API_BASE}/cloud/google/folders?parent_id=${parentId}`),
 };
