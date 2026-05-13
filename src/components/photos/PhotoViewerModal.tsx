@@ -58,14 +58,14 @@ export function PhotoViewerModal({
   const [selectedSimilarIds, setSelectedSimilarIds] = useState<Set<number>>(new Set());
   const [applyingSimilarName, setApplyingSimilarName] = useState(false);
   const [similarViewMode, setSimilarViewMode] = useState<'face' | 'photo'>('face');
-  const [showManualModal, setShowManualModal] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const [showManualModal, setShowManualModal] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [manualAlunoId, setManualAlunoId] = useState('');
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
 
-  // Alta qualidade dinâmica
+  // Alta qualidade dinÃ¢mica
   const [useHighRes, setUseHighRes] = useState(false);
   const [highResLoaded, setHighResLoaded] = useState(false);
   const [highResLoading, setHighResLoading] = useState(false);
@@ -161,6 +161,7 @@ export function PhotoViewerModal({
     }
   }, [clearOriginalLoadTimeout, failOriginalLoad, finishOriginalLoad, highResError, highResLoaded, highResLoading, originalSrc, photo.path, useHighRes, zoom]);
   const imageRef = useRef<HTMLImageElement>(null);
+  const imageWrapRef = useRef<HTMLDivElement>(null);
   const imageStageRef = useRef<HTMLDivElement>(null);
   const currentIndex = navigationPhotos.findIndex((p) => p.path === photo.path);
   const total = navigationPhotos.length;
@@ -168,6 +169,21 @@ export function PhotoViewerModal({
   const isDiscarded = photo.discarded;
 
   const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
+  const clamp01 = (val: number) => clamp(val, 0, 1);
+
+  const getImagePoint = useCallback((clientX: number, clientY: number) => {
+    const rect = imageRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+
+    return {
+      x: x / rect.width,
+      y: y / rect.height,
+      rect,
+    };
+  }, []);
 
   const calculateInitialPan = (w: number, h: number) => {
     if (!imageStageRef.current) return { x: 0, y: 0 };
@@ -225,7 +241,7 @@ export function PhotoViewerModal({
     if (!face) return;
     try {
       await api.bulkManualIdentify(currentCatalog, 'Desconhecido', face.rowid ? [face.rowid] : []);
-      showFeedbackMsg("Identificação removida");
+      showFeedbackMsg("IdentificaÃ§Ã£o removida");
       setActiveMenu(null);
       onPhotoUpdate?.({ ...photo });
     } catch (err) {
@@ -273,7 +289,7 @@ export function PhotoViewerModal({
     setApplyingSimilarName(true);
     try {
       await api.bulkManualIdentify(currentCatalog, similarName.trim(), rowids);
-      showFeedbackMsg(`Vínculo aplicado a ${rowids.length} faces`);
+      showFeedbackMsg(`VÃ­nculo aplicado a ${rowids.length} faces`);
       
       setSimilarResults(prev => prev.map(r => 
         rowids.includes(r.rowid) ? { ...r, aluno_id: similarName.trim() } : r
@@ -292,11 +308,21 @@ export function PhotoViewerModal({
 
   const handleAddManualFace = async () => {
     if (!manualAlunoId.trim() || !showManualModal) return;
+    if (!photo.width || !photo.height) {
+      showFeedbackMsg("Imagem indisponível para salvar o rosto manual");
+      return;
+    }
+
+    const x1 = Math.round(showManualModal.x * photo.width);
+    const y1 = Math.round(showManualModal.y * photo.height);
+    const x2 = Math.round((showManualModal.x + showManualModal.width) * photo.width);
+    const y2 = Math.round((showManualModal.y + showManualModal.height) * photo.height);
+
     try {
       await api.addManualFace({
         foto_path: photo.path,
         catalog: currentCatalog,
-        box: [showManualModal.x1, showManualModal.y1, showManualModal.x2, showManualModal.y2],
+        box: [x1, y1, x2, y2],
         new_name: manualAlunoId.trim(),
       });
       showFeedbackMsg("Rosto manual adicionado");
@@ -475,9 +501,10 @@ export function PhotoViewerModal({
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (!isManualMode || !imageRef.current) return;
-    const rect = imageRef.current.getBoundingClientRect();
-    setDrawStart({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    if (!isManualMode) return;
+    const point = getImagePoint(e.clientX, e.clientY);
+    if (!point || point.x < 0 || point.y < 0 || point.x > 1 || point.y > 1) return;
+    setDrawStart({ x: point.x, y: point.y });
     setDrawCurrent(null);
   };
 
@@ -485,31 +512,26 @@ export function PhotoViewerModal({
     if (!drawStart || !isManualMode) return;
 
     const onMove = (e: MouseEvent) => {
-      if (!imageRef.current) return;
-      const rect = imageRef.current.getBoundingClientRect();
-      setDrawCurrent({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+      const point = getImagePoint(e.clientX, e.clientY);
+      if (!point) return;
+      setDrawCurrent({ x: clamp01(point.x), y: clamp01(point.y) });
     };
 
     const onUp = (e: MouseEvent) => {
-      if (!imageRef.current) {
-        setDrawStart(null);
-        setDrawCurrent(null);
-        return;
-      }
-      const rect = imageRef.current.getBoundingClientRect();
-      const cur = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      const point = getImagePoint(e.clientX, e.clientY);
+      const cur = point ? { x: clamp01(point.x), y: clamp01(point.y) } : drawCurrent ?? drawStart;
 
       const x1 = Math.min(drawStart.x, cur.x);
       const y1 = Math.min(drawStart.y, cur.y);
       const x2 = Math.max(drawStart.x, cur.x);
       const y2 = Math.max(drawStart.y, cur.y);
 
-      if (x2 - x1 >= 20 && y2 - y1 >= 20 && photo.width && photo.height) {
+      if (x2 - x1 >= 0.02 && y2 - y1 >= 0.02) {
         setShowManualModal({
-          x1: (x1 / rect.width) * photo.width,
-          y1: (y1 / rect.height) * photo.height,
-          x2: (x2 / rect.width) * photo.width,
-          y2: (y2 / rect.height) * photo.height,
+          x: x1,
+          y: y1,
+          width: x2 - x1,
+          height: y2 - y1,
         });
       }
 
@@ -524,7 +546,7 @@ export function PhotoViewerModal({
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [drawStart, isManualMode, photo.width, photo.height]);
+  }, [drawStart, drawCurrent, getImagePoint, isManualMode]);
 
   const getFaceOverlayStyle = (face: Photo['faces'][number]) => {
     if (!photo.width || !photo.height || viewSize.w === 0) return {};
@@ -545,10 +567,10 @@ export function PhotoViewerModal({
   const getDrawRectStyle = () => {
     if (!drawStart || !drawCurrent) return {};
     return {
-      left: `${Math.min(drawStart.x, drawCurrent.x)}px`,
-      top: `${Math.min(drawStart.y, drawCurrent.y)}px`,
-      width: `${Math.abs(drawCurrent.x - drawStart.x)}px`,
-      height: `${Math.abs(drawCurrent.y - drawStart.y)}px`,
+      left: `${Math.min(drawStart.x, drawCurrent.x) * 100}%`,
+      top: `${Math.min(drawStart.y, drawCurrent.y) * 100}%`,
+      width: `${Math.abs(drawCurrent.x - drawStart.x) * 100}%`,
+      height: `${Math.abs(drawCurrent.y - drawStart.y) * 100}%`,
     };
   };
 
@@ -588,9 +610,9 @@ export function PhotoViewerModal({
 
   return (
     <div className={`${styles.viewerOverlay} ${isDiscarded ? styles.discarded : ''}`} onClick={onClose}>
-      {/* ── Header ── */}
+      {/* â”€â”€ Header â”€â”€ */}
       <div className={styles.header} onClick={(e) => e.stopPropagation()}>
-        <span className={styles.headerTitle}>Visualização de Registro</span>
+        <span className={styles.headerTitle}>VisualizaÃ§Ã£o de Registro</span>
         <span className={styles.escBadge}>ESC p/ sair</span>
         <div className={styles.headerSpacer} />
         <div className={styles.headerActions}>
@@ -637,9 +659,9 @@ export function PhotoViewerModal({
         </div>
       </div>
 
-      {/* ── Main ── */}
+      {/* â”€â”€ Main â”€â”€ */}
       <div className={styles.main}>
-        {/* Left panel — file info */}
+        {/* Left panel â€” file info */}
         <div className={styles.leftPanel} onClick={(e) => e.stopPropagation()}>
           <div className={styles.fileInfoCard}>
             <div className={styles.fileInfoLabel}>ARQUIVO</div>
@@ -647,7 +669,7 @@ export function PhotoViewerModal({
           </div>
         </div>
 
-        {/* Center — image */}
+        {/* Center â€” image */}
         <div className={styles.centerArea} onClick={(e) => e.stopPropagation()}>
           <div className={styles.viewerTopMeta}>
             <span className={styles.viewerTopName}>{photo.name}</span>
@@ -685,111 +707,120 @@ export function PhotoViewerModal({
                 height: viewSize.h || 'auto',
               }}
             >
-              <img
-                ref={imageRef}
-                src={currentSrc}
-                alt={photo.name}
-                className={styles.mainImage}
-                style={{ 
-                  opacity: isLoaded ? 1 : 0,
-                  imageRendering: zoom >= 1 ? 'auto' : 'auto'
-                }}
-                onLoad={(e) => {
-                  const img = e.currentTarget;
-                  const stage = imageStageRef.current;
-                  const maxW = stage?.clientWidth || 800;
-                  const maxH = stage?.clientHeight || window.innerHeight - 130;
-                  const nw = img.naturalWidth;
-                  const nh = img.naturalHeight;
-                  let w = nw;
-                  let h = nh;
-                  if (w > maxW) { w = maxW; h = (maxW / nw) * nh; }
-                  if (h > maxH) { h = maxH; w = (maxH / nh) * nw; }
-                  img.style.width = `${w}px`;
-                  img.style.height = `${h}px`;
-                  setViewSize({ w, h });
-                  setPan({
-                    x: (maxW - w) / 2,
-                    y: (maxH - h) / 2
-                  });
-                  setIsLoaded(true);
-                  if (img.src === originalSrc || currentSrc === originalSrc) {
-                    finishOriginalLoad();
-                  }
-                }}
-                onError={() => {
-                  if (currentSrc === originalSrc) {
-                    failOriginalLoad('Não foi possível carregar a imagem original');
-                  }
-                }}
-              />
+              <div className={styles.photoImageWrap} ref={imageWrapRef}>
+                <img
+                  ref={imageRef}
+                  src={currentSrc}
+                  alt={photo.name}
+                  className={styles.mainImage}
+                  style={{ 
+                    opacity: isLoaded ? 1 : 0,
+                    imageRendering: zoom >= 1 ? 'auto' : 'auto'
+                  }}
+                  onLoad={(e) => {
+                    const img = e.currentTarget;
+                    const stage = imageStageRef.current;
+                    const maxW = stage?.clientWidth || 800;
+                    const maxH = stage?.clientHeight || window.innerHeight - 130;
+                    const nw = img.naturalWidth;
+                    const nh = img.naturalHeight;
+                    let w = nw;
+                    let h = nh;
+                    if (w > maxW) { w = maxW; h = (maxW / nw) * nh; }
+                    if (h > maxH) { h = maxH; w = (maxH / nh) * nw; }
+                    img.style.width = `${w}px`;
+                    img.style.height = `${h}px`;
+                    setViewSize({ w, h });
+                    setPan({
+                      x: (maxW - w) / 2,
+                      y: (maxH - h) / 2
+                    });
+                    setIsLoaded(true);
+                    if (img.src === originalSrc || currentSrc === originalSrc) {
+                      finishOriginalLoad();
+                    }
+                  }}
+                  onError={() => {
+                    if (currentSrc === originalSrc) {
+                      failOriginalLoad('Não foi possível carregar a imagem original');
+                    }
+                  }}
+                />
 
-              {highResLoading && (
-                <div className={styles.highResIndicator}>
-                  <div className={styles.highResSpinner} />
-                  <span>Carregando original...</span>
-                </div>
-              )}
+                {highResLoading && (
+                  <div className={styles.highResIndicator}>
+                    <div className={styles.highResSpinner} />
+                    <span>Carregando original...</span>
+                  </div>
+                )}
 
-              {highResError && !highResLoading && (
-                <div className={styles.highResError}>{highResError}</div>
-              )}
+                {highResError && !highResLoading && (
+                  <div className={styles.highResError}>{highResError}</div>
+                )}
 
-              {isDiscarded && <div className={styles.discardBadge}>DESCARTADA</div>}
+                {isDiscarded && <div className={styles.discardBadge}>DESCARTADA</div>}
 
-              {isLoaded && viewSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, faceIdx) => {
-                const isKnown = isKnownFace(face);
-                const overlayStyle = getFaceOverlayStyle(face);
-                const isMenuOpen = activeMenu === faceIdx;
+                {isLoaded && viewSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, faceIdx) => {
+                  const isKnown = isKnownFace(face);
+                  const overlayStyle = getFaceOverlayStyle(face);
+                  const isMenuOpen = activeMenu === faceIdx;
 
-                return (
-                  <div
-                    key={face.rowid ?? faceIdx}
-                    className={`${styles.faceOverlay} ${isKnown ? styles.known : ''}`}
-                    style={overlayStyle}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setActiveMenu(isMenuOpen ? null : faceIdx);
-                    }}
-                  >
-                    <button
-                      className={styles.faceMenuBtn}
+                  return (
+                    <div
+                      key={face.rowid ?? faceIdx}
+                      className={`${styles.faceOverlay} ${isKnown ? styles.known : ''}`}
+                      style={overlayStyle}
                       onClick={(e) => {
                         e.stopPropagation();
                         setActiveMenu(isMenuOpen ? null : faceIdx);
                       }}
                     >
-                      <Search size={10} />
-                    </button>
+                      <button
+                        className={styles.faceMenuBtn}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveMenu(isMenuOpen ? null : faceIdx);
+                        }}
+                      >
+                        <Search size={10} />
+                      </button>
 
-                    {isMenuOpen && (
-                      <div className={styles.faceMenu} onClick={(e) => e.stopPropagation()}>
-                        <button className={styles.menuItem} onClick={() => {
-                          setShowRenameModal(faceIdx);
-                          setRenameValue(face.aluno_id ?? '');
-                          setActiveMenu(null);
-                        }}>
-                          <UserCheck size={13} />
-                          Renomear formando
-                        </button>
-                        <button className={styles.menuItem} onClick={() => handleSearchSimilar(faceIdx)}>
-                          <Search size={13} />
-                          Buscar semelhantes
-                        </button>
-                        <div className={styles.menuDivider} />
-                        <button className={`${styles.menuItem} ${styles.menuItemDanger}`} onClick={() => handleRemoveIdent(faceIdx)}>
-                          <UserMinus size={13} />
-                          Remover identificação
-                        </button>
-                      </div>
-                    )}
+                      {isMenuOpen && (
+                        <div className={styles.faceMenu} onClick={(e) => e.stopPropagation()}>
+                          <button className={styles.menuItem} onClick={() => {
+                            setShowRenameModal(faceIdx);
+                            setRenameValue(face.aluno_id ?? '');
+                            setActiveMenu(null);
+                          }}>
+                            <UserCheck size={13} />
+                            Renomear formando
+                          </button>
+                          <button className={styles.menuItem} onClick={() => handleSearchSimilar(faceIdx)}>
+                            <Search size={13} />
+                            Buscar semelhantes
+                          </button>
+                          <div className={styles.menuDivider} />
+                          <button className={`${styles.menuItem} ${styles.menuItemDanger}`} onClick={() => handleRemoveIdent(faceIdx)}>
+                            <UserMinus size={13} />
+                            Remover identificação
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {isManualMode && (
+                  <div
+                    className={styles.manualFaceOverlay}
+                    onMouseDown={handleMouseDown}
+                    onContextMenu={(e) => e.preventDefault()}
+                  >
+                    {drawStart && drawCurrent && <div className={styles.manualFaceRect} style={getDrawRectStyle()} />}
                   </div>
-                );
-              })}
-
-              {drawStart && drawCurrent && <div className={styles.drawingRect} style={getDrawRectStyle()} />}
+                )}
+              </div>
             </div>
-            {isManualMode && <div className={styles.drawHint}>Arraste para marcar o formando</div>}
           </div>
 
           {(contextLoading || contextBadge || total > 1) && (
@@ -825,10 +856,10 @@ export function PhotoViewerModal({
           )}
         </div>
 
-        {/* Right panel — identification */}
+        {/* Right panel â€” identification */}
         <div className={styles.rightPanel} onClick={(e) => e.stopPropagation()}>
           <div className={styles.identHeader}>
-            IDENTIFICAÇÃO {(photo.faces || []).length > 0 && <span className={styles.identCount}>{(photo.faces || []).length}</span>}
+            IDENTIFICAÃ‡ÃƒO {(photo.faces || []).length > 0 && <span className={styles.identCount}>{(photo.faces || []).length}</span>}
             <ChevronRight size={14} className={styles.identChevron} />
           </div>
 
@@ -878,10 +909,10 @@ export function PhotoViewerModal({
         </div>
       </div>
 
-      {/* ── Feedback toast ── */}
+      {/* â”€â”€ Feedback toast â”€â”€ */}
       {feedback && <div className={styles.feedback}>{feedback}</div>}
 
-      {/* ── Rename modal ── */}
+      {/* â”€â”€ Rename modal â”€â”€ */}
       {showRenameModal !== null && (
         <div className={styles.modalOverlay} onClick={() => setShowRenameModal(null)}>
           <div className={styles.modalBox} onClick={(e) => e.stopPropagation()}>
@@ -907,7 +938,7 @@ export function PhotoViewerModal({
         </div>
       )}
 
-      {/* ── Manual face modal ── */}
+      {/* â”€â”€ Manual face modal â”€â”€ */}
       {showManualModal && (
         <div className={styles.modalOverlay} onClick={() => setShowManualModal(null)}>
           <div className={styles.modalBox} onClick={(e) => e.stopPropagation()}>
@@ -933,7 +964,7 @@ export function PhotoViewerModal({
         </div>
       )}
 
-      {/* ── Similar results panel ── */}
+      {/* â”€â”€ Similar results panel â”€â”€ */}
       {(similarResults.length > 0 || similarError) && (
         <div className={styles.modalOverlay} onClick={() => { setSimilarResults([]); setSimilarError(null); }}>
           <div className={styles.similarPanel} onClick={(e) => e.stopPropagation()}>
@@ -978,7 +1009,7 @@ export function PhotoViewerModal({
                     className={styles.textBtn}
                     onClick={() => setSelectedSimilarIds(new Set())}
                   >
-                    Limpar seleção
+                    Limpar seleÃ§Ã£o
                   </button>
                 </div>
                 
@@ -1028,7 +1059,7 @@ export function PhotoViewerModal({
                         )}
                       </div>
                       <div className={styles.similarScore}>
-                        {result.aluno_id ?? 'Desconhecido'} · {(result.score * 100).toFixed(0)}%
+                        {result.aluno_id ?? 'Desconhecido'} Â· {(result.score * 100).toFixed(0)}%
                       </div>
                     </div>
                   );
