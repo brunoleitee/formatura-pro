@@ -735,3 +735,48 @@
   object-fit: contain;
   display: block;
 }
+
+.viewerLoading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 48px;
+  color: #9ca3af;
+}
+
+.viewerLoading p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.viewerError {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 48px;
+  color: #ef4444;
+}
+
+.viewerError p {
+  margin: 0;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.viewerRetry {
+  padding: 10px 24px;
+  border-radius: 8px;
+  border: 1px solid #3b82f6;
+  background: transparent;
+  color: #3b82f6;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.viewerRetry:hover {
+  background: #3b82f6;
+  color: white;
+}

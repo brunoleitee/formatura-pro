@@ -2311,14 +2311,24 @@ def cloud_google_download_full(file_id: str = ""):
 
         if cache.original_exists(file_id):
             local_path = cache.get_original_path(file_id)
-            full_url = f"/api/cloud/full?file_id={file_id}"
-            print(f"[CloudFull] cache hit: {local_path}")
-            return {
-                "success": True,
-                "local_path": local_path,
-                "url": full_url,
-                "file_id": file_id
-            }
+            local_path_obj = Path(local_path)
+            file_size = local_path_obj.stat().st_size if local_path_obj.exists() else 0
+            is_valid = _is_valid_image_file(local_path)
+            print(f"[CloudFull] cache hit: {local_path}, size={file_size}, valid={is_valid}")
+            if is_valid:
+                full_url = f"/api/cloud/full?file_id={file_id}"
+                return {
+                    "success": True,
+                    "local_path": local_path,
+                    "url": full_url,
+                    "file_id": file_id
+                }
+            else:
+                print(f"[CloudFull] cache corrompido, redisponibilizando: {local_path}")
+                try:
+                    local_path_obj.unlink()
+                except Exception:
+                    pass
 
         if not is_authenticated():
             return {"error": "Não conectado"}
