@@ -154,9 +154,14 @@ def _student_export_dir(dest_path: str, aid: str, class_name: str, sanitize_fold
 def build_export_worklist(conn, req: ExportReq):
     cur = conn.cursor()
     image_ext = _get("image_extensions", ())
+    log_info = _get("log_info", print)
 
     cur.execute("SELECT aluno_id, class_name FROM alunos")
     student_classes = {r["aluno_id"]: (r["class_name"] or "Sem turma") for r in cur.fetchall()}
+
+    organize_by_class = bool(getattr(req, "organize_by_class", False))
+    log_info(f"[export] organize_by_class = {organize_by_class}")
+    log_info(f"[export] turmas do banco: {dict(list(student_classes.items())[:10])}")
 
     cur.execute("SELECT foto_path FROM discarded_photos")
     discarded_manual = {r["foto_path"] for r in cur.fetchall()}
@@ -694,6 +699,8 @@ def run_export_worker(req: ExportReq, catalog_name: str):
                         os.makedirs(safe_p_al_map[aid], exist_ok=True)
                     except Exception as e:
                         log_info(f"Erro ao criar pasta para {aid}: {e}")
+
+            log_info(f"[export] safe_p_al_map (amostra): {dict(list(safe_p_al_map.items())[:5])}")
 
             total = len(worklist)
             export_state["total_files"] = total
