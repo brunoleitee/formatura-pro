@@ -240,11 +240,14 @@ def build_export_worklist(conn, req: ExportReq):
     exported_paths = set()
     base_dir = os.path.join(req.dest_path, "#BASE")
 
-    # 1. Fotos de alunos selecionados (inclui "Pessoa X" se selecionado)
+# 1. Fotos de alunos selecionados (inclui "Pessoa X" se selecionado)
+    organize_by_class = bool(getattr(req, "organize_by_class", False))
     for aid in req.ids:
+        class_name = student_classes.get(aid, "Sem turma")
         cur.execute("SELECT DISTINCT foto_path FROM ocorrencias WHERE aluno_id = ?", (aid,))
         fotos = [r[0] for r in cur.fetchall() if r[0] and r[0] not in discarded_manual]
-        p_al = _student_export_dir(req.dest_path, aid, student_classes.get(aid, "Sem turma"), _get("sanitize_folder_name"), bool(getattr(req, "organize_by_class", False)))
+        p_al = _student_export_dir(req.dest_path, aid, class_name, _get("sanitize_folder_name"), organize_by_class)
+        log_info(f"[export-debug] student={aid} selected_class={getattr(req, 'selected_class', 'N/A')} organize_by_class={organize_by_class} class_name={class_name} photos_count={len(fotos)} dest_dir={p_al}")
         for f in fotos:
             if os.path.exists(f):
                 worklist.append((aid, f, p_al))
@@ -729,6 +732,7 @@ def run_export_worker(req: ExportReq, catalog_name: str):
 
             safe_p_al_map = {}
             organize_by_class = bool(getattr(req, "organize_by_class", False))
+            log_info(f"[export] export_base={export_base} organize_by_class={organize_by_class}")
             for aid, _f, p_al in worklist:
                 if aid not in safe_p_al_map:
                     if aid in ("#BASE", "#DESCARTE"):
@@ -737,6 +741,7 @@ def run_export_worker(req: ExportReq, catalog_name: str):
                     else:
                         if organize_by_class:
                             safe_p_al_map[aid] = p_al
+                            log_info(f"[export-folder] student={aid} p_al={p_al}")
                         else:
                             safe_aid = _export_folder_name(aid, sanitize_folder_name)
                             safe_p_al_map[aid] = os.path.join(export_base, safe_aid)
