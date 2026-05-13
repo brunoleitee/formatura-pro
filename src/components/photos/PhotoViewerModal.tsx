@@ -4,7 +4,7 @@ import { api, type Photo } from '../../services/api';
 import { isKnownFace } from '../../utils/personIdentity';
 import { useApp } from '../../context/AppContext';
 import { logPerf, perfNow } from '../../utils/perf';
-import { getGridHighThumbUrl, getGridThumbUrl, getViewerPreviewUrl } from '../../utils/imageUrls';
+import { getGridHighThumbUrl, getGridThumbUrl, getViewerPreviewUrl, buildPhotoSourceUrl } from '../../utils/imageUrls';
 import styles from './PhotoViewerModal.module.css';
 
 interface PhotoViewerModalProps {
@@ -41,7 +41,10 @@ type ViewerPhoto = Photo & {
 function getViewerImageUrl(photo: Photo, maxSize = 1920) {
   const extended = photo as ViewerPhoto;
   const sourcePath = extended.preview_path || extended.original_path || photo.path;
-  return extended.preview_path || getViewerPreviewUrl(sourcePath, maxSize) || '';
+  if (extended.preview_path) return extended.preview_path;
+  const photoSrcUrl = buildPhotoSourceUrl(sourcePath);
+  console.log("[Viewer] usando PhotoSource:", photoSrcUrl);
+  return photoSrcUrl;
 }
 
 function getViewerFallbackUrl(photo: Photo) {
@@ -910,6 +913,7 @@ export function PhotoViewerModal({
                       setIsLoaded(true);
                       return;
                     }
+                    console.warn("[Viewer] fallback image_full para:", visiblePhoto.path);
                     setDisplayedSrc(fallback);
                     setIsLoaded(true);
                     if (viewerLoadStartRef.current !== null && !viewerLoggedRef.current) {
