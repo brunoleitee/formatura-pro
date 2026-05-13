@@ -48,4 +48,10 @@ export const cloudApi = {
     fetchJSON<{ files: unknown[]; count: number; error?: string }>(
       `${API_BASE}/cloud/google/files?folder_id=${folderId}`
     ),
+
+  createCatalog: (folderId: string, catalogName: string, mode: string = "metadata_only") =>
+    post<{ status: string; catalog?: string; photos_count?: number; error?: string }>(
+      `${API_BASE}/cloud/google/create-catalog?folder_id=${folderId}&catalog_name=${encodeURIComponent(catalogName)}&mode=${mode}`,
+      {}
+    ),
 };

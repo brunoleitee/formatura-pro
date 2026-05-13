@@ -44,6 +44,9 @@ export default function CloudSyncView() {
   const [files, setFiles] = useState<CloudFile[]>([]);
   const [currentFolder, setCurrentFolder] = useState<string>('root');
   const [syncStatus] = useState<SyncStatus>({ is_online: true });
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newCatalogName, setNewCatalogName] = useState('');
+  const [createResult, setCreateResult] = useState<{ status: string; message: string } | null>(null);
 
   useEffect(() => {
     checkGoogleStatus();
@@ -239,7 +242,77 @@ export default function CloudSyncView() {
               <p className={styles.placeholder}>Nenhuma pasta encontrada. Selecione uma pasta para indexar.</p>
             </div>
           )}
+
+          {files.length > 0 && (
+            <div className={styles.createCatalogSection}>
+              <button
+                className={styles.createCatalogBtn}
+                onClick={() => setShowCreateModal(true)}
+              >
+                Criar catálogo a partir desta pasta
+              </button>
+            </div>
+          )}
         </section>
+      )}
+
+      {showCreateModal && (
+        <div className={styles.modal}>
+          <div className={styles.modalContent}>
+            <h3>Criar Catálogo</h3>
+            <p>Digite o nome do novo catálogo:</p>
+            <input
+              type="text"
+              value={newCatalogName}
+              onChange={(e) => setNewCatalogName(e.target.value)}
+              placeholder="Nome do catálogo"
+              className={styles.modalInput}
+            />
+            <div className={styles.modalActions}>
+              <button
+                className={styles.cancelBtn}
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setNewCatalogName('');
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                className={styles.confirmBtn}
+                onClick={async () => {
+                  if (!newCatalogName.trim()) {
+                    alert('Digite um nome para o catálogo');
+                    return;
+                  }
+                  setLoading(true);
+                  try {
+                    const result = await cloudApi.createCatalog(currentFolder, newCatalogName);
+                    if (result.status === 'ok') {
+                      setCreateResult({ status: 'success', message: `Catálogo "${result.catalog}" criado com ${result.photos_count} fotos!` });
+                      setShowCreateModal(false);
+                    } else {
+                      alert(result.error || 'Erro ao criar catálogo');
+                    }
+                  } catch (e) {
+                    console.error('Erro:', e);
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+              >
+                Criar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {createResult && (
+        <div className={styles.toast}>
+          <span>{createResult.message}</span>
+          <button onClick={() => setCreateResult(null)}>×</button>
+        </div>
       )}
 
       <section className={styles.syncSection}>

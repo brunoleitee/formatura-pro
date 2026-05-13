@@ -2073,6 +2073,147 @@ def cloud_google_files(folder_id: str = "root"):
         return {"error": str(e), "files": []}
 
 
+@app.post("/api/cloud/google/create-catalog")
+def cloud_google_create_catalog(folder_id: str = "root", catalog_name: str = "", mode: str = "metadata_only"):
+    try:
+        from cloud.drive_cache import cache
+        import sqlite3
+
+        if not catalog_name:
+            return {"error": "Nome do catálogo é obrigatório"}
+
+        catalog_name_safe = "".join(c for c in catalog_name if c.isalnum() or c in " _-").strip()
+        if not catalog_name_safe:
+            return {"error": "Nome inválido"}
+
+        catalog_path = os.path.join("data", "catalogs", f"{catalog_name_safe}.db")
+        if os.path.exists(catalog_path):
+            return {"error": f"Catálogo '{catalog_name_safe}' já existe"}
+
+        conn = sqlite3.connect(catalog_path)
+        cur = conn.cursor()
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS alunos (
+                aluno_id TEXT PRIMARY KEY,
+                face_cache_path TEXT,
+                class_name TEXT DEFAULT 'Sem turma',
+                source_type TEXT DEFAULT 'local',
+                drive_file_id TEXT,
+                cloud_status TEXT DEFAULT 'pending',
+                local_full_path TEXT,
+                downloaded_full INTEGER DEFAULT 0
+            )
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS ocorrencias (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                foto_path TEXT,
+                aluno_id TEXT,
+                x1 REAL, y1 REAL, x2 REAL, y2 REAL,
+                photo_hash TEXT,
+                blur_score REAL,
+                blur_status TEXT,
+                closed_eyes INTEGER,
+                foreground_score REAL,
+                is_foreground INTEGER,
+                face_area_ratio REAL,
+                center_score REAL,
+                background_penalty_reason TEXT,
+                source_type TEXT DEFAULT 'local',
+                drive_file_id TEXT
+            )
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS discarded_photos (
+                foto_path TEXT PRIMARY KEY
+            )
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS scan_checkpoints (
+                scan_key TEXT PRIMARY KEY,
+                ori_path TEXT,
+                ref_path TEXT,
+                last_batch_index INTEGER,
+                total_batches INTEGER,
+                updated_at REAL
+            )
+        """)
+
+        indexed_files = []
+        for filename in os.listdir(cache.metadata_dir):
+            if filename.endswith('.json'):
+                file_id = filename[:-5]
+                metadata = cache.load_metadata(file_id)
+                if metadata and metadata.get('parent_folder') == folder_id:
+                    indexed_files.append(metadata)
+
+        for f in indexed_files:
+            foto_path = f"cloud://{f['drive_file_id']}"
+            cur.execute(
+                "INSERT OR IGNORE INTO ocorrencias (foto_path, aluno_id, source_type, drive_file_id, blur_status) VALUES (?, ?, ?, ?, ?)",
+                (foto_path, "Pessoa 1", "google_drive", f['drive_file_id'], "unknown")
+            )
+
+        conn.commit()
+        conn.close()
+
+        return {
+            "status": "ok",
+            "catalog": catalog_name_safe,
+            "path": catalog_path,
+            "photos_count": len(indexed_files),
+            "message": f"Catálogo '{catalog_name_safe}' criado com {len(indexed_files)} fotos"
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/cloud/google/download-full")
+def cloud_google_download_full(file_id: str = ""):
+    try:
+        from cloud.drive_cache import cache, download_queue
+        from cloud import is_authenticated, drive_manager
+
+        if not file_id:
+            return {"error": "file_id obrigatório"}
+
+        if cache.original_exists(file_id):
+            return {
+                "status": "exists",
+                "path": cache.get_original_path(file_id),
+                "file_id": file_id
+            }
+
+        if not is_authenticated():
+            return {"error": "Não conectado"}
+
+        file_info = drive_manager.get_file_metadata(file_id)
+        if not file_info:
+            return {"error": "Arquivo não encontrado"}
+
+        metadata = cache.load_metadata(file_id)
+        if not metadata:
+            return {"error": "Arquivo não indexado"}
+
+        download_queue.add_task(
+            file_id=file_id,
+            file_type="original",
+            url=f"https://drive.google.com/uc?id={file_id}",
+            dest_path=cache.get_original_dir(),
+            priority=3
+        )
+
+        return {"status": "downloading", "file_id": file_id}
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
 configure_modules()
 
 import webbrowser

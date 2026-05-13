@@ -60,7 +60,10 @@ class DriveCache:
         return os.path.join(self.preview_dir, f"{file_id}.jpg")
 
     def get_original_path(self, file_id: str) -> str:
-        return os.path.join(self.originals_dir, file_id)
+        return os.path.join(self.originals_dir, f"{file_id}.jpg")
+
+    def get_original_dir(self) -> str:
+        return self.originals_dir
 
     def thumb_exists(self, file_id: str) -> bool:
         return os.path.exists(self.get_thumb_path(file_id))
