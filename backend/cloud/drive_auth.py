@@ -202,6 +202,39 @@ def get_user_info() -> Optional[Dict[str, Any]]:
             scopes=token_data.get("scopes", []),
         )
 
+        service = build("drive", "v3", credentials=credentials)
+        about = service.about().get(fields="user").execute()
+        user = about.get("user", {})
+
+        print(f"[GoogleDrive] user info: {user}")
+
+        return {
+            "email": user.get("emailAddress"),
+            "name": user.get("displayName"),
+        }
+
+    except Exception as e:
+        print(f"[GoogleDrive] get_user_info error: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+    try:
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+
+        token_data = load_token()
+        if not token_data:
+            return None
+
+        credentials = Credentials(
+            token=token_data.get("token"),
+            refresh_token=token_data.get("refresh_token"),
+            token_uri=token_data.get("token_uri"),
+            client_id=token_data.get("client_id"),
+            client_secret=token_data.get("client_secret"),
+            scopes=token_data.get("scopes", []),
+        )
+
         service = build("oauth2", "v2", credentials=credentials)
         user_info = service.userinfo().get().execute()
 
