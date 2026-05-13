@@ -2088,15 +2088,24 @@ def cloud_google_create_catalog(folder_id: str = "root", catalog_name: str = "",
         if not catalog_name:
             return {"error": "Nome do catálogo é obrigatório"}
 
-        catalog_name_safe = "".join(c for c in catalog_name if c.isalnum() or c in " _-").strip()
+        catalog_name_safe = "".join(c for c in catalog_name if c.isalnum() or c in " _-").strip().replace(" ", "_")
         if not catalog_name_safe:
             return {"error": "Nome inválido"}
 
-        catalog_path = os.path.join("data", "catalogs", f"{catalog_name_safe}.db")
-        if os.path.exists(catalog_path):
+        BASE_DIR = Path(__file__).resolve().parents[1]
+        catalogs_dir = BASE_DIR / "data" / "catalogs"
+        catalogs_dir.mkdir(parents=True, exist_ok=True)
+
+        catalog_path = catalogs_dir / f"{catalog_name_safe}.db"
+
+        print(f"[CloudCatalog] catalog_path = {catalog_path}")
+        print(f"[CloudCatalog] parent exists = {catalog_path.parent.exists()}")
+        print(f"[CloudCatalog] writable = {os.access(str(catalog_path.parent), os.W_OK)}")
+
+        if catalog_path.exists():
             return {"error": f"Catálogo '{catalog_name_safe}' já existe"}
 
-        conn = sqlite3.connect(catalog_path)
+        conn = sqlite3.connect(str(catalog_path))
         cur = conn.cursor()
 
         cur.execute("""
