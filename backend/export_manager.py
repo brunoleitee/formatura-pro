@@ -186,6 +186,8 @@ def build_class_map_from_reference_root(reference_root: str) -> dict:
     if not reference_root or not os.path.isdir(reference_root):
         return class_map
 
+    ignored_folders = {"#BASE", "BASE", "base", "referencias", "referências", "referencia", "referência"}
+
     image_exts = (".jpg", ".jpeg", ".png", ".webp")
     for root, dirs, files in os.walk(reference_root):
         for filename in files:
@@ -195,7 +197,8 @@ def build_class_map_from_reference_root(reference_root: str) -> dict:
             try:
                 rel = os.path.relpath(full_path, reference_root)
                 parts = rel.replace("\\", "/").split("/")
-                class_name = parts[0].strip() if len(parts) >= 2 and parts[0].strip() else "Sem turma"
+                valid_parts = [p for p in parts[:-1] if p.strip() and p.strip().casefold() not in {f.casefold() for f in ignored_folders}]
+                class_name = valid_parts[-1] if valid_parts else "Sem turma"
                 student_name = os.path.splitext(filename)[0].strip()
                 class_map[student_name] = class_name
             except Exception:
