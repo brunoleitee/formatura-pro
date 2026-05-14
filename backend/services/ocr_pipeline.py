@@ -470,6 +470,140 @@ def _enriched_ocr_result(number: str, confidence: float) -> Dict[str, Any]:
     }
 
 
+def _detect_plate_in_crop(crop: np.ndarray) -> Optional[Tuple[int, int, int, int, np.ndarray, float]]:
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    h_img, w_img = gray.shape
+    if h_img < 20 or w_img < 20:
+        return None
+
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    best_plate = None
+    best_score = 0.0
+
+    for thresh_val in range(180, 250, 10):
+        _, thresh = cv2.threshold(blur, thresh_val, 255, cv2.THRESH_BINARY)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for cnt in contours:
+            x, y, w, h = cv2.boundingRect(cnt)
+            area = w * h
+            crop_area = h_img * w_img
+            if area < crop_area * 0.03:
+                continue
+            aspect = w / max(h, 1)
+            if aspect < 1.0 or aspect > 8.0:
+                continue
+            area_ratio = area / crop_area
+            cx = x + w / 2
+            cy = y + h / 2
+            crop_cx = w_img / 2
+            crop_cy = h_img / 2
+            dist = ((cx - crop_cx) ** 2 + (cy - crop_cy) ** 2) ** 0.5
+            max_dist = ((crop_cx) ** 2 + (crop_cy) ** 2) ** 0.5
+            center_score = 1.0 - (dist / max(max_dist, 1))
+            plate_region = gray[y:y + h, x:x + w]
+            if plate_region.size == 0:
+                continue
+            mean_brightness = float(np.mean(plate_region))
+            brightness_score = min(mean_brightness / 255.0 * 1.5, 1.0)
+            score = area_ratio * 0.4 + center_score * 0.3 + brightness_score * 0.3
+            if score > best_score:
+                best_score = score
+                best_plate = (x, y, w, h, crop[y:y + h, x:x + w])
+
+    if best_plate is not None and best_score > 0.3:
+        x, y, w_rect, h_rect, plate_img = best_plate
+        return (x, y, w_rect, h_rect, plate_img, best_score)
+    return None
+
+
+def _preprocess_plate_digits(plate_bgr: np.ndarray) -> np.ndarray:
+    gray = cv2.cvtColor(plate_bgr, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+    if max(h, w) < 600:
+        scale = 900.0 / max(h, w)
+        gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    blur = cv2.GaussianBlur(gray, (3, 3), 0)
+    binary = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 12)
+    mean_val = np.mean(binary)
+    if mean_val < 127:
+        binary = 255 - binary
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
+    kernel_close = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel_close)
+    return binary
+
+
+def _score_ocr_candidate(number: str, plate_score: float, ocr_raw_conf: float, plate_bbox: Tuple[int, int, int, int], crop_shape: Tuple[int, int]) -> float:
+    length = len(number)
+    if length < 3 or length > 6:
+        return 0.0
+    length_score = 1.0 if length in (4, 5) else (0.85 if length == 6 else 0.7)
+    _, _, w, h = plate_bbox
+    plate_area = w * h
+    crop_area = crop_shape[0] * crop_shape[1]
+    size_score = min(plate_area / max(crop_area, 1) * 3.0, 1.0)
+    conf_score = max(0.0, min(float(ocr_raw_conf), 1.0))
+    final = (
+        length_score * 0.35
+        + plate_score * 0.25
+        + size_score * 0.15
+        + conf_score * 0.25
+    )
+    return float(max(0.0, min(final, 0.99)))
+
+
+def _probe_plate_ocr(plate_bgr: np.ndarray, plate_score: float, plate_bbox: Tuple[int, int, int, int], crop_shape: Tuple[int, int], start: float, candidates: List[Dict[str, Any]]) -> None:
+    if time.time() - start > MAX_OCR_SECONDS:
+        return
+    processed = _preprocess_plate_digits(plate_bgr)
+    for psm in ("7", "8"):
+        if time.time() - start > MAX_OCR_SECONDS:
+            break
+        config = f"--oem 3 --psm {psm} -c tessedit_char_whitelist=0123456789"
+        raw_text = _run_tesseract(processed, config)
+        if not raw_text or not raw_text.strip():
+            continue
+        clean = re.sub(r"\D", "", raw_text.strip())
+        if len(clean) < 3:
+            continue
+        for number in re.findall(r"\d{3,6}", clean):
+            if len(number) < 3 or len(number) > 6:
+                continue
+            ocr_raw_len = len(number)
+            ocr_raw_conf = max(0.3, min(0.95, 0.5 + ocr_raw_len * 0.08))
+            score = _score_ocr_candidate(number, plate_score, ocr_raw_conf, plate_bbox, crop_shape)
+            if score < 0.75:
+                continue
+            candidates.append({
+                "numbers": number,
+                "confidence": round(score, 4),
+                "score": round(score, 4),
+            })
+
+
+def _save_debug_plate(local_path: str, tag: str, img: np.ndarray) -> None:
+    if not OCR_DEBUG_ENABLED:
+        return
+    try:
+        debug_dir = _ensure_debug_dir() / Path(local_path).stem
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(debug_dir / tag), img)
+    except Exception:
+        pass
+
+
+def _ocr_crop_fallback(crop: np.ndarray, start: float, candidates: List[Dict[str, Any]]) -> None:
+    if time.time() - start > MAX_OCR_SECONDS:
+        return
+    text = _run_tesseract(crop, "--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789")
+    numbers = _extract_id_card_candidates(text)
+    for number in numbers:
+        score = min(0.97, 0.54 + _digit_length_score(number) * 0.18)
+        if score >= 0.75:
+            candidates.append({"numbers": number, "confidence": round(score, 4), "score": round(score, 4)})
+
+
 def process_id_card_ocr(local_path: str, img: Optional[np.ndarray] = None) -> Dict[str, Any]:
     start = time.time()
     print("[OCR-ID] iniciando leitura da ficha")
@@ -483,7 +617,6 @@ def process_id_card_ocr(local_path: str, img: Optional[np.ndarray] = None) -> Di
             return _empty_ocr_result()
 
         h, w = img.shape[:2]
-
         crop_defs = [
             ("inferior_amplo", (0, int(h * 0.55), w, int(h * 0.95))),
             ("central_inferior", (int(w * 0.15), int(h * 0.58), int(w * 0.85), int(h * 0.90))),
@@ -495,6 +628,7 @@ def process_id_card_ocr(local_path: str, img: Optional[np.ndarray] = None) -> Di
             return _empty_ocr_result()
 
         candidates: List[Dict[str, Any]] = []
+        plates_found = 0
 
         for idx, (name, (x1, y1, x2, y2)) in enumerate(crop_defs, 1):
             if time.time() - start > MAX_OCR_SECONDS:
@@ -506,33 +640,30 @@ def process_id_card_ocr(local_path: str, img: Optional[np.ndarray] = None) -> Di
                 continue
 
             print(f"[OCR-ID] crop {idx}/{len(crop_defs)} criado")
+            _save_debug_plate(local_path, f"debug_crop_{idx}.jpg", crop)
 
-            # OCR numerico (whitelist)
-            print(f"[OCR-ID] crop {idx}/{len(crop_defs)} OCR iniciado")
-            t0 = time.time()
-            text = _run_tesseract(crop, "--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789")
-            numbers = _extract_id_card_candidates(text)
-            elapsed_ms = int((time.time() - t0) * 1000)
-            print(f"[OCR-ID] crop {idx}/{len(crop_defs)} OCR finalizado em {elapsed_ms}ms")
+            plate_result = _detect_plate_in_crop(crop)
+            if plate_result is None:
+                print(f"[OCR-ID] crop {idx}/{len(crop_defs)} sem placa detectada")
+                _ocr_crop_fallback(crop, start, candidates)
+                continue
 
-            if numbers:
-                for number in numbers:
-                    score = min(0.97, 0.54 + _digit_length_score(number) * 0.18)
-                    candidates.append({"numbers": number, "confidence": round(score, 4)})
-            else:
-                # Segundo pass com OCR generico se o numerico nao achou nada
-                print(f"[OCR-ID] crop {idx}/{len(crop_defs)} OCR (psm6) iniciado")
-                t0 = time.time()
-                text2 = _run_tesseract(crop, "--oem 3 --psm 6")
-                numbers2 = _extract_id_card_candidates(text2)
-                elapsed_ms = int((time.time() - t0) * 1000)
-                print(f"[OCR-ID] crop {idx}/{len(crop_defs)} OCR (psm6) finalizado em {elapsed_ms}ms")
-                if numbers2:
-                    for number in numbers2:
-                        score = min(0.94, 0.48 + _digit_length_score(number) * 0.18)
-                        candidates.append({"numbers": number, "confidence": round(score, 4)})
+            px, py, pw, ph, plate_img, plate_score = plate_result
+            plates_found += 1
+            print(f"[OCR-ID] placa detectada")
+            print(f"[OCR-ID] bbox placa: {px},{py},{pw},{ph}")
+            _save_debug_plate(local_path, f"debug_plate_crop_{idx}.jpg", plate_img)
 
-        print(f"[OCR-ID] candidatos encontrados: {[c['numbers'] for c in candidates]}")
+            if time.time() - start > MAX_OCR_SECONDS:
+                break
+
+            proc = _preprocess_plate_digits(plate_img)
+            _save_debug_plate(local_path, f"debug_threshold_{idx}.jpg", proc)
+
+            _probe_plate_ocr(plate_img, plate_score, (px, py, pw, ph), crop.shape[:2], start, candidates)
+
+        print(f"[OCR-ID] candidatos OCR: {[c['numbers'] for c in candidates]}")
+        print(f"[OCR-ID] placas detectadas: {plates_found}")
 
         if not candidates:
             print("[OCR-ID] sem numero detectado")
@@ -545,9 +676,15 @@ def process_id_card_ocr(local_path: str, img: Optional[np.ndarray] = None) -> Di
         number = best["numbers"]
         confidence = best["confidence"]
 
-        print(f"[OCR-ID] numero detectado: {number}")
+        print(f"[OCR-ID] melhor candidato: {number}")
+        print(f"[OCR-ID] score final: {confidence:.2f}")
         elapsed = int((time.time() - start) * 1000)
         print(f"[OCR-ID] finalizado em {elapsed}ms")
+
+        if confidence < 0.75:
+            print(f"[OCR-ID] confianca {confidence:.2f} abaixo de 0.75, descartando")
+            return _empty_ocr_result()
+
         return _enriched_ocr_result(number, confidence)
 
     except Exception as e:
