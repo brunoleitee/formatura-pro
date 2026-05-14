@@ -1,4 +1,4 @@
-import { Image as ImageIcon, User, Maximize2, Sparkles, ChevronDown, ScanFace } from 'lucide-react';
+import { Image as ImageIcon, User, Maximize2, Sparkles, ChevronDown, ScanFace, GitCompare } from 'lucide-react';
 import styles from './ClusterToolbar.module.css';
 
 export type FilterOption = 'all' | 'best' | 'sharp';
@@ -17,6 +17,9 @@ interface ClusterToolbarProps {
   onViewMode: (v: ViewMode) => void;
   onZoom: (z: number) => void;
   onSelectBest: () => void;
+  bestStudentName?: string | null;
+  bestStudentSim?: number | null;
+  onCompare?: () => void;
 }
 
 const FILTER_LABELS: Record<FilterOption, string> = {
@@ -43,6 +46,9 @@ export default function ClusterToolbar({
   onViewMode,
   onZoom,
   onSelectBest,
+  bestStudentName,
+  bestStudentSim,
+  onCompare,
 }: ClusterToolbarProps) {
   // Ranges por modo: FOTO controla largura da coluna (240-380px), ROSTO controla tamanho do quadrado (130-280px)
   const zoomMin = viewMode === 'photo' ? 180 : 120;
@@ -128,6 +134,19 @@ export default function ClusterToolbar({
       <button className={styles.iconBtn} title="Tela cheia">
         <Maximize2 size={14} />
       </button>
+
+      {/* Compare button */}
+      {(bestStudentName || onCompare) && (
+        <button 
+          className={styles.compareBtn} 
+          title={`Comparar com ${bestStudentName} — ${Math.round((bestStudentSim || 0) * 100)}%`}
+          onClick={onCompare}
+          disabled={!bestStudentName}
+        >
+          <GitCompare size={14} />
+          <span>Comparar</span>
+        </button>
+      )}
 
       {/* Counter (push to right) */}
       <div className={styles.counter}>

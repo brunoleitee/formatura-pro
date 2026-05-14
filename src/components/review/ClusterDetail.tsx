@@ -4,6 +4,7 @@ import type { AssignClusterResponse, RichCluster, RichClusterFace } from '../../
 import ClusterHero, { type ClusterHeroHandle } from './ClusterHero';
 import ClusterStatsPanel from './ClusterStatsPanel';
 import ClusterToolbar from './ClusterToolbar';
+import CompareModal from './CompareModal';
 import type { FilterOption, SortOption, ViewMode } from './ClusterToolbar';
 import { PhotoCard } from './PhotoCard';
 import { GraduationActions, type GraduationActionsHandle, type GraduationItem } from './GraduationActions';
@@ -67,6 +68,7 @@ export default function ClusterDetail({
   const [zoom, setZoom] = useState(ZOOM_FACE_DEFAULT);
   const [collapsed, setCollapsed] = useState(false);
   const [lastSelectedRowId, setLastSelectedRowId] = useState<number | null>(null);
+  const [isCompareOpen, setIsCompareOpen] = useState(false);
   const heroRef = useRef<ClusterHeroHandle>(null);
   const graduationRef = useRef<GraduationActionsHandle>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -135,17 +137,6 @@ export default function ClusterDetail({
     [visibleFaces]
   );
 
-  // --- Drag Selection Desativado ---
-  // const { selectionBox, handleMouseDown } = useDragSelection(
-  //   gridRef,
-  //   (face: RichClusterFace) => face.rowid,
-  //   selected,
-  //   setSelected,
-  //   visibleFaces
-  // );
-  // const selectionBox = null;
-  // const handleMouseDown = undefined;
-
   const handlePhotoSelect = useCallback((rowid: number, event: React.MouseEvent) => {
     setSelected(prev => {
       const next = new Set(prev);
@@ -203,6 +194,9 @@ export default function ClusterDetail({
   const thumbSize = gridZoom >= 240 ? 600 : 400;
   const photoImgH = Math.round(gridZoom * 0.85);
 
+  const bestName = cluster.suggested_student || cluster.best_student_debug;
+  const bestSim = cluster.suggested_similarity ?? cluster.best_similarity_debug ?? 0;
+
   return (
     <div className={`${styles.root} ${assignmentState?.clusterId === cluster.cluster_id ? styles.rootAssigned : ''}`} key={cluster.cluster_id}>
       {/* ── Header compacto ── */}
@@ -248,6 +242,9 @@ export default function ClusterDetail({
         onViewMode={setViewMode}
         onZoom={setZoom}
         onSelectBest={handleSelectBest}
+        bestStudentName={bestName}
+        bestStudentSim={bestSim}
+        onCompare={() => setIsCompareOpen(true)}
       />
 
       {/* ── Grid de fotos (prioridade visual) ── */}
@@ -272,20 +269,6 @@ export default function ClusterDetail({
               viewMode={viewMode}
             />
           ))}
-
-          {/* ── Selection Box Overlay ──
-          {selectionBox && (
-            <div
-              className={styles.selectionBox}
-              style={{
-                left: `${selectionBox.x}px`,
-                top: `${selectionBox.y}px`,
-                width: `${selectionBox.width}px`,
-                height: `${selectionBox.height}px`,
-              }}
-            />
-          )}
-          */}
         </div>
 
         {visibleFaces.length === 0 && (
@@ -294,6 +277,27 @@ export default function ClusterDetail({
           </div>
         )}
       </div>
+
+      {isCompareOpen && bestName && (
+        <CompareModal
+          cluster={cluster}
+          bestName={bestName}
+          bestSim={bestSim}
+          onConfirm={(name) => {
+            setIsCompareOpen(false);
+            if (onAssigned) {
+              onAssigned({
+                cluster_id: cluster.cluster_id,
+                aluno_id: name,
+                nome_formando: name,
+                status: 'assigned',
+                updated_count: cluster.face_count,
+              } as AssignClusterResponse);
+            }
+          }}
+          onClose={() => setIsCompareOpen(false)}
+        />
+      )}
 
     </div>
   );
