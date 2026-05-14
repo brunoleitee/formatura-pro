@@ -10,6 +10,7 @@ interface CompareModalProps {
   bestName: string;
   bestSim: number;
   onConfirm: (name: string) => void;
+  onReject: (name: string) => void;
   onClose: () => void;
 }
 
@@ -18,6 +19,7 @@ export default function CompareModal({
   bestName,
   bestSim,
   onConfirm,
+  onReject,
   onClose,
 }: CompareModalProps) {
   const [student, setStudent] = useState<Person | null>(null);
@@ -85,7 +87,7 @@ export default function CompareModal({
         </div>
 
         <div className={styles.footer}>
-          <button className={styles.btnSecondary} onClick={onClose}>
+          <button className={styles.btnSecondary} onClick={() => onReject(bestName)}>
             <X size={16} />
             <span>Não é {bestName}</span>
           </button>

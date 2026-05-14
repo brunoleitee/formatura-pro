@@ -69,6 +69,7 @@ export default function ClusterDetail({
   const [collapsed, setCollapsed] = useState(false);
   const [lastSelectedRowId, setLastSelectedRowId] = useState<number | null>(null);
   const [isCompareOpen, setIsCompareOpen] = useState(false);
+  const [rejectedName, setRejectedName] = useState<string | null>(null);
   const heroRef = useRef<ClusterHeroHandle>(null);
   const graduationRef = useRef<GraduationActionsHandle>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -208,6 +209,11 @@ export default function ClusterDetail({
     }
   }
 
+  if (bestName === rejectedName) {
+    bestName = null;
+    bestSim = 0;
+  }
+
   return (
     <div className={`${styles.root} ${assignmentState?.clusterId === cluster.cluster_id ? styles.rootAssigned : ''}`} key={cluster.cluster_id}>
       {/* ── Header compacto ── */}
@@ -307,6 +313,18 @@ export default function ClusterDetail({
             }
           }}
           onClose={() => setIsCompareOpen(false)}
+          onReject={(name) => {
+            setRejectedName(name);
+            setIsCompareOpen(false);
+            if (cluster.suggested_student === name) {
+              cluster.suggested_student = null;
+              cluster.suggested_similarity = null;
+            }
+            if (cluster.best_student_debug === name) {
+              cluster.best_student_debug = null;
+              cluster.best_similarity_debug = null;
+            }
+          }}
         />
       )}
 
