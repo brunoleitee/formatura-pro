@@ -2736,6 +2736,77 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
         query_duration_ms,
         duration_ms,
     )
+    # ── Final patch: ensure best_student_debug is populated ──
+    if clusters and any(c.get("best_student_debug") is None for c in clusters):
+        print("[FINAL PATCH] computing missing student matches...")
+        try:
+            with get_db(cat) as patch_conn:
+                pc = patch_conn.cursor()
+                pc.execute("""
+                    SELECT DISTINCT o.aluno_id, fe.embedding
+                    FROM ocorrencias o
+                    JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
+                    WHERE o.x1 IS NOT NULL
+                      AND o.aluno_id IS NOT NULL AND o.aluno_id != ''
+                      AND lower(o.aluno_id) NOT IN ('unknown','desconhecido','sem_nome','nao_mapeado','__unknown__')
+                      AND o.aluno_id NOT LIKE 'pessoa%'
+                      AND fe.embedding IS NOT NULL
+                """)
+                patch_students: list[tuple[str, np.ndarray]] = []
+                patch_map: dict[str, list[np.ndarray]] = {}
+                for r in pc.fetchall():
+                    name = str(r["aluno_id"])
+                    emb = np.frombuffer(r["embedding"], dtype="float32")
+                    n = np.linalg.norm(emb)
+                    if n > 0:
+                        patch_map.setdefault(name, []).append(emb / n)
+                for name, embs in patch_map.items():
+                    cent = np.mean(embs, axis=0)
+                    cn = np.linalg.norm(cent)
+                    if cn > 0:
+                        patch_students.append((name, cent / cn))
+
+                for c in clusters:
+                    if c.get("best_student_debug") is not None:
+                        continue
+                    rowids = [f.get("rowid") for f in c.get("faces", []) if f.get("rowid")]
+                    if not rowids:
+                        continue
+                    ph = ",".join(["?"] * len(rowids))
+                    pc.execute(f"SELECT occurrence_rowid, embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", rowids)
+                    embs = []
+                    for er in pc.fetchall():
+                        e = np.frombuffer(er["embedding"], dtype="float32")
+                        en = np.linalg.norm(e)
+                        if en > 0:
+                            embs.append(e / en)
+                    if not embs:
+                        continue
+                    centroid = np.mean(embs, axis=0)
+                    cn = np.linalg.norm(centroid)
+                    if cn > 0:
+                        centroid = centroid / cn
+                    best_name, best_sim = None, 0.0
+                    for name, ref in patch_students:
+                        sim = float(np.dot(centroid, ref))
+                        if sim > best_sim:
+                            best_sim = sim
+                            best_name = name
+                    if best_name:
+                        c["best_student_debug"] = best_name
+                        c["best_similarity_debug"] = round(best_sim, 4)
+                        print(f"[FINAL PATCH] {c['cluster_id']} best={best_name} sim={best_sim:.2f}")
+                        if best_sim >= 0.45:
+                            c["suggested_student"] = best_name
+                            c["suggested_similarity"] = round(best_sim, 4)
+                    else:
+                        print(f"[FINAL PATCH] {c['cluster_id']} no match found")
+        except Exception as e:
+            print(f"[FINAL PATCH] erro: {e}")
+
+    for c in clusters:
+        print(f"[FINAL PAYLOAD BEFORE] {c['cluster_id']} best_debug={c.get('best_student_debug')} sim={c.get('best_similarity_debug')}")
+
     return {
         "clusters": clusters,
         "limit": limit,
