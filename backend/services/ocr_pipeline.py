@@ -655,15 +655,21 @@ def _ocr_single_digit(digit_crop: np.ndarray) -> Optional[str]:
 
 def _ocr_blob_line(blob_crop: np.ndarray) -> Optional[str]:
     h, w = blob_crop.shape[:2]
-    padded = cv2.copyMakeBorder(blob_crop, 6, 6, 6, 6, cv2.BORDER_REPLICATE)
-    if max(h, w) < 120:
-        scale = 160.0 / max(h, w)
-        padded = cv2.resize(padded, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-    config = "--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789"
-    text = _run_tesseract(padded, config)
-    clean = re.sub(r"\D", "", (text or "").strip())
-    if 2 <= len(clean) <= 3:
-        return clean
+    for attempt in (0, 1):
+        img = blob_crop.copy()
+        if attempt == 1:
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+            img = cv2.dilate(img, kernel, iterations=1)
+        ih, iw = img.shape[:2]
+        padded = cv2.copyMakeBorder(img, 6, 6, 6, 6, cv2.BORDER_REPLICATE)
+        if max(ih, iw) < 120:
+            scale = 160.0 / max(ih, iw)
+            padded = cv2.resize(padded, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        config = "--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789"
+        text = _run_tesseract(padded, config)
+        clean = re.sub(r"\D", "", (text or "").strip())
+        if 2 <= len(clean) <= 3:
+            return clean
     return None
 
 
@@ -694,6 +700,8 @@ def _segmented_plate_ocr(plate_bgr: np.ndarray, plate_score: float, start: float
         mean_val = np.mean(binary)
         if mean_val < 127:
             binary = 255 - binary
+        kernel_close = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel_close)
         binary = _remove_small_components(binary, 30)
 
         _save_debug_plate(local_path, f"debug_threshold_{crop_idx}_{var_name}.jpg", binary)
