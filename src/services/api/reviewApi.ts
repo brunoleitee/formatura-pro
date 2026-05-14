@@ -21,7 +21,7 @@ export const reviewApi = {
 
   getReviewClusters: (catalog: string, limit = 30, offset = 0) =>
     fetchJSON<ReviewClustersPageResponse>(
-      `${API_BASE}/review/clusters?catalog=${encodeURIComponent(catalog)}&limit=${limit}&offset=${offset}`
+      `${API_BASE}/review/clusters?catalog=${encodeURIComponent(catalog)}&limit=${limit}&offset=${offset}&_t=${Date.now()}`
     ),
 
   getReviewClusterDetail: (catalog: string, clusterId: string) =>

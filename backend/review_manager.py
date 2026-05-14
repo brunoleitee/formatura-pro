@@ -965,8 +965,17 @@ def _sync_review_cluster_cache(cur) -> dict:
     }
 
 
+# In-memory cache invalidation: catalog -> last sync timestamp
+_cache_last_sync: dict[str, float] = {}
+
+def _invalidate_review_cache(catalog: str):
+    _cache_last_sync.pop(catalog, None)
+    print(f"[CACHE INVALIDATE] review clusters catalog={catalog}")
+
+
 def _ensure_review_cluster_cache(cur) -> dict:
     started_at = time.perf_counter()
+    cat = _current_catalog()
     cur.execute(
         f"""
         SELECT COUNT(*) AS cnt
@@ -980,22 +989,32 @@ def _ensure_review_cluster_cache(cur) -> dict:
         list(UNKNOWN_ALUNO_IDS),
     )
     unknown_faces = int((cur.fetchone() or {"cnt": 0})["cnt"] or 0)
+
+    # Check in-memory cache validity
+    last_sync = _cache_last_sync.get(cat)
+
     cur.execute("SELECT COUNT(*) AS cnt FROM unknown_face_clusters")
     cached_faces = int((cur.fetchone() or {"cnt": 0})["cnt"] or 0)
 
     if unknown_faces == 0:
         if cached_faces:
             _sync_unknown_face_clusters(cur, [])
-        return {
+        result = {
             "review_ready": True,
             "used_cache": cached_faces == 0,
             "unknown_faces": 0,
             "cluster_count": 0,
             "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
         }
+        if cached_faces:
+            _cache_last_sync.pop(cat, None)
+        print(f"[CACHE MISS] review_clusters_page catalog={cat} (no unknown faces)")
+        return result
 
-    if cached_faces != unknown_faces:
+    if cached_faces != unknown_faces or last_sync is None:
         sync_info = _sync_review_cluster_cache(cur)
+        _cache_last_sync[cat] = time.time()
+        print(f"[CACHE MISS] review_clusters_page catalog={cat} (resync: cached={cached_faces} unknown={unknown_faces})")
         return {
             "review_ready": True,
             "used_cache": False,
@@ -1006,6 +1025,7 @@ def _ensure_review_cluster_cache(cur) -> dict:
 
     cur.execute("SELECT COUNT(DISTINCT cluster_id) AS cnt FROM unknown_face_clusters")
     cluster_count = int((cur.fetchone() or {"cnt": 0})["cnt"] or 0)
+    print(f"[CACHE HIT] review_clusters_page catalog={cat} returned={cluster_count}")
     return {
         "review_ready": True,
         "used_cache": True,
@@ -1869,6 +1889,7 @@ def merge_unknown_clusters(catalog: str, source_cluster_id: str, target_cluster_
         cur = conn.cursor()
         cur.execute("UPDATE unknown_face_clusters SET cluster_id = ? WHERE cluster_id = ?", (target_cluster_id, source_cluster_id))
         conn.commit()
+    _invalidate_review_cache(cat)
     print(f"[CLUSTER MERGE] {source_cluster_id} -> {target_cluster_id}")
     return {"ok": True, "source": source_cluster_id, "target": target_cluster_id}
 
@@ -2359,6 +2380,7 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             cl["cluster_number"] = i + 1
         _sync_unknown_face_clusters(cur, clusters)
         conn.commit()
+        _invalidate_review_cache(cat)
         return {"clusters": clusters[:limit], "threshold": threshold, "min_cluster_size": min_cluster_size, "initial_cluster_count": initial_cluster_count}
 
 
