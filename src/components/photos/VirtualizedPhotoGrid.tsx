@@ -5,6 +5,9 @@ import type { MouseEvent, PointerEvent } from 'react';
 import type { Photo } from '../../services/api';
 import { MemoPhotoCard } from './PhotoCard';
 import { getPhotoId } from '../../hooks/usePhotoSelection';
+import { aiCacheStore } from '../../services/AICacheStore';
+import { aiQueueManager } from '../../services/AIQueueManager';
+import { aiApi } from '../../services/aiApi';
 
 interface VirtualizedPhotoGridProps {
   photos: Photo[];
@@ -82,6 +85,42 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
     if (!parentRef.current) return;
     parentRef.current.scrollTop = 0;
   }, [resetScrollKey]);
+
+  useEffect(() => {
+    const limited = photos.slice(0, 50);
+    const paths = limited.map((p) => p.path).filter(Boolean) as string[];
+    if (paths.length === 0) return;
+    let cancelled = false;
+    console.log(`[AI-GRID] batch status solicitado (${paths.length} fotos)`);
+    aiApi.batchStatus(paths).then((res) => {
+      if (cancelled) return;
+      let found = 0;
+      for (const item of res.items) {
+        if (item.status === "completed") {
+          aiCacheStore.set(item.foto_path, {
+            face_detected: item.face_detected ?? false,
+            faces_count: item.faces_count ?? 0,
+            embedding_ready: item.embedding_ready ?? false,
+            final_student: item.final_student ?? null,
+            status: "completed",
+          });
+          found++;
+        }
+      }
+      console.log(`[AI-GRID] cache preenchido: ${found}`);
+      const pending = paths.filter((p) => {
+        const c = aiCacheStore.get(p);
+        return !c || c.status !== "completed";
+      });
+      if (pending.length > 0) {
+        console.log(`[AI-GRID] queue pendente: ${pending.length}`);
+        aiQueueManager.batchInitialize(pending);
+      }
+    }).catch(() => {
+      if (!cancelled) aiQueueManager.batchInitialize(paths);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const columns = useMemo(() => {
     const safeWidth = Math.max(0, viewportWidth);

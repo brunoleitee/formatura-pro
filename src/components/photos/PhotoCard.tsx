@@ -1,10 +1,11 @@
 import React, { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Image as ImageIcon, MoreHorizontal } from 'lucide-react';
+import { Image as ImageIcon, MoreHorizontal, Brain, ScanFace, FileText } from 'lucide-react';
 import { type Photo } from '../../services/api';
 import { isPhotoBlurry, isPhotoAttention } from '../../utils/qualityUtils';
 import { isPhotoMapped, isKnownFace } from '../../utils/personIdentity';
 import { getGridHighThumbUrl, getGridThumbUrl } from '../../utils/imageUrls';
 import { isPerfLoggingEnabled, logPerf, perfNow } from '../../utils/perf';
+import { aiCacheStore } from '../../services/AICacheStore';
 
 interface PhotoCardProps {
   photo: Photo;
@@ -183,6 +184,12 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
     .map((f) => f.aluno_id)
     .filter((v, idx, a) => a.indexOf(v) === idx);
   const firstName = knownNames.length > 0 ? knownNames.join(', ') : 'Não mapeada';
+
+  const [aiTick, setAiTick] = useState(0);
+  useEffect(() => aiCacheStore.subscribe(() => setAiTick((t) => t + 1)), []);
+  const aiResult = aiCacheStore.get(photo.path);
+  const showAiBadge = aiTick >= 0 && aiResult?.status === "completed" && (aiResult.face_detected || aiResult.ocr_text);
+  const isAiProcessing = aiResult?.status === "processing" || aiResult?.status === "pending";
 
   useEffect(() => {
     const shouldPromoteHigh = highUrl !== lowUrl && highSize > lowSize;
@@ -483,6 +490,16 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
         )}
         {isDiscarded && (
           <div className="discardBadge">DESCARTADA</div>
+        )}
+        {isAiProcessing && (
+          <div className="ai-badge ai-processing">IA...</div>
+        )}
+        {showAiBadge && (
+          <div className="ai-badge ai-ready" title={aiResult?.ocr_text ? `OCR: ${aiResult.ocr_text}` : aiResult?.face_detected ? 'Rosto detectado' : ''}>
+            {aiResult?.face_detected ? <ScanFace size={10} /> : null}
+            {aiResult?.ocr_text ? <FileText size={10} /> : null}
+            {aiResult?.face_detected && aiResult?.ocr_text ? null : !aiResult?.face_detected && !aiResult?.ocr_text ? <Brain size={10} /> : null}
+          </div>
         )}
         {isDragging && dragSelectionCount > 1 && (
           <div

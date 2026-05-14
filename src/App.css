@@ -725,6 +725,41 @@
   pointer-events: none;
 }
 
+.ai-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.ai-ready {
+  background: rgba(21, 128, 61, 0.8);
+  color: #bbf7d0;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.ai-processing {
+  background: rgba(202, 138, 4, 0.65);
+  color: #fef9c3;
+  border: 1px solid rgba(250, 204, 21, 0.25);
+  animation: aiPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes aiPulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
 .photo-info { padding: 10px 10px 8px; flex-shrink: 0; }
 .photo-name {
   font-size: 0.82rem;
