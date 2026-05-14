@@ -947,6 +947,8 @@ def _sync_review_cluster_cache(cur) -> dict:
             if result.get("clusters"):
                 return {"unknown_faces": len(rows), "cluster_count": len(result["clusters"])}
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print(f"[CLUSTER] get_unknown_clusters fallback: {e}")
 
     # Fallback: legacy aluno_id grouping
@@ -2083,10 +2085,10 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
 
         def _merge_threshold(sz_a: int, sz_b: int) -> float:
             if sz_a <= 1 and sz_b <= 1:
-                return 0.48
+                return 0.45
             if sz_a <= 1 or sz_b <= 1:
-                return 0.52
-            return 0.58
+                return 0.48
+            return 0.55
 
         import os as _os
         changed = True
@@ -2309,15 +2311,7 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 ],
             })
 
-        # Debug: log all clusters
-        for cl in clusters:
-            cid = cl["cluster_id"]
-            rowids = [f.get("rowid") for f in cl.get("faces", [])]
-            tags_str = ",".join(_cluster_tags_from_payload(cl)) if _cluster_tags_from_payload(cl) else "none"
-            emb_status = "OK" if any(ccid == cid for ccid, _, _ in cluster_centroids) else "AUSENTE"
-            print(f"[CLUSTER DEBUG] {cid} rowids={rowids} fotos={cl.get('photo_count',0)} embedding={emb_status} aluno_id=unknown tags=[{tags_str}]")
-
-        # Second pass: compute unknown-vs-unknown cluster similarity (hybrid)
+        # Helper: extract graduation tags from a cluster payload
         def _cluster_tags_from_payload(cl) -> set[str]:
             tags: set[str] = set()
             if cl.get("has_gown"): tags.add("gown")
@@ -2325,6 +2319,15 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             if cl.get("has_sash"): tags.add("sash")
             if cl.get("has_cap"): tags.add("cap")
             return tags
+
+        # Debug: log all clusters
+        for cl in clusters:
+            cid = cl["cluster_id"]
+            rowids = [f.get("rowid") for f in cl.get("faces", [])]
+            tags_set = _cluster_tags_from_payload(cl)
+            tags_str = ",".join(tags_set) if tags_set else "none"
+            emb_status = "OK" if any(ccid == cid for ccid, _, _ in cluster_centroids) else "AUSENTE"
+            print(f"[CLUSTER DEBUG] {cid} rowids={rowids} fotos={cl.get('photo_count',0)} embedding={emb_status} aluno_id=unknown tags=[{tags_str}]")
 
         def _hybrid_sim_between_clusters(cl_a, cl_b, cent_a, cent_b) -> tuple[float, dict]:
             face_sim = float(np.dot(cent_a, cent_b))
