@@ -2624,14 +2624,37 @@ def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
                 with _suppress_stdout():
                     faces = app_face.get(img) or []
             print(f"[AI] faces detected count: {len(faces)}")
+            if len(faces) > 0:
+                print("[AI] face detectada")
 
             # OCR hibrido
-            from services.ocr_pipeline import process_ocr, cross_reference_ocr_with_face
-            ocr_result = process_ocr(local_path)
+            ocr_result = {
+                "ocr_text": "",
+                "ocr_confidence": 0.0,
+                "ocr_confidence_pct": 0,
+                "ocr_score": 0.0,
+                "ocr_type": "none",
+                "ocr_label": "OCR geral",
+            }
+            cross = {}
+            process_ocr = None
+            cross_reference_ocr_with_face = None
+            try:
+                from services.ocr_pipeline import process_ocr, cross_reference_ocr_with_face
+                print("[OCR] pipeline carregado")
+            except Exception as e:
+                print(f"[OCR] fallback import error: {e}")
+                print("[OCR] fallback ativo")
+
+            if process_ocr:
+                try:
+                    ocr_result = process_ocr(local_path) or ocr_result
+                except Exception as e:
+                    print(f"[OCR] fallback ativo: {e}")
+
             face_student = None
             for db in Path(__file__).resolve().parents[1].glob("data/catalogs/*.db"):
                 try:
-                    import sqlite3
                     conn = sqlite3.connect(str(db))
                     c = conn.cursor()
                     c.execute("SELECT aluno_id FROM ocorrencias WHERE foto_path = ? LIMIT 1", (foto_path,))
@@ -2642,24 +2665,31 @@ def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
                     break
                 except Exception:
                     pass
-            cross = cross_reference_ocr_with_face(
-                ocr_text=ocr_result["ocr_text"],
-                ocr_confidence=ocr_result["ocr_confidence"],
-                face_student=face_student if len(faces) > 0 else None,
-                face_confidence=float(faces[0].det_score) if len(faces) > 0 and hasattr(faces[0], "det_score") else None,
-            )
+            if cross_reference_ocr_with_face:
+                try:
+                    cross = cross_reference_ocr_with_face(
+                        ocr_text=ocr_result.get("ocr_text", ""),
+                        ocr_confidence=ocr_result.get("ocr_confidence", 0.0),
+                        face_student=face_student if len(faces) > 0 else None,
+                        face_confidence=float(faces[0].det_score) if len(faces) > 0 and hasattr(faces[0], "det_score") else None,
+                    ) or {}
+                    print("[HYBRID] cruzamento concluido")
+                except Exception as e:
+                    print(f"[HYBRID] fallback ativo: {e}")
+            else:
+                print("[HYBRID] fallback ativo")
 
             result = {
                 "success": True,
                 "local_path": local_path,
                 "face_detected": len(faces) > 0,
                 "faces_count": len(faces),
-                "ocr_text": ocr_result["ocr_text"],
-                "ocr_confidence": ocr_result["ocr_confidence"],
-                "ocr_confidence_pct": ocr_result.get("ocr_confidence_pct", int(round(float(ocr_result["ocr_confidence"]) * 100))),
-                "ocr_score": ocr_result.get("ocr_score", ocr_result["ocr_confidence"]),
-                "ocr_type": ocr_result["ocr_type"],
-                "ocr_label": ocr_result.get("ocr_label", ocr_result["ocr_type"]),
+                "ocr_text": ocr_result.get("ocr_text", ""),
+                "ocr_confidence": ocr_result.get("ocr_confidence", 0.0),
+                "ocr_confidence_pct": ocr_result.get("ocr_confidence_pct", int(round(float(ocr_result.get("ocr_confidence", 0.0)) * 100))),
+                "ocr_score": ocr_result.get("ocr_score", ocr_result.get("ocr_confidence", 0.0)),
+                "ocr_type": ocr_result.get("ocr_type", "none"),
+                "ocr_label": ocr_result.get("ocr_label", ocr_result.get("ocr_type", "none")),
                 "final_student": cross.get("final_student"),
                 "final_confidence": cross.get("final_confidence"),
                 "ocr_enriched": cross.get("ocr_enriched", False),
@@ -2698,6 +2728,7 @@ def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
                             result["embedding_ready"] = norm > 0
                             result["embedding_norm"] = round(norm, 4)
                             result["confidence"] = float(face.det_score) if hasattr(face, "det_score") else 0.0
+                            print("[AI] embedding gerado")
                         conn.commit()
                         saved_to_catalog = True
                         break
@@ -2721,12 +2752,13 @@ def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
                     metadata["ai_processed_at"] = time.time()
                     result["embedding_ready"] = norm > 0
                     result["confidence"] = metadata["ai_confidence"]
-                metadata["ai_ocr_text"] = ocr_result["ocr_text"]
-                metadata["ai_ocr_confidence"] = ocr_result["ocr_confidence"]
-                metadata["ai_ocr_confidence_pct"] = ocr_result.get("ocr_confidence_pct", int(round(float(ocr_result["ocr_confidence"]) * 100)))
-                metadata["ai_ocr_score"] = ocr_result.get("ocr_score", ocr_result["ocr_confidence"])
-                metadata["ai_ocr_type"] = ocr_result["ocr_type"]
-                metadata["ai_ocr_label"] = ocr_result.get("ocr_label", ocr_result["ocr_type"])
+                    print("[AI] embedding gerado")
+                metadata["ai_ocr_text"] = ocr_result.get("ocr_text", "")
+                metadata["ai_ocr_confidence"] = ocr_result.get("ocr_confidence", 0.0)
+                metadata["ai_ocr_confidence_pct"] = ocr_result.get("ocr_confidence_pct", int(round(float(ocr_result.get("ocr_confidence", 0.0)) * 100)))
+                metadata["ai_ocr_score"] = ocr_result.get("ocr_score", ocr_result.get("ocr_confidence", 0.0))
+                metadata["ai_ocr_type"] = ocr_result.get("ocr_type", "none")
+                metadata["ai_ocr_label"] = ocr_result.get("ocr_label", ocr_result.get("ocr_type", "none"))
                 cache.save_metadata(file_id, metadata)
                 print(f"[AI] resultado (face+ocr) salvo no cache metadata: {file_id}")
 

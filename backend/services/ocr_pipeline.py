@@ -454,3 +454,52 @@ def process_ocr(local_path: str) -> Dict[str, Any]:
     result = _result_from_candidate(best, len(regions), len(all_candidates), get_tesseract_status())
     _save_debug_artifacts(local_path, img, all_candidates, best, result)
     return result
+
+
+def cross_reference_ocr_with_face(
+    face_result: Optional[Dict[str, Any]] = None,
+    ocr_result: Optional[Dict[str, Any]] = None,
+    *,
+    ocr_text: str = "",
+    ocr_confidence: float = 0.0,
+    face_student: Optional[str] = None,
+    face_confidence: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Faz cruzamento simples entre OCR e face detection.
+    Fallback seguro para evitar quebra do pipeline hibrido.
+    """
+    face_result = face_result or {}
+    ocr_result = ocr_result or {}
+
+    if not ocr_text:
+        ocr_text = str(ocr_result.get("ocr_text") or ocr_result.get("text") or "")
+    if not ocr_confidence:
+        try:
+            ocr_confidence = float(ocr_result.get("ocr_confidence") or ocr_result.get("confidence") or 0.0)
+        except Exception:
+            ocr_confidence = 0.0
+    if face_student is None:
+        face_student = face_result.get("face_student") or face_result.get("student") or face_result.get("aluno_id")
+    if face_confidence is None:
+        try:
+            face_confidence = float(face_result.get("face_confidence") or face_result.get("confidence") or 0.0)
+        except Exception:
+            face_confidence = 0.0
+
+    ocr_confidence = max(0.0, min(float(ocr_confidence or 0.0), 1.0))
+    face_confidence = max(0.0, min(float(face_confidence or 0.0), 1.0))
+    suggested_id = ocr_text.strip() or None
+
+    final_student = face_student or suggested_id
+    final_confidence = face_confidence if face_student else ocr_confidence
+
+    return {
+        "matched": bool(face_student and suggested_id and str(face_student) == str(suggested_id)),
+        "ocr_confidence": ocr_confidence,
+        "face_confidence": face_confidence,
+        "suggested_id": suggested_id,
+        "final_student": final_student,
+        "final_confidence": final_confidence,
+        "ocr_enriched": bool(suggested_id and not face_student),
+    }
