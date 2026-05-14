@@ -2867,6 +2867,52 @@ def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = "", 
         return {"error": str(e)}
 
 
+class AiBatchStatusReq(BaseModel):
+    foto_paths: List[str] = []
+
+
+@app.post("/api/ai/batch-status")
+def ai_batch_status(req: AiBatchStatusReq):
+    result_items = []
+    for fp in req.foto_paths:
+        item = {"foto_path": fp, "status": "unknown"}
+        file_id = fp.replace("cloud://", "", 1) if fp.startswith("cloud://") else ""
+        if file_id:
+            try:
+                from cloud.drive_cache import cache
+                meta = cache.load_metadata(file_id)
+                if meta and meta.get("ai_face_detected") is not None:
+                    item["status"] = "completed"
+                    item["face_detected"] = bool(meta.get("ai_face_detected"))
+                    item["faces_count"] = int(meta.get("ai_faces_count", 0))
+                    item["embedding_ready"] = bool(meta.get("ai_embedding_ready", False))
+                    item["ocr_text"] = str(meta.get("ai_ocr_text", ""))
+                    item["ocr_confidence"] = float(meta.get("ai_ocr_confidence", 0.0))
+                    item["final_student"] = meta.get("ai_ocr_text")
+                else:
+                    item["status"] = "pending"
+            except Exception:
+                item["status"] = "error"
+        elif fp:
+            root_dir = Path(__file__).resolve().parents[1]
+            for db_file in (root_dir / "data" / "catalogs").glob("*.db"):
+                try:
+                    conn = sqlite3.connect(str(db_file))
+                    c = conn.cursor()
+                    c.execute("SELECT aluno_id FROM ocorrencias WHERE foto_path = ? LIMIT 1", (fp,))
+                    r = c.fetchone()
+                    conn.close()
+                    if r:
+                        item["status"] = "completed"
+                        item["face_detected"] = True
+                        item["final_student"] = r[0]
+                    break
+                except Exception:
+                    pass
+        result_items.append(item)
+    return {"items": result_items}
+
+
 @app.post("/api/ai/retry-face-detection")
 def ai_retry_face_detection(foto_path: str = ""):
     try:

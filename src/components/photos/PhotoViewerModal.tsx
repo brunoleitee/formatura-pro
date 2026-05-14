@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, ChevronLeft, ChevronRight, Search, UserCheck, UserMinus, Plus, ArrowUp, ArrowDown, FolderOpen } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Search, UserCheck, UserMinus, Plus, ArrowUp, ArrowDown, FolderOpen, Brain } from 'lucide-react';
 import { api, type Photo } from '../../services/api';
 import { isKnownFace } from '../../utils/personIdentity';
 import { useApp } from '../../context/AppContext';
 import { logPerf, perfNow } from '../../utils/perf';
 import { getGridHighThumbUrl, getGridThumbUrl, getViewerPreviewUrl, buildPhotoSourceUrl } from '../../utils/imageUrls';
+import { aiQueueManager } from '../../services/AIQueueManager';
+import { aiCacheStore } from '../../services/AICacheStore';
 import styles from './PhotoViewerModal.module.css';
 
 interface PhotoViewerModalProps {
@@ -109,6 +111,7 @@ export function PhotoViewerModal({
   const thumbRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const filmstripScrollTimerRef = useRef<number | null>(null);
   const filmstripUserScrollRef = useRef(false);
+  const [aiCacheTick, setAiCacheTick] = useState(0);
 
   useEffect(() => {
     viewerLoadStartRef.current = perfNow();
@@ -440,6 +443,27 @@ export function PhotoViewerModal({
       .filter((item) => item.path && item.path !== photo.path)
       .forEach((item) => preloadImage(item));
   }, [loadPreview, navigationPhotos, currentIndex, photo.path, (photo as ViewerPhoto).original_path, (photo as ViewerPhoto).preview_path]);
+
+  useEffect(() => {
+    const currentPath = photo.path || (photo as ViewerPhoto).original_path;
+    if (!currentPath) return;
+    aiQueueManager.add(currentPath, 3);
+    const preloadPaths: string[] = [];
+    for (const offset of [-2, -1, 1, 2]) {
+      const idx = currentIndex + offset;
+      if (idx >= 0 && idx < navigationPhotos.length) {
+        const p = navigationPhotos[idx]?.path;
+        if (p && p !== currentPath) preloadPaths.push(p);
+      }
+    }
+    for (const p of preloadPaths) {
+      aiQueueManager.add(p, 1);
+    }
+  }, [photo.path, currentIndex]);
+
+  useEffect(() => {
+    return aiCacheStore.subscribe(() => setAiCacheTick((t) => t + 1));
+  }, []);
 
   useEffect(() => {
     const container = filmstripRef.current;
@@ -1010,11 +1034,14 @@ export function PhotoViewerModal({
                   {navigationPhotos.map((item) => {
                     const isActive = item.path === visiblePhoto.path;
                     const itemKey = getViewerPhotoKey(item);
+                    const aiResult = aiCacheStore.get(item.path);
+                    const aiStatus = aiResult?.status;
+                    const showAiBadge = aiStatus === "completed" && (aiResult?.face_detected || aiResult?.ocr_text);
                     return (
                       <button
                         key={itemKey}
                         type="button"
-                        className={`${styles.filmstripItem} ${isActive ? styles.filmstripItemActive : ''}`}
+                        className={`${styles.filmstripItem} ${isActive ? styles.filmstripItemActive : ''} ${aiStatus === "processing" || aiStatus === "pending" ? styles.filmstripItemProcessing : ''}`}
                         ref={(node) => {
                           thumbRefs.current[itemKey] = node;
                         }}
@@ -1029,6 +1056,7 @@ export function PhotoViewerModal({
                           className={styles.filmstripThumb}
                         />
                         {isActive && <span className={styles.filmstripLabel}>Atual</span>}
+                        {showAiBadge && <span className={styles.filmstripAiBadge}><Brain size={10} /></span>}
                       </button>
                     );
                   })}
