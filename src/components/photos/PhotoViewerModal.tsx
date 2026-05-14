@@ -73,6 +73,7 @@ export function PhotoViewerModal({
   const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
   const [isLoaded, setIsLoaded] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
   const pendingSrcRef = useRef<string | null>(null);
   const [activeMenu, setActiveMenu] = useState<number | null>(null);
   const [isManualMode, setIsManualMode] = useState(false);
@@ -559,29 +560,40 @@ export function PhotoViewerModal({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (showRenameModal !== null || similarResults.length > 0 || showManualModal) return;
-      
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+
       if (e.key === 'p' || e.key === 'P') {
         api.openPhotoshop(visiblePhoto.path);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         handleRestore();
-      } else if (e.key === 'ArrowDown') {
+      } else if (e.key === 'ArrowDown' || e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
+        console.log(`[HOTKEY] discard`);
         handleDiscard();
       } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        e.preventDefault();
+        console.log(`[HOTKEY] previous`);
         viewerTransitionRef.current = 'prev';
         if (currentIndex > 0) onNavigate(navigationPhotos[currentIndex - 1]);
       } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        console.log(`[HOTKEY] next`);
         viewerTransitionRef.current = 'next';
         if (currentIndex < total - 1) onNavigate(navigationPhotos[currentIndex + 1]);
-      } else if (e.key === 'Escape') {
-        if (isManualMode) {
+      } else if (e.key === ' ' || e.key === 'Escape') {
+        e.preventDefault();
+        if (e.key === 'Escape' && isManualMode) {
           setIsManualMode(false);
           setDrawStart(null);
           setDrawCurrent(null);
-        } else {
-          onClose();
+          return;
         }
+        console.log(`[HOTKEY] close viewer`);
+        onClose();
+      } else if (e.key === 'h' || e.key === 'H') {
+        setShowHelp((v) => !v);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -1345,6 +1357,19 @@ export function PhotoViewerModal({
         <div className={styles.modalOverlay}>
           <div className={styles.similarPanel} onClick={(e) => e.stopPropagation()}>
             <div className={styles.similarLoading}>Buscando faces semelhantes...</div>
+          </div>
+        </div>
+      )}
+
+      {showHelp && (
+        <div className={styles.helpOverlay} onClick={() => setShowHelp(false)}>
+          <div className={styles.helpPanel} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.helpTitle}>Atalhos</div>
+            <div className={styles.helpRow}><kbd>←</kbd><kbd>→</kbd><span>Navegar</span></div>
+            <div className={styles.helpRow}><kbd>Espaço</kbd><span>Fechar</span></div>
+            <div className={styles.helpRow}><kbd>Delete</kbd><span>Descartar</span></div>
+            <div className={styles.helpRow}><kbd>↑</kbd><span>Restaurar</span></div>
+            <div className={styles.helpRow}><kbd>H</kbd><span>Ocultar ajuda</span></div>
           </div>
         </div>
       )}

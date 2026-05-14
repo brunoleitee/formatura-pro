@@ -1037,3 +1037,59 @@
   color: #64748b;
   font-size: 0.85rem;
 }
+
+.helpOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(2, 6, 18, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.helpPanel {
+  background: #0f172a;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 16px;
+  padding: 28px 36px;
+  min-width: 260px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.helpTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 18px;
+  letter-spacing: 0.02em;
+}
+
+.helpRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: #94a3b8;
+  font-size: 0.82rem;
+}
+
+.helpRow kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 26px;
+  padding: 0 8px;
+  background: #1e293b;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  font-family: inherit;
+}
+
+.helpRow span {
+  color: #94a3b8;
+}
