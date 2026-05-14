@@ -2279,6 +2279,7 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 print(f"[STUDENT MATCH] cluster_{len(clusters)+1} no_match best={best_debug_name} sim={best_debug_sim:.2f}")
 
             cluster_num = len(clusters) + 1
+            print(f"[AFTER STUDENT APPLY] cluster_{cluster_num} best_debug={best_debug_name} sim={best_debug_sim}")
             cluster_centroids.append((f"cluster_{cluster_num}", centroid.copy(), comp_idxs))
             clusters.append({
                 "cluster_id": f"cluster_{cluster_num}",
@@ -2431,6 +2432,8 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
         # Renumber after sort
         for i, cl in enumerate(clusters):
             cl["cluster_number"] = i + 1
+        for c in clusters[:3]:
+            print(f'[BEFORE SYNC] {c["cluster_id"]} best_student_debug={c.get("best_student_debug")} best_similarity_debug={c.get("best_similarity_debug")}')
         _sync_unknown_face_clusters(cur, clusters)
         conn.commit()
         _invalidate_review_cache(cat)
@@ -2678,6 +2681,7 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
     }
     for c in clusters[:5]:
         print(f"[PAGE CLUSTER] {c['cluster_id']}: suggested={c.get('suggested_student')} sim={c.get('suggested_similarity')}")
+        print(f"[PAGE MATCH READ] {c['cluster_id']}: best_debug={c.get('best_student_debug')} best_sim={c.get('best_similarity_debug')}")
 
 
 
