@@ -37,7 +37,7 @@ export default function CompareModal({
 
   let rightImg = '';
   if (student && student.cover_path && student.cover_box) {
-    rightImg = api.photoApi.faceThumbUrl(
+    rightImg = api.faceThumbUrl(
       student.cover_path,
       student.cover_box[0],
       student.cover_box[1],
