@@ -193,16 +193,15 @@ export default function ClusterDetail({
     setLastSelectedRowId(null);
   }, [cluster.faces]);
 
-  // thumbSize baseado no zoom (qualidade da thumbnail)
-  const adaptiveZoom = useMemo(() => {
+  // Zoom controlado pelo slider. Ajuste adaptativo mínimo para preencher espaço.
+  const gridZoom = useMemo(() => {
     const count = visibleFaces.length;
-    if (count <= 2) return Math.max(zoom, viewMode === 'face' ? 260 : 360);
-    if (count <= 4) return Math.max(zoom, viewMode === 'face' ? 200 : 280);
+    if (count <= 2) return Math.min(zoom + 40, viewMode === 'face' ? 280 : 420);
+    if (count <= 4) return Math.min(zoom + 20, viewMode === 'face' ? 280 : 420);
     return zoom;
   }, [visibleFaces.length, zoom, viewMode]);
-  const thumbSize = adaptiveZoom >= 240 ? 600 : 400;
-  // Altura da imagem em modo FOTO: proporcional ao tamanho da coluna (~85%)
-  const photoImgH = Math.round(adaptiveZoom * 0.85);
+  const thumbSize = gridZoom >= 240 ? 600 : 400;
+  const photoImgH = Math.round(gridZoom * 0.85);
 
   return (
     <div className={`${styles.root} ${assignmentState?.clusterId === cluster.cluster_id ? styles.rootAssigned : ''}`} key={cluster.cluster_id}>
@@ -257,7 +256,7 @@ export default function ClusterDetail({
           ref={gridRef}
           className={`${styles.gridSelectionHost} ${viewMode === 'photo' ? styles.clusterGridPhoto : styles.clusterGridFace}`}
           style={{
-            '--grid-item-size': `${adaptiveZoom}px`,
+            '--grid-item-size': `${gridZoom}px`,
             '--photo-img-h': `${photoImgH}px`,
           } as CSSProperties}
         >
