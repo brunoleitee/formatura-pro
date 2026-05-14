@@ -95,17 +95,19 @@ const ClusterItem = memo(function ClusterItem({
 
       <div className={styles.itemInfo}>
         <span className={styles.itemName}>Possível formando</span>
-        {cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.65 ? (
-          <span className={styles.suggestedLabel}>
-            <strong>{cluster.suggested_student}</strong> — {Math.round(cluster.suggested_similarity * 100)}%
-          </span>
-        ) : cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.45 ? (
-          <span className={styles.suggestedLabelPossible}>
-            Possível {cluster.suggested_student} — {Math.round(cluster.suggested_similarity * 100)}%
-          </span>
-        ) : (
-          <span className={styles.noSuggestionLabel}>Sem correspondência conhecida</span>
-        )}
+        <div className={styles.suggestionRow}>
+          {cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.65 ? (
+            <span className={styles.suggestionBadgeStrong} title={`Sugestão forte: ${cluster.suggested_student} — ${Math.round(cluster.suggested_similarity * 100)}%`}>
+              {cluster.suggested_student} — {Math.round(cluster.suggested_similarity * 100)}%
+            </span>
+          ) : cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.45 ? (
+            <span className={styles.suggestionBadgePossible} title={`Similaridade moderada: ${cluster.suggested_student} — ${Math.round(cluster.suggested_similarity * 100)}%`}>
+              Possível {cluster.suggested_student}
+            </span>
+          ) : (
+            <span className={styles.suggestionBadgeNone} title="Sem correspondência conhecida">Sem match</span>
+          )}
+        </div>
         <span className={styles.itemMeta}>
           <span>{photoCountLabel}</span>
           <span className={styles.dot}>·</span>

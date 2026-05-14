@@ -299,36 +299,57 @@
   color: #e2e8f0;
 }
 
-.suggestedLabel {
-  font-size: 0.68rem;
-  color: #60a5fa;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.3;
+.suggestionRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-height: 18px;
 }
 
-.suggestedLabel strong {
+.suggestionBadgeStrong {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border-radius: 5px;
+  font-size: 0.62rem;
   font-weight: 700;
-  color: #93c5fd;
+  letter-spacing: 0.02em;
+  background: rgba(16, 185, 129, 0.15);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  white-space: nowrap;
 }
 
-.suggestedLabelPossible {
-  font-size: 0.68rem;
-  color: #fbbf24;
+.suggestionBadgePossible {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border-radius: 5px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: rgba(245, 158, 11, 0.12);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.18);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.3;
 }
 
-.noSuggestionLabel {
-  font-size: 0.65rem;
-  color: #475569;
+.suggestionBadgeNone {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border-radius: 5px;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: rgba(100, 116, 139, 0.1);
+  color: #64748b;
+  border: 1px solid rgba(100, 116, 139, 0.12);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.3;
 }
 
 .itemActive .itemMeta {
