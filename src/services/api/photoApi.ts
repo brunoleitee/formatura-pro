@@ -49,4 +49,14 @@ export const photoApi = {
     ),
   addManualFace: (data: { foto_path: string; catalog: string; box: number[]; new_name: string }) =>
     post(`${API_BASE}/manual_identify`, data),
+
+  setRating: (fotoPath: string, rating: number) =>
+    post<{ success: boolean; rating: number }>(
+      `${API_BASE}/photo/rating?foto_path=${encodeURIComponent(fotoPath)}&rating=${rating}`, {}
+    ),
+
+  toggleFavorite: (fotoPath: string) =>
+    post<{ success: boolean; favorite: boolean }>(
+      `${API_BASE}/photo/favorite?foto_path=${encodeURIComponent(fotoPath)}`, {}
+    ),
 };

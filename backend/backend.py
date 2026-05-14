@@ -953,6 +953,13 @@ class DbConnection:
                 timestamp TEXT
             )
         """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS photo_meta (
+                foto_path TEXT PRIMARY KEY,
+                rating INTEGER DEFAULT 0,
+                favorite INTEGER DEFAULT 0
+            )
+        """)
         c.execute("CREATE INDEX IF NOT EXISTS idx_face_embeddings_path ON face_embeddings(foto_path)")
         c.execute("""
             CREATE TABLE IF NOT EXISTS unknown_face_clusters (
@@ -2911,6 +2918,46 @@ def ai_batch_status(req: AiBatchStatusReq):
                     pass
         result_items.append(item)
     return {"items": result_items}
+
+
+@app.post("/api/photo/rating")
+def set_photo_rating(foto_path: str = "", rating: int = 0):
+    if not foto_path:
+        return {"error": "foto_path obrigatorio"}
+    rating = max(0, min(5, int(rating)))
+    try:
+        with get_db() as db:
+            db.cursor().execute("""
+                INSERT INTO photo_meta (foto_path, rating) VALUES (?, ?)
+                ON CONFLICT(foto_path) DO UPDATE SET rating = excluded.rating
+            """, (foto_path, rating))
+            db.commit()
+        print(f"[HOTKEY] rating {rating}: {foto_path}")
+        return {"success": True, "rating": rating}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/photo/favorite")
+def toggle_photo_favorite(foto_path: str = ""):
+    if not foto_path:
+        return {"error": "foto_path obrigatorio"}
+    try:
+        with get_db() as db:
+            cur = db.cursor()
+            cur.execute("SELECT favorite FROM photo_meta WHERE foto_path = ?", (foto_path,))
+            row = cur.fetchone()
+            current = bool(row["favorite"]) if row else False
+            new_val = 1 if not current else 0
+            cur.execute("""
+                INSERT INTO photo_meta (foto_path, rating, favorite) VALUES (?, 0, ?)
+                ON CONFLict(foto_path) DO UPDATE SET favorite = excluded.favorite
+            """, (foto_path, new_val))
+            db.commit()
+        print(f"[HOTKEY] favorite {'on' if new_val else 'off'}: {foto_path}")
+        return {"success": True, "favorite": bool(new_val)}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.post("/api/ai/retry-face-detection")

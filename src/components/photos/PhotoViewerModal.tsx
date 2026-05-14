@@ -557,11 +557,45 @@ export function PhotoViewerModal({
     };
   }, []);
 
+  const handleRating = useCallback(async (rating: number) => {
+    const path = visiblePhoto.path;
+    console.log(`[HOTKEY] rating ${rating}`);
+    try {
+      await api.setRating(path, rating);
+      showFeedbackMsg(`Rating: ${rating}`);
+      if (currentIndex < total - 1) onNavigate(navigationPhotos[currentIndex + 1]);
+    } catch { /* ignore */ }
+  }, [visiblePhoto.path, currentIndex, total, onNavigate, showFeedbackMsg]);
+
+  const handleFavorite = useCallback(async () => {
+    console.log(`[HOTKEY] favorite toggle`);
+    try {
+      const res = await api.toggleFavorite(visiblePhoto.path);
+      showFeedbackMsg(res.favorite ? "Favoritada" : "Desfavoritada");
+    } catch { /* ignore */ }
+  }, [visiblePhoto.path, showFeedbackMsg]);
+
+  const handleConfirmSuggestion = useCallback(() => {
+    const aiResult = aiCacheStore.get(visiblePhoto.path);
+    const suggested = aiResult?.final_student || aiResult?.suggested_id;
+    if (suggested && suggested.trim()) {
+      console.log(`[HOTKEY] confirm suggestion: ${suggested}`);
+      showFeedbackMsg(`Sugestão: ${suggested}`);
+    }
+  }, [visiblePhoto.path, showFeedbackMsg]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (showRenameModal !== null || similarResults.length > 0 || showManualModal) return;
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+
+      if (e.ctrlKey && e.key === 'z') {
+        e.preventDefault();
+        console.log(`[HOTKEY] undo`);
+        showFeedbackMsg("Desfazer: sem ação anterior");
+        return;
+      }
 
       if (e.key === 'p' || e.key === 'P') {
         api.openPhotoshop(visiblePhoto.path);
@@ -594,11 +628,24 @@ export function PhotoViewerModal({
         onClose();
       } else if (e.key === 'h' || e.key === 'H') {
         setShowHelp((v) => !v);
+      } else if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        handleFavorite();
+      } else if (e.key === 'Enter') {
+        if (e.shiftKey) {
+          console.log(`[HOTKEY] confirm batch`);
+          showFeedbackMsg("Confirmação em lote");
+        } else {
+          handleConfirmSuggestion();
+        }
+      } else if (/^[1-5]$/.test(e.key)) {
+        e.preventDefault();
+        handleRating(parseInt(e.key));
       }
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [photo, currentIndex, total, onNavigate, onClose, isManualMode, showRenameModal, similarResults.length, showManualModal, handleRestore, handleDiscard]);
+  }, [photo, currentIndex, total, onNavigate, onClose, isManualMode, showRenameModal, similarResults.length, showManualModal, handleRestore, handleDiscard, handleRating, handleFavorite, handleConfirmSuggestion, showFeedbackMsg]);
 
   const clampPanToStage = useCallback((nextPan: { x: number; y: number }, nextZoom: number) => {
     const stage = imageStageRef.current;
@@ -1367,8 +1414,12 @@ export function PhotoViewerModal({
             <div className={styles.helpTitle}>Atalhos</div>
             <div className={styles.helpRow}><kbd>←</kbd><kbd>→</kbd><span>Navegar</span></div>
             <div className={styles.helpRow}><kbd>Espaço</kbd><span>Fechar</span></div>
-            <div className={styles.helpRow}><kbd>Delete</kbd><span>Descartar</span></div>
+            <div className={styles.helpRow}><kbd>Delete</kbd><span>Descartar + auto next</span></div>
             <div className={styles.helpRow}><kbd>↑</kbd><span>Restaurar</span></div>
+            <div className={styles.helpRow}><kbd>1</kbd><kbd>–</kbd><kbd>5</kbd><span>Rating</span></div>
+            <div className={styles.helpRow}><kbd>F</kbd><span>Favoritar</span></div>
+            <div className={styles.helpRow}><kbd>Enter</kbd><span>Confirmar sugestão IA</span></div>
+            <div className={styles.helpRow}><kbd>Ctrl+Z</kbd><span>Desfazer</span></div>
             <div className={styles.helpRow}><kbd>H</kbd><span>Ocultar ajuda</span></div>
           </div>
         </div>
