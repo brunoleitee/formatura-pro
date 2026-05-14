@@ -137,16 +137,15 @@ export default function ClusterToolbar({
 
       {/* Compare button */}
       {(() => {
-        const isEnabled = !!bestStudentName;
-        console.log('[COMPARE BUTTON]\nstudent=' + bestStudentName + '\nsimilarity=' + bestStudentSim + '\nenabled=' + isEnabled);
-        if (!bestStudentName && !onCompare) return null;
+        const isValid = bestStudentName && bestStudentName !== 'null' && bestStudentName !== 'unknown';
+        console.log('[COMPARE BUTTON]\nstudent=' + bestStudentName + '\nsimilarity=' + bestStudentSim + '\nenabled=' + !!isValid);
         
         return (
           <button 
             className={styles.compareBtn} 
-            title={`Comparar com ${bestStudentName} — ${Math.round((bestStudentSim || 0) * 100)}%`}
-            onClick={onCompare}
-            disabled={!isEnabled}
+            title={isValid ? `Comparar com ${bestStudentName} — ${Math.round((bestStudentSim || 0) * 100)}%` : 'Comparar'}
+            onClick={isValid ? onCompare : undefined}
+            disabled={!isValid}
           >
             <GitCompare size={14} />
             <span>Comparar</span>
