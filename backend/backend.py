@@ -1346,6 +1346,14 @@ def debug_face_state(rowid: int = 0, foto_path: str = ""):
         return {"error": str(e)}
 
 
+@app.get("/api/review/debug-student-matches")
+def debug_student_matches(catalog: str = ""):
+    try:
+        return rm.debug_student_matches(catalog)
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.post("/api/review/graduation-analysis/start")
 def start_graduation_analysis(req: GraduationAnalysisRequest):
     try:

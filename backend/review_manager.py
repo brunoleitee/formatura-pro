@@ -2156,7 +2156,7 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 WHERE o.x1 IS NOT NULL
                   AND o.aluno_id IS NOT NULL
                   AND o.aluno_id != ''
-                  AND lower(o.aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'não_mapeado', '__unknown__')
+                  AND lower(o.aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__')
                   AND o.aluno_id NOT LIKE 'pessoa%'
                   AND fe.embedding IS NOT NULL
                 ORDER BY o.aluno_id
@@ -2173,6 +2173,12 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 cn = np.linalg.norm(centroid)
                 if cn > 0:
                     identified_centroids.append((name, centroid / cn))
+            print(f"[STUDENT DB] identified_students_count={len(identified_centroids)}")
+            for name, _ in identified_centroids:
+                emb_count = len(id_emb_map.get(name, []))
+                print(f"[STUDENT DB] student={name} embeddings={emb_count}")
+            if not identified_centroids:
+                print(f"[STUDENT DB] nenhum formando identificado com embedding encontrado (query returned {len(id_rows)} rows)")
         except Exception as e:
             print(f"[CLUSTER] erro ao carregar formandos: {e}")
 
@@ -2475,6 +2481,29 @@ def debug_face_state(rowid: int = 0, foto_path: str = ""):
             }
     except Exception as e:
         return {"error": str(e)}
+
+
+def debug_student_matches(catalog: str = ""):
+    """Debug: returns identified students and best match per cluster."""
+    cat = catalog or _current_catalog()
+    if not cat:
+        return {"error": "nenhum catalogo"}
+    result = get_unknown_clusters(catalog=cat, min_cluster_size=1, limit=200)
+    clusters_data = result.get("clusters", [])
+    students: set[str] = set()
+    for cl in clusters_data:
+        if cl.get("suggested_student"):
+            students.add(str(cl["suggested_student"]))
+    return {
+        "identified_students_count": len(students),
+        "students": sorted(students),
+        "clusters": [{
+            "cluster_id": c["cluster_id"],
+            "best_student": c.get("suggested_student"),
+            "similarity": c.get("suggested_similarity"),
+            "photos": c.get("photo_count", 0),
+        } for c in clusters_data],
+    }
 
 
 def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0):
