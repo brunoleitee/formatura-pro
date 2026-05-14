@@ -1338,6 +1338,14 @@ def debug_cluster_similarities(catalog: str = ""):
         return {"error": str(e)}
 
 
+@app.get("/api/review/debug-face-state")
+def debug_face_state(rowid: int = 0, foto_path: str = ""):
+    try:
+        return rm.debug_face_state(rowid=rowid, foto_path=foto_path)
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.post("/api/review/graduation-analysis/start")
 def start_graduation_analysis(req: GraduationAnalysisRequest):
     try:

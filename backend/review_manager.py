@@ -512,24 +512,35 @@ def bulk_manual_identify(req: BulkManualIdentifyReq):
 
     new_name = (req.new_name or "").strip() or "Desconhecido"
     updated = 0
+    is_reset = (new_name == "Desconhecido")
     with get_db(req.catalog) as conn:
         cur = conn.cursor()
         _ensure_aluno_row(cur, new_name)
         for i in range(0, len(rowids), 900):
             chunk = rowids[i:i + 900]
             placeholders = ",".join(["?"] * len(chunk))
-            # OR REPLACE garante que conflitos de UNIQUE constraint sejam resolvidos:
-            # se já existir uma linha com (new_name, foto_path, x1...) a antiga é removida.
             cur.execute(
                 f"UPDATE OR REPLACE ocorrencias SET aluno_id = ? WHERE rowid IN ({placeholders})",
                 [new_name] + chunk,
             )
             updated += cur.rowcount
+        # If resetting to unknown, clean up legacy state
+        if is_reset:
+            for rid in rowids:
+                cur.execute("SELECT aluno_id FROM ocorrencias WHERE rowid = ?", (rid,))
+                old = cur.fetchone()
+                old_id = str(old["aluno_id"]) if old else ""
+                print(f"[RESET UNKNOWN] rowid={rid} old_student={old_id}")
+            placeholders = ",".join(["?"] * len(rowids))
+            cur.execute(f"DELETE FROM face_embeddings WHERE occurrence_rowid IN ({placeholders})", rowids)
+            cur.execute(f"DELETE FROM unknown_face_clusters WHERE face_id IN ({placeholders})", rowids)
         conn.commit()
         logging.info(f"[bulk_manual_identify] catalog={req.catalog} name={new_name!r} rowids={len(rowids)} updated={updated}")
         if new_name and new_name != "Desconhecido":
             _ensure_person_reference(conn, req.catalog, new_name)
 
+    if is_reset:
+        _invalidate_review_cache(req.catalog)
     return {"ok": True, "status": "ok", "updated": updated, "new_name": new_name}
 
 
@@ -2416,6 +2427,40 @@ def debug_cluster_similarities(catalog: str = ""):
         "total_clusters": len(debug_clusters),
         "clusters": debug_clusters,
     }
+
+
+def debug_face_state(rowid: int = 0, foto_path: str = ""):
+    """Debug endpoint: returns full state of a single face."""
+    cat = _current_catalog()
+    if not cat:
+        return {"error": "nenhum catalogo"}
+    try:
+        get_db = _get("get_db")
+        with get_db(cat) as conn:
+            cur = conn.cursor()
+            if rowid:
+                cur.execute("SELECT rowid, * FROM ocorrencias WHERE rowid = ?", (rowid,))
+            elif foto_path:
+                cur.execute("SELECT rowid, * FROM ocorrencias WHERE foto_path = ? LIMIT 1", (foto_path,))
+            else:
+                return {"error": "forneca rowid ou foto_path"}
+            face = cur.fetchone()
+            if not face:
+                return {"error": "face nao encontrada"}
+            face_dict = dict(face)
+            rowid_val = face_dict.get("rowid") or face_dict.get("rowid")
+            cur.execute("SELECT * FROM unknown_face_clusters WHERE face_id = ?", (rowid_val,))
+            cluster_row = cur.fetchone()
+            cur.execute("SELECT * FROM face_embeddings WHERE occurrence_rowid = ?", (rowid_val,))
+            emb_row = cur.fetchone()
+            return {
+                "face": {k: str(v) if isinstance(v, bytes) else v for k, v in face_dict.items()},
+                "unknown_cluster": dict(cluster_row) if cluster_row else None,
+                "has_embedding": emb_row is not None,
+                "catalog": cat,
+            }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0):
