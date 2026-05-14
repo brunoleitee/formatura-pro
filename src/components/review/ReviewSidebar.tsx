@@ -96,11 +96,11 @@ const ClusterItem = memo(function ClusterItem({
       <div className={styles.itemInfo}>
         <span className={styles.itemName}>Possível formando</span>
         <div className={styles.suggestionRow}>
-          {cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.65 ? (
-            <span className={styles.suggestionBadgeStrong} title={`Sugestão forte: ${cluster.suggested_student} — ${Math.round(cluster.suggested_similarity * 100)}%`}>
-              {cluster.suggested_student} — {Math.round(cluster.suggested_similarity * 100)}%
-            </span>
-          ) : cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.45 ? (
+        {cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.55 ? (
+          <span className={styles.suggestionBadgeStrong} title={`Sugestão: ${cluster.suggested_student} — ${Math.round(cluster.suggested_similarity * 100)}%`}>
+            {cluster.suggested_student} — {Math.round(cluster.suggested_similarity * 100)}%
+          </span>
+        ) : cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.30 ? (
             <span className={styles.suggestionBadgePossible} title={`Similaridade moderada: ${cluster.suggested_student} — ${Math.round(cluster.suggested_similarity * 100)}%`}>
               Possível {cluster.suggested_student}
             </span>

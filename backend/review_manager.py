@@ -2241,6 +2241,17 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             graduation_tags = _ordered_cluster_tags(priority_meta)
             debug_graduation_source = _resolve_cluster_graduation_source(priority_meta)
             suggested_student, suggested_similarity = _best_student_match(centroid)
+            if suggested_student:
+                print(f"[STUDENT MATCH] cluster_{len(clusters)+1} best={suggested_student} sim={suggested_similarity:.2f}")
+            elif identified_centroids:
+                # Log best match even below threshold for debugging
+                best_name, best_sim = None, 0.0
+                for name, ref_cent in identified_centroids:
+                    sim = float(np.dot(centroid, ref_cent))
+                    if sim > best_sim:
+                        best_sim = sim
+                        best_name = name
+                print(f"[STUDENT MATCH] cluster_{len(clusters)+1} no_match best={best_name} sim={best_sim:.2f}")
 
             cluster_num = len(clusters) + 1
             cluster_centroids.append((f"cluster_{cluster_num}", centroid.copy(), comp_idxs))

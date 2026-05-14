@@ -161,12 +161,12 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
           <span className={styles.metaConf}>{cohesionLabel}</span>
         </div>
 
-        {cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.65 && !isAssigned ? (
+        {cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.55 && !isAssigned ? (
           <div className={styles.suggestionRowStrong}>
             <Sparkles size={12} />
             <span><strong>{cluster.suggested_student}</strong> — {Math.round(cluster.suggested_similarity * 100)}%</span>
           </div>
-        ) : cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.45 && !isAssigned ? (
+        ) : cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.35 && !isAssigned ? (
           <div className={styles.suggestionRow}>
             <Sparkles size={12} />
             <span>Possível semelhança: <strong>{cluster.suggested_student}</strong> — {Math.round(cluster.suggested_similarity * 100)}%</span>
@@ -192,7 +192,7 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
               <UserPlus size={16} />
               <span>Identificar</span>
             </button>
-            {cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.65 && !isAssigned && !identifying ? (
+            {cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.55 && !isAssigned && !identifying ? (
               <button
                 className={styles.btnConfirm}
                 onClick={() => {
