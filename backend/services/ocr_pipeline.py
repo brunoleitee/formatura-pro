@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
@@ -11,6 +12,9 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+_EASYOCR_READER = None
+MAX_OCR_SECONDS = 3.0
+
 from services.ocr_engine import (
     get_tesseract_status,
     is_tesseract_available,
@@ -18,7 +22,7 @@ from services.ocr_engine import (
     run_tesseract_safe,
 )
 
-OCR_DEBUG_ENABLED = os.environ.get("OCR_DEBUG", os.environ.get("FORM_PRO_OCR_DEBUG", "0")) == "1"
+OCR_DEBUG_ENABLED = os.environ.get("OCR_DEBUG", os.environ.get("FORM_PRO_OCR_DEBUG", os.environ.get("FORM_PRO_DEBUG", "0"))) == "1"
 OCR_DEBUG_DIR = Path(__file__).resolve().parents[1] / "data" / ".cache" / "ocr_debug"
 
 
@@ -108,6 +112,17 @@ def _extract_number_candidates(text: str) -> List[str]:
     seen = set()
     for item in candidates:
         if item not in seen:
+            seen.add(item)
+            unique.append(item)
+    return unique
+
+
+def _extract_id_card_candidates(text: str) -> List[str]:
+    candidates = re.findall(r"\d{3,6}", text or "")
+    unique: List[str] = []
+    seen = set()
+    for item in candidates:
+        if 3 <= len(item) <= 6 and item not in seen:
             seen.add(item)
             unique.append(item)
     return unique
@@ -302,6 +317,244 @@ def _ocr_numeric_only(image: np.ndarray) -> Dict[str, Any]:
     return {"text": text, "numbers": numbers, "confidence": conf, "type": "ficha_numerica", "label": "Ficha numérica"}
 
 
+def _id_card_regions(img: np.ndarray) -> List[Tuple[str, Tuple[int, int, int, int], float]]:
+    h, w = img.shape[:2]
+    regions = [
+        ("lower_half", (0, int(h * 0.50), w, h), 0.90),
+        ("lower_third", (0, int(h * 0.66), w, h), 0.96),
+        ("lower_band_55_95", (0, int(h * 0.55), w, int(h * 0.95)), 1.00),
+        ("center_lower", (int(w * 0.12), int(h * 0.58), int(w * 0.88), int(h * 0.95)), 1.00),
+        ("hand_card_area", (int(w * 0.18), int(h * 0.62), int(w * 0.82), int(h * 0.92)), 0.98),
+        ("bottom_center", (int(w * 0.20), int(h * 0.70), int(w * 0.80), int(h * 0.98)), 0.94),
+    ]
+    valid = []
+    for name, (x1, y1, x2, y2), weight in regions:
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(w, x2), min(h, y2)
+        if x2 - x1 >= 80 and y2 - y1 >= 40:
+            valid.append((name, (x1, y1, x2, y2), weight))
+    return valid
+
+
+def _prepare_id_card_variants(crop: np.ndarray) -> List[Tuple[str, np.ndarray, float]]:
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if crop.ndim == 3 else crop.copy()
+    gray = cv2.fastNlMeansDenoising(gray, None, 10, 7, 21)
+    clahe = cv2.createCLAHE(clipLimit=3.5, tileGridSize=(8, 8))
+    gray = clahe.apply(gray)
+
+    h, w = gray.shape[:2]
+    scale = 3.0 if max(h, w) < 900 else 2.0
+    upscaled = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    sharpen = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
+    sharp = cv2.filter2D(upscaled, -1, sharpen)
+    blur = cv2.GaussianBlur(sharp, (3, 3), 0)
+    otsu = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+    otsu_inv = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+    adaptive = cv2.adaptiveThreshold(
+        blur,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        31,
+        7,
+    )
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+    opened = cv2.morphologyEx(otsu, cv2.MORPH_OPEN, kernel, iterations=1)
+    return [
+        ("gray", upscaled, 0.80),
+        ("sharp", sharp, 0.86),
+        ("otsu", otsu, 0.94),
+        ("otsu_inv", otsu_inv, 0.88),
+        ("adaptive", adaptive, 0.92),
+        ("opened", opened, 0.90),
+    ]
+
+
+def _ocr_segmented_large_digits(image: np.ndarray) -> Optional[str]:
+    if image.ndim == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image.copy()
+    if float(np.mean(gray)) < 127.0:
+        binary = 255 - gray
+    else:
+        binary = gray
+
+    inv = 255 - binary
+    contours, _ = cv2.findContours(inv, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    h, w = binary.shape[:2]
+    boxes = []
+    for cnt in contours:
+        x, y, bw, bh = cv2.boundingRect(cnt)
+        area = bw * bh
+        if bh < h * 0.18 or bw < w * 0.015:
+            continue
+        if area < max(500, h * w * 0.002):
+            continue
+        if bh > h * 0.95 or bw > w * 0.45:
+            continue
+        boxes.append((x, y, bw, bh))
+
+    boxes.sort(key=lambda item: item[0])
+    if not 3 <= len(boxes) <= 6:
+        return None
+
+    digits = []
+    for x, y, bw, bh in boxes:
+        pad = max(12, int(max(bw, bh) * 0.10))
+        x1 = max(0, x - pad)
+        y1 = max(0, y - pad)
+        x2 = min(w, x + bw + pad)
+        y2 = min(h, y + bh + pad)
+        roi = binary[y1:y2, x1:x2]
+        text = _run_tesseract(
+            roi,
+            "--oem 3 --psm 13 -c tessedit_char_whitelist=0123456789 -c classify_bln_numeric_mode=1",
+        )
+        digit = re.sub(r"\D", "", text or "")
+        if len(digit) != 1:
+            return None
+        digits.append(digit)
+
+    number = "".join(digits)
+    return number if 3 <= len(number) <= 6 else None
+
+
+def _save_id_card_debug(local_path: str, img: np.ndarray, candidates: List[Dict[str, Any]], crops: List[Dict[str, Any]], result: Dict[str, Any]) -> None:
+    if not OCR_DEBUG_ENABLED:
+        return
+    try:
+        debug_dir = _ensure_debug_dir() / Path(local_path).stem / "id_card" / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(debug_dir / "original.png"), img)
+
+        overlay = img.copy()
+        for item in crops:
+            x1, y1, x2, y2 = item["region"]
+            cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 200, 255), 2)
+            cv2.putText(overlay, item["name"], (x1, max(0, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 200, 255), 1, cv2.LINE_AA)
+            crop_img = item.get("crop")
+            if crop_img is not None:
+                cv2.imwrite(str(debug_dir / f"{item['name']}.png"), crop_img)
+        cv2.imwrite(str(debug_dir / "regions.png"), overlay)
+
+        payload = {
+            "result": result,
+            "candidates": [{k: v for k, v in item.items() if k not in ("crop", "image")} for item in candidates],
+            "crops": [{k: v for k, v in item.items() if k != "crop"} for item in crops],
+        }
+        (debug_dir / "result.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _empty_ocr_result() -> Dict[str, Any]:
+    return {
+        "ocr_text": "",
+        "ocr_confidence": 0.0,
+        "ocr_confidence_pct": 0,
+        "ocr_type": "none",
+        "ocr_label": "OCR geral",
+        "ocr_enriched": False,
+    }
+
+
+def _enriched_ocr_result(number: str, confidence: float) -> Dict[str, Any]:
+    return {
+        "ocr_text": number,
+        "ocr_confidence": round(confidence, 4),
+        "ocr_confidence_pct": int(round(confidence * 100)),
+        "ocr_type": "id_card",
+        "ocr_label": "Ficha numérica",
+        "ocr_enriched": True,
+    }
+
+
+def process_id_card_ocr(local_path: str, img: Optional[np.ndarray] = None) -> Dict[str, Any]:
+    start = time.time()
+    print("[OCR-ID] iniciando leitura da ficha")
+    try:
+        if img is None:
+            img = _load_image(local_path)
+        if img is None:
+            print("[OCR-ID] sem numero detectado")
+            elapsed = int((time.time() - start) * 1000)
+            print(f"[OCR-ID] finalizado em {elapsed}ms")
+            return _empty_ocr_result()
+
+        h, w = img.shape[:2]
+
+        crop_defs = [
+            ("inferior_amplo", (0, int(h * 0.55), w, int(h * 0.95))),
+            ("central_inferior", (int(w * 0.15), int(h * 0.58), int(w * 0.85), int(h * 0.90))),
+            ("ficha_provavel", (int(w * 0.20), int(h * 0.62), int(w * 0.80), int(h * 0.88))),
+        ]
+
+        if time.time() - start > MAX_OCR_SECONDS:
+            print("[OCR-ID] timeout, abortando OCR da ficha")
+            return _empty_ocr_result()
+
+        candidates: List[Dict[str, Any]] = []
+
+        for idx, (name, (x1, y1, x2, y2)) in enumerate(crop_defs, 1):
+            if time.time() - start > MAX_OCR_SECONDS:
+                print("[OCR-ID] timeout, abortando OCR da ficha")
+                break
+
+            crop = img[y1:y2, x1:x2]
+            if crop.size == 0:
+                continue
+
+            print(f"[OCR-ID] crop {idx}/{len(crop_defs)} criado")
+
+            # OCR numerico (whitelist)
+            print(f"[OCR-ID] crop {idx}/{len(crop_defs)} OCR iniciado")
+            t0 = time.time()
+            text = _run_tesseract(crop, "--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789")
+            numbers = _extract_id_card_candidates(text)
+            elapsed_ms = int((time.time() - t0) * 1000)
+            print(f"[OCR-ID] crop {idx}/{len(crop_defs)} OCR finalizado em {elapsed_ms}ms")
+
+            if numbers:
+                for number in numbers:
+                    score = min(0.97, 0.54 + _digit_length_score(number) * 0.18)
+                    candidates.append({"numbers": number, "confidence": round(score, 4)})
+            else:
+                # Segundo pass com OCR generico se o numerico nao achou nada
+                print(f"[OCR-ID] crop {idx}/{len(crop_defs)} OCR (psm6) iniciado")
+                t0 = time.time()
+                text2 = _run_tesseract(crop, "--oem 3 --psm 6")
+                numbers2 = _extract_id_card_candidates(text2)
+                elapsed_ms = int((time.time() - t0) * 1000)
+                print(f"[OCR-ID] crop {idx}/{len(crop_defs)} OCR (psm6) finalizado em {elapsed_ms}ms")
+                if numbers2:
+                    for number in numbers2:
+                        score = min(0.94, 0.48 + _digit_length_score(number) * 0.18)
+                        candidates.append({"numbers": number, "confidence": round(score, 4)})
+
+        print(f"[OCR-ID] candidatos encontrados: {[c['numbers'] for c in candidates]}")
+
+        if not candidates:
+            print("[OCR-ID] sem numero detectado")
+            elapsed = int((time.time() - start) * 1000)
+            print(f"[OCR-ID] finalizado em {elapsed}ms")
+            return _empty_ocr_result()
+
+        candidates.sort(key=lambda c: (c["confidence"], len(c["numbers"])), reverse=True)
+        best = candidates[0]
+        number = best["numbers"]
+        confidence = best["confidence"]
+
+        print(f"[OCR-ID] numero detectado: {number}")
+        elapsed = int((time.time() - start) * 1000)
+        print(f"[OCR-ID] finalizado em {elapsed}ms")
+        return _enriched_ocr_result(number, confidence)
+
+    except Exception as e:
+        print(f"[OCR-ID] erro protegido: {e}")
+        return _empty_ocr_result()
+
+
 def _result_from_candidate(candidate: Optional[Dict[str, Any]], regions_found: int, candidates_count: int, tesseract_status: Dict[str, Any]) -> Dict[str, Any]:
     if not candidate:
         return {
@@ -367,6 +620,10 @@ def process_ocr(local_path: str) -> Dict[str, Any]:
             "ocr_available": True,
             "ocr_status": get_tesseract_status(),
         }
+
+    id_card_result = process_id_card_ocr(local_path, img)
+    if id_card_result and id_card_result.get("ocr_text"):
+        return id_card_result
 
     regions = _find_text_regions(img)
     all_candidates: List[Dict[str, Any]] = []
@@ -491,8 +748,8 @@ def cross_reference_ocr_with_face(
     face_confidence = max(0.0, min(float(face_confidence or 0.0), 1.0))
     suggested_id = ocr_text.strip() or None
 
-    final_student = face_student or suggested_id
-    final_confidence = face_confidence if face_student else ocr_confidence
+    final_student = suggested_id or face_student
+    final_confidence = ocr_confidence if suggested_id else face_confidence
 
     return {
         "matched": bool(face_student and suggested_id and str(face_student) == str(suggested_id)),
@@ -501,5 +758,5 @@ def cross_reference_ocr_with_face(
         "suggested_id": suggested_id,
         "final_student": final_student,
         "final_confidence": final_confidence,
-        "ocr_enriched": bool(suggested_id and not face_student),
+        "ocr_enriched": bool(suggested_id),
     }

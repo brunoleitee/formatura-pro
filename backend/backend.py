@@ -2690,9 +2690,11 @@ def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
                 "ocr_score": ocr_result.get("ocr_score", ocr_result.get("ocr_confidence", 0.0)),
                 "ocr_type": ocr_result.get("ocr_type", "none"),
                 "ocr_label": ocr_result.get("ocr_label", ocr_result.get("ocr_type", "none")),
+                "suggested_id": cross.get("suggested_id"),
                 "final_student": cross.get("final_student"),
                 "final_confidence": cross.get("final_confidence"),
                 "ocr_enriched": cross.get("ocr_enriched", False),
+                "hybrid_result": cross,
             }
 
             root_dir = Path(__file__).resolve().parents[1]
