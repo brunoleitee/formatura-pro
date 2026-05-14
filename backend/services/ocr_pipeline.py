@@ -529,7 +529,29 @@ def _add_plate_padding(plate_bgr: np.ndarray, pad: int = 15) -> np.ndarray:
     return cv2.copyMakeBorder(plate_bgr, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
 
 
-def _split_wide_blob(blob_crop: np.ndarray, x_offset: int, y_offset: int) -> List[Tuple[int, int, int, int, np.ndarray]]:
+def _split_blob_by_erosion(blob_crop: np.ndarray, x_offset: int, y_offset: int) -> List[Tuple[int, int, int, int, np.ndarray]]:
+    h, w = blob_crop.shape
+    for k in (1, 2):
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (k + 1, k + 1))
+        eroded = cv2.erode(blob_crop, kernel, iterations=1)
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(eroded, connectivity=8)
+        if num_labels - 1 < 2:
+            continue
+        comps = []
+        for i in range(1, num_labels):
+            x = stats[i, cv2.CC_STAT_LEFT]
+            y = stats[i, cv2.CC_STAT_TOP]
+            bw = stats[i, cv2.CC_STAT_WIDTH]
+            bh = stats[i, cv2.CC_STAT_HEIGHT]
+            if bh >= h * 0.4 and bw >= 4:
+                comps.append((x_offset + x, y_offset + y, bw, bh, blob_crop[y:y + bh, x:x + bw]))
+        if len(comps) >= 2:
+            print(f"[OCR-ID] split por erosao: {len(comps)} componentes")
+            return comps
+    return []
+
+
+def _split_blob_by_projection(blob_crop: np.ndarray, x_offset: int, y_offset: int) -> List[Tuple[int, int, int, int, np.ndarray]]:
     h, w = blob_crop.shape
     if w < 10:
         return []
@@ -546,7 +568,7 @@ def _split_wide_blob(blob_crop: np.ndarray, x_offset: int, y_offset: int) -> Lis
     right_region = proj_smooth[valley:min(w, valley + int(w * 0.2))] if valley < w - 1 else np.array([valley_depth])
     left_peak = float(np.max(left_region))
     right_peak = float(np.max(right_region))
-    if left_peak > valley_depth * 1.3 and right_peak > valley_depth * 1.3:
+    if left_peak > valley_depth * 1.25 and right_peak > valley_depth * 1.25:
         left_w = valley
         right_w = w - valley
         if left_w >= 4 and right_w >= 4:
@@ -554,6 +576,18 @@ def _split_wide_blob(blob_crop: np.ndarray, x_offset: int, y_offset: int) -> Lis
                 (x_offset, y_offset, left_w, h, blob_crop[:, :valley]),
                 (x_offset + valley, y_offset, right_w, h, blob_crop[:, valley:]),
             ]
+    return []
+
+
+def _try_split_blob(blob_crop: np.ndarray, x_offset: int, y_offset: int) -> List[Tuple[int, int, int, int, np.ndarray]]:
+    result = _split_blob_by_projection(blob_crop, x_offset, y_offset)
+    if result:
+        print(f"[OCR-ID] split por projecao vertical")
+        return result
+    result = _split_blob_by_erosion(blob_crop, x_offset, y_offset)
+    if result:
+        print(f"[OCR-ID] vale vertical encontrado")
+        return result
     return []
 
 
@@ -573,9 +607,9 @@ def _segment_digits_in_plate(binary: np.ndarray, min_height_ratio: float = 0.3) 
             continue
         if bh > h * 0.95:
             continue
-        if bw < 4 or bh < 8:
+        if bw < 3 or bh < 6:
             continue
-        if area < 30:
+        if area < 25:
             continue
         if x < 2 or (x + bw) > w - 2:
             continue
@@ -587,11 +621,10 @@ def _segment_digits_in_plate(binary: np.ndarray, min_height_ratio: float = 0.3) 
         if aspect <= 1.6:
             final.append((x, y, bw, bh, crop))
         else:
-            sub = _split_wide_blob(crop, x, y)
+            sub = _try_split_blob(crop, x, y)
             if sub:
                 print(f"[OCR-ID] blob composto detectado ({bw}x{bh}), dividido em {len(sub)} partes")
-                for sb in sub:
-                    final.append(sb)
+                final.extend(sub)
             else:
                 final.append((x, y, bw, bh, crop))
     final.sort(key=lambda b: b[0])
@@ -615,6 +648,20 @@ def _ocr_single_digit(digit_crop: np.ndarray) -> Optional[str]:
     return None
 
 
+def _ocr_blob_line(blob_crop: np.ndarray) -> Optional[str]:
+    h, w = blob_crop.shape[:2]
+    padded = cv2.copyMakeBorder(blob_crop, 6, 6, 6, 6, cv2.BORDER_REPLICATE)
+    if max(h, w) < 120:
+        scale = 160.0 / max(h, w)
+        padded = cv2.resize(padded, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    config = "--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789"
+    text = _run_tesseract(padded, config)
+    clean = re.sub(r"\D", "", (text or "").strip())
+    if 2 <= len(clean) <= 3:
+        return clean
+    return None
+
+
 def _segmented_plate_ocr(plate_bgr: np.ndarray, plate_score: float, start: float, local_path: str, crop_idx: int) -> Optional[Dict[str, Any]]:
     if time.time() - start > MAX_OCR_SECONDS:
         return None
@@ -626,9 +673,11 @@ def _segmented_plate_ocr(plate_bgr: np.ndarray, plate_score: float, start: float
         scale = 900.0 / max(h, w)
         gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
 
+    blurred = cv2.medianBlur(gray, 3)
+
     prep_variants = [
-        ("adaptive", lambda g: cv2.adaptiveThreshold(cv2.GaussianBlur(g, (3, 3), 0), 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 12)),
-        ("otsu", lambda g: cv2.threshold(cv2.GaussianBlur(g, (3, 3), 0), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]),
+        ("adaptive", lambda g: cv2.adaptiveThreshold(g, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 8)),
+        ("otsu", lambda g: cv2.threshold(g, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]),
     ]
 
     best_digits: Optional[List[str]] = None
@@ -637,13 +686,11 @@ def _segmented_plate_ocr(plate_bgr: np.ndarray, plate_score: float, start: float
     for var_name, thresh_fn in prep_variants:
         if time.time() - start > MAX_OCR_SECONDS:
             break
-        binary = thresh_fn(gray)
+        binary = thresh_fn(blurred)
         mean_val = np.mean(binary)
         if mean_val < 127:
             binary = 255 - binary
-        binary = _remove_small_components(binary, 40)
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
+        binary = _remove_small_components(binary, 30)
 
         _save_debug_plate(local_path, f"debug_threshold_{crop_idx}_{var_name}.jpg", binary)
 
@@ -653,6 +700,7 @@ def _segmented_plate_ocr(plate_bgr: np.ndarray, plate_score: float, start: float
             continue
 
         print(f"[OCR-ID] blobs encontrados: {len(blobs)}")
+        print(f"[OCR-ID] projection histogram calculado")
         digits: List[str] = []
         valid = True
         for bi, (bx, by, bw, bh, digit_crop) in enumerate(blobs, 1):
@@ -662,6 +710,8 @@ def _segmented_plate_ocr(plate_bgr: np.ndarray, plate_score: float, start: float
             print(f"[OCR-ID] blob {bi} bbox: {bx},{by},{bw},{bh}")
             _save_debug_plate(local_path, f"debug_blob_{crop_idx}_{var_name}_{bi}.jpg", digit_crop)
             d = _ocr_single_digit(digit_crop)
+            if d is None:
+                d = _ocr_blob_line(digit_crop)
             if d is None:
                 print(f"[OCR-ID] blob {bi} OCR: falhou")
                 valid = False
@@ -674,9 +724,6 @@ def _segmented_plate_ocr(plate_bgr: np.ndarray, plate_score: float, start: float
 
         number = "".join(digits)
         if not re.match(r"^\d{3,5}$", number):
-            continue
-
-        if number in [d.get("number") for d in []]:  # skip seen
             continue
 
         mean_blob_height = np.mean([b[3] for b in blobs]) if blobs else 0
