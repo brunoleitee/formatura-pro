@@ -529,149 +529,138 @@ def _add_plate_padding(plate_bgr: np.ndarray, pad: int = 15) -> np.ndarray:
     return cv2.copyMakeBorder(plate_bgr, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
 
 
-def _preprocess_plate_digits(plate_bgr: np.ndarray) -> np.ndarray:
+def _segment_digits_in_plate(binary: np.ndarray, min_height_ratio: float = 0.3, max_width_height_ratio: float = 1.2) -> List[Tuple[int, int, int, int, np.ndarray]]:
+    h, w = binary.shape
+    if h < 10 or w < 10:
+        return []
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    blobs: List[Tuple[int, int, int, int, int, np.ndarray]] = []
+    for i in range(1, num_labels):
+        x = stats[i, cv2.CC_STAT_LEFT]
+        y = stats[i, cv2.CC_STAT_TOP]
+        bw = stats[i, cv2.CC_STAT_WIDTH]
+        bh = stats[i, cv2.CC_STAT_HEIGHT]
+        area = stats[i, cv2.CC_STAT_AREA]
+        if bh < h * min_height_ratio:
+            continue
+        if bh > h * 0.95:
+            continue
+        if bw < 4 or bh < 8:
+            continue
+        aspect = bw / max(bh, 1)
+        if aspect > max_width_height_ratio:
+            continue
+        if area < 30:
+            continue
+        if x < 2 or (x + bw) > w - 2:
+            continue
+        blobs.append((x, y, bw, bh, area, binary[y:y + bh, x:x + bw]))
+    blobs.sort(key=lambda b: b[0])
+    return [(x, y, bw, bh, crop) for x, y, bw, bh, _, crop in blobs]
+
+
+def _ocr_single_digit(digit_crop: np.ndarray) -> Optional[str]:
+    if digit_crop.size == 0:
+        return None
+    h, w = digit_crop.shape[:2]
+    padded = cv2.copyMakeBorder(digit_crop, 8, 8, 8, 8, cv2.BORDER_REPLICATE)
+    if max(h, w) < 100:
+        scale = 140.0 / max(h, w)
+        padded = cv2.resize(padded, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    for psm in ("10", "13"):
+        config = f"--oem 3 --psm {psm} -c tessedit_char_whitelist=0123456789"
+        text = _run_tesseract(padded, config)
+        clean = re.sub(r"\D", "", (text or "").strip())
+        if len(clean) == 1:
+            return clean
+    return None
+
+
+def _segmented_plate_ocr(plate_bgr: np.ndarray, plate_score: float, start: float, local_path: str, crop_idx: int) -> Optional[Dict[str, Any]]:
+    if time.time() - start > MAX_OCR_SECONDS:
+        return None
+
     padded = _add_plate_padding(plate_bgr, 12)
     gray = cv2.cvtColor(padded, cv2.COLOR_BGR2GRAY)
     h, w = gray.shape
     if max(h, w) < 600:
         scale = 900.0 / max(h, w)
         gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-    blur = cv2.GaussianBlur(gray, (3, 3), 0)
-    binary = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 12)
-    mean_val = np.mean(binary)
-    if mean_val < 127:
-        binary = 255 - binary
-    binary = _remove_small_components(binary, 40)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
-    kernel_close = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel_close)
-    return binary
 
-
-def _preprocess_plate_light(plate_bgr: np.ndarray) -> np.ndarray:
-    padded = _add_plate_padding(plate_bgr, 8)
-    gray = cv2.cvtColor(padded, cv2.COLOR_BGR2GRAY)
-    h, w = gray.shape
-    if max(h, w) < 500:
-        scale = 700.0 / max(h, w)
-        gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-    blur = cv2.GaussianBlur(gray, (3, 3), 0)
-    _, binary = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    mean_val = np.mean(binary)
-    if mean_val < 127:
-        binary = 255 - binary
-    binary = _remove_small_components(binary, 30)
-    return binary
-
-
-def _preprocess_plate_morph(plate_bgr: np.ndarray) -> np.ndarray:
-    padded = _add_plate_padding(plate_bgr, 15)
-    gray = cv2.cvtColor(padded, cv2.COLOR_BGR2GRAY)
-    h, w = gray.shape
-    if max(h, w) < 600:
-        scale = 900.0 / max(h, w)
-        gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-    blur = cv2.GaussianBlur(gray, (5, 5), 0)
-    binary = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 51, 15)
-    mean_val = np.mean(binary)
-    if mean_val < 127:
-        binary = 255 - binary
-    binary = _remove_small_components(binary, 60)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
-    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
-    return binary
-
-
-def _is_phantom_digit_candidate(numbers: List[str]) -> Optional[str]:
-    if len(numbers) < 2:
-        return None
-    sorted_nums = sorted(numbers, key=lambda n: (-len(n), n))
-    shortest = sorted_nums[-1]
-    for n in sorted_nums[:-1]:
-        if len(n) == len(shortest) + 1 and n.startswith(shortest):
-            return shortest
-    return None
-
-
-def _score_ocr_candidate(number: str, plate_score: float, ocr_raw_conf: float, plate_bbox: Tuple[int, int, int, int], crop_shape: Tuple[int, int]) -> float:
-    length = len(number)
-    if length < 3 or length > 5:
-        return 0.0
-    length_score = 1.0 if length in (4, 5) else 0.8
-    _, _, w, h = plate_bbox
-    plate_area = w * h
-    crop_area = crop_shape[0] * crop_shape[1]
-    size_score = min(plate_area / max(crop_area, 1) * 3.0, 1.0)
-    conf_score = max(0.0, min(float(ocr_raw_conf), 1.0))
-    penalty = 0.0
-    if length > 5:
-        penalty = 0.15
-    final = (
-        length_score * 0.35
-        + plate_score * 0.25
-        + size_score * 0.15
-        + conf_score * 0.25
-        - penalty
-    )
-    return float(max(0.0, min(final, 0.99)))
-
-
-def _probe_plate_ocr(plate_bgr: np.ndarray, plate_score: float, plate_bbox: Tuple[int, int, int, int], crop_shape: Tuple[int, int], start: float, candidates: List[Dict[str, Any]]) -> None:
-    if time.time() - start > MAX_OCR_SECONDS:
-        return
     prep_variants = [
-        ("adaptive", lambda p: _preprocess_plate_digits(p)),
-        ("otsu", lambda p: _preprocess_plate_light(p)),
-        ("morph", lambda p: _preprocess_plate_morph(p)),
+        ("adaptive", lambda g: cv2.adaptiveThreshold(cv2.GaussianBlur(g, (3, 3), 0), 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 12)),
+        ("otsu", lambda g: cv2.threshold(cv2.GaussianBlur(g, (3, 3), 0), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]),
     ]
-    raw_results: List[Dict[str, Any]] = []
-    seen_numbers: set = set()
-    for var_name, prep_fn in prep_variants:
+
+    best_digits: Optional[List[str]] = None
+    best_conf = 0.0
+
+    for var_name, thresh_fn in prep_variants:
         if time.time() - start > MAX_OCR_SECONDS:
             break
-        processed = prep_fn(plate_bgr)
-        for psm in ("7", "8"):
-            if time.time() - start > MAX_OCR_SECONDS:
-                break
-            config = f"--oem 3 --psm {psm} -c tessedit_char_whitelist=0123456789"
-            raw_text = _run_tesseract(processed, config)
-            if not raw_text or not raw_text.strip():
-                continue
-            clean = re.sub(r"\D", "", raw_text.strip())
-            if len(clean) < 3 or len(clean) > 5:
-                continue
-            if not re.match(r"^\d{3,5}$", clean):
-                continue
-            if clean in seen_numbers:
-                continue
-            seen_numbers.add(clean)
-            ocr_raw_conf = max(0.3, min(0.95, 0.5 + len(clean) * 0.08))
-            score = _score_ocr_candidate(clean, plate_score, ocr_raw_conf, plate_bbox, crop_shape)
-            raw_results.append({
-                "numbers": clean,
-                "confidence": round(score, 4),
-                "score": round(score, 4),
-                "variant": var_name,
-                "psm": psm,
-            })
+        binary = thresh_fn(gray)
+        mean_val = np.mean(binary)
+        if mean_val < 127:
+            binary = 255 - binary
+        binary = _remove_small_components(binary, 40)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
 
-    phantom = _is_phantom_digit_candidate([r["numbers"] for r in raw_results])
-    for r in raw_results:
-        num = r["numbers"]
-        score = r["confidence"]
-        if phantom and num != phantom and len(num) > len(phantom) and num.startswith(phantom):
-            print(f"[OCR-ID] candidato rejeitado: {num} (dígito extra, provavelmente {phantom})")
+        _save_debug_plate(local_path, f"debug_threshold_{crop_idx}_{var_name}.jpg", binary)
+
+        blobs = _segment_digits_in_plate(binary)
+        if len(blobs) < 3 or len(blobs) > 6:
+            _save_debug_plate(local_path, f"debug_blobs_{crop_idx}_{var_name}.jpg", binary)
             continue
-        if score < 0.75:
-            print(f"[OCR-ID] candidato rejeitado: {num} (score {score:.2f})")
+
+        print(f"[OCR-ID] blobs encontrados: {len(blobs)}")
+        digits: List[str] = []
+        valid = True
+        for bi, (bx, by, bw, bh, digit_crop) in enumerate(blobs, 1):
+            if time.time() - start > MAX_OCR_SECONDS:
+                valid = False
+                break
+            print(f"[OCR-ID] blob {bi} bbox: {bx},{by},{bw},{bh}")
+            _save_debug_plate(local_path, f"debug_blob_{crop_idx}_{var_name}_{bi}.jpg", digit_crop)
+            d = _ocr_single_digit(digit_crop)
+            if d is None:
+                print(f"[OCR-ID] blob {bi} OCR: falhou")
+                valid = False
+                break
+            print(f"[OCR-ID] blob {bi} OCR: {d}")
+            digits.append(d)
+
+        if not valid or len(digits) < 3 or len(digits) > 5:
             continue
-        candidates.append({
-            "numbers": num,
-            "confidence": score,
-            "score": score,
-        })
+
+        number = "".join(digits)
+        if not re.match(r"^\d{3,5}$", number):
+            continue
+
+        if number in [d.get("number") for d in []]:  # skip seen
+            continue
+
+        mean_blob_height = np.mean([b[3] for b in blobs]) if blobs else 0
+        h_norm = binary.shape[0] if binary.shape[0] > 0 else 1
+        height_score = min(mean_blob_height / max(h_norm * 0.5, 1), 1.0)
+        length_score = 1.0 if len(digits) in (4, 5) else 0.8
+        conf = min(0.97, 0.5 + len(digits) * 0.09 + height_score * 0.2)
+        score = length_score * 0.5 + height_score * 0.3 + plate_score * 0.2
+        score = float(max(0.0, min(score, 0.99)))
+
+        if score > best_conf:
+            best_conf = score
+            best_digits = digits
+
+    if best_digits and best_conf >= 0.75:
+        number = "".join(best_digits)
+        print(f"[OCR-ID] resultado final: {number}")
+        return {
+            "numbers": number,
+            "confidence": round(best_conf, 4),
+            "score": round(best_conf, 4),
+        }
+    return None
 
 
 def _save_debug_plate(local_path: str, tag: str, img: np.ndarray) -> None:
@@ -750,10 +739,9 @@ def process_id_card_ocr(local_path: str, img: Optional[np.ndarray] = None) -> Di
             if time.time() - start > MAX_OCR_SECONDS:
                 break
 
-            proc = _preprocess_plate_digits(plate_img)
-            _save_debug_plate(local_path, f"debug_threshold_{idx}.jpg", proc)
-
-            _probe_plate_ocr(plate_img, plate_score, (px, py, pw, ph), crop.shape[:2], start, candidates)
+            seg_result = _segmented_plate_ocr(plate_img, plate_score, start, local_path, idx)
+            if seg_result:
+                candidates.append(seg_result)
 
         print(f"[OCR-ID] candidatos OCR: {[c['numbers'] for c in candidates]}")
         print(f"[OCR-ID] placas detectadas: {plates_found}")
