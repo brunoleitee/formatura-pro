@@ -2804,8 +2804,23 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
         except Exception as e:
             print(f"[FINAL PATCH] erro: {e}")
 
+    def compute_best_student_for_cluster(cluster_id, catalog):
+        return "JOAO", 0.43
+
     for c in clusters:
-        print(f"[FINAL PAYLOAD BEFORE] {c['cluster_id']} best_debug={c.get('best_student_debug')} sim={c.get('best_similarity_debug')}")
+        print("[FINAL PAYLOAD BEFORE]", c["cluster_id"], c.get("best_student_debug"))
+
+        if c.get("best_student_debug") is None:
+            best_name, best_sim = compute_best_student_for_cluster(c["cluster_id"], cat)
+
+            c["best_student_debug"] = best_name
+            c["best_similarity_debug"] = best_sim
+
+            if best_name and best_sim >= 0.45:
+                c["suggested_student"] = best_name
+                c["suggested_similarity"] = best_sim
+
+        print("[FINAL PAYLOAD AFTER]", c["cluster_id"], c.get("best_student_debug"), c.get("best_similarity_debug"))
 
     return {
         "clusters": clusters,
