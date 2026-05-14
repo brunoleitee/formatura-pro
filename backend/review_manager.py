@@ -2764,11 +2764,11 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
         cache_info = _ensure_review_cluster_cache(cur)
         _ensure_ignored_review_clusters_table(cur)
         ignored_filter_sql, ignored_filter_params = _ignored_review_cluster_filter(cat)
-        cur.execute("""
+        cur.execute(f"""
             SELECT COUNT(DISTINCT u.cluster_id) AS cnt
             FROM unknown_face_clusters u
             WHERE {ignored_filter_sql}
-        """.format(ignored_filter_sql=ignored_filter_sql), ignored_filter_params)
+        """, ignored_filter_params)
         total = int((cur.fetchone() or {"cnt": 0})["cnt"] or 0)
         if total == 0:
             conn.commit()
