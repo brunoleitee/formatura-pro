@@ -208,6 +208,15 @@
   margin-top: 2px;
 }
 
+.suggestionRowDebug {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  color: #f87171;
+  margin-top: 2px;
+}
+
 .unknownMatchRow {
   display: flex;
   align-items: center;
