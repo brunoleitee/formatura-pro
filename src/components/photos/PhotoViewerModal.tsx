@@ -116,6 +116,14 @@ export function PhotoViewerModal({
   const filmstripScrollTimerRef = useRef<number | null>(null);
   const filmstripUserScrollRef = useRef(false);
   const [aiCacheTick, setAiCacheTick] = useState(0);
+  const [actionOverlay, setActionOverlay] = useState<string | null>(null);
+  const actionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showActionOverlay = useCallback((text: string) => {
+    setActionOverlay(text);
+    if (actionTimerRef.current) clearTimeout(actionTimerRef.current);
+    actionTimerRef.current = setTimeout(() => setActionOverlay(null), 500);
+  }, []);
 
   useEffect(() => {
     viewerLoadStartRef.current = perfNow();
@@ -557,32 +565,36 @@ export function PhotoViewerModal({
     };
   }, []);
 
+  const feedbackStars = useCallback((n: number) => "★".repeat(n) + "☆".repeat(5 - n), []);
+
   const handleRating = useCallback(async (rating: number) => {
     const path = visiblePhoto.path;
     console.log(`[HOTKEY] rating ${rating}`);
+    showActionOverlay(feedbackStars(rating));
     try {
       await api.setRating(path, rating);
-      showFeedbackMsg(`Rating: ${rating}`);
       if (currentIndex < total - 1) onNavigate(navigationPhotos[currentIndex + 1]);
     } catch { /* ignore */ }
-  }, [visiblePhoto.path, currentIndex, total, onNavigate, showFeedbackMsg]);
+  }, [visiblePhoto.path, currentIndex, total, onNavigate, showActionOverlay, feedbackStars]);
 
   const handleFavorite = useCallback(async () => {
     console.log(`[HOTKEY] favorite toggle`);
     try {
       const res = await api.toggleFavorite(visiblePhoto.path);
-      showFeedbackMsg(res.favorite ? "Favoritada" : "Desfavoritada");
+      showActionOverlay(res.favorite ? "❤ Favorito" : "♡ Desfavoritado");
     } catch { /* ignore */ }
-  }, [visiblePhoto.path, showFeedbackMsg]);
+  }, [visiblePhoto.path, showActionOverlay]);
 
   const handleConfirmSuggestion = useCallback(() => {
     const aiResult = aiCacheStore.get(visiblePhoto.path);
     const suggested = aiResult?.final_student || aiResult?.suggested_id;
     if (suggested && suggested.trim()) {
       console.log(`[HOTKEY] confirm suggestion: ${suggested}`);
-      showFeedbackMsg(`Sugestão: ${suggested}`);
+      showActionOverlay("✓ Confirmado");
+    } else {
+      showActionOverlay("Sem sugestão");
     }
-  }, [visiblePhoto.path, showFeedbackMsg]);
+  }, [visiblePhoto.path, showActionOverlay]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1389,7 +1401,7 @@ export function PhotoViewerModal({
                         )}
                       </div>
                       <div className={styles.similarScore}>
-                        {result.aluno_id ?? 'Desconhecido'} Â· {(result.score * 100).toFixed(0)}%
+                        {result.aluno_id ?? 'Desconhecido'} - {(result.score * 100).toFixed(0)}%
                       </div>
                     </div>
                   );
@@ -1405,6 +1417,12 @@ export function PhotoViewerModal({
           <div className={styles.similarPanel} onClick={(e) => e.stopPropagation()}>
             <div className={styles.similarLoading}>Buscando faces semelhantes...</div>
           </div>
+        </div>
+      )}
+
+      {actionOverlay && (
+        <div className={styles.actionOverlay}>
+          <span className={styles.actionOverlayText}>{actionOverlay}</span>
         </div>
       )}
 

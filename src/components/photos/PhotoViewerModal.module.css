@@ -1093,3 +1093,34 @@
 .helpRow span {
   color: #94a3b8;
 }
+
+.actionOverlay {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2000;
+  pointer-events: none;
+  animation: actionFade 0.5s ease-out forwards;
+}
+
+.actionOverlayText {
+  display: inline-block;
+  background: rgba(2, 6, 18, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 14px;
+  padding: 14px 28px;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  letter-spacing: 0.03em;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+@keyframes actionFade {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.92); }
+  15% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  70% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(0.96); }
+}
