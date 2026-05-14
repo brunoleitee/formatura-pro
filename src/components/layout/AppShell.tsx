@@ -328,7 +328,23 @@ export function AppShell() {
 
   const canOpenReview = Boolean(scanStatus?.scan_summary) || (scanStatus?.total_clusters ?? 0) > 0;
 
-const renderEmptyCatalog = () => (
+function autoCatalogName(): string {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `Catalogo_${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
+  }
+
+  const handleQuickCreate = async () => {
+    const name = autoCatalogName();
+    try {
+      await api.setCatalog(name);
+      await refreshCatalogs();
+    } catch (e) {
+      console.error('Erro ao criar catálogo rápido:', e);
+    }
+  };
+
+  const renderEmptyCatalog = () => (
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       height: '100%', gap: '16px', padding: '40px', color: '#94a3b8', textAlign: 'center',
@@ -340,9 +356,9 @@ const renderEmptyCatalog = () => (
       <p style={{ margin: 0, fontSize: '0.85rem', maxWidth: 360, lineHeight: 1.5 }}>
         Crie ou selecione um catálogo para começar a gerenciar suas fotos.
       </p>
-      <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+      <div style={{ display: 'flex', gap: '10px', marginTop: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
         <button
-          onClick={() => setShowCatalogModal(true)}
+          onClick={handleQuickCreate}
           style={{
             padding: '10px 22px', borderRadius: '10px', border: 'none',
             background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
@@ -353,7 +369,19 @@ const renderEmptyCatalog = () => (
           onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 6px 20px rgba(59,130,246,0.5)'}
           onMouseLeave={(e) => e.currentTarget.style.boxShadow = '0 4px 14px rgba(59,130,246,0.35)'}
         >
-          Criar catálogo
+          Criar catálogo rápido
+        </button>
+        <button
+          onClick={() => setShowCatalogModal(true)}
+          style={{
+            padding: '10px 22px', borderRadius: '10px', border: '1px solid rgba(148,163,184,0.2)',
+            background: 'transparent', color: '#cbd5e1', fontWeight: 500, fontSize: '0.85rem',
+            cursor: 'pointer', transition: 'background 0.2s',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(148,163,184,0.08)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+        >
+          Gerenciar catálogos
         </button>
       </div>
     </div>

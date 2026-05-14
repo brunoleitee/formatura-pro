@@ -23,9 +23,14 @@ export default function CatalogModal({ onClose, onRequestConfirm }: Props) {
     onClose();
   };
 
+  function autoCatalogName(): string {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `Catalogo_${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
+  }
+
   const handleCreate = async () => {
-    const trimmed = newName.trim();
-    if (!trimmed) return;
+    const trimmed = newName.trim() || autoCatalogName();
     setCreating(true);
     setError('');
     try {
@@ -136,7 +141,7 @@ export default function CatalogModal({ onClose, onRequestConfirm }: Props) {
           <button
             className="btn-primary"
             onClick={handleCreate}
-            disabled={creating || !newName.trim()}
+            disabled={creating}
           >
             <Plus size={16} />
             {creating ? 'Criando...' : 'Criar'}
