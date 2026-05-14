@@ -218,22 +218,23 @@
 .btnPrimary {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 7px;
-  background: #3b82f6;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
   color: #fff;
   border: none;
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 0.82rem;
+  font-weight: 700;
   cursor: pointer;
-  transition: background 0.15s, transform 0.1s;
+  transition: box-shadow 0.2s, transform 0.1s;
   font-family: inherit;
   white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.3);
 }
 
 .btnPrimary:hover {
-  background: #2563eb;
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.45);
 }
 
 .btnPrimary:active {
@@ -242,44 +243,69 @@
 
 .btnPrimary:disabled,
 .btnSecondary:disabled,
-.btnIcon:disabled,
-.btnConfirm:disabled {
+.btnConfirm:disabled,
+.btnIcon:disabled {
   opacity: 0.45;
   cursor: default;
   transform: none;
+  box-shadow: none;
 }
 
 .btnSecondary {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 11px;
-  border-radius: 7px;
+  padding: 10px 16px;
+  border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.04);
   color: #94a3b8;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
   font-family: inherit;
   white-space: nowrap;
 }
 
 .btnSecondary:hover {
   color: #e2e8f0;
-  border-color: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.btnConfirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(52, 211, 153, 0.25);
+  background: rgba(16, 185, 129, 0.1);
+  color: #6ee7b7;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btnConfirm:hover {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: rgba(52, 211, 153, 0.35);
 }
 
 .btnIcon {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 6px 10px;
-  border-radius: 7px;
+  padding: 10px 12px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.02);
   color: #64748b;
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
   font-family: inherit;

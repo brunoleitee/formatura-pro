@@ -155,22 +155,31 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
 
         {/* Ações ou identify inline */}
         <div className={`${styles.actions} ${identifying ? styles.blockHidden : styles.blockVisible}`}>
-          <button
-            className={styles.btnPrimary}
-            onClick={() => setIdentifying(true)}
-            type="button"
-            disabled={isAssigned}
-          >
-            <UserPlus size={14} />
-            <span>Identificar pessoa</span>
-          </button>
+            <button
+              className={styles.btnPrimary}
+              onClick={() => setIdentifying(true)}
+              type="button"
+              disabled={isAssigned}
+            >
+              <UserPlus size={16} />
+              <span>Identificar</span>
+            </button>
+            <button
+              className={styles.btnConfirm}
+              onClick={onSkip}
+              type="button"
+              disabled={isAssigned}
+            >
+              <Check size={16} />
+              <span>Confirmar</span>
+            </button>
             <button
               className={`${styles.btnSecondary} ${collapsed ? styles.inlineHidden : styles.inlineFlexVisible}`}
               onClick={onSkip}
               type="button"
               disabled={isAssigned}
             >
-              <EyeOff size={14} />
+              <EyeOff size={16} />
               <span>Ignorar</span>
             </button>
           {onToggleCollapsed && (

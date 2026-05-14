@@ -1,4 +1,4 @@
-import { Image as ImageIcon, User, Maximize2, Sparkles, ChevronDown } from 'lucide-react';
+import { Image as ImageIcon, User, Maximize2, Sparkles, ChevronDown, ScanFace } from 'lucide-react';
 import styles from './ClusterToolbar.module.css';
 
 export type FilterOption = 'all' | 'best' | 'sharp';
@@ -97,14 +97,16 @@ export default function ClusterToolbar({
           type="button"
         >
           <ImageIcon size={14} />
+          <span>Foto</span>
         </button>
         <button
           className={`${styles.viewBtn} ${viewMode === 'face' ? styles.viewBtnActive : ''}`}
           onClick={() => onViewMode('face')}
-          title="Rosto"
+          title="Apenas rosto"
           type="button"
         >
-          <User size={14} />
+          <ScanFace size={14} />
+          <span>Rosto</span>
         </button>
       </div>
 
