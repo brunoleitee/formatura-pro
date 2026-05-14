@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, ChevronLeft, ChevronRight, Search, UserCheck, UserMinus, Plus, ArrowUp, ArrowDown, FolderOpen, Brain } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { X, ChevronLeft, ChevronRight, Search, UserCheck, UserMinus, Plus, ArrowUp, ArrowDown, FolderOpen, Brain, ScanFace } from 'lucide-react';
 import { api, type Photo } from '../../services/api';
 import { isKnownFace } from '../../utils/personIdentity';
 import { useApp } from '../../context/AppContext';
@@ -10,6 +10,7 @@ import { aiCacheStore } from '../../services/AICacheStore';
 import { aiApi } from '../../services/aiApi';
 import { imagePreloadCache } from '../../services/ImagePreloadCache';
 import { ratingCache } from '../../services/RatingCache';
+import { API_BASE } from '../../services/api/core';
 import styles from './PhotoViewerModal.module.css';
 
 interface PhotoViewerModalProps {
@@ -117,6 +118,7 @@ export function PhotoViewerModal({
   const filmstripScrollTimerRef = useRef<number | null>(null);
   const filmstripUserScrollRef = useRef(false);
   const [aiCacheTick, setAiCacheTick] = useState(0);
+  const [faceOnly, setFaceOnly] = useState(false);
   const [actionOverlay, setActionOverlay] = useState<string | null>(null);
   const actionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -167,6 +169,13 @@ export function PhotoViewerModal({
   const displayCounter = displayIndex >= 0 ? displayIndex + 1 : 1;
   const isDiscarded = visiblePhoto.discarded;
   const currentPhotoKey = (visiblePhoto as ViewerPhoto).original_path ?? visiblePhoto.path;
+  const facePreviewUrl = useMemo(() => {
+    if (!faceOnly || !visiblePhoto.faces || visiblePhoto.faces.length === 0) return null;
+    const face = visiblePhoto.faces[0];
+    if (face.x1 == null || face.x2 == null || face.y1 == null || face.y2 == null) return null;
+    if (!visiblePhoto.width || !visiblePhoto.height) return null;
+    return `${API_BASE}/thumb?path=${encodeURIComponent(visiblePhoto.path)}&x1=${face.x1}&y1=${face.y1}&x2=${face.x2}&y2=${face.y2}&size=1200&expand=0.35`;
+  }, [faceOnly, visiblePhoto]);
 
   const getViewerPhotoKey = useCallback((item: Photo) => (
     (item as ViewerPhoto).id ?? (item as ViewerPhoto).original_path ?? item.path
@@ -991,6 +1000,14 @@ export function PhotoViewerModal({
         <div className={styles.headerSpacer} />
         <div className={styles.headerActions}>
           <button
+            className={`${styles.headerBtn} ${faceOnly ? styles.active : ''}`}
+            onClick={() => setFaceOnly((v) => !v)}
+            title={faceOnly ? "Mostrar foto completa" : "Mostrar apenas rosto"}
+          >
+            <ScanFace size={13} />
+            {faceOnly ? 'Foto' : 'Rostos'}
+          </button>
+          <button
             className={`${styles.headerBtn} ${isManualMode ? styles.active : ''}`}
             onClick={() => setIsManualMode(!isManualMode)}
             title="Adicionar rosto manual"
@@ -1062,6 +1079,7 @@ export function PhotoViewerModal({
             </button>
           )}
 
+          {faceOnly && !isLoaded && <div className={styles.faceOnlyHint}>Carregando rosto...</div>}
           <div
             ref={imageStageRef}
             className={`${styles.imageStage} ${isManualMode ? styles.crosshair : ''}`}
@@ -1084,7 +1102,7 @@ export function PhotoViewerModal({
               <div className={styles.photoImageWrap} ref={imageWrapRef}>
                   <img
                     ref={imageRef}
-                    src={displayedSrc}
+                    src={facePreviewUrl || displayedSrc}
                     alt={visiblePhoto.name}
                     className={styles.mainImage}
                   style={{ 
