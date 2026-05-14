@@ -639,11 +639,26 @@ def _resolve_assign_aluno(cur, aluno_id: str | None, nome_formando: str | None) 
     return resolved_aluno_id, normalized_name
 
 
+def _ensure_unknown_face_clusters_schema(cur):
+    try:
+        cur.execute("PRAGMA table_info(unknown_face_clusters)")
+        cols = {row["name"] for row in cur.fetchall()}
+        if "suggested_student" not in cols:
+            cur.execute("ALTER TABLE unknown_face_clusters ADD COLUMN suggested_student TEXT")
+        if "suggested_similarity" not in cols:
+            cur.execute("ALTER TABLE unknown_face_clusters ADD COLUMN suggested_similarity REAL")
+    except Exception:
+        pass
+
+
 def _sync_unknown_face_clusters(cur, clusters: list[dict]):
+    _ensure_unknown_face_clusters_schema(cur)
     now = time.time()
     cur.execute("DELETE FROM unknown_face_clusters")
     rows = []
     for cluster in clusters:
+        ss = cluster.get("suggested_student")
+        si = cluster.get("suggested_similarity")
         for face in cluster.get("faces", []):
             rows.append(
                 (
@@ -651,6 +666,8 @@ def _sync_unknown_face_clusters(cur, clusters: list[dict]):
                     int(face["rowid"]),
                     face["path"],
                     float(cluster.get("cohesion_score") or 0.0),
+                    ss,
+                    float(si) if si is not None else None,
                     now,
                     now,
                 )
@@ -659,8 +676,8 @@ def _sync_unknown_face_clusters(cur, clusters: list[dict]):
         cur.executemany(
             """
             INSERT INTO unknown_face_clusters
-            (cluster_id, face_id, original_path, confidence, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (cluster_id, face_id, original_path, confidence, suggested_student, suggested_similarity, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -752,7 +769,7 @@ def _load_review_occurrence_rows(cur) -> list:
 
 
 def _row_to_review_item(row) -> dict:
-    return {
+    result = {
         "rowid": int(row["rowid"]),
         "aluno_id": row["aluno_id"],
         "foto_path": row["foto_path"],
@@ -776,6 +793,13 @@ def _row_to_review_item(row) -> dict:
         "foreground_score": row["foreground_score"],
         "background_penalty_reason": row["background_penalty_reason"],
     }
+    # Include suggestion data if present
+    if "suggested_student" in row.keys():
+        result["suggested_student"] = row["suggested_student"]
+    if "suggested_similarity" in row.keys():
+        ss = row["suggested_similarity"]
+        result["suggested_similarity"] = float(ss) if ss is not None else None
+    return result
 
 
 def _build_review_cluster_payload(
@@ -804,6 +828,10 @@ def _build_review_cluster_payload(
     cluster_manual_tags = sorted({
         tag for meta in priority_meta for tag in (meta.get("manual_graduation_tags") or [])
     })
+    first_item = comp_items[0] if comp_items else {}
+    suggested_student = first_item.get("suggested_student")
+    suggested_similarity = first_item.get("suggested_similarity")
+
     cluster_payload = {
         "cluster_id": cluster_id,
         "cluster_number": cluster_number,
@@ -813,6 +841,8 @@ def _build_review_cluster_payload(
         "cohesion_score": round(cohesion_score, 4),
         "cohesion": round(cohesion_score, 4),
         "priority_score": round(float(priority_score), 4),
+        "suggested_student": suggested_student,
+        "suggested_similarity": round(float(suggested_similarity), 4) if suggested_similarity is not None else None,
         "graduation_tags": _ordered_cluster_tags(priority_meta),
         "has_gown": any(meta["has_gown"] for meta in priority_meta),
         "has_diploma": any(meta["has_diploma"] for meta in priority_meta),
@@ -2193,7 +2223,9 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                    COUNT(DISTINCT o.foto_path) AS photo_count,
                    MAX(COALESCE(o.graduation_score, 0)) AS max_graduation_score,
                    AVG(COALESCE(u.confidence, 0)) AS avg_confidence,
-                   MIN(u.id) AS first_id
+                   MIN(u.id) AS first_id,
+                   MAX(u.suggested_student) AS suggested_student,
+                   MAX(u.suggested_similarity) AS suggested_similarity
             FROM unknown_face_clusters u
             JOIN ocorrencias o ON o.rowid = u.face_id
             WHERE {ignored_filter_sql}
@@ -2219,7 +2251,8 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                        o.face_front_score, o.graduation_score, o.graduation_tags,
                        o.gown_confidence, o.diploma_confidence, o.sash_confidence, o.cap_confidence,
                        o.manual_graduation_tags,
-                       o.is_foreground, o.foreground_score, o.background_penalty_reason
+                       o.is_foreground, o.foreground_score, o.background_penalty_reason,
+                       u.suggested_student, u.suggested_similarity
                 FROM unknown_face_clusters u
                 JOIN ocorrencias o ON o.rowid = u.face_id
                 WHERE u.cluster_id IN ({placeholders})
@@ -2295,7 +2328,8 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
                    o.face_front_score, o.graduation_score, o.graduation_tags,
                    o.gown_confidence, o.diploma_confidence, o.sash_confidence, o.cap_confidence,
                    o.manual_graduation_tags,
-                   o.is_foreground, o.foreground_score, o.background_penalty_reason
+                   o.is_foreground, o.foreground_score, o.background_penalty_reason,
+                   u.suggested_student, u.suggested_similarity
             FROM unknown_face_clusters u
             JOIN ocorrencias o ON o.rowid = u.face_id
             WHERE u.cluster_id = ?
