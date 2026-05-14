@@ -702,24 +702,26 @@ def _segmented_plate_ocr(plate_bgr: np.ndarray, plate_score: float, start: float
         print(f"[OCR-ID] blobs encontrados: {len(blobs)}")
         print(f"[OCR-ID] projection histogram calculado")
         digits: List[str] = []
-        valid = True
         for bi, (bx, by, bw, bh, digit_crop) in enumerate(blobs, 1):
             if time.time() - start > MAX_OCR_SECONDS:
-                valid = False
                 break
+            print(f"[OCR-ID] processando blob {bi}/{len(blobs)}")
             print(f"[OCR-ID] blob {bi} bbox: {bx},{by},{bw},{bh}")
             _save_debug_plate(local_path, f"debug_blob_{crop_idx}_{var_name}_{bi}.jpg", digit_crop)
-            d = _ocr_single_digit(digit_crop)
-            if d is None:
-                d = _ocr_blob_line(digit_crop)
+            try:
+                d = _ocr_single_digit(digit_crop)
+                if d is None:
+                    d = _ocr_blob_line(digit_crop)
+            except Exception as e:
+                print(f"[OCR-ID] blob {bi} erro protegido: {e}")
+                continue
             if d is None:
                 print(f"[OCR-ID] blob {bi} OCR: falhou")
-                valid = False
-                break
+                continue
             print(f"[OCR-ID] blob {bi} OCR: {d}")
             digits.append(d)
 
-        if not valid or len(digits) < 3 or len(digits) > 5:
+        if len(digits) < 3 or len(digits) > 5:
             continue
 
         number = "".join(digits)
