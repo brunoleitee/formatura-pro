@@ -94,7 +94,7 @@ const ClusterItem = memo(function ClusterItem({
       </div>
 
       <div className={styles.itemInfo}>
-        <span className={styles.itemName}>Possível formando</span>
+        <span className={styles.itemName}>Pessoa {String(cluster.cluster_number).padStart(2, '0')}</span>
         <div className={styles.suggestionRow}>
         {cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.55 ? (
           <span className={styles.suggestionBadgeStrong} title={`Sugestão: ${cluster.suggested_student} — ${Math.round(cluster.suggested_similarity * 100)}%`}>
