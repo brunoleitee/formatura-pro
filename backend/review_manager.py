@@ -2179,6 +2179,7 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
 
     with get_db(cat) as conn:
         cur = conn.cursor()
+        _ensure_unknown_face_clusters_schema(cur)
         cache_info = _ensure_review_cluster_cache(cur)
         _ensure_ignored_review_clusters_table(cur)
         ignored_filter_sql, ignored_filter_params = _ignored_review_cluster_filter(cat)
@@ -2316,6 +2317,7 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
     started_at = time.perf_counter()
     with get_db(cat) as conn:
         cur = conn.cursor()
+        _ensure_unknown_face_clusters_schema(cur)
         cache_info = _ensure_review_cluster_cache(cur)
         _ensure_ignored_review_clusters_table(cur)
         ignored_filter_sql, ignored_filter_params = _ignored_review_cluster_filter(cat)
