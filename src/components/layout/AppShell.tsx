@@ -113,15 +113,8 @@ export function AppShell() {
     return () => window.cancelAnimationFrame(raf);
   }, [activeView]);
 
-  useEffect(() => {
-    if (!currentCatalog && catalogs.length === 0) {
-      const t = setTimeout(() => setShowCatalogModal(true), 300);
-      return () => clearTimeout(t);
-    }
-    if (!currentCatalog && catalogs.length > 0) {
-      setShowCatalogModal(true);
-    }
-  }, [currentCatalog, catalogs.length]);
+
+
 
   const appendTimeline = useCallback((entry: ScanTimelineEntry) => {
     setScanTimeline(prev => [...prev.slice(-79), entry]);
@@ -335,7 +328,41 @@ export function AppShell() {
 
   const canOpenReview = Boolean(scanStatus?.scan_summary) || (scanStatus?.total_clusters ?? 0) > 0;
 
-const renderView = () => {
+const renderEmptyCatalog = () => (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      height: '100%', gap: '16px', padding: '40px', color: '#94a3b8', textAlign: 'center',
+    }}>
+      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.3">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+      </svg>
+      <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 600, color: '#e2e8f0' }}>Nenhum catálogo aberto</h2>
+      <p style={{ margin: 0, fontSize: '0.85rem', maxWidth: 360, lineHeight: 1.5 }}>
+        Crie ou selecione um catálogo para começar a gerenciar suas fotos.
+      </p>
+      <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+        <button
+          onClick={() => setShowCatalogModal(true)}
+          style={{
+            padding: '10px 22px', borderRadius: '10px', border: 'none',
+            background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+            color: '#fff', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer',
+            transition: 'box-shadow 0.2s',
+            boxShadow: '0 4px 14px rgba(59,130,246,0.35)',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 6px 20px rgba(59,130,246,0.5)'}
+          onMouseLeave={(e) => e.currentTarget.style.boxShadow = '0 4px 14px rgba(59,130,246,0.35)'}
+        >
+          Criar catálogo
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderView = () => {
+    if (!currentCatalog && !showScanCenter) {
+      return renderEmptyCatalog();
+    }
     switch (activeView) {
       case 'dashboard':    return <DashboardView />;
       case 'photos':        return <CatalogView />;
@@ -387,7 +414,7 @@ const renderView = () => {
       </div>
       {showCatalogModal && (
         <CatalogModal
-          onClose={() => { if (currentCatalog) setShowCatalogModal(false); }}
+          onClose={() => setShowCatalogModal(false)}
           onRequestConfirm={requestConfirm}
         />
       )}
