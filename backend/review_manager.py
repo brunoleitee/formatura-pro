@@ -2043,6 +2043,36 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
         print(f"[CLUSTER] clusters iniciais: {initial_cluster_count}, unitarios: {unit_clusters}")
 
         # ── Iterative hybrid reclustering ──
+        def _compute_robust_centroid(cluster_idxs: list[int]) -> np.ndarray:
+            if not cluster_idxs:
+                return np.zeros(embeddings.shape[1], dtype="float32")
+            scored = []
+            for idx in cluster_idxs:
+                it = items[idx]
+                front = float(it.get("face_front_score") or 0.0)
+                blur_stat = it.get("blur_status")
+                is_bad = (blur_stat == "blur") or (front < 0.2)
+                scored.append((idx, front, is_bad))
+            scored.sort(key=lambda x: x[1], reverse=True)
+            good = [x for x in scored if not x[2]]
+            if not good:
+                good = scored
+            top_n = max(3, int(len(good) * 0.5))
+            top_items = good[:top_n]
+            valid_embs = []
+            weights = []
+            for idx, front, is_bad in top_items:
+                w = max(0.1, front)
+                valid_embs.append(embeddings[idx])
+                weights.append(w)
+            valid_embs = np.array(valid_embs)
+            weights = np.array(weights).reshape(-1, 1)
+            weighted_sum = np.sum(valid_embs * weights, axis=0)
+            cn = np.linalg.norm(weighted_sum)
+            if cn > 0:
+                return (weighted_sum / cn).astype("float32")
+            return valid_embs.mean(axis=0).astype("float32")
+
         def _cluster_gown_tags(cluster_idxs: list[int]) -> set[str]:
             tags: set[str] = set()
             for idx in cluster_idxs:
@@ -2076,6 +2106,9 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 beca_sim = overlap / max(max_tags, 1)
             else:
                 beca_sim = 0.0
+            
+            faixa_sim = 1.0 if ("sash" in tags1 and "sash" in tags2) else 0.0
+
             # OCR similarity
             ocr1 = _cluster_ocr_text(c1_idxs)
             ocr2 = _cluster_ocr_text(c2_idxs)
@@ -2086,19 +2119,28 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             temporal_sim = 0.0
             for p1 in paths1:
                 for p2 in paths2:
-                    if p1 and p2 and os.path.dirname(p1) == os.path.dirname(p2):
-                        temporal_sim = 0.3
+                    if p1 and p2 and _os.path.dirname(p1) == _os.path.dirname(p2):
+                        temporal_sim = 1.0
                         break
                 if temporal_sim > 0:
                     break
+            
+            front1 = max((float(items[i].get("face_front_score") or 0.0)) for i in c1_idxs)
+            front2 = max((float(items[i].get("face_front_score") or 0.0)) for i in c2_idxs)
+            front_sim = (front1 + front2) / 2.0
+
             # Hybrid score
             scores = {
                 "face": round(face_sim, 2),
                 "beca": round(beca_sim, 2),
+                "faixa": round(faixa_sim, 2),
                 "ocr": round(ocr_sim, 2),
                 "tempo": round(temporal_sim, 2),
+                "front": round(front_sim, 2),
             }
-            final = (0.65 * face_sim) + (0.15 * beca_sim) + (0.05 * ocr_sim) + (0.15 * temporal_sim)
+            final = (0.50 * face_sim) + (0.15 * beca_sim) + (0.10 * faixa_sim) + (0.05 * ocr_sim) + (0.15 * temporal_sim) + (0.05 * front_sim)
+            if temporal_sim > 0 and face_sim > 0.45:
+                final += 0.05
             return final, scores
 
         def _merge_threshold(sz_a: int, sz_b: int) -> float:
@@ -2120,10 +2162,7 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             centroids = {}
             for r in root_list:
                 idxs = clusters_by_root[r]
-                comp_emb = embeddings[idxs]
-                cent = comp_emb.mean(axis=0)
-                cn = np.linalg.norm(cent)
-                centroids[r] = cent / cn if cn > 0 else np.zeros(embeddings.shape[1], dtype="float32")
+                centroids[r] = _compute_robust_centroid(idxs)
             # Compare all pairs, log every comparison
             candidates = []
             for r in root_list:
@@ -2230,10 +2269,7 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 continue
             comp_items = [items[i] for i in comp_idxs]
             comp_emb = embeddings[comp_idxs]
-            centroid = comp_emb.mean(axis=0)
-            centroid_norm = np.linalg.norm(centroid)
-            if centroid_norm > 0:
-                centroid = centroid / centroid_norm
+            centroid = _compute_robust_centroid(comp_idxs)
             rep_scores = comp_emb @ centroid
             unique_paths = sorted({item["foto_path"] for item in comp_items})
             cohesion_score = float(np.clip(np.mean(rep_scores), 0.0, 1.0)) if len(rep_scores) else 0.0
