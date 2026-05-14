@@ -597,16 +597,59 @@ export function PhotoViewerModal({
     }
   }, [visiblePhoto.path, showActionOverlay]);
 
-  const handleConfirmSuggestion = useCallback(() => {
+  const handleConfirmSuggestion = useCallback(async () => {
     const aiResult = aiCacheStore.get(visiblePhoto.path);
     const suggested = aiResult?.final_student || aiResult?.suggested_id;
-    if (suggested && suggested.trim()) {
-      console.log(`[HOTKEY] confirm suggestion: ${suggested}`);
-      showActionOverlay("✓ Confirmado");
-    } else {
+    if (!suggested || !suggested.trim()) {
       showActionOverlay("Sem sugestão");
+      return;
     }
-  }, [visiblePhoto.path, showActionOverlay]);
+    const faceRowids = (visiblePhoto.faces ?? [])
+      .map((f) => f.rowid)
+      .filter((id): id is number => id != null && id > 0);
+    if (faceRowids.length === 0) {
+      showActionOverlay("Sem faces para confirmar");
+      return;
+    }
+    try {
+      await api.bulkManualIdentify(currentCatalog, suggested.trim(), faceRowids);
+      console.log(`[REVIEW] AI confirmed: ${suggested}`);
+      showActionOverlay("✓ Confirmado");
+      onPhotoUpdate?.({ ...visiblePhoto });
+    } catch {
+      showActionOverlay("Erro ao confirmar");
+    }
+  }, [visiblePhoto, currentCatalog, showActionOverlay, onPhotoUpdate]);
+
+  const handleBatchConfirm = useCallback(async () => {
+    const aiResult = aiCacheStore.get(visiblePhoto.path);
+    const suggested = aiResult?.final_student || aiResult?.suggested_id;
+    if (!suggested || !suggested.trim()) {
+      showActionOverlay("Sem sugestão em lote");
+      return;
+    }
+    const allRowids: number[] = [];
+    for (const item of navigationPhotos) {
+      if (!item.faces) continue;
+      for (const f of item.faces) {
+        if (f.rowid && f.rowid > 0 && !f.aluno_id) {
+          allRowids.push(f.rowid);
+        }
+      }
+    }
+    if (allRowids.length === 0) {
+      showActionOverlay("Nenhuma pendente no grupo");
+      return;
+    }
+    try {
+      await api.bulkManualIdentify(currentCatalog, suggested.trim(), allRowids);
+      console.log(`[REVIEW-BATCH] ${allRowids.length} fotos confirmadas como ${suggested}`);
+      showActionOverlay(`✓ ${allRowids.length} confirmadas`);
+      onPhotoUpdate?.({ ...visiblePhoto });
+    } catch {
+      showActionOverlay("Erro no lote");
+    }
+  }, [visiblePhoto, currentCatalog, navigationPhotos, showActionOverlay, onPhotoUpdate]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -657,8 +700,8 @@ export function PhotoViewerModal({
         handleFavorite();
       } else if (e.key === 'Enter') {
         if (e.shiftKey) {
-          console.log(`[HOTKEY] confirm batch`);
-          showFeedbackMsg("Confirmação em lote");
+          e.preventDefault();
+          handleBatchConfirm();
         } else {
           handleConfirmSuggestion();
         }
@@ -669,7 +712,7 @@ export function PhotoViewerModal({
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [photo, currentIndex, total, onNavigate, onClose, isManualMode, showRenameModal, similarResults.length, showManualModal, handleRestore, handleDiscard, handleRating, handleFavorite, handleConfirmSuggestion, showFeedbackMsg]);
+  }, [photo, currentIndex, total, onNavigate, onClose, isManualMode, showRenameModal, similarResults.length, showManualModal, handleRestore, handleDiscard, handleRating, handleFavorite, handleConfirmSuggestion, handleBatchConfirm, showFeedbackMsg]);
 
   const clampPanToStage = useCallback((nextPan: { x: number; y: number }, nextZoom: number) => {
     const stage = imageStageRef.current;
