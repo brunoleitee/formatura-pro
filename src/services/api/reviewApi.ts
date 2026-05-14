@@ -69,6 +69,11 @@ export const reviewApi = {
   manualIdentify: (foto_path: string, catalog: string, box: number[], new_name: string) =>
     post(`${API_BASE}/manual_identify`, { foto_path, catalog, box, new_name }),
 
+  mergeCluster: (catalog: string, sourceClusterId: string, targetClusterId: string) =>
+    post<{ ok: boolean; source: string; target: string }>(
+      `${API_BASE}/review/clusters/merge?catalog=${encodeURIComponent(catalog)}&source_cluster_id=${encodeURIComponent(sourceClusterId)}&target_cluster_id=${encodeURIComponent(targetClusterId)}`, {}
+    ),
+
   graduationManualOverride: (
     catalog: string,
     payload: { rowids: number[]; action: 'confirm' | 'remove'; item: 'gown' | 'diploma' | 'sash' | 'cap' }

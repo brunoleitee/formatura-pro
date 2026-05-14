@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
-import { UserPlus, EyeOff, Check, X, Sparkles, ChevronUp, ChevronDown } from 'lucide-react';
+import { UserPlus, EyeOff, Check, X, Sparkles, Merge, ChevronUp, ChevronDown } from 'lucide-react';
 import type { AssignClusterResponse, RichCluster, SearchResult } from '../../services/api';
 import { api } from '../../services/api';
 import { faceThumb } from './FaceCard';
@@ -110,6 +110,14 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
 
   const canAssign = Boolean(selectedStudent?.id || nameInput.trim());
 
+  const handleMerge = useCallback(async () => {
+    if (!cluster.unknown_similar_id) return;
+    try {
+      await api.mergeCluster(catalog, cluster.cluster_id, cluster.unknown_similar_id);
+      onSkip();
+    } catch { /* ignore */ }
+  }, [cluster.cluster_id, cluster.unknown_similar_id, catalog, onSkip]);
+
   return (
     <div className={`${styles.hero} ${collapsed ? styles.heroCollapsed : ''} ${isAssigned ? styles.heroAssigned : ''}`}>
       {/* Avatar circular */}
@@ -163,6 +171,10 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
             <Sparkles size={12} />
             <span>Possível semelhança: <strong>{cluster.suggested_student}</strong> — {Math.round(cluster.suggested_similarity * 100)}%</span>
           </div>
+        ) : cluster.unknown_similar_id && cluster.unknown_similar_number && cluster.unknown_similar_similarity && cluster.unknown_similar_similarity >= 0.55 && !isAssigned ? (
+          <div className={styles.unknownMatchRow}>
+            <span>Provável mesmo formando que grupo <strong>#{cluster.unknown_similar_number}</strong> — {Math.round(cluster.unknown_similar_similarity * 100)}%</span>
+          </div>
         ) : !isAssigned ? (
           <div className={styles.noSuggestionRow}>
             <span>Sem correspondência com formandos identificados</span>
@@ -197,6 +209,16 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
               >
                 <Check size={16} />
                 <span>Confirmar como {cluster.suggested_student}</span>
+              </button>
+            ) : null}
+            {cluster.unknown_similar_id && cluster.unknown_similar_similarity && cluster.unknown_similar_similarity >= 0.55 && !isAssigned && !identifying ? (
+              <button
+                className={styles.btnMerge}
+                onClick={handleMerge}
+                type="button"
+              >
+                <Merge size={16} />
+                <span>Mesclar com #{cluster.unknown_similar_number}</span>
               </button>
             ) : null}
             <button

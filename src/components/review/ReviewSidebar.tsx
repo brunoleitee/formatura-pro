@@ -104,6 +104,10 @@ const ClusterItem = memo(function ClusterItem({
             <span className={styles.suggestionBadgePossible} title={`Similaridade moderada: ${cluster.suggested_student} — ${Math.round(cluster.suggested_similarity * 100)}%`}>
               Possível {cluster.suggested_student}
             </span>
+          ) : cluster.unknown_similar_id && cluster.unknown_similar_number && cluster.unknown_similar_similarity && cluster.unknown_similar_similarity >= 0.55 ? (
+            <span className={styles.suggestionBadgeUnknown} title={`Provável mesmo formando que grupo #${cluster.unknown_similar_number} — ${Math.round(cluster.unknown_similar_similarity * 100)}%`}>
+              Parece #<strong>{cluster.unknown_similar_number}</strong> — {Math.round(cluster.unknown_similar_similarity * 100)}%
+            </span>
           ) : (
             <span className={styles.suggestionBadgeNone} title="Sem correspondência conhecida">Sem match</span>
           )}

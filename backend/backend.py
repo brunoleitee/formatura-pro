@@ -1322,6 +1322,14 @@ def ignore_cluster(req: IgnoreUnknownClusterRequest):
             },
         )
 
+@app.post("/api/review/clusters/merge")
+def merge_clusters(catalog: str = "", source_cluster_id: str = "", target_cluster_id: str = ""):
+    try:
+        return rm.merge_unknown_clusters(catalog, source_cluster_id, target_cluster_id)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
+
 @app.post("/api/review/graduation-analysis/start")
 def start_graduation_analysis(req: GraduationAnalysisRequest):
     try:

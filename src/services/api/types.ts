@@ -221,6 +221,9 @@ export interface RichCluster {
   discovered_at?: string;
   suggested_student?: string | null;
   suggested_similarity?: number | null;
+  unknown_similar_id?: string | null;
+  unknown_similar_number?: number | null;
+  unknown_similar_similarity?: number | null;
   representative: RichClusterFace;
   faces: RichClusterFace[];
 }
@@ -236,6 +239,9 @@ export interface ReviewClusterSummary {
   priority_score?: number;
   suggested_student?: string | null;
   suggested_similarity?: number | null;
+  unknown_similar_id?: string | null;
+  unknown_similar_number?: number | null;
+  unknown_similar_similarity?: number | null;
   graduation_tags?: string[];
   has_gown?: boolean;
   has_diploma?: boolean;

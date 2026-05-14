@@ -352,6 +352,21 @@
   white-space: nowrap;
 }
 
+.suggestionBadgeUnknown {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border-radius: 5px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: rgba(147, 51, 234, 0.12);
+  color: #c084fc;
+  border: 1px solid rgba(147, 51, 234, 0.18);
+  white-space: nowrap;
+}
+
 .itemActive .itemMeta {
   color: #cbd5e1;
 }

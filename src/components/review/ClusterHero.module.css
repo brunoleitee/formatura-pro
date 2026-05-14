@@ -208,6 +208,42 @@
   margin-top: 2px;
 }
 
+.unknownMatchRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: #c084fc;
+  margin-top: 2px;
+}
+
+.unknownMatchRow strong {
+  font-weight: 700;
+  color: #d8b4fe;
+}
+
+.btnMerge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(147, 51, 234, 0.25);
+  background: rgba(147, 51, 234, 0.1);
+  color: #c084fc;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btnMerge:hover {
+  background: rgba(147, 51, 234, 0.18);
+  border-color: rgba(147, 51, 234, 0.35);
+}
+
 /* ── Description ── */
 .description {
   font-size: 0.8rem;

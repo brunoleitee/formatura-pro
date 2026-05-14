@@ -1839,6 +1839,20 @@ def ignore_cluster(req: IgnoreUnknownClusterRequest):
     }
 
 
+def merge_unknown_clusters(catalog: str, source_cluster_id: str, target_cluster_id: str) -> dict:
+    cat = catalog or _current_catalog()
+    if not cat:
+        raise HTTPException(status_code=400, detail="Nenhum catalogo selecionado")
+    if not source_cluster_id or not target_cluster_id:
+        raise HTTPException(status_code=400, detail="Source e target obrigatorios.")
+    with _get("get_db")(cat) as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE unknown_face_clusters SET cluster_id = ? WHERE cluster_id = ?", (target_cluster_id, source_cluster_id))
+        conn.commit()
+    print(f"[CLUSTER MERGE] {source_cluster_id} -> {target_cluster_id}")
+    return {"ok": True, "source": source_cluster_id, "target": target_cluster_id}
+
+
 def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster_size: int = 2, limit: int = 80):
     get_db = _get("get_db")
     cat = catalog or _current_catalog()
@@ -2052,8 +2066,11 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
 
         import datetime as _dt
 
+        # First pass: build all clusters with their centroids
         clusters = []
         now_iso = _dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        cluster_centroids: list[tuple[str, np.ndarray, list[int]]] = []
+
         for comp_idxs in clusters_by_root.values():
             if len(comp_idxs) < min_cluster_size:
                 continue
@@ -2084,7 +2101,6 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 tag for meta in priority_meta for tag in (meta.get("manual_graduation_tags") or [])
             })
             
-            # Boost priority if there are many foreground faces
             fg_count = sum(1 for item in comp_items if item.get("is_foreground") == 1)
             fg_ratio = fg_count / max(1, len(comp_items))
             fg_boost = fg_ratio * 2.0
@@ -2094,9 +2110,9 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             rep_item_meta = priority_meta[comp_items.index(rep_item)]
             graduation_tags = _ordered_cluster_tags(priority_meta)
             debug_graduation_source = _resolve_cluster_graduation_source(priority_meta)
-            # Suggestion: match against identified students
             suggested_student, suggested_similarity = _best_student_match(centroid)
 
+            cluster_centroids.append((f"cluster_{cluster_num}", centroid.copy(), comp_idxs))
             cluster_num = len(clusters) + 1
             clusters.append({
                 "cluster_id": f"cluster_{cluster_num}",
@@ -2164,6 +2180,33 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                     for item, meta in zip(comp_items, priority_meta)
                 ],
             })
+
+        # Second pass: compute unknown-vs-unknown cluster similarity
+        UNKNOWN_MERGE_THRESHOLD = 0.55
+        for cl in clusters:
+            cid = cl["cluster_id"]
+            match = None
+            best_sim = 0.0
+            for other_cid, other_cent, _ in cluster_centroids:
+                if other_cid == cid:
+                    continue
+                cent_self = None
+                for ccid, cc, _ in cluster_centroids:
+                    if ccid == cid:
+                        cent_self = cc
+                        break
+                if cent_self is None:
+                    continue
+                sim = float(np.dot(cent_self, other_cent))
+                if sim > best_sim and sim >= UNKNOWN_MERGE_THRESHOLD:
+                    best_sim = sim
+                    match = other_cid
+            if match and not cl.get("suggested_student"):
+                match_num = match.replace("cluster_", "")
+                print(f"[UNKNOWN MATCH] {cid} parecido com {match} sim={best_sim:.2f}")
+                cl["unknown_similar_id"] = match
+                cl["unknown_similar_number"] = int(match_num)
+                cl["unknown_similar_similarity"] = round(best_sim, 4)
 
         clusters.sort(
             key=lambda c: (c["priority_score"], c["cohesion_score"], c["total_photos"]),
