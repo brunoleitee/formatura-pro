@@ -8,6 +8,7 @@ import { getGridHighThumbUrl, getGridThumbUrl, getViewerPreviewUrl, buildPhotoSo
 import { aiQueueManager } from '../../services/AIQueueManager';
 import { aiCacheStore } from '../../services/AICacheStore';
 import { aiApi } from '../../services/aiApi';
+import { imagePreloadCache } from '../../services/ImagePreloadCache';
 import styles from './PhotoViewerModal.module.css';
 
 interface PhotoViewerModalProps {
@@ -384,16 +385,13 @@ export function PhotoViewerModal({
     const preloadImage = (targetPhoto: Photo) => {
       const targetUrl = getViewerImageUrl(targetPhoto, VIEWER_PREVIEW_SIZE);
       if (!targetUrl) return;
-
       const cached = imageCacheRef.current.get(targetUrl);
-      if (cached?.status === 'loaded') {
-        return;
-      }
-
+      if (cached?.status === 'loaded') return;
+      imagePreloadCache.preload(targetPhoto.path, targetUrl);
       void loadPreview(targetUrl);
     };
 
-    const settleCurrent = (url: string, sourcePhoto: Photo, kind: 'cache-miss' | 'fallback') => {
+    const settleCurrent = (url: string, sourcePhoto: Photo, kind: 'cache-miss' | 'fallback' | 'instant') => {
       if (requestId !== requestIdRef.current) return false;
       setDisplayedPhoto(sourcePhoto);
       setDisplayedSrc(url);
@@ -404,7 +402,15 @@ export function PhotoViewerModal({
       return true;
     };
 
-    if (imageCacheRef.current.get(currentUrl)?.status === 'loaded') {
+    const instantCached = imagePreloadCache.getCached(photo.path);
+    if (instantCached) {
+      setDisplayedPhoto(photo);
+      setDisplayedSrc(currentUrl);
+      setIsLoaded(true);
+      if (previewStartRef.current !== null) {
+        logPerf('viewer preview instant', previewStartRef.current, photo.path);
+      }
+    } else if (imageCacheRef.current.get(currentUrl)?.status === 'loaded') {
       setDisplayedPhoto(photo);
       setDisplayedSrc(currentUrl);
       setIsLoaded(true);
@@ -412,6 +418,7 @@ export function PhotoViewerModal({
         logPerf('viewer preview cache hit', previewStartRef.current, photo.path);
       }
     } else {
+      imagePreloadCache.preload(photo.path, currentUrl);
       const timeoutId = window.setTimeout(() => {
         settleCurrent(fallbackUrl, photo, 'fallback');
       }, PREVIEW_TIMEOUT_MS);
