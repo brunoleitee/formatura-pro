@@ -529,12 +529,40 @@ def _add_plate_padding(plate_bgr: np.ndarray, pad: int = 15) -> np.ndarray:
     return cv2.copyMakeBorder(plate_bgr, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
 
 
-def _segment_digits_in_plate(binary: np.ndarray, min_height_ratio: float = 0.3, max_width_height_ratio: float = 1.2) -> List[Tuple[int, int, int, int, np.ndarray]]:
+def _split_wide_blob(blob_crop: np.ndarray, x_offset: int, y_offset: int) -> List[Tuple[int, int, int, int, np.ndarray]]:
+    h, w = blob_crop.shape
+    if w < 10:
+        return []
+    projection = np.sum(blob_crop == 255, axis=0).astype(np.float32)
+    kernel = np.ones(5) / 5
+    proj_smooth = np.convolve(projection, kernel, mode="same")
+    start = int(w * 0.15)
+    end = int(w * 0.85)
+    if end <= start:
+        return []
+    valley = np.argmin(proj_smooth[start:end]) + start
+    valley_depth = proj_smooth[valley]
+    left_region = proj_smooth[max(0, valley - int(w * 0.2)):valley] if valley > 0 else np.array([valley_depth])
+    right_region = proj_smooth[valley:min(w, valley + int(w * 0.2))] if valley < w - 1 else np.array([valley_depth])
+    left_peak = float(np.max(left_region))
+    right_peak = float(np.max(right_region))
+    if left_peak > valley_depth * 1.3 and right_peak > valley_depth * 1.3:
+        left_w = valley
+        right_w = w - valley
+        if left_w >= 4 and right_w >= 4:
+            return [
+                (x_offset, y_offset, left_w, h, blob_crop[:, :valley]),
+                (x_offset + valley, y_offset, right_w, h, blob_crop[:, valley:]),
+            ]
+    return []
+
+
+def _segment_digits_in_plate(binary: np.ndarray, min_height_ratio: float = 0.3) -> List[Tuple[int, int, int, int, np.ndarray]]:
     h, w = binary.shape
     if h < 10 or w < 10:
         return []
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
-    blobs: List[Tuple[int, int, int, int, int, np.ndarray]] = []
+    raw: List[Tuple[int, int, int, int, int, np.ndarray]] = []
     for i in range(1, num_labels):
         x = stats[i, cv2.CC_STAT_LEFT]
         y = stats[i, cv2.CC_STAT_TOP]
@@ -547,16 +575,27 @@ def _segment_digits_in_plate(binary: np.ndarray, min_height_ratio: float = 0.3, 
             continue
         if bw < 4 or bh < 8:
             continue
-        aspect = bw / max(bh, 1)
-        if aspect > max_width_height_ratio:
-            continue
         if area < 30:
             continue
         if x < 2 or (x + bw) > w - 2:
             continue
-        blobs.append((x, y, bw, bh, area, binary[y:y + bh, x:x + bw]))
-    blobs.sort(key=lambda b: b[0])
-    return [(x, y, bw, bh, crop) for x, y, bw, bh, _, crop in blobs]
+        raw.append((x, y, bw, bh, area, binary[y:y + bh, x:x + bw]))
+    raw.sort(key=lambda b: b[0])
+    final: List[Tuple[int, int, int, int, np.ndarray]] = []
+    for x, y, bw, bh, area, crop in raw:
+        aspect = bw / max(bh, 1)
+        if aspect <= 1.6:
+            final.append((x, y, bw, bh, crop))
+        else:
+            sub = _split_wide_blob(crop, x, y)
+            if sub:
+                print(f"[OCR-ID] blob composto detectado ({bw}x{bh}), dividido em {len(sub)} partes")
+                for sb in sub:
+                    final.append(sb)
+            else:
+                final.append((x, y, bw, bh, crop))
+    final.sort(key=lambda b: b[0])
+    return final
 
 
 def _ocr_single_digit(digit_crop: np.ndarray) -> Optional[str]:
