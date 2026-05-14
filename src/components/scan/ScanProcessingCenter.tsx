@@ -105,7 +105,7 @@ function formatCatalogMeta(status: ScanStatus | null, sourcePath?: string | null
   const totalFiles = status?.total_files ?? 0;
   const totalLabel = totalFiles > 0 ? `${formatInteger(totalFiles)} fotos` : 'Aguardando lote inicial';
   const sizeLabel = sourcePath ? 'tamanho em análise' : 'origem em preparação';
-  return `${totalLabel} • ${sizeLabel}`;
+  return `${totalLabel} - ${sizeLabel}`;
 }
 
 function getFaceKind(face: ScanRecentFace) {
