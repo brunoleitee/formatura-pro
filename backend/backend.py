@@ -1330,6 +1330,14 @@ def merge_clusters(catalog: str = "", source_cluster_id: str = "", target_cluste
         return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
 
 
+@app.get("/api/review/debug-cluster-similarities")
+def debug_cluster_similarities(catalog: str = ""):
+    try:
+        return rm.debug_cluster_similarities(catalog)
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.post("/api/review/graduation-analysis/start")
 def start_graduation_analysis(req: GraduationAnalysisRequest):
     try:

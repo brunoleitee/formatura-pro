@@ -2250,6 +2250,14 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 ],
             })
 
+        # Debug: log all clusters
+        for cl in clusters:
+            cid = cl["cluster_id"]
+            rowids = [f.get("rowid") for f in cl.get("faces", [])]
+            tags_str = ",".join(_cluster_tags_from_payload(cl)) if _cluster_tags_from_payload(cl) else "none"
+            emb_status = "OK" if any(ccid == cid for ccid, _, _ in cluster_centroids) else "AUSENTE"
+            print(f"[CLUSTER DEBUG] {cid} rowids={rowids} fotos={cl.get('photo_count',0)} embedding={emb_status} aluno_id=unknown tags=[{tags_str}]")
+
         # Second pass: compute unknown-vs-unknown cluster similarity (hybrid)
         def _cluster_tags_from_payload(cl) -> set[str]:
             tags: set[str] = set()
@@ -2276,9 +2284,14 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             final = (0.65 * face_sim) + (0.15 * beca_sim) + (0.20 * temporal_sim)
             return final, scores
 
+        print(f"[CLUSTER DEBUG] total clusters = {len(clusters)}")
         for cl in clusters:
             cid = cl["cluster_id"]
             if cl.get("suggested_student"):
+                print(f"[SKIP COMPARE] {cid} motivo=suggested_student ja existe ({cl['suggested_student']})")
+                continue
+            if cid not in [ccid for ccid, _, _ in cluster_centroids]:
+                print(f"[SKIP COMPARE] {cid} motivo=sem embedding no cluster_centroids")
                 continue
             match = None
             best_score = 0.0
@@ -2292,11 +2305,14 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                         cent_self = cc
                         break
                 if cent_self is None:
+                    print(f"[SKIP COMPARE] {cid} x {other_cid} motivo=cent_self None")
                     continue
                 other_cl = next((c for c in clusters if c["cluster_id"] == other_cid), None)
                 if other_cl is None:
+                    print(f"[SKIP COMPARE] {cid} x {other_cid} motivo=other_cl nao encontrado")
                     continue
                 hscore, sub_scores = _hybrid_sim_between_clusters(cl, other_cl, cent_self, other_cent)
+                print(f"[COMPARE] {cid} x {other_cid} face_sim={sub_scores['face']} final={hscore:.2f} {'merge_candidate=true' if hscore >= 0.50 else ''}")
                 if hscore > best_score and hscore >= 0.50:
                     best_score = hscore
                     best_scores = sub_scores
@@ -2318,6 +2334,36 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
         _sync_unknown_face_clusters(cur, clusters)
         conn.commit()
         return {"clusters": clusters[:limit], "threshold": threshold, "min_cluster_size": min_cluster_size}
+
+
+def debug_cluster_similarities(catalog: str = ""):
+    """Debug endpoint: returns cluster info and pairwise similarities."""
+    cat = catalog or _current_catalog()
+    if not cat:
+        return {"error": "nenhum catalogo"}
+    # Force recompute clusters with suggestions
+    result = get_unknown_clusters(catalog=cat, min_cluster_size=1, limit=200)
+    clusters_data = result.get("clusters", [])
+    # Build detailed debug output
+    debug_clusters = []
+    for cl in clusters_data:
+        debug_clusters.append({
+            "cluster_id": cl["cluster_id"],
+            "cluster_number": cl["cluster_number"],
+            "photos": cl.get("photo_count", 0),
+            "faces": cl.get("face_count", 0),
+            "has_embedding": True,
+            "tags": [k for k in ["gown", "diploma", "sash", "cap"] if cl.get(f"has_{k}")],
+            "suggested_student": cl.get("suggested_student"),
+            "suggested_similarity": cl.get("suggested_similarity"),
+            "unknown_similar_id": cl.get("unknown_similar_id"),
+            "unknown_similar_similarity": cl.get("unknown_similar_similarity"),
+            "preview": cl.get("preview_image", "")[:80],
+        })
+    return {
+        "total_clusters": len(debug_clusters),
+        "clusters": debug_clusters,
+    }
 
 
 def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0):
