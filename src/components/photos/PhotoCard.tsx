@@ -71,12 +71,12 @@ function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number,
       }}
     >
       {(face.is_foreground === 1 || (face.foreground_score && face.foreground_score >= 0.65)) && (
-        <div style={{ position: 'absolute', top: '-20px', left: '-2px', background: '#10b981', color: 'white', fontSize: '10px', padding: '2px 4px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
+        <div className={`${styles.faceLabel} ${styles.faceLabelFg}`}>
           1º plano
         </div>
       )}
       {(face.is_foreground === 0 || (face.foreground_score !== undefined && face.foreground_score !== null && face.foreground_score < 0.45)) && (
-        <div style={{ position: 'absolute', top: '-20px', left: '-2px', background: '#f59e0b', color: 'white', fontSize: '10px', padding: '2px 4px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
+        <div className={`${styles.faceLabel} ${styles.faceLabelBg}`}>
           2º plano {face.background_penalty_reason ? `(${face.background_penalty_reason})` : ''}
         </div>
       )}
@@ -490,13 +490,13 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
           </div>
         )}
         {isPhotoBlurry(photo) && (
-          <div className="blur-badge blur-blurry">Desfocada</div>
+          <div className={`${styles.blurBadge} ${styles.blurBadgeBlurry}`} title="Desfocada">Desfocada</div>
         )}
         {isPhotoAttention(photo) && (
-          <div className="blur-badge blur-attention">Verificar foco</div>
+          <div className={`${styles.blurBadge} ${styles.blurBadgeAttention}`} title="Atenção">Verificar foco</div>
         )}
         {isDiscarded && (
-          <div className="discardBadge">DESCARTADA</div>
+          <div className={styles.discardBadge}>Descartada</div>
         )}
         {isAiProcessing && (
           <div className={`${styles.aiBadge} ${styles.aiProcessing}`}>IA...</div>

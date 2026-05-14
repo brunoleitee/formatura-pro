@@ -699,31 +699,8 @@
   opacity: 0.6;
 }
 
-.blur-badge {
-  position: absolute;
-  bottom: 5px;
-  left: 5px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-size: 0.65rem;
-  font-weight: 600;
-}
-.blur-badge.blur-blurry { background: rgba(239,68,68,0.8); color: white; }
-.blur-badge.blur-attention { background: rgba(245,158,11,0.8); color: white; }
-.discardBadge {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 5;
-  background: rgba(185, 28, 28, 1);
-  color: white;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 4px 8px;
-  border-radius: 999px;
-  letter-spacing: .4px;
-  pointer-events: none;
-}
+
+
 
 
 
