@@ -73,6 +73,7 @@ export function PhotoViewerModal({
   const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
   const [isLoaded, setIsLoaded] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const pendingSrcRef = useRef<string | null>(null);
   const [activeMenu, setActiveMenu] = useState<number | null>(null);
   const [isManualMode, setIsManualMode] = useState(false);
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
@@ -218,6 +219,26 @@ export function PhotoViewerModal({
 
     imageCacheRef.current.set(url, { status: 'loading', promise });
     return promise;
+  }, []);
+
+  const swapImageNoFlicker = useCallback((newUrl: string, newPhoto: Photo) => {
+    if (pendingSrcRef.current === newUrl) return;
+    pendingSrcRef.current = newUrl;
+    const preloadImg = new window.Image();
+    preloadImg.decoding = "async";
+    preloadImg.onload = () => {
+      if (pendingSrcRef.current !== newUrl) return;
+      setDisplayedPhoto(newPhoto);
+      setDisplayedSrc(newUrl);
+      setIsLoaded(true);
+    };
+    preloadImg.onerror = () => {
+      if (pendingSrcRef.current !== newUrl) return;
+      setDisplayedPhoto(newPhoto);
+      setDisplayedSrc(newUrl);
+      setIsLoaded(true);
+    };
+    preloadImg.src = newUrl;
   }, []);
 
   const handleDiscard = async () => {
@@ -391,11 +412,9 @@ export function PhotoViewerModal({
       void loadPreview(targetUrl);
     };
 
-    const settleCurrent = (url: string, sourcePhoto: Photo, kind: 'cache-miss' | 'fallback' | 'instant') => {
+    const settleCurrent = (url: string, sourcePhoto: Photo, kind: 'cache-miss' | 'fallback' | 'instant' | 'wap') => {
       if (requestId !== requestIdRef.current) return false;
-      setDisplayedPhoto(sourcePhoto);
-      setDisplayedSrc(url);
-      setIsLoaded(true);
+      swapImageNoFlicker(url, sourcePhoto);
       if (previewStartRef.current !== null) {
         logPerf(`viewer preview ${kind}`, previewStartRef.current, sourcePhoto.path);
       }
@@ -404,16 +423,12 @@ export function PhotoViewerModal({
 
     const instantCached = imagePreloadCache.getCached(photo.path);
     if (instantCached) {
-      setDisplayedPhoto(photo);
-      setDisplayedSrc(currentUrl);
-      setIsLoaded(true);
+      swapImageNoFlicker(currentUrl, photo);
       if (previewStartRef.current !== null) {
         logPerf('viewer preview instant', previewStartRef.current, photo.path);
       }
     } else if (imageCacheRef.current.get(currentUrl)?.status === 'loaded') {
-      setDisplayedPhoto(photo);
-      setDisplayedSrc(currentUrl);
-      setIsLoaded(true);
+      swapImageNoFlicker(currentUrl, photo);
       if (previewStartRef.current !== null) {
         logPerf('viewer preview cache hit', previewStartRef.current, photo.path);
       }
