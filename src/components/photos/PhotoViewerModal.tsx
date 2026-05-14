@@ -7,6 +7,7 @@ import { logPerf, perfNow } from '../../utils/perf';
 import { getGridHighThumbUrl, getGridThumbUrl, getViewerPreviewUrl, buildPhotoSourceUrl } from '../../utils/imageUrls';
 import { aiQueueManager } from '../../services/AIQueueManager';
 import { aiCacheStore } from '../../services/AICacheStore';
+import { aiApi } from '../../services/aiApi';
 import styles from './PhotoViewerModal.module.css';
 
 interface PhotoViewerModalProps {
@@ -443,6 +444,44 @@ export function PhotoViewerModal({
       .filter((item) => item.path && item.path !== photo.path)
       .forEach((item) => preloadImage(item));
   }, [loadPreview, navigationPhotos, currentIndex, photo.path, (photo as ViewerPhoto).original_path, (photo as ViewerPhoto).preview_path]);
+
+  useEffect(() => {
+    const allPaths = navigationPhotos
+      .slice(0, 50)
+      .map((p) => p.path)
+      .filter(Boolean) as string[];
+    if (allPaths.length === 0) return;
+    let cancelled = false;
+    console.log(`[AI-BATCH] consultando status inicial (${allPaths.length} fotos)`);
+    aiApi.batchStatus(allPaths).then((res) => {
+      if (cancelled) return;
+      let found = 0;
+      for (const item of res.items) {
+        if (item.status === "completed") {
+          aiCacheStore.set(item.foto_path, {
+            face_detected: item.face_detected ?? false,
+            faces_count: item.faces_count ?? 0,
+            embedding_ready: item.embedding_ready ?? false,
+            final_student: item.final_student ?? null,
+            status: "completed",
+          });
+          found++;
+        }
+      }
+      console.log(`[AI-BATCH] cache encontrado: ${found}`);
+      const pending = allPaths.filter((p) => {
+        const c = aiCacheStore.get(p);
+        return !c || c.status !== "completed";
+      });
+      console.log(`[AI-BATCH] fotos pendentes: ${pending.length}`);
+      aiQueueManager.batchInitialize(pending);
+      console.log(`[AI-BATCH] queue inicializada`);
+    }).catch(() => {
+      if (cancelled) return;
+      aiQueueManager.batchInitialize(allPaths);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const currentPath = photo.path || (photo as ViewerPhoto).original_path;

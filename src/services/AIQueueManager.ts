@@ -27,13 +27,33 @@ class AIQueueManager {
     if (this.processing.has(path)) return;
     if (aiCacheStore.has(path)) {
       const cached = aiCacheStore.get(path)!;
-      if (cached.status === "completed" || cached.status === "error") {
-        return;
+      if (cached.status === "completed") return;
+      if (cached.status === "error") {
+        const age = Date.now() - cached.updated_at;
+        if (age < 60000) return;
       }
     }
     this.pendingBatch.add(path);
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     this.debounceTimer = setTimeout(() => this.flushBatch(), DEBOUNCE_MS);
+  }
+
+  batchInitialize(paths: string[]): void {
+    const pending: string[] = [];
+    for (const p of paths) {
+      if (this.processed.has(p) || this.processing.has(p)) continue;
+      if (aiCacheStore.has(p)) {
+        const cached = aiCacheStore.get(p)!;
+        if (cached.status === "completed") continue;
+      }
+      pending.push(p);
+    }
+    if (pending.length === 0) return;
+    this.log(`batch inicializando: ${pending.length} fotos pendentes`);
+    for (const p of pending) {
+      this.pendingBatch.add(p);
+    }
+    this.flushBatch();
   }
 
   private flushBatch(): void {
