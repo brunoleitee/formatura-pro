@@ -184,7 +184,7 @@ def get_people(unknown: bool = False):
             if unknown:
                 cur.execute("""
                     SELECT aluno_id, COUNT(*) as total FROM ocorrencias
-                    WHERE lower(aluno_id) IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nÃ£o_mapeado', '__unknown__')
+                    WHERE lower(aluno_id) IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__')
                        OR aluno_id LIKE 'Pessoa%'
                     GROUP BY aluno_id ORDER BY total DESC, aluno_id ASC
                 """)
@@ -203,7 +203,7 @@ def get_people(unknown: bool = False):
                     WITH counts AS (
                         SELECT aluno_id, COUNT(*) AS total
                         FROM ocorrencias
-                        WHERE lower(aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nÃ£o_mapeado', '__unknown__')
+                        WHERE lower(aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__')
                           AND aluno_id NOT LIKE 'Pessoa%'
                         GROUP BY aluno_id
                     ),

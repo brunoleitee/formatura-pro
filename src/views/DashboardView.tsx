@@ -50,7 +50,7 @@ const UNKNOWN_LABELS = new Set([
   'desconhecido',
   'sem_nome',
   'nao_mapeado',
-  'nÃ£o_mapeado',
+  'nao_mapeado',
   '__unknown__',
 ]);
 

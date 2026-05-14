@@ -85,7 +85,7 @@ const PeopleCard = memo(function PeopleCard({
           <span className="person-name" title={person.name}>{person.name}</span>
         )}
         <span className="person-count">
-          {(person.class_name || 'Sem turma')} Â· {person.total_photos} foto{person.total_photos !== 1 ? 's' : ''}
+          {(person.class_name || 'Sem turma')} · {person.total_photos} foto{person.total_photos !== 1 ? 's' : ''}
         </span>
       </div>
 
@@ -196,7 +196,7 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
         <div>
           <h1>Formandos Identificados</h1>
           <p className="view-subtitle">
-            {currentCatalog && <><strong>{currentCatalog}</strong> Â· </>}
+            {currentCatalog && <><strong>{currentCatalog}</strong> · </>}
             {filtered.length === 1 ? '1 pessoa' : `${filtered.length} pessoas`}
           </p>
         </div>

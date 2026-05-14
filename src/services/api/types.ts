@@ -244,6 +244,8 @@ export interface ReviewClusterSummary {
   unknown_similar_id?: string | null;
   unknown_similar_number?: number | null;
   unknown_similar_similarity?: number | null;
+  best_student_debug?: string | null;
+  best_similarity_debug?: number | null;
   graduation_tags?: string[];
   has_gown?: boolean;
   has_diploma?: boolean;
@@ -301,6 +303,17 @@ export interface AssignClusterResponse {
   nome_formando?: string | null;
   ok?: boolean;
   updated?: number;
+}
+
+export interface StudentMatchPreviewResponse {
+  matched_student_rowid: number;
+  matched_student_photo_path: string;
+  matched_student_face_box: number[];
+  matched_similarity: number;
+  matched_student_id: string;
+  matched_student_name: string | null;
+  matched_student_folder: string;
+  matched_student_label: string;
 }
 
 export interface Stats {

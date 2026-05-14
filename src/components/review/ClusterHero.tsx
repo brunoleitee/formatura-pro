@@ -204,9 +204,10 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
                     cluster_id: cluster.cluster_id,
                     aluno_id: cluster.suggested_student!,
                     nome_formando: cluster.suggested_student!,
-                    face_count: cluster.face_count,
+                    updated_count: cluster.face_count,
                     status: "assigned",
-                    classroom: "",
+                    success: true,
+                    student_name: cluster.suggested_student ?? null,
                   });
                 }}
                 type="button"

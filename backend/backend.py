@@ -1262,6 +1262,11 @@ def get_review_cluster_detail(
     return rm.get_review_cluster_detail(catalog, cluster_id)
 
 
+@app.get("/api/review/student-match-preview")
+def get_student_match_preview(catalog: str, cluster_id: str, student: str):
+    return rm.get_student_match_preview(catalog, cluster_id, student)
+
+
 BulkManualIdentifyReq = rm.BulkManualIdentifyReq
 
 

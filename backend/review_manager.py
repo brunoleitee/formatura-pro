@@ -2840,21 +2840,10 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
         except Exception as e:
             print(f"[FINAL PATCH] erro: {e}")
 
-    def compute_best_student_for_cluster(cluster_id, catalog):
-        return "JOAO", 0.43
-
     for c in clusters:
         print("[FINAL PAYLOAD BEFORE]", c["cluster_id"], c.get("best_student_debug"))
 
-        if c.get("best_student_debug") is None:
-            best_name, best_sim = compute_best_student_for_cluster(c["cluster_id"], cat)
-
-            c["best_student_debug"] = best_name
-            c["best_similarity_debug"] = best_sim
-
-            if best_name and best_sim >= 0.45:
-                c["suggested_student"] = best_name
-                c["suggested_similarity"] = best_sim
+        # Removido fallback hardcoded JOAO
 
         print("[FINAL PAYLOAD AFTER]", c["cluster_id"], c.get("best_student_debug"), c.get("best_similarity_debug"))
 
@@ -4001,3 +3990,109 @@ def clear_cache():
     clear_embedding_cache()
     qa_clear_disk_caches()
     return {"status": "ok", "removed": removed}
+
+
+def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
+    get_db = _get("get_db")
+    cat = catalog or _current_catalog()
+    if not cat:
+        raise HTTPException(status_code=400, detail="Catalogo obrigatorio")
+
+    with get_db(cat) as conn:
+        cur = conn.cursor()
+
+        # 1. Obter embeddings do cluster atual para calcular o centroide
+        cur.execute("""
+            SELECT o.rowid, fe.embedding
+            FROM unknown_face_clusters u
+            JOIN ocorrencias o ON o.rowid = u.face_id
+            JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
+            WHERE u.cluster_id = ?
+        """, (cluster_id,))
+        cluster_rows = cur.fetchall()
+        if not cluster_rows:
+            # Tentar direto na tabela ocorrencias caso não esteja na tabela de clusters (ex: manual identify preliminar)
+            cur.execute("""
+                SELECT rowid, embedding FROM face_embeddings 
+                WHERE occurrence_rowid IN (SELECT rowid FROM ocorrencias WHERE aluno_id = ?)
+            """, (cluster_id,))
+            cluster_rows = cur.fetchall()
+            
+        if not cluster_rows:
+            raise HTTPException(status_code=404, detail=f"Cluster {cluster_id} nao encontrado ou sem embeddings.")
+
+        cluster_embs = []
+        for r in cluster_rows:
+            emb = np.frombuffer(r["embedding"], dtype="float32")
+            norm = np.linalg.norm(emb)
+            if norm > 0:
+                cluster_embs.append(emb / norm)
+
+        if not cluster_embs:
+            raise HTTPException(status_code=404, detail="Não foi possível extrair embeddings do cluster.")
+
+        cluster_centroid = np.mean(cluster_embs, axis=0)
+        cluster_centroid = cluster_centroid / np.linalg.norm(cluster_centroid)
+
+        # 2. Buscar todas as faces identificadas do aluno
+        cur.execute("""
+            SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, fe.embedding
+            FROM ocorrencias o
+            JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
+            WHERE o.aluno_id = ?
+        """, (student_id,))
+        student_faces = cur.fetchall()
+
+        if not student_faces:
+             # Tentar buscar por nome se aluno_id for numérico ou diferente
+             cur.execute("""
+                SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, fe.embedding
+                FROM ocorrencias o
+                JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
+                WHERE o.aluno_id = (SELECT aluno_id FROM alunos WHERE nome = ? OR aluno_id = ? LIMIT 1)
+            """, (student_id, student_id))
+             student_faces = cur.fetchall()
+
+        if not student_faces:
+            raise HTTPException(status_code=404, detail=f"Nenhuma face de referência identificada para {student_id}")
+
+        best_face = None
+        best_sim = -1.0
+
+        for f in student_faces:
+            if not f["embedding"]: continue
+            emb = np.frombuffer(f["embedding"], dtype="float32")
+            norm = np.linalg.norm(emb)
+            if norm <= 0: continue
+
+            sim = float(np.dot(cluster_centroid, emb / norm))
+            if sim > best_sim:
+                best_sim = sim
+                best_face = f
+
+        if not best_face:
+             raise HTTPException(status_code=404, detail=f"Erro ao calcular similaridade para faces de {student_id}")
+
+        # 3. Obter metadados amigáveis do aluno (nome, pasta, etc)
+        student_id_real = best_face["aluno_id"]
+        cur.execute("SELECT aluno_id, nome, folder FROM alunos WHERE aluno_id = ?", (student_id_real,))
+        meta = cur.fetchone()
+        
+        student_name = meta["nome"] if meta and meta["nome"] else None
+        student_folder = meta["folder"] if meta and meta["folder"] else student_id_real
+        
+        # Label prioritário: Nome Real > Pasta/ID
+        student_label = student_name if student_name else student_folder
+
+        print(f"[COMPARE PREVIEW LABEL] student_param={student_id} matched_student_id={student_id_real} matched_student_name={student_name} matched_student_folder={student_folder} label={student_label}")
+
+        return {
+            "matched_student_rowid": int(best_face["rowid"]),
+            "matched_student_photo_path": best_face["foto_path"],
+            "matched_student_face_box": [best_face["x1"], best_face["y1"], best_face["x2"], best_face["y2"]],
+            "matched_similarity": round(best_sim, 4),
+            "matched_student_id": student_id_real,
+            "matched_student_name": student_name,
+            "matched_student_folder": student_folder,
+            "matched_student_label": student_label
+        }

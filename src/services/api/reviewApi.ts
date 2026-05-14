@@ -6,9 +6,15 @@ import type {
   ReviewClustersPageResponse,
   UnknownCluster,
   UnknownClustersResponse,
+  StudentMatchPreviewResponse,
 } from './types';
 
 export const reviewApi = {
+  getStudentMatchPreview: (catalog: string, cluster_id: string, student: string) =>
+    fetchJSON<StudentMatchPreviewResponse>(
+      `${API_BASE}/review/student-match-preview?catalog=${encodeURIComponent(catalog)}&cluster_id=${encodeURIComponent(cluster_id)}&student=${encodeURIComponent(student)}`
+    ),
+
   getUnknownClusters: (catalog: string, min_score = 0.58, min_cluster_size = 2, limit = 80) =>
     fetchJSON<UnknownCluster[]>(
       `${API_BASE}/unknown-clusters?catalog=${encodeURIComponent(catalog)}&min_score=${min_score}&min_cluster_size=${min_cluster_size}&limit=${limit}`

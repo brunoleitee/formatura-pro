@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef, type CSSProperties } from 'react';
 import type { AssignClusterResponse, RichCluster, RichClusterFace } from '../../services/api';
+import { api } from '../../services/api';
 // import { useDragSelection } from '../../hooks/useDragSelection';
 import ClusterHero, { type ClusterHeroHandle } from './ClusterHero';
 import ClusterStatsPanel from './ClusterStatsPanel';
@@ -70,6 +71,7 @@ export default function ClusterDetail({
   const [lastSelectedRowId, setLastSelectedRowId] = useState<number | null>(null);
   const [isCompareOpen, setIsCompareOpen] = useState(false);
   const [rejectedName, setRejectedName] = useState<string | null>(null);
+  const [matchedLabel, setMatchedLabel] = useState<string | null>(null);
   const heroRef = useRef<ClusterHeroHandle>(null);
   const graduationRef = useRef<GraduationActionsHandle>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -80,6 +82,7 @@ export default function ClusterDetail({
     setFilter('all');
     setSort('best_match');
     setLastSelectedRowId(null);
+    setMatchedLabel(null);
   }, [cluster.cluster_id]);
 
   // Resetar selection state ao mudar view mode, filter, ou sort (opcional, mas recomendado)
@@ -214,6 +217,24 @@ export default function ClusterDetail({
     bestSim = 0;
   }
 
+  // Buscar label amigável (nome real) se houver um melhor match
+  useEffect(() => {
+    if (bestName && !matchedLabel) {
+      api.getStudentMatchPreview(catalog, cluster.cluster_id, bestName)
+        .then(data => {
+          if (data.matched_student_label) {
+            setMatchedLabel(data.matched_student_label);
+          }
+        })
+        .catch(() => {
+          // Fallback silencioso para o ID original
+        });
+    }
+  }, [bestName, catalog, cluster.cluster_id]);
+
+  const displayBestName = matchedLabel || bestName;
+
+
   return (
     <div className={`${styles.root} ${assignmentState?.clusterId === cluster.cluster_id ? styles.rootAssigned : ''}`} key={cluster.cluster_id}>
       {/* ── Header compacto ── */}
@@ -259,7 +280,7 @@ export default function ClusterDetail({
         onViewMode={setViewMode}
         onZoom={setZoom}
         onSelectBest={handleSelectBest}
-        bestStudentName={bestName}
+        bestStudentName={displayBestName}
         bestStudentSim={bestSim}
         onCompare={() => setIsCompareOpen(true)}
       />
@@ -298,18 +319,22 @@ export default function ClusterDetail({
       {isCompareOpen && bestName && (
         <CompareModal
           cluster={cluster}
+          catalog={catalog}
           bestName={bestName}
           bestSim={bestSim}
-          onConfirm={(name) => {
+          onConfirm={async (name) => {
             setIsCompareOpen(false);
             if (onAssigned) {
-              onAssigned({
-                cluster_id: cluster.cluster_id,
-                aluno_id: name,
-                nome_formando: name,
-                status: 'assigned',
-                updated_count: cluster.face_count,
-              } as AssignClusterResponse);
+              try {
+                const result = await api.assignCluster(catalog, {
+                  cluster_id: cluster.cluster_id,
+                  aluno_id: name,
+                  nome_formando: name,
+                });
+                onAssigned(result);
+              } catch (err) {
+                console.error('Erro ao confirmar aluno no modal:', err);
+              }
             }
           }}
           onClose={() => setIsCompareOpen(false)}

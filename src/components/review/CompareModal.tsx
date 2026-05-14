@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Check, X } from 'lucide-react';
-import type { RichCluster, Person } from '../../services/api';
+import type { RichCluster, StudentMatchPreviewResponse } from '../../services/api';
 import { api } from '../../services/api';
 import { faceThumb } from './FaceCard';
 import styles from './CompareModal.module.css';
 
 interface CompareModalProps {
   cluster: RichCluster;
+  catalog: string;
   bestName: string;
   bestSim: number;
   onConfirm: (name: string) => void;
@@ -16,35 +17,46 @@ interface CompareModalProps {
 
 export default function CompareModal({
   cluster,
+  catalog,
   bestName,
   bestSim,
   onConfirm,
   onReject,
   onClose,
 }: CompareModalProps) {
-  const [student, setStudent] = useState<Person | null>(null);
+  const [matchData, setMatchData] = useState<StudentMatchPreviewResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const displayLabel = matchData?.matched_student_label || bestName;
 
   useEffect(() => {
-    // Busca a referência da imagem do aluno (bestName)
-    api.getPeople().then(people => {
-      const match = people.find(p => p.id === bestName || p.name === bestName);
-      if (match) {
-        setStudent(match);
-      }
-    }).catch(console.error);
-  }, [bestName]);
+    if (!bestName || !cluster.cluster_id) return;
+    setIsLoading(true);
+    
+    // Obter o catálogo atual (a partir da URL ou injetado, no ClusterDetail temos prop catalog)
+    // Como CompareModal não recebe catalog, vamos assumir que ele pode ser extraído ou passado.
+    // Olhando ClusterDetail, ele tem catalog. Vamos precisar passar catalog para o CompareModal.
+    
+    api.getStudentMatchPreview(catalog, cluster.cluster_id, bestName)
+      .then(data => {
+        setMatchData(data);
+      })
+      .catch(err => {
+        console.error('[CompareModal] preview error:', err);
+        setMatchData(null);
+      })
+      .finally(() => setIsLoading(false));
+  }, [bestName, cluster.cluster_id]);
 
   const rep = cluster.representative;
   const leftImg = rep ? faceThumb(rep.path, rep.box, 400) : '';
 
   let rightImg = '';
-  if (student && student.cover_path && student.cover_box) {
+  if (matchData) {
+    const box = matchData.matched_student_face_box;
     rightImg = api.faceThumbUrl(
-      student.cover_path,
-      student.cover_box[0],
-      student.cover_box[1],
-      student.cover_box[2],
-      student.cover_box[3],
+      matchData.matched_student_photo_path,
+      box[0], box[1], box[2], box[3],
       400
     );
   }
@@ -63,7 +75,7 @@ export default function CompareModal({
         
         <div className={styles.header}>
           <h2 className={styles.title}>
-            {bestName} — {Math.round(bestSim * 100)}% similaridade
+            {displayLabel} — {matchData ? Math.round(matchData.matched_similarity * 100) : Math.round(bestSim * 100)}% similaridade
           </h2>
           <button className={styles.closeBtn} onClick={onClose} aria-label="Fechar">
             <X size={20} />
@@ -80,20 +92,20 @@ export default function CompareModal({
           
           <div className={styles.side}>
             <div className={styles.imgWrap}>
-              {rightImg ? <img src={rightImg} alt={bestName} className={styles.img} /> : <div className={styles.placeholder}>Buscando...</div>}
+              {rightImg ? <img src={rightImg} alt={bestName} className={styles.img} /> : <div className={styles.placeholder}>{isLoading ? 'Buscando...' : 'Sem imagem'}</div>}
             </div>
-            <span className={styles.label}>Referência: {bestName}</span>
+            <span className={styles.label}>Referência: {displayLabel}</span>
           </div>
         </div>
 
         <div className={styles.footer}>
           <button className={styles.btnSecondary} onClick={() => onReject(bestName)}>
             <X size={16} />
-            <span>Não é {bestName}</span>
+            <span>Não é {displayLabel}</span>
           </button>
           <button className={styles.btnPrimary} onClick={() => onConfirm(bestName)}>
             <Check size={16} />
-            <span>Confirmar como {bestName}</span>
+            <span>Confirmar como {displayLabel}</span>
           </button>
         </div>
       </div>
