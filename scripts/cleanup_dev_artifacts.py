@@ -45,6 +45,7 @@ TARGETS = [
 ]
 
 SAFETY_DIRS = {".git", "backend/catalogos", "data/catalogs", "data/cloud", "backend/binaries", ".insightface"}
+SAFETY_FILES = {"*.db", "last_catalog.txt", "*.sqlite", "*.sqlite3"}
 
 
 def format_bytes(size: int) -> str:
@@ -75,6 +76,18 @@ def is_safe(path: Path) -> bool:
     for safe in SAFETY_DIRS:
         if safe in parts:
             return False
+    name = path.name
+    for pat in SAFETY_FILES:
+        if pat.startswith("*"):
+            if name.endswith(pat[1:]):
+                return False
+        elif name == pat:
+            return False
+    # Also check if any parent is a catalog
+    for parent in path.resolve().parents:
+        if parent.name == "data" and (parent / "catalogs").exists():
+            if "catalogs" in set(parent.resolve().parts):
+                return False
     return True
 
 
