@@ -94,7 +94,7 @@ const ClusterItem = memo(function ClusterItem({
       </div>
 
       <div className={styles.itemInfo}>
-        <span className={styles.itemName}>Pessoa desconhecida</span>
+        <span className={styles.itemName}>Possível formando</span>
         <span className={styles.itemMeta}>
           <span>{photoCountLabel}</span>
           <span className={styles.dot}>·</span>

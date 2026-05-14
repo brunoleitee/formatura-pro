@@ -130,7 +130,7 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
       <div className={styles.info}>
         {/* Linha do título + meta em uma linha só */}
         <div className={styles.titleRow}>
-          <h1 className={styles.title}>Pessoa desconhecida</h1>
+          <h1 className={styles.title}>Possível formando</h1>
           {isAssigned && (
             <span className={styles.assignedBadge}>
               <Check size={10} />
