@@ -6,6 +6,7 @@ import { isPhotoMapped, isKnownFace } from '../../utils/personIdentity';
 import { getGridHighThumbUrl, getGridThumbUrl } from '../../utils/imageUrls';
 import { isPerfLoggingEnabled, logPerf, perfNow } from '../../utils/perf';
 import { aiCacheStore } from '../../services/AICacheStore';
+import { ratingCache } from '../../services/RatingCache';
 import styles from './PhotoCard.module.css';
 
 interface PhotoCardProps {
@@ -188,9 +189,14 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
 
   const [aiTick, setAiTick] = useState(0);
   useEffect(() => aiCacheStore.subscribe(() => setAiTick((t) => t + 1)), []);
+  const [ratingTick, setRatingTick] = useState(0);
+  useEffect(() => ratingCache.subscribe(() => setRatingTick((t) => t + 1)), []);
   const aiResult = aiCacheStore.get(photo.path);
   const showAiBadge = aiTick >= 0 && aiResult?.status === "completed" && (aiResult.face_detected || aiResult.ocr_text);
   const isAiProcessing = aiResult?.status === "processing" || aiResult?.status === "pending";
+  const photoMeta = ratingCache.get(photo.path);
+  const showRating = photoMeta.rating > 0;
+  const showFavorite = photoMeta.favorite;
 
   useEffect(() => {
     const shouldPromoteHigh = highUrl !== lowUrl && highSize > lowSize;
@@ -501,6 +507,14 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
             {aiResult?.ocr_text ? <FileText size={10} /> : null}
             {aiResult?.face_detected && aiResult?.ocr_text ? null : !aiResult?.face_detected && !aiResult?.ocr_text ? <Brain size={10} /> : null}
           </div>
+        )}
+        {showRating && (
+          <div className={styles.ratingBadge} title={`Rating: ${photoMeta.rating}`}>
+            {'★'.repeat(photoMeta.rating)}{'☆'.repeat(5 - photoMeta.rating)}
+          </div>
+        )}
+        {showFavorite && (
+          <div className={styles.favBadge} title="Favorito">❤</div>
         )}
         {isDragging && dragSelectionCount > 1 && (
           <div

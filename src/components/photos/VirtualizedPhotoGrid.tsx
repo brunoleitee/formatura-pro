@@ -8,6 +8,7 @@ import { getPhotoId } from '../../hooks/usePhotoSelection';
 import { aiCacheStore } from '../../services/AICacheStore';
 import { aiQueueManager } from '../../services/AIQueueManager';
 import { aiApi } from '../../services/aiApi';
+import { ratingCache } from '../../services/RatingCache';
 
 interface VirtualizedPhotoGridProps {
   photos: Photo[];
@@ -91,6 +92,10 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
     const paths = limited.map((p) => p.path).filter(Boolean) as string[];
     if (paths.length === 0) return;
     let cancelled = false;
+
+    api.getRatings(paths).then((res) => {
+      if (!cancelled) ratingCache.loadBatch(res.items);
+    }).catch(() => {});
     console.log(`[AI-GRID] batch status solicitado (${paths.length} fotos)`);
     aiApi.batchStatus(paths).then((res) => {
       if (cancelled) return;

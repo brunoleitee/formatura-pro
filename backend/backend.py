@@ -2960,6 +2960,27 @@ def toggle_photo_favorite(foto_path: str = ""):
         return {"error": str(e)}
 
 
+@app.post("/api/photo/ratings")
+def get_photo_ratings(req: AiBatchStatusReq):
+    results: list = []
+    if not req.foto_paths:
+        return {"items": results}
+    try:
+        with get_db() as db:
+            placeholders = ",".join(["?"] * len(req.foto_paths))
+            cur = db.cursor()
+            cur.execute(f"SELECT foto_path, rating, favorite FROM photo_meta WHERE foto_path IN ({placeholders})", req.foto_paths)
+            rows = {r["foto_path"]: {"rating": r["rating"] or 0, "favorite": bool(r["favorite"])} for r in cur.fetchall()}
+            for path in req.foto_paths:
+                meta = rows.get(path, {"rating": 0, "favorite": False})
+                results.append({"foto_path": path, "rating": meta["rating"], "favorite": meta["favorite"]})
+    except Exception as e:
+        print(f"[RATING] batch error: {e}")
+        for path in req.foto_paths:
+            results.append({"foto_path": path, "rating": 0, "favorite": False})
+    return {"items": results}
+
+
 @app.post("/api/ai/retry-face-detection")
 def ai_retry_face_detection(foto_path: str = ""):
     try:

@@ -59,4 +59,13 @@ export const photoApi = {
     post<{ success: boolean; favorite: boolean }>(
       `${API_BASE}/photo/favorite?foto_path=${encodeURIComponent(fotoPath)}`, {}
     ),
+
+  getRatings: (fotoPaths: string[]) =>
+    fetchJSON<{ items: Array<{ foto_path: string; rating: number; favorite: boolean }> }>(
+      `${API_BASE}/photo/ratings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ foto_paths: fotoPaths }),
+      }
+    ),
 };

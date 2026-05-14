@@ -32,3 +32,25 @@
   0%, 100% { opacity: 0.7; }
   50% { opacity: 1; }
 }
+
+.ratingBadge {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  z-index: 6;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  color: #fbbf24;
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.favBadge {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  z-index: 6;
+  font-size: 0.8rem;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}

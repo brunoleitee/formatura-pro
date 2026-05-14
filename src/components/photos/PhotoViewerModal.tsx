@@ -9,6 +9,7 @@ import { aiQueueManager } from '../../services/AIQueueManager';
 import { aiCacheStore } from '../../services/AICacheStore';
 import { aiApi } from '../../services/aiApi';
 import { imagePreloadCache } from '../../services/ImagePreloadCache';
+import { ratingCache } from '../../services/RatingCache';
 import styles from './PhotoViewerModal.module.css';
 
 interface PhotoViewerModalProps {
@@ -291,7 +292,7 @@ export function PhotoViewerModal({
     if (!face) return;
     try {
       await api.bulkManualIdentify(currentCatalog, 'Desconhecido', face.rowid ? [face.rowid] : []);
-      showFeedbackMsg("Identificacao removida");
+      showFeedbackMsg("Identificação removida");
       setActiveMenu(null);
       onPhotoUpdate?.({ ...visiblePhoto });
     } catch (err) {
@@ -570,19 +571,30 @@ export function PhotoViewerModal({
   const handleRating = useCallback(async (rating: number) => {
     const path = visiblePhoto.path;
     console.log(`[HOTKEY] rating ${rating}`);
+    ratingCache.setRating(path, rating);
     showActionOverlay(feedbackStars(rating));
     try {
       await api.setRating(path, rating);
+      console.log(`[REVIEW] rating persisted: ${path}`);
       if (currentIndex < total - 1) onNavigate(navigationPhotos[currentIndex + 1]);
-    } catch { /* ignore */ }
+    } catch {
+      ratingCache.setRating(path, 0);
+      console.log(`[REVIEW] rating rollback: ${path}`);
+    }
   }, [visiblePhoto.path, currentIndex, total, onNavigate, showActionOverlay, feedbackStars]);
 
   const handleFavorite = useCallback(async () => {
     console.log(`[HOTKEY] favorite toggle`);
+    const path = visiblePhoto.path;
+    const current = ratingCache.get(path).favorite;
+    ratingCache.setFavorite(path, !current);
     try {
-      const res = await api.toggleFavorite(visiblePhoto.path);
+      const res = await api.toggleFavorite(path);
       showActionOverlay(res.favorite ? "❤ Favorito" : "♡ Desfavoritado");
-    } catch { /* ignore */ }
+    } catch {
+      ratingCache.setFavorite(path, current);
+      console.log(`[REVIEW] favorite rollback: ${path}`);
+    }
   }, [visiblePhoto.path, showActionOverlay]);
 
   const handleConfirmSuggestion = useCallback(() => {
@@ -1201,7 +1213,7 @@ export function PhotoViewerModal({
         {/* Right panel â€” identification */}
         <div className={styles.rightPanel} onClick={(e) => e.stopPropagation()}>
           <div className={styles.identHeader}>
-            IDENTIFICACAO {(visiblePhoto.faces || []).length > 0 && <span className={styles.identCount}>{(visiblePhoto.faces || []).length}</span>}
+            IDENTIFICAÇÃO {(visiblePhoto.faces || []).length > 0 && <span className={styles.identCount}>{(visiblePhoto.faces || []).length}</span>}
             <ChevronRight size={14} className={styles.identChevron} />
           </div>
 
