@@ -184,6 +184,30 @@
   color: #93c5fd;
 }
 
+.suggestionRowStrong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: #6ee7b7;
+  margin-top: 2px;
+  font-weight: 600;
+}
+
+.suggestionRowStrong strong {
+  font-weight: 700;
+  color: #86efac;
+}
+
+.noSuggestionRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  color: #475569;
+  margin-top: 2px;
+}
+
 /* ── Description ── */
 .description {
   font-size: 0.8rem;

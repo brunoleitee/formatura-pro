@@ -2037,11 +2037,17 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             if not identified_centroids or centroid is None:
                 return None, 0.0
             best_name, best_sim = None, 0.0
+            all_matches: list[tuple[str, float]] = []
             for name, ref_cent in identified_centroids:
                 sim = float(np.dot(centroid, ref_cent))
+                all_matches.append((name, sim))
                 if sim > best_sim:
                     best_sim = sim
                     best_name = name
+            all_matches.sort(key=lambda x: x[1], reverse=True)
+            top3 = all_matches[:3]
+            if any(s >= 0.40 for _, s in top3):
+                print(f"[CLUSTER] TOP MATCHES: {' | '.join(f'{n}={s:.2f}' for n, s in top3)}")
             return best_name, best_sim
 
         import datetime as _dt

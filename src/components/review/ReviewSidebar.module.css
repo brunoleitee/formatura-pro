@@ -313,6 +313,24 @@
   color: #93c5fd;
 }
 
+.suggestedLabelPossible {
+  font-size: 0.68rem;
+  color: #fbbf24;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.noSuggestionLabel {
+  font-size: 0.65rem;
+  color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
 .itemActive .itemMeta {
   color: #cbd5e1;
 }
