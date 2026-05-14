@@ -36,13 +36,21 @@
 .ratingBadge {
   display: inline-flex;
   align-items: center;
-  margin-left: 6px;
+  margin-left: auto;
+  padding-left: 6px;
   font-size: 0.6rem;
   letter-spacing: 0.03em;
   color: #fbbf24;
   pointer-events: none;
-  vertical-align: middle;
   line-height: 1;
+  flex-shrink: 0;
+}
+
+.photoNameRow {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
 }
 
 .favBadge {

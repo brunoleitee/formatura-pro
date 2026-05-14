@@ -566,8 +566,8 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
         </div>
       </div>
       <div className="photo-info">
-        <div className="photo-name" title={photo.name}>
-          {photo.name}
+        <div className={`photo-name ${styles.photoNameRow}`} title={photo.name}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto', minWidth: 0 }}>{photo.name}</span>
           {showRating && (
             <span className={styles.ratingBadge} title={`Rating: ${photoMeta.rating}`}>
               {'★'.repeat(photoMeta.rating)}{'☆'.repeat(5 - photoMeta.rating)}
