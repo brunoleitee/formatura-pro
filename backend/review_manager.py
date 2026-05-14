@@ -876,8 +876,6 @@ def _build_review_cluster_payload(
             "background_penalty_reason": rep_item.get("background_penalty_reason"),
         },
     }
-    print(f"[BUILD CLUSTER] {cluster_id}: suggested_student={suggested_student}, suggested_similarity={suggested_similarity}, comp_items={len(comp_items)}, first_item_keys={list(first_item.keys())}")
-
     if include_faces:
         cluster_payload["faces"] = [
             {
@@ -910,6 +908,17 @@ def _sync_review_cluster_cache(cur) -> dict:
         _sync_unknown_face_clusters(cur, [])
         return {"unknown_faces": 0, "cluster_count": 0}
 
+    # Use embedding-based clustering with suggestions
+    cat = _current_catalog()
+    if cat:
+        try:
+            result = get_unknown_clusters(catalog=cat, min_cluster_size=1, limit=200)
+            if result.get("clusters"):
+                return {"unknown_faces": len(rows), "cluster_count": len(result["clusters"])}
+        except Exception as e:
+            print(f"[CLUSTER] get_unknown_clusters fallback: {e}")
+
+    # Fallback: legacy aluno_id grouping
     grouped: dict[str, list[dict]] = {}
     for row in rows:
         aluno_id = str(row["aluno_id"] or "")
@@ -2268,84 +2277,16 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                 grouped_items[str(row["cluster_id"])].append(_row_to_review_item(row))
 
         clusters = []
-        suggestions_missing = False
         for index, cluster_id in enumerate(cluster_ids, start=offset + 1):
             comp_items = grouped_items.get(cluster_id, [])
             if not comp_items:
                 continue
-            payload = _build_review_cluster_payload(
+            clusters.append(_build_review_cluster_payload(
                 cluster_id=cluster_id,
                 cluster_number=index,
                 comp_items=comp_items,
                 include_faces=False,
-            )
-            if payload.get("suggested_student") is None:
-                suggestions_missing = True
-            clusters.append(payload)
-
-        # If suggestions are missing, force a resync via get_unknown_clusters()
-        if suggestions_missing and clusters:
-            conn.commit()
-            conn.close()
-            print("[PAGE CLUSTER] sugestoes ausentes, forçando resync")
-            get_unknown_clusters(catalog=cat, limit=200)
-            with get_db(cat) as new_conn:
-                new_cur = new_conn.cursor()
-                _ensure_unknown_face_clusters_schema(new_cur)
-                new_cur.execute("""
-                    SELECT u.cluster_id,
-                           COUNT(*) AS face_count,
-                           COUNT(DISTINCT o.foto_path) AS photo_count,
-                           MAX(COALESCE(o.graduation_score, 0)) AS max_graduation_score,
-                           AVG(COALESCE(u.confidence, 0)) AS avg_confidence,
-                           MIN(u.id) AS first_id,
-                           MAX(u.suggested_student) AS suggested_student,
-                           MAX(u.suggested_similarity) AS suggested_similarity
-                    FROM unknown_face_clusters u
-                    JOIN ocorrencias o ON o.rowid = u.face_id
-                    WHERE {ignored_filter_sql}
-                    GROUP BY u.cluster_id
-                    ORDER BY max_graduation_score DESC, avg_confidence DESC, face_count DESC, first_id ASC
-                    LIMIT ? OFFSET ?
-                """, ignored_filter_params + [limit, offset])
-                summary_rows = new_cur.fetchall()
-                cluster_ids = [str(row["cluster_id"]) for row in summary_rows]
-                grouped_items = {cid: [] for cid in cluster_ids}
-                if cluster_ids:
-                    placeholders = ",".join(["?"] * len(cluster_ids))
-                    new_cur.execute(f"""
-                        SELECT u.cluster_id, o.rowid, o.aluno_id, o.foto_path,
-                               o.x1, o.y1, o.x2, o.y2, o.blur_status, o.blur_score,
-                               o.closed_eyes, o.has_gown, o.has_diploma, o.has_sash, o.has_cap,
-                               o.face_front_score, o.graduation_score, o.graduation_tags,
-                               o.gown_confidence, o.diploma_confidence, o.sash_confidence, o.cap_confidence,
-                               o.manual_graduation_tags, o.is_foreground, o.foreground_score,
-                               o.background_penalty_reason, u.suggested_student, u.suggested_similarity
-                        FROM unknown_face_clusters u
-                        JOIN ocorrencias o ON o.rowid = u.face_id
-                        WHERE u.cluster_id IN ({placeholders}) AND {ignored_filter_sql}
-                        ORDER BY u.id ASC
-                    """, cluster_ids + ignored_filter_params)
-                    for row in new_cur.fetchall():
-                        grouped_items[str(row["cluster_id"])].append(_row_to_review_item(row))
-                clusters = []
-                for index, cluster_id in enumerate(cluster_ids, start=offset + 1):
-                    comp_items = grouped_items.get(cluster_id, [])
-                    if not comp_items: continue
-                    clusters.append(_build_review_cluster_payload(
-                        cluster_id=cluster_id, cluster_number=index,
-                        comp_items=comp_items, include_faces=False,
-                    ))
-                new_conn.commit()
-            print(f"[PAGE CLUSTER] resync concluido, {len(clusters)} clusters com sugestoes")
-            return {
-                "clusters": clusters, "limit": limit, "offset": offset,
-                "total": total, "has_more": (offset + len(clusters)) < total,
-                "review_ready": bool(cache_info["review_ready"]),
-                "cache_used": bool(cache_info["used_cache"]),
-                "cache_duration_ms": cache_info["duration_ms"],
-                "query_duration_ms": query_duration_ms,
-            }
+            ))
 
         conn.commit()
 
@@ -2368,11 +2309,11 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
         "offset": offset,
         "total": total,
         "has_more": (offset + len(clusters)) < total,
-                "review_ready": bool(cache_info["review_ready"]),
-                "cache_used": bool(cache_info["used_cache"]),
-                "cache_duration_ms": cache_info["duration_ms"],
-                "query_duration_ms": query_duration_ms,
-            }
+        "review_ready": bool(cache_info["review_ready"]),
+        "cache_used": bool(cache_info["used_cache"]),
+        "cache_duration_ms": cache_info["duration_ms"],
+        "query_duration_ms": query_duration_ms,
+    }
     for c in clusters[:5]:
         print(f"[PAGE CLUSTER] {c['cluster_id']}: suggested={c.get('suggested_student')} sim={c.get('suggested_similarity')}")
 
