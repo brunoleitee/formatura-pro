@@ -647,6 +647,10 @@ def _ensure_unknown_face_clusters_schema(cur):
             cur.execute("ALTER TABLE unknown_face_clusters ADD COLUMN suggested_student TEXT")
         if "suggested_similarity" not in cols:
             cur.execute("ALTER TABLE unknown_face_clusters ADD COLUMN suggested_similarity REAL")
+        if "unknown_similar_id" not in cols:
+            cur.execute("ALTER TABLE unknown_face_clusters ADD COLUMN unknown_similar_id TEXT")
+        if "unknown_similar_similarity" not in cols:
+            cur.execute("ALTER TABLE unknown_face_clusters ADD COLUMN unknown_similar_similarity REAL")
     except Exception:
         pass
 
@@ -659,6 +663,8 @@ def _sync_unknown_face_clusters(cur, clusters: list[dict]):
     for cluster in clusters:
         ss = cluster.get("suggested_student")
         si = cluster.get("suggested_similarity")
+        ui = cluster.get("unknown_similar_id")
+        us = cluster.get("unknown_similar_similarity")
         for face in cluster.get("faces", []):
             rows.append(
                 (
@@ -668,6 +674,8 @@ def _sync_unknown_face_clusters(cur, clusters: list[dict]):
                     float(cluster.get("cohesion_score") or 0.0),
                     ss,
                     float(si) if si is not None else None,
+                    ui,
+                    float(us) if us is not None else None,
                     now,
                     now,
                 )
@@ -676,8 +684,11 @@ def _sync_unknown_face_clusters(cur, clusters: list[dict]):
         cur.executemany(
             """
             INSERT INTO unknown_face_clusters
-            (cluster_id, face_id, original_path, confidence, suggested_student, suggested_similarity, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (cluster_id, face_id, original_path, confidence,
+             suggested_student, suggested_similarity,
+             unknown_similar_id, unknown_similar_similarity,
+             created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -793,12 +804,17 @@ def _row_to_review_item(row) -> dict:
         "foreground_score": row["foreground_score"],
         "background_penalty_reason": row["background_penalty_reason"],
     }
-    # Include suggestion data if present
+    # Include suggestion and unknown match data if present
     if "suggested_student" in row.keys():
         result["suggested_student"] = row["suggested_student"]
     if "suggested_similarity" in row.keys():
         ss = row["suggested_similarity"]
         result["suggested_similarity"] = float(ss) if ss is not None else None
+    if "unknown_similar_id" in row.keys():
+        result["unknown_similar_id"] = row["unknown_similar_id"]
+    if "unknown_similar_similarity" in row.keys():
+        us = row["unknown_similar_similarity"]
+        result["unknown_similar_similarity"] = float(us) if us is not None else None
     return result
 
 
@@ -831,6 +847,8 @@ def _build_review_cluster_payload(
     first_item = comp_items[0] if comp_items else {}
     suggested_student = first_item.get("suggested_student")
     suggested_similarity = first_item.get("suggested_similarity")
+    unknown_similar_id = first_item.get("unknown_similar_id")
+    unknown_similar_similarity = first_item.get("unknown_similar_similarity")
 
     cluster_payload = {
         "cluster_id": cluster_id,
@@ -843,6 +861,8 @@ def _build_review_cluster_payload(
         "priority_score": round(float(priority_score), 4),
         "suggested_student": suggested_student,
         "suggested_similarity": round(float(suggested_similarity), 4) if suggested_similarity is not None else None,
+        "unknown_similar_id": unknown_similar_id,
+        "unknown_similar_similarity": round(float(unknown_similar_similarity), 4) if unknown_similar_similarity is not None else None,
         "graduation_tags": _ordered_cluster_tags(priority_meta),
         "has_gown": any(meta["has_gown"] for meta in priority_meta),
         "has_diploma": any(meta["has_diploma"] for meta in priority_meta),
@@ -2432,7 +2452,9 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                    AVG(COALESCE(u.confidence, 0)) AS avg_confidence,
                    MIN(u.id) AS first_id,
                    MAX(u.suggested_student) AS suggested_student,
-                   MAX(u.suggested_similarity) AS suggested_similarity
+                   MAX(u.suggested_similarity) AS suggested_similarity,
+                   MAX(u.unknown_similar_id) AS unknown_similar_id,
+                   MAX(u.unknown_similar_similarity) AS unknown_similar_similarity
             FROM unknown_face_clusters u
             JOIN ocorrencias o ON o.rowid = u.face_id
             WHERE {ignored_filter_sql}
@@ -2459,11 +2481,12 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                        o.gown_confidence, o.diploma_confidence, o.sash_confidence, o.cap_confidence,
                        o.manual_graduation_tags,
                        o.is_foreground, o.foreground_score, o.background_penalty_reason,
-                       u.suggested_student, u.suggested_similarity
-                FROM unknown_face_clusters u
-                JOIN ocorrencias o ON o.rowid = u.face_id
-                WHERE u.cluster_id IN ({placeholders})
-                  AND {ignored_filter_sql}
+                        u.suggested_student, u.suggested_similarity,
+                        u.unknown_similar_id, u.unknown_similar_similarity
+                 FROM unknown_face_clusters u
+                 JOIN ocorrencias o ON o.rowid = u.face_id
+                 WHERE u.cluster_id IN ({placeholders})
+                   AND {ignored_filter_sql}
                 ORDER BY u.id ASC
                 """,
                 cluster_ids + ignored_filter_params,
@@ -2538,12 +2561,13 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
                    o.gown_confidence, o.diploma_confidence, o.sash_confidence, o.cap_confidence,
                    o.manual_graduation_tags,
                    o.is_foreground, o.foreground_score, o.background_penalty_reason,
-                   u.suggested_student, u.suggested_similarity
-            FROM unknown_face_clusters u
-            JOIN ocorrencias o ON o.rowid = u.face_id
-            WHERE u.cluster_id = ?
-              AND {ignored_filter_sql}
-            ORDER BY u.id ASC
+                    u.suggested_student, u.suggested_similarity,
+                    u.unknown_similar_id, u.unknown_similar_similarity
+             FROM unknown_face_clusters u
+             JOIN ocorrencias o ON o.rowid = u.face_id
+             WHERE u.cluster_id = ?
+               AND {ignored_filter_sql}
+             ORDER BY u.id ASC
             """,
             [cluster_id] + ignored_filter_params,
         )
