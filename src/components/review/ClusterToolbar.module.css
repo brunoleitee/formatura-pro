@@ -99,16 +99,20 @@
 }
 
 .viewBtn {
-  width: 24px;
-  height: 24px;
-  border-radius: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
   border: none;
   background: transparent;
   color: #475569;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 4px;
   cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 500;
+  font-family: inherit;
+  white-space: nowrap;
   transition: color 0.15s, background 0.15s;
 }
 

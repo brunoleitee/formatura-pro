@@ -449,6 +449,58 @@
   color: #94a3b8;
 }
 
+.identifyActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.btnSmallConfirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 7px;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.btnSmallConfirm:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.btnSmallConfirm:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btnSmallCancel {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.btnSmallCancel:hover {
+  color: #94a3b8;
+}
+
 /* ── Mensagem de erro ao salvar ── */
 .saveError {
   font-size: 0.75rem;

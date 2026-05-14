@@ -258,28 +258,30 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
             </div>
           </div>
 
-          <button
-            className={styles.btnConfirm}
-            onClick={handleAssign}
-            disabled={isAssigning || !canAssign || isAssigned}
-            type="button"
-          >
-            <Check size={14} />
-            <span>{isAssigning ? 'Salvando...' : 'Confirmar'}</span>
-          </button>
-          <button
-            className={styles.btnCancel}
-            onClick={() => {
-              setIdentifying(false);
-              setNameInput('');
-              setSelectedStudent(null);
-              setSuggestions([]);
-              setSaveError(null);
-            }}
-            type="button"
-          >
-            <X size={14} />
-          </button>
+          <span className={styles.identifyActions}>
+            <button
+              className={styles.btnSmallConfirm}
+              onClick={handleAssign}
+              disabled={isAssigning || !canAssign || isAssigned}
+              type="button"
+            >
+              <Check size={13} />
+              <span>{isAssigning ? 'Salvando...' : 'Salvar'}</span>
+            </button>
+            <button
+              className={styles.btnSmallCancel}
+              onClick={() => {
+                setIdentifying(false);
+                setNameInput('');
+                setSelectedStudent(null);
+                setSuggestions([]);
+                setSaveError(null);
+              }}
+              type="button"
+            >
+              <X size={14} />
+            </button>
+          </span>
 
           <span className={`${styles.saveError} ${saveError ? styles.inlineVisible : styles.inlineHidden}`}>{saveError ?? ''}</span>
         </div>
