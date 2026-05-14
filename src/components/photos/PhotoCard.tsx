@@ -508,11 +508,6 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
             {aiResult?.face_detected && aiResult?.ocr_text ? null : !aiResult?.face_detected && !aiResult?.ocr_text ? <Brain size={10} /> : null}
           </div>
         )}
-        {showRating && (
-          <div className={styles.ratingBadge} title={`Rating: ${photoMeta.rating}`}>
-            {'★'.repeat(photoMeta.rating)}{'☆'.repeat(5 - photoMeta.rating)}
-          </div>
-        )}
         {showFavorite && (
           <div className={styles.favBadge} title="Favorito">❤</div>
         )}
@@ -573,6 +568,11 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
       <div className="photo-info">
         <div className="photo-name" title={photo.name}>
           {photo.name}
+          {showRating && (
+            <span className={styles.ratingBadge} title={`Rating: ${photoMeta.rating}`}>
+              {'★'.repeat(photoMeta.rating)}{'☆'.repeat(5 - photoMeta.rating)}
+            </span>
+          )}
         </div>
         <div className="photo-status">
           <div className={`status-indicator ${isMapped ? 'mapped' : 'unmapped'}`} />

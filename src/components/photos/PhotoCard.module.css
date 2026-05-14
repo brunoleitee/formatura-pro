@@ -34,15 +34,15 @@
 }
 
 .ratingBadge {
-  position: absolute;
-  left: 6px;
-  bottom: 6px;
-  z-index: 6;
-  font-size: 0.7rem;
-  letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  font-size: 0.6rem;
+  letter-spacing: 0.03em;
   color: #fbbf24;
   pointer-events: none;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  vertical-align: middle;
+  line-height: 1;
 }
 
 .favBadge {
