@@ -291,7 +291,7 @@ export function PhotoViewerModal({
     if (!face) return;
     try {
       await api.bulkManualIdentify(currentCatalog, 'Desconhecido', face.rowid ? [face.rowid] : []);
-      showFeedbackMsg("IdentificaÃ§Ã£o removida");
+      showFeedbackMsg("Identificacao removida");
       setActiveMenu(null);
       onPhotoUpdate?.({ ...visiblePhoto });
     } catch (err) {
@@ -339,7 +339,7 @@ export function PhotoViewerModal({
     setApplyingSimilarName(true);
     try {
       await api.bulkManualIdentify(currentCatalog, similarName.trim(), rowids);
-      showFeedbackMsg(`VÃ­nculo aplicado a ${rowids.length} faces`);
+      showFeedbackMsg(`Vínculo aplicado a ${rowids.length} faces`);
       
       setSimilarResults(prev => prev.map(r => 
         rowids.includes(r.rowid) ? { ...r, aluno_id: similarName.trim() } : r
@@ -931,7 +931,7 @@ export function PhotoViewerModal({
     <div className={`${styles.viewerOverlay} ${isDiscarded ? styles.discarded : ''}`} onClick={onClose}>
       {/* â”€â”€ Header â”€â”€ */}
       <div className={styles.header} onClick={(e) => e.stopPropagation()}>
-        <span className={styles.headerTitle}>VisualizaÃ§Ã£o de Registro</span>
+        <span className={styles.headerTitle}>Visualização de Registro</span>
         <span className={styles.escBadge}>ESC p/ sair</span>
         <div className={styles.headerSpacer} />
         <div className={styles.headerActions}>
@@ -1201,7 +1201,7 @@ export function PhotoViewerModal({
         {/* Right panel â€” identification */}
         <div className={styles.rightPanel} onClick={(e) => e.stopPropagation()}>
           <div className={styles.identHeader}>
-            IDENTIFICAÃ‡ÃƒO {(visiblePhoto.faces || []).length > 0 && <span className={styles.identCount}>{(visiblePhoto.faces || []).length}</span>}
+            IDENTIFICACAO {(visiblePhoto.faces || []).length > 0 && <span className={styles.identCount}>{(visiblePhoto.faces || []).length}</span>}
             <ChevronRight size={14} className={styles.identChevron} />
           </div>
 
@@ -1351,7 +1351,7 @@ export function PhotoViewerModal({
                     className={styles.textBtn}
                     onClick={() => setSelectedSimilarIds(new Set())}
                   >
-                    Limpar seleÃ§Ã£o
+                    Limpar selecao
                   </button>
                 </div>
                 

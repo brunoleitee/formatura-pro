@@ -173,7 +173,7 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
   const handleDeletePerson = useCallback(async (person: Person) => {
     const confirmed = await onRequestConfirm({
       title: 'Excluir formando?',
-      message: `Excluir "${person.name}" e todas as suas ocorrÃƒÂªncias?`,
+      message: `Excluir "${person.name}" e todas as suas ocorrencias?`,
       confirmText: 'Excluir',
       cancelText: 'Cancelar',
     });

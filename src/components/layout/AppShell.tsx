@@ -145,7 +145,7 @@ export function AppShell() {
 
     if (nextMatches > prevMatches) {
       const delta = nextMatches - prevMatches;
-      nextEntries.push(buildTimelineEntry('match', `${delta} match${delta !== 1 ? 'es' : ''} automÃ¡tic${delta !== 1 ? 'os' : 'o'} confirmado${delta !== 1 ? 's' : ''}.`));
+      nextEntries.push(buildTimelineEntry('match', `${delta} match${delta !== 1 ? 'es' : ''} automátic${delta !== 1 ? 'os' : 'o'} confirmado${delta !== 1 ? 's' : ''}.`));
     }
 
     if (nextClusters > prevClusters) {
@@ -176,11 +176,11 @@ export function AppShell() {
       const summary = next.scan_summary;
       const totalFaces = typeof summary?.total_faces === 'number' ? summary.total_faces : undefined;
       const totalPhotos = typeof summary?.total_photos === 'number' ? summary.total_photos : next.total_processadas;
-      const totalFacesLabel = totalFaces ? ` â€¢ ${totalFaces} rostos` : '';
+      const totalFacesLabel = totalFaces ? ` → ${totalFaces} rostos` : '';
       nextEntries.push(
         buildTimelineEntry(
           'summary',
-          `Processamento concluÃ­do com ${totalPhotos ?? 0} fotos${totalFacesLabel}.`,
+          `Processamento concluído com ${totalPhotos ?? 0} fotos${totalFacesLabel}.`,
         ),
       );
     }
@@ -302,13 +302,13 @@ export function AppShell() {
       cancelText: 'Cancelar',
     });
     if (!confirmed) return;
-    appendTimeline(buildTimelineEntry('warning', 'SolicitaÃ§Ã£o de cancelamento enviada ao scanner.'));
+    appendTimeline(buildTimelineEntry('warning', 'Solicitacao de cancelamento enviada ao scanner.'));
     setScanMsg('Cancelando scan...');
     try {
       await api.stopScan();
       await pollScanStatus();
     } catch {
-      appendTimeline(buildTimelineEntry('warning', 'NÃ£o foi possÃ­vel cancelar o scanner agora.'));
+      appendTimeline(buildTimelineEntry('warning', 'Não foi possível cancelar o scanner agora.'));
     }
   };
 
