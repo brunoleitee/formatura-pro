@@ -2653,6 +2653,74 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                 include_faces=False,
             ))
 
+        # Fallback: compute student match directly if missing from DB sync
+        if clusters and not clusters[0].get("best_student_debug"):
+            print("[PAGE STUDENT PATCH] computando matches...")
+            identified_centroids: list[tuple[str, np.ndarray]] = []
+            try:
+                cur.execute("""
+                    SELECT DISTINCT o.aluno_id, fe.embedding
+                    FROM ocorrencias o
+                    JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
+                    WHERE o.x1 IS NOT NULL
+                      AND o.aluno_id IS NOT NULL AND o.aluno_id != ''
+                      AND lower(o.aluno_id) NOT IN ('unknown','desconhecido','sem_nome','nao_mapeado','__unknown__')
+                      AND o.aluno_id NOT LIKE 'pessoa%'
+                      AND fe.embedding IS NOT NULL
+                """)
+                id_emb_map: dict[str, list[np.ndarray]] = {}
+                for r in cur.fetchall():
+                    name = str(r["aluno_id"])
+                    emb = np.frombuffer(r["embedding"], dtype="float32")
+                    emb = emb / np.linalg.norm(emb) if np.linalg.norm(emb) > 0 else emb
+                    id_emb_map.setdefault(name, []).append(emb)
+                for name, embs in id_emb_map.items():
+                    cent = np.mean(embs, axis=0)
+                    cn = np.linalg.norm(cent)
+                    if cn > 0:
+                        identified_centroids.append((name, cent / cn))
+            except Exception as e:
+                print(f"[PAGE STUDENT PATCH] erro: {e}")
+
+            if identified_centroids:
+                for cl in clusters:
+                    all_rowids = [f.get("rowid") for f in cl.get("faces", []) if f.get("rowid")]
+                    if not all_rowids:
+                        continue
+                    try:
+                        ph = ",".join(["?"] * len(all_rowids))
+                        cur.execute(f"SELECT occurrence_rowid, embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", all_rowids)
+                        embs = []
+                        for er in cur.fetchall():
+                            e = np.frombuffer(er["embedding"], dtype="float32")
+                            en = np.linalg.norm(e)
+                            if en > 0:
+                                embs.append(e / en)
+                        if not embs:
+                            continue
+                        centroid = np.mean(embs, axis=0)
+                        cn = np.linalg.norm(centroid)
+                        if cn > 0:
+                            centroid = centroid / cn
+                        best_name, best_sim = None, 0.0
+                        for name, rc in identified_centroids:
+                            sim = float(np.dot(centroid, rc))
+                            if sim > best_sim:
+                                best_sim = sim
+                                best_name = name
+                        if best_name:
+                            cl["best_student_debug"] = best_name
+                            cl["best_similarity_debug"] = round(best_sim, 4)
+                            print(f"[PAGE STUDENT PATCH] {cl['cluster_id']} best={best_name} sim={best_sim:.2f}")
+                            if best_sim >= 0.45:
+                                cl["suggested_student"] = best_name
+                                cl["suggested_similarity"] = round(best_sim, 4)
+                    except Exception as e:
+                        print(f"[PAGE STUDENT PATCH] erro: {e}")
+
+        for c in clusters[:5]:
+            print(f"[PAGE CLUSTER] {c['cluster_id']}: suggested={c.get('suggested_student')} sim={c.get('suggested_similarity')}")
+
         conn.commit()
 
     duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
@@ -2668,76 +2736,6 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
         query_duration_ms,
         duration_ms,
     )
-    # Fallback: compute student match directly if missing from DB sync
-    if clusters and not clusters[0].get("best_student_debug"):
-        print("[PAGE STUDENT PATCH] computando matches...")
-        identified_centroids: list[tuple[str, np.ndarray]] = []
-        try:
-            cur.execute("""
-                SELECT DISTINCT o.aluno_id, fe.embedding
-                FROM ocorrencias o
-                JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
-                WHERE o.x1 IS NOT NULL
-                  AND o.aluno_id IS NOT NULL AND o.aluno_id != ''
-                  AND lower(o.aluno_id) NOT IN ('unknown','desconhecido','sem_nome','nao_mapeado','__unknown__')
-                  AND o.aluno_id NOT LIKE 'pessoa%'
-                  AND fe.embedding IS NOT NULL
-            """)
-            id_emb_map: dict[str, list[np.ndarray]] = {}
-            for r in cur.fetchall():
-                name = str(r["aluno_id"])
-                emb = np.frombuffer(r["embedding"], dtype="float32")
-                emb = emb / np.linalg.norm(emb) if np.linalg.norm(emb) > 0 else emb
-                id_emb_map.setdefault(name, []).append(emb)
-            for name, embs in id_emb_map.items():
-                cent = np.mean(embs, axis=0)
-                cn = np.linalg.norm(cent)
-                if cn > 0:
-                    identified_centroids.append((name, cent / cn))
-        except Exception as e:
-            print(f"[PAGE STUDENT PATCH] erro: {e}")
-
-        if identified_centroids:
-            for cl in clusters:
-                all_rowids = [f.get("rowid") for f in cl.get("faces", []) if f.get("rowid")]
-                if not all_rowids:
-                    continue
-                try:
-                    ph = ",".join(["?"] * len(all_rowids))
-                    cur.execute(f"SELECT occurrence_rowid, embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", all_rowids)
-                    embs = []
-                    for er in cur.fetchall():
-                        e = np.frombuffer(er["embedding"], dtype="float32")
-                        en = np.linalg.norm(e)
-                        if en > 0:
-                            embs.append(e / en)
-                    if not embs:
-                        continue
-                    centroid = np.mean(embs, axis=0)
-                    cn = np.linalg.norm(centroid)
-                    if cn > 0:
-                        centroid = centroid / cn
-                    best_name, best_sim = None, 0.0
-                    for name, rc in identified_centroids:
-                        sim = float(np.dot(centroid, rc))
-                        if sim > best_sim:
-                            best_sim = sim
-                            best_name = name
-                    if best_name:
-                        cl["best_student_debug"] = best_name
-                        cl["best_similarity_debug"] = round(best_sim, 4)
-                        print(f"[PAGE STUDENT PATCH] {cl['cluster_id']} best={best_name} sim={best_sim:.2f}")
-                        if best_sim >= 0.45:
-                            cl["suggested_student"] = best_name
-                            cl["suggested_similarity"] = round(best_sim, 4)
-                except Exception as e:
-                    print(f"[PAGE STUDENT PATCH] erro: {e}")
-
-    for c in clusters[:5]:
-        print(f"[PAGE CLUSTER] {c['cluster_id']}: suggested={c.get('suggested_student')} sim={c.get('suggested_similarity')}")
-
-    conn.commit()
-
     return {
         "clusters": clusters,
         "limit": limit,
