@@ -516,8 +516,22 @@ def _detect_plate_in_crop(crop: np.ndarray) -> Optional[Tuple[int, int, int, int
     return None
 
 
+def _remove_small_components(binary: np.ndarray, min_area: int = 40) -> np.ndarray:
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    cleaned = np.zeros_like(binary)
+    for i in range(1, num_labels):
+        if stats[i, cv2.CC_STAT_AREA] >= min_area:
+            cleaned[labels == i] = 255
+    return cleaned
+
+
+def _add_plate_padding(plate_bgr: np.ndarray, pad: int = 15) -> np.ndarray:
+    return cv2.copyMakeBorder(plate_bgr, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
+
+
 def _preprocess_plate_digits(plate_bgr: np.ndarray) -> np.ndarray:
-    gray = cv2.cvtColor(plate_bgr, cv2.COLOR_BGR2GRAY)
+    padded = _add_plate_padding(plate_bgr, 12)
+    gray = cv2.cvtColor(padded, cv2.COLOR_BGR2GRAY)
     h, w = gray.shape
     if max(h, w) < 600:
         scale = 900.0 / max(h, w)
@@ -527,6 +541,7 @@ def _preprocess_plate_digits(plate_bgr: np.ndarray) -> np.ndarray:
     mean_val = np.mean(binary)
     if mean_val < 127:
         binary = 255 - binary
+    binary = _remove_small_components(binary, 40)
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
     binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
     kernel_close = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
@@ -534,21 +549,71 @@ def _preprocess_plate_digits(plate_bgr: np.ndarray) -> np.ndarray:
     return binary
 
 
+def _preprocess_plate_light(plate_bgr: np.ndarray) -> np.ndarray:
+    padded = _add_plate_padding(plate_bgr, 8)
+    gray = cv2.cvtColor(padded, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+    if max(h, w) < 500:
+        scale = 700.0 / max(h, w)
+        gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    blur = cv2.GaussianBlur(gray, (3, 3), 0)
+    _, binary = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    mean_val = np.mean(binary)
+    if mean_val < 127:
+        binary = 255 - binary
+    binary = _remove_small_components(binary, 30)
+    return binary
+
+
+def _preprocess_plate_morph(plate_bgr: np.ndarray) -> np.ndarray:
+    padded = _add_plate_padding(plate_bgr, 15)
+    gray = cv2.cvtColor(padded, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+    if max(h, w) < 600:
+        scale = 900.0 / max(h, w)
+        gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    binary = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 51, 15)
+    mean_val = np.mean(binary)
+    if mean_val < 127:
+        binary = 255 - binary
+    binary = _remove_small_components(binary, 60)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
+    return binary
+
+
+def _is_phantom_digit_candidate(numbers: List[str]) -> Optional[str]:
+    if len(numbers) < 2:
+        return None
+    sorted_nums = sorted(numbers, key=lambda n: (-len(n), n))
+    shortest = sorted_nums[-1]
+    for n in sorted_nums[:-1]:
+        if len(n) == len(shortest) + 1 and n.startswith(shortest):
+            return shortest
+    return None
+
+
 def _score_ocr_candidate(number: str, plate_score: float, ocr_raw_conf: float, plate_bbox: Tuple[int, int, int, int], crop_shape: Tuple[int, int]) -> float:
     length = len(number)
-    if length < 3 or length > 6:
+    if length < 3 or length > 5:
         return 0.0
-    length_score = 1.0 if length in (4, 5) else (0.85 if length == 6 else 0.7)
+    length_score = 1.0 if length in (4, 5) else 0.8
     _, _, w, h = plate_bbox
     plate_area = w * h
     crop_area = crop_shape[0] * crop_shape[1]
     size_score = min(plate_area / max(crop_area, 1) * 3.0, 1.0)
     conf_score = max(0.0, min(float(ocr_raw_conf), 1.0))
+    penalty = 0.0
+    if length > 5:
+        penalty = 0.15
     final = (
         length_score * 0.35
         + plate_score * 0.25
         + size_score * 0.15
         + conf_score * 0.25
+        - penalty
     )
     return float(max(0.0, min(final, 0.99)))
 
@@ -556,30 +621,57 @@ def _score_ocr_candidate(number: str, plate_score: float, ocr_raw_conf: float, p
 def _probe_plate_ocr(plate_bgr: np.ndarray, plate_score: float, plate_bbox: Tuple[int, int, int, int], crop_shape: Tuple[int, int], start: float, candidates: List[Dict[str, Any]]) -> None:
     if time.time() - start > MAX_OCR_SECONDS:
         return
-    processed = _preprocess_plate_digits(plate_bgr)
-    for psm in ("7", "8"):
+    prep_variants = [
+        ("adaptive", lambda p: _preprocess_plate_digits(p)),
+        ("otsu", lambda p: _preprocess_plate_light(p)),
+        ("morph", lambda p: _preprocess_plate_morph(p)),
+    ]
+    raw_results: List[Dict[str, Any]] = []
+    seen_numbers: set = set()
+    for var_name, prep_fn in prep_variants:
         if time.time() - start > MAX_OCR_SECONDS:
             break
-        config = f"--oem 3 --psm {psm} -c tessedit_char_whitelist=0123456789"
-        raw_text = _run_tesseract(processed, config)
-        if not raw_text or not raw_text.strip():
-            continue
-        clean = re.sub(r"\D", "", raw_text.strip())
-        if len(clean) < 3:
-            continue
-        for number in re.findall(r"\d{3,6}", clean):
-            if len(number) < 3 or len(number) > 6:
+        processed = prep_fn(plate_bgr)
+        for psm in ("7", "8"):
+            if time.time() - start > MAX_OCR_SECONDS:
+                break
+            config = f"--oem 3 --psm {psm} -c tessedit_char_whitelist=0123456789"
+            raw_text = _run_tesseract(processed, config)
+            if not raw_text or not raw_text.strip():
                 continue
-            ocr_raw_len = len(number)
-            ocr_raw_conf = max(0.3, min(0.95, 0.5 + ocr_raw_len * 0.08))
-            score = _score_ocr_candidate(number, plate_score, ocr_raw_conf, plate_bbox, crop_shape)
-            if score < 0.75:
+            clean = re.sub(r"\D", "", raw_text.strip())
+            if len(clean) < 3 or len(clean) > 5:
                 continue
-            candidates.append({
-                "numbers": number,
+            if not re.match(r"^\d{3,5}$", clean):
+                continue
+            if clean in seen_numbers:
+                continue
+            seen_numbers.add(clean)
+            ocr_raw_conf = max(0.3, min(0.95, 0.5 + len(clean) * 0.08))
+            score = _score_ocr_candidate(clean, plate_score, ocr_raw_conf, plate_bbox, crop_shape)
+            raw_results.append({
+                "numbers": clean,
                 "confidence": round(score, 4),
                 "score": round(score, 4),
+                "variant": var_name,
+                "psm": psm,
             })
+
+    phantom = _is_phantom_digit_candidate([r["numbers"] for r in raw_results])
+    for r in raw_results:
+        num = r["numbers"]
+        score = r["confidence"]
+        if phantom and num != phantom and len(num) > len(phantom) and num.startswith(phantom):
+            print(f"[OCR-ID] candidato rejeitado: {num} (dígito extra, provavelmente {phantom})")
+            continue
+        if score < 0.75:
+            print(f"[OCR-ID] candidato rejeitado: {num} (score {score:.2f})")
+            continue
+        candidates.append({
+            "numbers": num,
+            "confidence": score,
+            "score": score,
+        })
 
 
 def _save_debug_plate(local_path: str, tag: str, img: np.ndarray) -> None:
@@ -597,11 +689,12 @@ def _ocr_crop_fallback(crop: np.ndarray, start: float, candidates: List[Dict[str
     if time.time() - start > MAX_OCR_SECONDS:
         return
     text = _run_tesseract(crop, "--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789")
-    numbers = _extract_id_card_candidates(text)
-    for number in numbers:
-        score = min(0.97, 0.54 + _digit_length_score(number) * 0.18)
-        if score >= 0.75:
-            candidates.append({"numbers": number, "confidence": round(score, 4), "score": round(score, 4)})
+    clean = re.sub(r"\D", "", (text or "").strip())
+    if not re.match(r"^\d{3,5}$", clean):
+        return
+    score = min(0.97, 0.54 + _digit_length_score(clean) * 0.18)
+    if score >= 0.75:
+        candidates.append({"numbers": clean, "confidence": round(score, 4), "score": round(score, 4)})
 
 
 def process_id_card_ocr(local_path: str, img: Optional[np.ndarray] = None) -> Dict[str, Any]:

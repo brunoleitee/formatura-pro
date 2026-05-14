@@ -72,6 +72,7 @@ PORT = args.port
 
 APP_NAME = "Formatura PRO"
 APP_VERSION = "1.2.0"
+AI_VERSION = "hybrid_v2"
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff")
 EMBEDDING_CACHE_FILE = None
 
@@ -2567,8 +2568,88 @@ def ai_photo_details(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
         return {"error": str(e)}
 
 
-@app.post("/api/ai/process-photo")
-def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
+def _try_load_ai_cache(foto_path: str, local_path: str = "") -> Optional[Dict[str, Any]]:
+    file_id = foto_path.replace("cloud://", "", 1) if foto_path.startswith("cloud://") else ""
+    if file_id:
+        try:
+            from cloud.drive_cache import cache
+            meta = cache.load_metadata(file_id)
+            if meta and meta.get("ai_face_detected") is not None:
+                ai_ver = meta.get("ai_version", "")
+                if ai_ver == AI_VERSION:
+                    print("[AI-CACHE] cache encontrado")
+                    print("[AI-CACHE] usando resultado salvo")
+                    result = {
+                        "success": True,
+                        "cached": True,
+                        "face_detected": bool(meta.get("ai_face_detected", False)),
+                        "faces_count": int(meta.get("ai_faces_count", 0)),
+                        "embedding_ready": bool(meta.get("ai_embedding_ready", False)),
+                        "confidence": float(meta.get("ai_confidence", 0.0)),
+                        "ocr_text": str(meta.get("ai_ocr_text", "")),
+                        "ocr_confidence": float(meta.get("ai_ocr_confidence", 0.0)),
+                        "ocr_confidence_pct": int(meta.get("ai_ocr_confidence_pct", 0)),
+                        "ocr_score": float(meta.get("ai_ocr_score", 0.0)),
+                        "ocr_type": str(meta.get("ai_ocr_type", "none")),
+                        "ocr_label": str(meta.get("ai_ocr_label", "OCR geral")),
+                        "ai_version": AI_VERSION,
+                    }
+                    print("[AI-CACHE] ignorando reprocessamento")
+                    return result
+                else:
+                    print(f"[AI-CACHE] versao diferente ({ai_ver} != {AI_VERSION}), invalidando")
+                    meta.pop("ai_face_detected", None)
+                    meta.pop("ai_ocr_text", None)
+                    cache.save_metadata(file_id, meta)
+        except Exception as e:
+            print(f"[AI-CACHE] erro ao ler cache: {e}")
+    if local_path and os.path.exists(local_path):
+        try:
+            root_dir = Path(__file__).resolve().parents[1]
+            for db_file in (root_dir / "data" / "catalogs").glob("*.db"):
+                try:
+                    conn = sqlite3.connect(str(db_file))
+                    conn.row_factory = sqlite3.Row
+                    c = conn.cursor()
+                    c.execute("SELECT foto_path FROM ocorrencias WHERE foto_path = ? LIMIT 1", (foto_path,))
+                    occ = c.fetchone()
+                    if occ:
+                        c.execute("""
+                            SELECT fe.embedding, o.aluno_id
+                            FROM face_embeddings fe
+                            JOIN ocorrencias o ON o.rowid = fe.occurrence_rowid
+                            WHERE fe.foto_path = ? LIMIT 1
+                        """, (foto_path,))
+                        emb_row = c.fetchone()
+                        conn.close()
+                        if emb_row and emb_row["embedding"]:
+                            print("[AI-CACHE] cache encontrado (banco SQLite)")
+                            return {
+                                "success": True,
+                                "cached": True,
+                                "face_detected": True,
+                                "faces_count": 1,
+                                "embedding_ready": True,
+                                "confidence": 0.0,
+                                "ocr_text": "",
+                                "ocr_confidence": 0.0,
+                                "ocr_confidence_pct": 0,
+                                "ocr_score": 0.0,
+                                "ocr_type": "none",
+                                "ocr_label": "OCR geral",
+                                "ai_version": AI_VERSION,
+                                "final_student": str(emb_row["aluno_id"]) if emb_row["aluno_id"] else None,
+                            }
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"[AI-CACHE] erro ao ler banco: {e}")
+    return None
+
+
+@ app.post("/api/ai/process-photo")
+def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = "", force: bool = False):
     try:
         from services.ai_processing_queue import ai_processing_queue
 
@@ -2609,6 +2690,11 @@ def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
             print(f"[AI] file size: {file_size}")
             if file_size == 0:
                 return {"success": False, "error": "Arquivo vazio"}
+
+            if not force:
+                cached = _try_load_ai_cache(foto_path, local_path)
+                if cached:
+                    return cached
 
             import cv2
             img = cv2.imread(local_path)
@@ -2681,6 +2767,7 @@ def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
 
             result = {
                 "success": True,
+                "cached": False,
                 "local_path": local_path,
                 "face_detected": len(faces) > 0,
                 "faces_count": len(faces),
@@ -2695,6 +2782,7 @@ def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
                 "final_confidence": cross.get("final_confidence"),
                 "ocr_enriched": cross.get("ocr_enriched", False),
                 "hybrid_result": cross,
+                "ai_version": AI_VERSION,
             }
 
             root_dir = Path(__file__).resolve().parents[1]
@@ -2761,6 +2849,7 @@ def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
                 metadata["ai_ocr_score"] = ocr_result.get("ocr_score", ocr_result.get("ocr_confidence", 0.0))
                 metadata["ai_ocr_type"] = ocr_result.get("ocr_type", "none")
                 metadata["ai_ocr_label"] = ocr_result.get("ocr_label", ocr_result.get("ocr_type", "none"))
+                metadata["ai_version"] = AI_VERSION
                 cache.save_metadata(file_id, metadata)
                 print(f"[AI] resultado (face+ocr) salvo no cache metadata: {file_id}")
 
