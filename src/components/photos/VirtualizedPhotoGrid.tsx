@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Image as ImageIcon } from 'lucide-react';
 import type { MouseEvent, PointerEvent } from 'react';
-import type { Photo } from '../../services/api';
+import { api, type Photo } from '../../services/api';
 import { MemoPhotoCard } from './PhotoCard';
 import { getPhotoId } from '../../hooks/usePhotoSelection';
 import { aiCacheStore } from '../../services/AICacheStore';
