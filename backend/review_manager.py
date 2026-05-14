@@ -2072,6 +2072,8 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 cent = comp_emb.mean(axis=0)
                 cn = np.linalg.norm(cent)
                 centroids[r] = cent / cn if cn > 0 else np.zeros(embeddings.shape[1], dtype="float32")
+            # Compare all pairs, log every comparison
+            candidates = []
             for r in root_list:
                 if r not in clusters_by_root:
                     continue
@@ -2079,11 +2081,8 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 cent_a = centroids.get(r)
                 if cent_a is None:
                     continue
-                best_target = None
-                best_score = 0.0
-                best_scores = {}
                 for other_r in root_list:
-                    if other_r == r or other_r not in clusters_by_root:
+                    if other_r <= r or other_r not in clusters_by_root:
                         continue
                     sz_b = len(clusters_by_root[other_r])
                     cent_b = centroids.get(other_r)
@@ -2093,16 +2092,23 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                         clusters_by_root[r], clusters_by_root[other_r], cent_a, cent_b
                     )
                     thresh = _merge_threshold(sz_a, sz_b)
-                    if score > best_score and score >= thresh:
-                        best_score = score
-                        best_scores = sub_scores
-                        best_target = other_r
-                if best_target is not None and best_score >= _merge_threshold(sz_a, len(clusters_by_root[best_target])):
-                    print(f"[MERGE SCORE] iter={iteration} cluster {r} ({sz_a}) + {best_target} ({len(clusters_by_root[best_target])}) final={best_score:.2f} {' | '.join(f'{k}={v}' for k,v in best_scores.items())}")
-                    clusters_by_root[best_target].extend(clusters_by_root[r])
-                    del clusters_by_root[r]
-                    changed = True
-                    break
+                    log_line = f"[MERGE COMPARE] iter={iteration} {r}({sz_a}) x {other_r}({sz_b}) final={score:.2f} thresh={thresh:.2f} {' | '.join(f'{k}={v}' for k,v in sub_scores.items())}"
+                    if score >= thresh:
+                        candidates.append((score, r, other_r))
+                        print(log_line + " ** CANDIDATE **")
+                    else:
+                        if score >= 0.30:
+                            print(log_line)
+            # Apply best merge
+            if candidates:
+                candidates.sort(key=lambda x: x[0], reverse=True)
+                best_score, r, other_r = candidates[0]
+                sz_a = len(clusters_by_root[r])
+                sz_b = len(clusters_by_root[other_r])
+                print(f"[MERGE APPLY] iter={iteration} {r}({sz_a}) <- {other_r}({sz_b}) final={best_score:.2f}")
+                clusters_by_root[other_r].extend(clusters_by_root[r])
+                del clusters_by_root[r]
+                changed = True
 
         print(f"[CLUSTER] clusters finais: {len(clusters_by_root)} (apos {iteration} iteracoes)")
 
@@ -2353,7 +2359,7 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             cl["cluster_number"] = i + 1
         _sync_unknown_face_clusters(cur, clusters)
         conn.commit()
-        return {"clusters": clusters[:limit], "threshold": threshold, "min_cluster_size": min_cluster_size}
+        return {"clusters": clusters[:limit], "threshold": threshold, "min_cluster_size": min_cluster_size, "initial_cluster_count": initial_cluster_count}
 
 
 def debug_cluster_similarities(catalog: str = ""):
@@ -2366,6 +2372,7 @@ def debug_cluster_similarities(catalog: str = ""):
     clusters_data = result.get("clusters", [])
     # Build detailed debug output
     debug_clusters = []
+    total_before = result.get("initial_cluster_count", len(clusters_data))
     for cl in clusters_data:
         debug_clusters.append({
             "cluster_id": cl["cluster_id"],
@@ -2381,6 +2388,8 @@ def debug_cluster_similarities(catalog: str = ""):
             "preview": cl.get("preview_image", "")[:80],
         })
     return {
+        "total_before_merge": total_before,
+        "total_after_merge": len(debug_clusters),
         "total_clusters": len(debug_clusters),
         "clusters": debug_clusters,
     }
