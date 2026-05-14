@@ -596,8 +596,8 @@ export function PhotoViewerModal({
         setShowHelp((v) => !v);
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
   }, [photo, currentIndex, total, onNavigate, onClose, isManualMode, showRenameModal, similarResults.length, showManualModal, handleRestore, handleDiscard]);
 
   const clampPanToStage = useCallback((nextPan: { x: number; y: number }, nextZoom: number) => {

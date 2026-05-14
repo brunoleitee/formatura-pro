@@ -148,10 +148,27 @@ export default function CatalogView() {
     }
   }, [viewerPhoto]);
 
-  // Sincronizar loading com contexto
+  // Space = abrir foto grande
   useEffect(() => {
-    setIsLoadingCatalogPhotos(loading);
-  }, [loading, setIsLoadingCatalogPhotos]);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== " " && e.code !== "Space") return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      if (viewerPhoto) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (selectedPaths.size > 0) {
+        const first = filteredPhotos.find((p) => selectedPaths.has(getPhotoId(p)));
+        if (first) { setViewerPhoto(first); console.log("[HOTKEY] space open viewer"); return; }
+      }
+      if (filteredPhotos.length > 0) {
+        setViewerPhoto(filteredPhotos[0]);
+        console.log("[HOTKEY] space open viewer");
+      }
+    };
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () => window.removeEventListener("keydown", onKey, { capture: true });
+  }, [viewerPhoto, filteredPhotos, selectedPaths, setViewerPhoto]);
 
   // Publica subfolders no contexto para a Sidebar mostrar a árvore
   useEffect(() => {
