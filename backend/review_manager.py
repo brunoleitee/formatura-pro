@@ -1970,52 +1970,121 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
         unit_clusters = sum(1 for v in clusters_by_root.values() if len(v) < 2)
         print(f"[CLUSTER] clusters iniciais: {initial_cluster_count}, unitarios: {unit_clusters}")
 
-        # Merge post-processing: merge small clusters with nearest larger one
-        MERGE_THRESHOLD = max(threshold - 0.08, 0.45)
-        root_list = list(clusters_by_root.keys())
-        if len(root_list) > 1:
-            changed = True
-            while changed:
-                changed = False
-                root_list = list(clusters_by_root.keys())
-                if len(root_list) < 2:
-                    break
-                centroids = {}
-                for r in root_list:
-                    idxs = clusters_by_root[r]
-                    comp_emb = embeddings[idxs]
-                    cent = comp_emb.mean(axis=0)
-                    cn = np.linalg.norm(cent)
-                    centroids[r] = cent / cn if cn > 0 else np.zeros(embeddings.shape[1], dtype="float32")
-                for r in root_list:
-                    if r not in clusters_by_root:
-                        continue
-                    sz = len(clusters_by_root[r])
-                    if sz > 2:
-                        continue
-                    cent_r = centroids.get(r)
-                    if cent_r is None:
-                        continue
-                    best_target = None
-                    best_sim = 0.0
-                    for other_r in root_list:
-                        if other_r == r or other_r not in clusters_by_root:
-                            continue
-                        cent_o = centroids.get(other_r)
-                        if cent_o is None:
-                            continue
-                        sim = float(np.dot(cent_r, cent_o))
-                        if sim > best_sim:
-                            best_sim = sim
-                            best_target = other_r
-                    if best_target is not None and best_sim >= MERGE_THRESHOLD:
-                        print(f"[CLUSTER] merge: cluster {r} ({sz} faces) + {best_target} sim={best_sim:.2f}")
-                        clusters_by_root[best_target].extend(clusters_by_root[r])
-                        del clusters_by_root[r]
-                        changed = True
-                        break
+        # ── Iterative hybrid reclustering ──
+        def _cluster_gown_tags(cluster_idxs: list[int]) -> set[str]:
+            tags: set[str] = set()
+            for idx in cluster_idxs:
+                item = items[idx]
+                if item.get("has_gown"): tags.add("gown")
+                if item.get("has_diploma"): tags.add("diploma")
+                if item.get("has_sash"): tags.add("sash")
+                if item.get("has_cap"): tags.add("cap")
+            return tags
 
-        print(f"[CLUSTER] clusters finais: {len(clusters_by_root)}")
+        def _cluster_ocr_text(cluster_idxs: list[int]) -> str:
+            for idx in cluster_idxs:
+                item = items[idx]
+                t = str(item.get("ai_ocr_text") or "")
+                if t.strip():
+                    return t.strip()
+            return ""
+
+        def _hybrid_similarity(
+            c1_idxs: list[int], c2_idxs: list[int],
+            c1_cent: np.ndarray, c2_cent: np.ndarray,
+        ) -> tuple[float, dict]:
+            # Face similarity
+            face_sim = float(np.dot(c1_cent, c2_cent))
+            # Gown/tag similarity
+            tags1 = _cluster_gown_tags(c1_idxs)
+            tags2 = _cluster_gown_tags(c2_idxs)
+            if tags1 and tags2:
+                overlap = len(tags1 & tags2)
+                max_tags = max(len(tags1), len(tags2))
+                beca_sim = overlap / max(max_tags, 1)
+            else:
+                beca_sim = 0.0
+            # OCR similarity
+            ocr1 = _cluster_ocr_text(c1_idxs)
+            ocr2 = _cluster_ocr_text(c2_idxs)
+            ocr_sim = 1.0 if ocr1 and ocr2 and ocr1 == ocr2 else 0.0
+            # Temporal/context similarity (based on path proximity)
+            paths1 = sorted({items[i].get("foto_path", "") for i in c1_idxs})
+            paths2 = sorted({items[i].get("foto_path", "") for i in c2_idxs})
+            temporal_sim = 0.0
+            for p1 in paths1:
+                for p2 in paths2:
+                    if p1 and p2 and os.path.dirname(p1) == os.path.dirname(p2):
+                        temporal_sim = 0.3
+                        break
+                if temporal_sim > 0:
+                    break
+            # Hybrid score
+            scores = {
+                "face": round(face_sim, 2),
+                "beca": round(beca_sim, 2),
+                "ocr": round(ocr_sim, 2),
+                "tempo": round(temporal_sim, 2),
+            }
+            final = (0.65 * face_sim) + (0.15 * beca_sim) + (0.05 * ocr_sim) + (0.15 * temporal_sim)
+            return final, scores
+
+        def _merge_threshold(sz_a: int, sz_b: int) -> float:
+            if sz_a <= 1 and sz_b <= 1:
+                return 0.48
+            if sz_a <= 1 or sz_b <= 1:
+                return 0.52
+            return 0.58
+
+        import os as _os
+        changed = True
+        iteration = 0
+        while changed:
+            iteration += 1
+            changed = False
+            root_list = list(clusters_by_root.keys())
+            if len(root_list) < 2:
+                break
+            centroids = {}
+            for r in root_list:
+                idxs = clusters_by_root[r]
+                comp_emb = embeddings[idxs]
+                cent = comp_emb.mean(axis=0)
+                cn = np.linalg.norm(cent)
+                centroids[r] = cent / cn if cn > 0 else np.zeros(embeddings.shape[1], dtype="float32")
+            for r in root_list:
+                if r not in clusters_by_root:
+                    continue
+                sz_a = len(clusters_by_root[r])
+                cent_a = centroids.get(r)
+                if cent_a is None:
+                    continue
+                best_target = None
+                best_score = 0.0
+                best_scores = {}
+                for other_r in root_list:
+                    if other_r == r or other_r not in clusters_by_root:
+                        continue
+                    sz_b = len(clusters_by_root[other_r])
+                    cent_b = centroids.get(other_r)
+                    if cent_b is None:
+                        continue
+                    score, sub_scores = _hybrid_similarity(
+                        clusters_by_root[r], clusters_by_root[other_r], cent_a, cent_b
+                    )
+                    thresh = _merge_threshold(sz_a, sz_b)
+                    if score > best_score and score >= thresh:
+                        best_score = score
+                        best_scores = sub_scores
+                        best_target = other_r
+                if best_target is not None and best_score >= _merge_threshold(sz_a, len(clusters_by_root[best_target])):
+                    print(f"[MERGE SCORE] iter={iteration} cluster {r} ({sz_a}) + {best_target} ({len(clusters_by_root[best_target])}) final={best_score:.2f} {' | '.join(f'{k}={v}' for k,v in best_scores.items())}")
+                    clusters_by_root[best_target].extend(clusters_by_root[r])
+                    del clusters_by_root[r]
+                    changed = True
+                    break
+
+        print(f"[CLUSTER] clusters finais: {len(clusters_by_root)} (apos {iteration} iteracoes)")
 
         # Load identified students for suggestion matching
         identified_centroids: list[tuple[str, np.ndarray]] = []
@@ -2181,12 +2250,39 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 ],
             })
 
-        # Second pass: compute unknown-vs-unknown cluster similarity
-        UNKNOWN_MERGE_THRESHOLD = 0.55
+        # Second pass: compute unknown-vs-unknown cluster similarity (hybrid)
+        def _cluster_tags_from_payload(cl) -> set[str]:
+            tags: set[str] = set()
+            if cl.get("has_gown"): tags.add("gown")
+            if cl.get("has_diploma"): tags.add("diploma")
+            if cl.get("has_sash"): tags.add("sash")
+            if cl.get("has_cap"): tags.add("cap")
+            return tags
+
+        def _hybrid_sim_between_clusters(cl_a, cl_b, cent_a, cent_b) -> tuple[float, dict]:
+            face_sim = float(np.dot(cent_a, cent_b))
+            tags_a = _cluster_tags_from_payload(cl_a)
+            tags_b = _cluster_tags_from_payload(cl_b)
+            beca_sim = 0.0
+            if tags_a and tags_b:
+                overlap = len(tags_a & tags_b)
+                beca_sim = overlap / max(len(tags_a), len(tags_b), 1)
+            p1 = str(cl_a.get("preview_image") or "")
+            p2 = str(cl_b.get("preview_image") or "")
+            temporal_sim = 0.0
+            if p1 and p2 and _os.path.dirname(p1) == _os.path.dirname(p2):
+                temporal_sim = 0.3
+            scores = {"face": round(face_sim, 2), "beca": round(beca_sim, 2), "tempo": round(temporal_sim, 2)}
+            final = (0.65 * face_sim) + (0.15 * beca_sim) + (0.20 * temporal_sim)
+            return final, scores
+
         for cl in clusters:
             cid = cl["cluster_id"]
+            if cl.get("suggested_student"):
+                continue
             match = None
-            best_sim = 0.0
+            best_score = 0.0
+            best_scores = {}
             for other_cid, other_cent, _ in cluster_centroids:
                 if other_cid == cid:
                     continue
@@ -2197,16 +2293,20 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                         break
                 if cent_self is None:
                     continue
-                sim = float(np.dot(cent_self, other_cent))
-                if sim > best_sim and sim >= UNKNOWN_MERGE_THRESHOLD:
-                    best_sim = sim
+                other_cl = next((c for c in clusters if c["cluster_id"] == other_cid), None)
+                if other_cl is None:
+                    continue
+                hscore, sub_scores = _hybrid_sim_between_clusters(cl, other_cl, cent_self, other_cent)
+                if hscore > best_score and hscore >= 0.50:
+                    best_score = hscore
+                    best_scores = sub_scores
                     match = other_cid
-            if match and not cl.get("suggested_student"):
+            if match:
                 match_num = match.replace("cluster_", "")
-                print(f"[UNKNOWN MATCH] {cid} parecido com {match} sim={best_sim:.2f}")
+                print(f"[UNKNOWN MATCH] {cid} parecido com {match} final={best_score:.2f} {' | '.join(f'{k}={v}' for k,v in best_scores.items())}")
                 cl["unknown_similar_id"] = match
                 cl["unknown_similar_number"] = int(match_num)
-                cl["unknown_similar_similarity"] = round(best_sim, 4)
+                cl["unknown_similar_similarity"] = round(best_score, 4)
 
         clusters.sort(
             key=lambda c: (c["priority_score"], c["cohesion_score"], c["total_photos"]),
