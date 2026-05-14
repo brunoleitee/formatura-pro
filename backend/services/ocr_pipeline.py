@@ -13,7 +13,8 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 _EASYOCR_READER = None
-MAX_OCR_SECONDS = 3.0
+MAX_OCR_SECONDS = 6.0
+OCR_FALLBACK_RESERVE_SECONDS = 1.2
 
 from services.ocr_engine import (
     get_tesseract_status,
@@ -470,6 +471,26 @@ def _enriched_ocr_result(number: str, confidence: float) -> Dict[str, Any]:
     }
 
 
+def _id_card_candidate_rank(candidate: Dict[str, Any]) -> Tuple[float, float, float, float]:
+    number = str(candidate.get("numbers", ""))
+    length = len(number)
+    confidence = float(candidate.get("confidence", 0.0))
+    source = str(candidate.get("source", ""))
+    psm = str(candidate.get("psm", ""))
+    region = str(candidate.get("region", ""))
+
+    if source == "number_box":
+        length_bonus = {5: 0.11, 4: 0.02, 3: -0.02, 6: -0.18}.get(length, -0.25)
+    else:
+        length_bonus = {4: 0.08, 5: 0.03, 3: 0.02, 6: -0.16}.get(length, -0.25)
+    source_bonus = 0.08 if source == "number_box" else 0.04 if source == "segmented" else 0.0
+    region_bonus = 0.03 if region == "middle_right_box" else 0.0
+    psm_bonus = 0.05 if psm == "13" else 0.0
+    noise_penalty = 0.04 if source == "line_fallback" and length >= 5 else 0.0
+    rank = confidence + length_bonus + source_bonus + region_bonus + psm_bonus - noise_penalty
+    return (rank, 1.0 if length == 4 else 0.0, confidence, -float(length))
+
+
 def _detect_plate_in_crop(crop: np.ndarray) -> Optional[Tuple[int, int, int, int, np.ndarray, float]]:
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
     h_img, w_img = gray.shape
@@ -527,6 +548,19 @@ def _remove_small_components(binary: np.ndarray, min_area: int = 40) -> np.ndarr
 
 def _add_plate_padding(plate_bgr: np.ndarray, pad: int = 15) -> np.ndarray:
     return cv2.copyMakeBorder(plate_bgr, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
+
+
+def _digits_as_foreground(binary: np.ndarray) -> np.ndarray:
+    h, w = binary.shape[:2]
+    if h == 0 or w == 0:
+        return binary
+    border = np.concatenate([
+        binary[0, :],
+        binary[-1, :],
+        binary[:, 0],
+        binary[:, -1],
+    ])
+    return 255 - binary if float(np.mean(border)) > 127.0 else binary
 
 
 def _split_blob_by_erosion(blob_crop: np.ndarray, x_offset: int, y_offset: int) -> List[Tuple[int, int, int, int, np.ndarray]]:
@@ -613,6 +647,10 @@ def _segment_digits_in_plate(binary: np.ndarray, min_height_ratio: float = 0.3) 
             continue
         if x < 2 or (x + bw) > w - 2:
             continue
+        touches_vertical_border = y < 2 or (y + bh) > h - 2
+        too_large_for_digit = bw > w * 0.40 or bh > h * 0.88
+        if touches_vertical_border and too_large_for_digit:
+            continue
         raw.append((x, y, bw, bh, area, binary[y:y + bh, x:x + bw]))
     raw.sort(key=lambda b: b[0])
     widths = [b[2] for b in raw]
@@ -697,12 +735,11 @@ def _segmented_plate_ocr(plate_bgr: np.ndarray, plate_score: float, start: float
     best_conf = 0.0
 
     for var_name, thresh_fn in prep_variants:
-        if time.time() - start > MAX_OCR_SECONDS:
+        if time.time() - start > MAX_OCR_SECONDS - OCR_FALLBACK_RESERVE_SECONDS:
+            print("[OCR-ID] timeout segmentacao, preservando fallback de linha")
             break
         binary = thresh_fn(gray)
-        mean_val = np.mean(binary)
-        if mean_val < 127:
-            binary = 255 - binary
+        binary = _digits_as_foreground(binary)
         kernel_h = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 5))
         binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel_h)
         binary = _remove_small_components(binary, 20)
@@ -710,15 +747,17 @@ def _segmented_plate_ocr(plate_bgr: np.ndarray, plate_score: float, start: float
         _save_debug_plate(local_path, f"debug_threshold_{crop_idx}_{var_name}.jpg", binary)
 
         blobs = _segment_digits_in_plate(binary)
+        print(f"[OCR-ID] blobs encontrados: {len(blobs)}")
         if len(blobs) < 3 or len(blobs) > 6:
+            print("[OCR-ID] nenhum blob válido encontrado")
             _save_debug_plate(local_path, f"debug_blobs_{crop_idx}_{var_name}.jpg", binary)
             continue
 
-        print(f"[OCR-ID] blobs encontrados: {len(blobs)}")
         print(f"[OCR-ID] projection histogram calculado")
         digits: List[str] = []
         for bi, (bx, by, bw, bh, digit_crop) in enumerate(blobs, 1):
-            if time.time() - start > MAX_OCR_SECONDS:
+            if time.time() - start > MAX_OCR_SECONDS - OCR_FALLBACK_RESERVE_SECONDS:
+                print("[OCR-ID] timeout segmentacao, preservando fallback de linha")
                 break
             print(f"[OCR-ID] processando blob {bi}/{len(blobs)}")
             print(f"[OCR-ID] blob {bi} bbox: {bx},{by},{bw},{bh}")
@@ -734,7 +773,7 @@ def _segmented_plate_ocr(plate_bgr: np.ndarray, plate_score: float, start: float
                 print(f"[OCR-ID] blob {bi} OCR: falhou")
                 continue
             print(f"[OCR-ID] blob {bi} OCR: {d}")
-            digits.append(d)
+            digits.extend(list(d))
 
         if len(digits) < 3 or len(digits) > 5:
             continue
@@ -762,6 +801,8 @@ def _segmented_plate_ocr(plate_bgr: np.ndarray, plate_score: float, start: float
             "numbers": number,
             "confidence": round(best_conf, 4),
             "score": round(best_conf, 4),
+            "source": "segmented",
+            "psm": "blob",
         }
     return None
 
@@ -786,7 +827,109 @@ def _ocr_crop_fallback(crop: np.ndarray, start: float, candidates: List[Dict[str
         return
     score = min(0.97, 0.54 + _digit_length_score(clean) * 0.18)
     if score >= 0.75:
-        candidates.append({"numbers": clean, "confidence": round(score, 4), "score": round(score, 4)})
+        candidates.append({
+            "numbers": clean,
+            "confidence": round(score, 4),
+            "score": round(score, 4),
+            "source": "crop_fallback",
+            "psm": "7",
+        })
+
+
+def _ocr_plate_number_box_fallback(plate_bgr: np.ndarray, plate_score: float, start: float, candidates: List[Dict[str, Any]]) -> None:
+    if time.time() - start > MAX_OCR_SECONDS:
+        return
+    try:
+        h, w = plate_bgr.shape[:2]
+        aspect = w / max(h, 1)
+        if aspect > 2.05:
+            print("[OCR-ID] fallback caixa numero ignorado: placa larga")
+            return
+        regions = [
+            ("top_right_box", (int(w * 0.58), 0, w, int(h * 0.36))),
+            ("upper_right_wide", (int(w * 0.45), 0, w, int(h * 0.42))),
+            ("middle_right_box", (int(w * 0.58), int(h * 0.12), w, int(h * 0.52))),
+            ("top_band", (int(w * 0.25), 0, w, int(h * 0.30))),
+        ]
+        for region_name, (x1, y1, x2, y2) in regions:
+            if time.time() - start > MAX_OCR_SECONDS:
+                return
+            roi = plate_bgr[max(0, y1):min(h, y2), max(0, x1):min(w, x2)]
+            if roi.size == 0:
+                continue
+            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+            if max(gray.shape[:2]) < 420:
+                scale = 520.0 / max(gray.shape[:2])
+                gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(4, 4))
+            gray = clahe.apply(gray)
+            variants = [
+                ("gray", gray),
+                ("otsu", cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]),
+                ("otsu_inv", cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]),
+                ("adaptive", cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 7)),
+            ]
+            for variant_name, img in variants:
+                for psm in ("7", "6", "13"):
+                    if time.time() - start > MAX_OCR_SECONDS:
+                        return
+                    text = _run_tesseract(img, f"--oem 3 --psm {psm} -c tessedit_char_whitelist=0123456789")
+                    clean = re.sub(r"\D", "", (text or "").strip())
+                    print(f"[OCR-ID] fallback caixa numero {region_name}/{variant_name}/psm{psm}: {clean or 'falhou'}")
+                    if not re.match(r"^\d{3,6}$", clean):
+                        continue
+                    score = min(0.96, 0.60 + _digit_length_score(clean) * 0.18 + plate_score * 0.12)
+                    if score >= 0.72:
+                        candidates.append({
+                            "numbers": clean,
+                            "confidence": round(score, 4),
+                            "score": round(score, 4),
+                            "source": "number_box",
+                            "psm": psm,
+                            "variant": variant_name,
+                            "region": region_name,
+                        })
+    except Exception as e:
+        print(f"[OCR-ID] fallback caixa numero erro protegido: {e}")
+
+
+def _ocr_plate_line_fallback(plate_bgr: np.ndarray, plate_score: float, start: float, candidates: List[Dict[str, Any]]) -> None:
+    if time.time() - start > MAX_OCR_SECONDS:
+        return
+    try:
+        padded = _add_plate_padding(plate_bgr, 12)
+        gray = cv2.cvtColor(padded, cv2.COLOR_BGR2GRAY)
+        if max(gray.shape[:2]) < 700:
+            scale = 900.0 / max(gray.shape[:2])
+            gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        gray = clahe.apply(gray)
+        variants = [
+            ("gray", gray),
+            ("otsu", cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]),
+            ("adaptive", cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 8)),
+        ]
+        for var_name, img in variants:
+            for psm in ("7", "6", "13"):
+                if time.time() - start > MAX_OCR_SECONDS:
+                    return
+                text = _run_tesseract(img, f"--oem 3 --psm {psm} -c tessedit_char_whitelist=0123456789")
+                clean = re.sub(r"\D", "", (text or "").strip())
+                print(f"[OCR-ID] fallback linha {var_name}/psm{psm}: {clean or 'falhou'}")
+                if not re.match(r"^\d{3,6}$", clean):
+                    continue
+                score = min(0.94, 0.54 + _digit_length_score(clean) * 0.18 + plate_score * 0.12)
+                if score >= 0.70:
+                    candidates.append({
+                        "numbers": clean,
+                        "confidence": round(score, 4),
+                        "score": round(score, 4),
+                        "source": "line_fallback",
+                        "psm": psm,
+                        "variant": var_name,
+                    })
+    except Exception as e:
+        print(f"[OCR-ID] fallback linha erro protegido: {e}")
 
 
 def process_id_card_ocr(local_path: str, img: Optional[np.ndarray] = None) -> Dict[str, Any]:
@@ -845,6 +988,10 @@ def process_id_card_ocr(local_path: str, img: Optional[np.ndarray] = None) -> Di
             seg_result = _segmented_plate_ocr(plate_img, plate_score, start, local_path, idx)
             if seg_result:
                 candidates.append(seg_result)
+            _ocr_plate_number_box_fallback(plate_img, plate_score, start, candidates)
+            _ocr_plate_line_fallback(plate_img, plate_score, start, candidates)
+            if candidates:
+                break
 
         print(f"[OCR-ID] candidatos OCR: {[c['numbers'] for c in candidates]}")
         print(f"[OCR-ID] placas detectadas: {plates_found}")
@@ -855,7 +1002,7 @@ def process_id_card_ocr(local_path: str, img: Optional[np.ndarray] = None) -> Di
             print(f"[OCR-ID] finalizado em {elapsed}ms")
             return _empty_ocr_result()
 
-        candidates.sort(key=lambda c: (c["confidence"], len(c["numbers"])), reverse=True)
+        candidates.sort(key=_id_card_candidate_rank, reverse=True)
         best = candidates[0]
         number = best["numbers"]
         confidence = best["confidence"]

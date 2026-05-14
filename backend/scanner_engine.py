@@ -1,6 +1,9 @@
 import contextlib
 import hashlib
+import io
 import os
+import threading
+import traceback
 from pathlib import Path
 from collections import Counter
 
@@ -10,10 +13,20 @@ from PIL import Image, ImageOps
 
 from onnx_provider_utils import get_onnx_providers, get_session_providers, mark_cuda_failed
 
+os.environ.setdefault("NO_ALBUMENTATIONS_UPDATE", "1")
+
+_FACE_ENGINE_LOCK = threading.Lock()
+
+
+@contextlib.contextmanager
+def _default_quiet_external_output():
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        yield
+
 _cfg = {
     "log_debug": lambda msg: None,
     "log_info": lambda msg: None,
-    "quiet_external_output": contextlib.nullcontext,
+    "quiet_external_output": _default_quiet_external_output,
     "get_memory_info": lambda: {},
     "get_db": None,
     "sanitize_catalog_name": lambda name: name,
@@ -328,94 +341,91 @@ def get_available_ai_provider():
 
 def ensure_face_engine():
     global _cfg
-    app_face = _cfg["app_face"]
-    face_engine_device = _cfg["face_engine_device"]
-    face_engine_provider = _cfg["face_engine_provider"]
-    face_engine_label = _cfg["face_engine_label"]
-    face_engine_gpu_error = _cfg["face_engine_gpu_error"]
-    provider_info = get_available_ai_provider()
-    selected_provider = provider_info["selected_provider"]
-    selected_providers = provider_info["selected_providers"]
-    provider_options = provider_info["provider_options"]
-    ctx_id = provider_info["ctx_id"]
+    if _cfg["app_face"] is not None:
+        _cfg["log_info"]("[AI] reutilizando InsightFace global")
+        return
 
-    if app_face is not None:
-        real_providers = get_session_providers(app_face)
-        if selected_provider in real_providers or (selected_provider == "CPUExecutionProvider" and "CPUExecutionProvider" in real_providers):
+    with _FACE_ENGINE_LOCK:
+        if _cfg["app_face"] is not None:
+            _cfg["log_info"]("[AI] reutilizando InsightFace global")
             return
-        app_face = None
 
-    model_root = _cfg["runtime_dir"] if os.path.isdir(os.path.join(_cfg["runtime_dir"], "models", "buffalo_l")) else "~/.insightface"
+        _cfg["log_info"]("[AI] inicializando InsightFace global...")
+        provider_info = get_available_ai_provider()
+        selected_provider = provider_info["selected_provider"]
+        selected_providers = provider_info["selected_providers"]
+        provider_options = provider_info["provider_options"]
+        ctx_id = provider_info["ctx_id"]
 
-    from insightface.app import FaceAnalysis
+        face_engine_device = _cfg["face_engine_device"]
+        face_engine_provider = _cfg["face_engine_provider"]
+        face_engine_label = _cfg["face_engine_label"]
+        face_engine_gpu_error = _cfg["face_engine_gpu_error"]
+        model_root = _cfg["runtime_dir"] if os.path.isdir(os.path.join(_cfg["runtime_dir"], "models", "buffalo_l")) else "~/.insightface"
 
-    try:
-        app_face = FaceAnalysis(
-            name="buffalo_l",
-            root=model_root,
-            providers=selected_providers,
-            provider_options=provider_options,
-            allowed_modules=["detection", "recognition"],
-        )
-        app_face.prepare(ctx_id=ctx_id, det_size=_cfg.get("det_size", (640, 640)))
+        from insightface.app import FaceAnalysis
 
-        real_providers = get_session_providers(app_face)
-        real_provider = real_providers[0] if real_providers else selected_provider
-        if selected_provider == "CUDAExecutionProvider" and "CUDAExecutionProvider" not in real_providers:
+        try:
+            with quiet_external_output():
+                app_face = FaceAnalysis(
+                    name="buffalo_l",
+                    root=model_root,
+                    providers=selected_providers,
+                    provider_options=provider_options,
+                    allowed_modules=["detection", "recognition"],
+                )
+                app_face.prepare(ctx_id=ctx_id, det_size=_cfg.get("det_size", (640, 640)))
+
+            real_providers = get_session_providers(app_face)
+            real_provider = real_providers[0] if real_providers else selected_provider
+            if selected_provider == "CUDAExecutionProvider" and "CUDAExecutionProvider" not in real_providers:
+                mark_cuda_failed()
+                face_engine_device = "CPU"
+                face_engine_provider = "CPUExecutionProvider"
+                face_engine_label = "CPU"
+                face_engine_gpu_error = "Sessao real da IA ficou em CPU"
+                _cfg["log_info"]("[AI] CUDA indisponivel, usando CPU")
+                _cfg["log_info"]("[AI] Provider ativo: CPUExecutionProvider")
+            else:
+                face_engine_device = "GPU" if real_provider in {"CUDAExecutionProvider", "DmlExecutionProvider"} else "CPU"
+                face_engine_provider = real_provider
+                face_engine_label = _provider_label(real_provider)
+                face_engine_gpu_error = provider_info.get("provider_error", "")
+                if real_provider == "CUDAExecutionProvider":
+                    _cfg["log_info"]("[AI] CUDA ativa")
+                elif selected_provider == "CPUExecutionProvider":
+                    _cfg["log_info"]("[AI] CUDA indisponivel, usando CPU")
+                _cfg["log_info"](f"[AI] Provider ativo: {real_provider}")
+        except Exception as e:
+            _cfg["log_info"](f"[AI] Falha ao carregar engine de IA: {e}")
+            if selected_provider == "CPUExecutionProvider":
+                _cfg["log_debug"](f"[SCAN] Erro fatal no carregamento CPU: {traceback.format_exc()}")
+                raise
+
             mark_cuda_failed()
-            face_engine_device = "CPU"
-            face_engine_provider = "CPUExecutionProvider"
-            face_engine_label = "CPU"
-            face_engine_gpu_error = "Sessao real da IA ficou em CPU"
             _cfg["log_info"]("[AI] CUDA indisponivel, usando CPU")
-            _cfg["log_info"]("[AI] Provider ativo: CPUExecutionProvider")
-        else:
-            face_engine_device = "GPU" if real_provider in {"CUDAExecutionProvider", "DmlExecutionProvider"} else "CPU"
+            with quiet_external_output():
+                app_face = FaceAnalysis(
+                    name="buffalo_l",
+                    root=model_root,
+                    providers=["CPUExecutionProvider"],
+                    provider_options=None,
+                    allowed_modules=["detection", "recognition"],
+                )
+                app_face.prepare(ctx_id=-1, det_size=_cfg.get("det_size", (640, 640)))
+            real_providers = get_session_providers(app_face)
+            real_provider = real_providers[0] if real_providers else "CPUExecutionProvider"
+            face_engine_device = "CPU"
             face_engine_provider = real_provider
             face_engine_label = _provider_label(real_provider)
-            face_engine_gpu_error = ""
-            if real_provider == "CUDAExecutionProvider":
-                _cfg["log_info"]("[AI] CUDA ativa")
+            face_engine_gpu_error = str(e)
             _cfg["log_info"](f"[AI] Provider ativo: {real_provider}")
-    except Exception as e:
-        _cfg["log_info"](f"[AI] Falha ao carregar engine de IA: {e}")
-        if selected_provider == "CPUExecutionProvider":
-            _cfg["log_debug"](f"[SCAN] Erro fatal no carregamento CPU: {traceback.format_exc()}")
-            raise
 
-        if selected_provider == "CUDAExecutionProvider":
-            mark_cuda_failed()
-            _cfg["log_info"]("[AI] CUDA indisponivel, usando CPU")
-        else:
-            _cfg["log_info"]("[AI] Provider indisponivel, usando CPU")
-
-        fallback_info = get_onnx_providers(log_debug=_cfg["log_debug"])
-        fallback_providers = fallback_info["selected_providers"]
-        fallback_options = fallback_info["provider_options"]
-        fallback_ctx = fallback_info["ctx_id"]
-        app_face = FaceAnalysis(
-            name="buffalo_l",
-            root=model_root,
-            providers=fallback_providers,
-            provider_options=fallback_options,
-            allowed_modules=["detection", "recognition"],
-        )
-        app_face.prepare(ctx_id=fallback_ctx, det_size=_cfg.get("det_size", (640, 640)))
-        real_providers = get_session_providers(app_face)
-        real_provider = real_providers[0] if real_providers else "CPUExecutionProvider"
-        face_engine_device = "CPU"
-        face_engine_provider = real_provider
-        face_engine_label = _provider_label(real_provider)
-        face_engine_gpu_error = str(e)
-        if real_provider == "CUDAExecutionProvider":
-            _cfg["log_info"]("[AI] CUDA ativa")
-        _cfg["log_info"](f"[AI] Provider ativo: {real_provider}")
-
-    _cfg["app_face"] = app_face
-    _cfg["face_engine_device"] = face_engine_device
-    _cfg["face_engine_provider"] = face_engine_provider
-    _cfg["face_engine_label"] = face_engine_label
-    _cfg["face_engine_gpu_error"] = face_engine_gpu_error
+        _cfg["app_face"] = app_face
+        _cfg["face_engine_device"] = face_engine_device
+        _cfg["face_engine_provider"] = face_engine_provider
+        _cfg["face_engine_label"] = face_engine_label
+        _cfg["face_engine_gpu_error"] = face_engine_gpu_error
 
 
 def load_references(ref_path):

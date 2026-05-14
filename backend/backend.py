@@ -1406,6 +1406,10 @@ async def log_graduation_analysis_routes():
     for route in app.routes:
         path = getattr(route, "path", "")
         print(path, flush=True)
+    try:
+        se.ensure_face_engine()
+    except Exception as e:
+        print(f"[AI] warmup InsightFace adiado: {e}", flush=True)
 
 @app.get("/api/culling/analyze/{aluno_id}")
 def analyze_culling(aluno_id: str, catalog: str = ""):

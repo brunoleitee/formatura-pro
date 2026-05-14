@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import threading
+import ctypes
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:
@@ -10,6 +12,8 @@ except Exception:  # pragma: no cover - optional runtime dependency
     ort = None
 
 _cuda_failed = False
+_cuda_preflight_done = False
+_cuda_preflight_error = ""
 _state_lock = threading.Lock()
 FORCE_CPU_ONNX = os.environ.get("FORCE_CPU_ONNX", "0") == "1"
 
@@ -30,6 +34,41 @@ def mark_cuda_failed() -> None:
     global _cuda_failed
     with _state_lock:
         _cuda_failed = True
+
+
+def _cuda_provider_loadable() -> bool:
+    global _cuda_preflight_done, _cuda_preflight_error, _cuda_failed
+    if os.name != "nt" or ort is None:
+        return True
+
+    with _state_lock:
+        if _cuda_preflight_done:
+            return not _cuda_failed
+
+    error = ""
+    loadable = True
+    try:
+        ort_dir = Path(getattr(ort, "__file__", "")).resolve().parent
+        candidates = [
+            ort_dir / "capi" / "onnxruntime_providers_cuda.dll",
+            ort_dir / "onnxruntime_providers_cuda.dll",
+        ]
+        cuda_dll = next((path for path in candidates if path.exists()), None)
+        if cuda_dll is not None:
+            ctypes.CDLL(str(cuda_dll))
+        else:
+            loadable = False
+            error = "onnxruntime_providers_cuda.dll nao encontrado"
+    except Exception as exc:
+        loadable = False
+        error = str(exc)
+
+    with _state_lock:
+        _cuda_preflight_done = True
+        if not loadable:
+            _cuda_failed = True
+            _cuda_preflight_error = error
+    return loadable
 
 
 def get_session_providers(target: Any) -> List[str]:
@@ -92,18 +131,34 @@ def get_onnx_providers(log_debug=None) -> Dict[str, Any]:
         }
 
     if "CUDAExecutionProvider" in available_providers:
+        if _cuda_provider_loadable():
+            return {
+                "available_providers": available_providers,
+                "selected_providers": ["CUDAExecutionProvider", "CPUExecutionProvider"],
+                "providers": ["CUDAExecutionProvider", "CPUExecutionProvider"],
+                "provider_options": _build_cuda_provider_options(),
+                "provider": "CUDAExecutionProvider",
+                "ctx_id": 0,
+                "device": "GPU",
+                "label": "GPU NVIDIA",
+                "cuda_allowed": True,
+                "cuda_failed": False,
+                "provider_error": provider_error,
+            }
+        with _state_lock:
+            cuda_preflight_error = _cuda_preflight_error
         return {
             "available_providers": available_providers,
-            "selected_providers": ["CUDAExecutionProvider", "CPUExecutionProvider"],
-            "providers": ["CUDAExecutionProvider", "CPUExecutionProvider"],
-            "provider_options": _build_cuda_provider_options(),
-            "provider": "CUDAExecutionProvider",
-            "ctx_id": 0,
-            "device": "GPU",
-            "label": "GPU NVIDIA",
-            "cuda_allowed": True,
-            "cuda_failed": False,
-            "provider_error": provider_error,
+            "selected_providers": ["CPUExecutionProvider"],
+            "providers": ["CPUExecutionProvider"],
+            "provider_options": None,
+            "provider": "CPUExecutionProvider",
+            "ctx_id": -1,
+            "device": "CPU",
+            "label": "CPU",
+            "cuda_allowed": False,
+            "cuda_failed": True,
+            "provider_error": provider_error or cuda_preflight_error,
         }
 
     if "DmlExecutionProvider" in available_providers:
