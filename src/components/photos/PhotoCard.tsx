@@ -6,6 +6,7 @@ import { isPhotoMapped, isKnownFace } from '../../utils/personIdentity';
 import { getGridHighThumbUrl, getGridThumbUrl } from '../../utils/imageUrls';
 import { isPerfLoggingEnabled, logPerf, perfNow } from '../../utils/perf';
 import { aiCacheStore } from '../../services/AICacheStore';
+import styles from './PhotoCard.module.css';
 
 interface PhotoCardProps {
   photo: Photo;
@@ -492,10 +493,10 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
           <div className="discardBadge">DESCARTADA</div>
         )}
         {isAiProcessing && (
-          <div className="ai-badge ai-processing">IA...</div>
+          <div className={`${styles.aiBadge} ${styles.aiProcessing}`}>IA...</div>
         )}
         {showAiBadge && (
-          <div className="ai-badge ai-ready" title={aiResult?.ocr_text ? `OCR: ${aiResult.ocr_text}` : aiResult?.face_detected ? 'Rosto detectado' : ''}>
+          <div className={`${styles.aiBadge} ${styles.aiReady}`} title={aiResult?.ocr_text ? `OCR: ${aiResult.ocr_text}` : aiResult?.face_detected ? 'Rosto detectado' : ''}>
             {aiResult?.face_detected ? <ScanFace size={10} /> : null}
             {aiResult?.ocr_text ? <FileText size={10} /> : null}
             {aiResult?.face_detected && aiResult?.ocr_text ? null : !aiResult?.face_detected && !aiResult?.ocr_text ? <Brain size={10} /> : null}
