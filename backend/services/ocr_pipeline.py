@@ -639,12 +639,17 @@ def _ocr_single_digit(digit_crop: np.ndarray) -> Optional[str]:
     if max(h, w) < 100:
         scale = 140.0 / max(h, w)
         padded = cv2.resize(padded, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-    for psm in ("10", "13"):
-        config = f"--oem 3 --psm {psm} -c tessedit_char_whitelist=0123456789"
-        text = _run_tesseract(padded, config)
-        clean = re.sub(r"\D", "", (text or "").strip())
-        if len(clean) == 1:
-            return clean
+    variants = [padded]
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+    dilated = cv2.dilate(padded, kernel, iterations=1)
+    variants.append(dilated)
+    for img in variants:
+        for psm in ("10", "13"):
+            config = f"--oem 3 --psm {psm} -c tessedit_char_whitelist=0123456789"
+            text = _run_tesseract(img, config)
+            clean = re.sub(r"\D", "", (text or "").strip())
+            if len(clean) == 1:
+                return clean
     return None
 
 
@@ -673,10 +678,9 @@ def _segmented_plate_ocr(plate_bgr: np.ndarray, plate_score: float, start: float
         scale = 900.0 / max(h, w)
         gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
 
-    blurred = cv2.medianBlur(gray, 3)
-
     prep_variants = [
-        ("adaptive", lambda g: cv2.adaptiveThreshold(g, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 8)),
+        ("adaptive_31_12", lambda g: cv2.adaptiveThreshold(g, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 12)),
+        ("adaptive_21_8", lambda g: cv2.adaptiveThreshold(g, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 8)),
         ("otsu", lambda g: cv2.threshold(g, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]),
     ]
 
@@ -686,7 +690,7 @@ def _segmented_plate_ocr(plate_bgr: np.ndarray, plate_score: float, start: float
     for var_name, thresh_fn in prep_variants:
         if time.time() - start > MAX_OCR_SECONDS:
             break
-        binary = thresh_fn(blurred)
+        binary = thresh_fn(gray)
         mean_val = np.mean(binary)
         if mean_val < 127:
             binary = 255 - binary
