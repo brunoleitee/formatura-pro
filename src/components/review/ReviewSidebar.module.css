@@ -299,6 +299,20 @@
   color: #e2e8f0;
 }
 
+.suggestedLabel {
+  font-size: 0.68rem;
+  color: #60a5fa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.suggestedLabel strong {
+  font-weight: 700;
+  color: #93c5fd;
+}
+
 .itemActive .itemMeta {
   color: #cbd5e1;
 }

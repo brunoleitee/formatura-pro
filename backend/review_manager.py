@@ -1962,6 +1962,47 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
 
         print(f"[CLUSTER] clusters finais: {len(clusters_by_root)}")
 
+        # Load identified students for suggestion matching
+        identified_centroids: list[tuple[str, np.ndarray]] = []
+        try:
+            cur.execute("""
+                SELECT DISTINCT o.aluno_id, fe.embedding
+                FROM ocorrencias o
+                JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
+                WHERE o.x1 IS NOT NULL
+                  AND o.aluno_id IS NOT NULL
+                  AND o.aluno_id != ''
+                  AND lower(o.aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'não_mapeado', '__unknown__')
+                  AND o.aluno_id NOT LIKE 'pessoa%'
+                  AND fe.embedding IS NOT NULL
+                ORDER BY o.aluno_id
+            """)
+            id_rows = cur.fetchall()
+            id_emb_map: dict[str, list[np.ndarray]] = {}
+            for r in id_rows:
+                name = str(r["aluno_id"])
+                emb = np.frombuffer(r["embedding"], dtype="float32")
+                emb = emb / np.linalg.norm(emb) if np.linalg.norm(emb) > 0 else emb
+                id_emb_map.setdefault(name, []).append(emb)
+            for name, embs in id_emb_map.items():
+                centroid = np.mean(embs, axis=0)
+                cn = np.linalg.norm(centroid)
+                if cn > 0:
+                    identified_centroids.append((name, centroid / cn))
+        except Exception as e:
+            print(f"[CLUSTER] erro ao carregar formandos: {e}")
+
+        def _best_student_match(centroid: np.ndarray) -> tuple[str | None, float]:
+            if not identified_centroids or centroid is None:
+                return None, 0.0
+            best_name, best_sim = None, 0.0
+            for name, ref_cent in identified_centroids:
+                sim = float(np.dot(centroid, ref_cent))
+                if sim > best_sim:
+                    best_sim = sim
+                    best_name = name
+            return best_name, best_sim
+
         import datetime as _dt
 
         clusters = []
@@ -2006,6 +2047,9 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             rep_item_meta = priority_meta[comp_items.index(rep_item)]
             graduation_tags = _ordered_cluster_tags(priority_meta)
             debug_graduation_source = _resolve_cluster_graduation_source(priority_meta)
+            # Suggestion: match against identified students
+            suggested_student, suggested_similarity = _best_student_match(centroid)
+
             cluster_num = len(clusters) + 1
             clusters.append({
                 "cluster_id": f"cluster_{cluster_num}",
@@ -2016,6 +2060,8 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 "cohesion_score": round(cohesion_score, 4),
                 "cohesion": round(cohesion_score, 4),
                 "priority_score": round(float(priority_score), 4),
+                "suggested_student": suggested_student,
+                "suggested_similarity": round(suggested_similarity, 4) if suggested_student else None,
                 "graduation_tags": graduation_tags,
                 "has_gown": cluster_has_gown,
                 "has_diploma": cluster_has_diploma,

@@ -153,6 +153,13 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
           <span className={styles.metaConf}>{cohesionLabel}</span>
         </div>
 
+        {cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.60 && !isAssigned && (
+          <div className={styles.suggestionRow}>
+            <Sparkles size={12} />
+            <span>Sugestão: <strong>{cluster.suggested_student}</strong> — {Math.round(cluster.suggested_similarity * 100)}%</span>
+          </div>
+        )}
+
         {/* Ações ou identify inline */}
         <div className={`${styles.actions} ${identifying ? styles.blockHidden : styles.blockVisible}`}>
             <button
@@ -164,15 +171,25 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
               <UserPlus size={16} />
               <span>Identificar</span>
             </button>
-            <button
-              className={styles.btnConfirm}
-              onClick={onSkip}
-              type="button"
-              disabled={isAssigned}
-            >
-              <Check size={16} />
-              <span>Confirmar</span>
-            </button>
+            {cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.65 && !isAssigned ? (
+              <button
+                className={styles.btnConfirm}
+                onClick={() => {
+                  if (onAssigned) onAssigned({
+                    cluster_id: cluster.cluster_id,
+                    aluno_id: cluster.suggested_student!,
+                    nome_formando: cluster.suggested_student!,
+                    face_count: cluster.face_count,
+                    status: "assigned",
+                    classroom: "",
+                  });
+                }}
+                type="button"
+              >
+                <Check size={16} />
+                <span>Confirmar como {cluster.suggested_student}</span>
+              </button>
+            ) : null}
             <button
               className={`${styles.btnSecondary} ${collapsed ? styles.inlineHidden : styles.inlineFlexVisible}`}
               onClick={onSkip}
@@ -180,7 +197,7 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
               disabled={isAssigned}
             >
               <EyeOff size={16} />
-              <span>Ignorar</span>
+              <span>Ignorar grupo</span>
             </button>
           {onToggleCollapsed && (
             <button

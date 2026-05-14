@@ -170,6 +170,20 @@
   color: #475569;
 }
 
+.suggestionRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: #60a5fa;
+  margin-top: 2px;
+}
+
+.suggestionRow strong {
+  font-weight: 700;
+  color: #93c5fd;
+}
+
 /* ── Description ── */
 .description {
   font-size: 0.8rem;

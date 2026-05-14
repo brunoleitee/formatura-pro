@@ -219,6 +219,8 @@ export interface RichCluster {
   debug_graduation_source?: string;
   preview_image?: string;
   discovered_at?: string;
+  suggested_student?: string | null;
+  suggested_similarity?: number | null;
   representative: RichClusterFace;
   faces: RichClusterFace[];
 }
@@ -232,6 +234,8 @@ export interface ReviewClusterSummary {
   cohesion_score: number;
   cohesion?: number;
   priority_score?: number;
+  suggested_student?: string | null;
+  suggested_similarity?: number | null;
   graduation_tags?: string[];
   has_gown?: boolean;
   has_diploma?: boolean;
