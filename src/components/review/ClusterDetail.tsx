@@ -195,8 +195,18 @@ export default function ClusterDetail({
   const photoImgH = Math.round(gridZoom * 0.85);
 
   const cleanName = (n: any) => (!n || n === 'null' || n === 'unknown') ? null : n;
-  const bestName = cleanName(cluster.suggested_student) || cleanName(cluster.best_student_debug);
-  const bestSim = cleanName(cluster.suggested_student) ? (cluster.suggested_similarity ?? 0) : (cluster.best_similarity_debug ?? 0);
+  
+  let bestName = cleanName(cluster.suggested_student);
+  let bestSim = bestName ? (cluster.suggested_similarity ?? 0) : 0;
+
+  if (!bestName) {
+    const debugName = cleanName(cluster.best_student_debug);
+    const debugSim = cluster.best_similarity_debug ?? 0;
+    if (debugName && debugSim >= 0.30) {
+      bestName = debugName;
+      bestSim = debugSim;
+    }
+  }
 
   return (
     <div className={`${styles.root} ${assignmentState?.clusterId === cluster.cluster_id ? styles.rootAssigned : ''}`} key={cluster.cluster_id}>
