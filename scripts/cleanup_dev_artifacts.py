@@ -18,22 +18,30 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 TARGETS = [
+    # Build artifacts
+    {"pattern": "dist", "type": "dir", "label": "frontend build"},
+    {"pattern": "build", "type": "dir", "label": "build output", "skip_git_tracked": True},
+    {"pattern": "release", "type": "dir", "label": "release output", "skip_git_tracked": True},
     # Python bytecode
     {"pattern": "**/__pycache__", "type": "dir", "label": "__pycache__"},
     {"pattern": "**/node_modules/__pycache__", "type": "dir", "label": "__pycache__ in node_modules"},
+    {"pattern": "**/.pytest_cache", "type": "dir", "label": "pytest cache"},
     # Cache dirs (safe to remove, auto-regenerated)
     {"pattern": "node_modules/.vite", "type": "dir", "label": "Vite dep cache"},
     {"pattern": "**/.vite", "type": "dir", "label": "Vite cache", "skip_git_tracked": True},
     {"pattern": "backend/thumb_cache", "type": "dir", "label": "thumbnail cache"},
-    # Logs (non-tracked only)
+    # OCR debug crops
+    {"pattern": "data/.cache/ocr_debug", "type": "dir", "label": "OCR debug crops"},
+    {"pattern": "data/.cache", "type": "dir", "label": "data cache", "skip_git_tracked": True, "min_size_mb": 10},
+    # Logs
     {"pattern": "*.log", "type": "file", "label": "root log files", "skip_git_tracked": True},
     {"pattern": "backend/*.log", "type": "file", "label": "backend log files", "skip_git_tracked": True},
-    # Temp / backup (non-tracked only)
+    # Temp / backup
     {"pattern": "backend/backups/*.bak", "type": "file", "label": "auto-backup .bak"},
     {"pattern": "*.tmp", "type": "file", "label": "temp files", "skip_git_tracked": True},
     {"pattern": "*.old", "type": "file", "label": "old files", "skip_git_tracked": True},
-    # Rust build artifacts (opt-in)
-    {"pattern": "src-tauri/target/debug", "type": "dir", "label": "Rust debug build", "min_size_mb": 50},
+    # Rust build artifacts
+    {"pattern": "src-tauri/target", "type": "dir", "label": "Rust target (cargo build)", "min_size_mb": 50},
 ]
 
 SAFETY_DIRS = {".git", "backend/catalogos", "data/catalogs", "data/cloud", "backend/binaries", ".insightface"}
@@ -117,6 +125,7 @@ def main():
     print("=" * 60)
 
     to_remove, total_size = gather(apply=args.apply, verbose=args.verbose)
+    total_size_removed = 0
 
     if not to_remove:
         print("\nNada para limpar. Projeto já está limpo!")
@@ -130,20 +139,20 @@ def main():
             print("Cancelado.")
             return
         removed = 0
-        removed_size = 0
         for path in to_remove:
             try:
+                sz = size_of(path)
                 if path.is_dir():
                     shutil.rmtree(str(path))
                 else:
                     path.unlink()
                 removed += 1
-                removed_size += size_of(path) if not path.exists() else 0
-                print(f"  [OK] Removido: {path}")
+                total_size_removed += sz
+                print(f"  [OK] Removido: {path} ({format_bytes(sz)})")
             except Exception as e:
                 print(f"  [ERRO] {path}: {e}")
         print(f"\n[CLEANUP] removido: {removed} itens")
-        print(f"[CLEANUP] espaço recuperado: {format_bytes(removed_size)}")
+        print(f"[CLEANUP] espaço recuperado: {format_bytes(total_size_removed)}")
     else:
         print(f"\nExecute com --apply para remover.")
 
