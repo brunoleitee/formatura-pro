@@ -662,6 +662,10 @@ def _ensure_unknown_face_clusters_schema(cur):
             cur.execute("ALTER TABLE unknown_face_clusters ADD COLUMN unknown_similar_id TEXT")
         if "unknown_similar_similarity" not in cols:
             cur.execute("ALTER TABLE unknown_face_clusters ADD COLUMN unknown_similar_similarity REAL")
+        if "best_student_debug" not in cols:
+            cur.execute("ALTER TABLE unknown_face_clusters ADD COLUMN best_student_debug TEXT")
+        if "best_similarity_debug" not in cols:
+            cur.execute("ALTER TABLE unknown_face_clusters ADD COLUMN best_similarity_debug REAL")
     except Exception:
         pass
 
@@ -676,6 +680,8 @@ def _sync_unknown_face_clusters(cur, clusters: list[dict]):
         si = cluster.get("suggested_similarity")
         ui = cluster.get("unknown_similar_id")
         us = cluster.get("unknown_similar_similarity")
+        bd = cluster.get("best_student_debug")
+        bs = cluster.get("best_similarity_debug")
         for face in cluster.get("faces", []):
             rows.append(
                 (
@@ -687,6 +693,8 @@ def _sync_unknown_face_clusters(cur, clusters: list[dict]):
                     float(si) if si is not None else None,
                     ui,
                     float(us) if us is not None else None,
+                    bd,
+                    float(bs) if bs is not None else None,
                     now,
                     now,
                 )
@@ -698,8 +706,9 @@ def _sync_unknown_face_clusters(cur, clusters: list[dict]):
             (cluster_id, face_id, original_path, confidence,
              suggested_student, suggested_similarity,
              unknown_similar_id, unknown_similar_similarity,
+             best_student_debug, best_similarity_debug,
              created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -826,6 +835,11 @@ def _row_to_review_item(row) -> dict:
     if "unknown_similar_similarity" in row.keys():
         us = row["unknown_similar_similarity"]
         result["unknown_similar_similarity"] = float(us) if us is not None else None
+    if "best_student_debug" in row.keys():
+        result["best_student_debug"] = row["best_student_debug"]
+    if "best_similarity_debug" in row.keys():
+        bd = row["best_similarity_debug"]
+        result["best_similarity_debug"] = float(bd) if bd is not None else None
     return result
 
 
@@ -860,6 +874,8 @@ def _build_review_cluster_payload(
     suggested_similarity = first_item.get("suggested_similarity")
     unknown_similar_id = first_item.get("unknown_similar_id")
     unknown_similar_similarity = first_item.get("unknown_similar_similarity")
+    best_student_debug = first_item.get("best_student_debug")
+    best_similarity_debug = first_item.get("best_similarity_debug")
 
     cluster_payload = {
         "cluster_id": cluster_id,
@@ -872,6 +888,8 @@ def _build_review_cluster_payload(
         "priority_score": round(float(priority_score), 4),
         "suggested_student": suggested_student,
         "suggested_similarity": round(float(suggested_similarity), 4) if suggested_similarity is not None else None,
+        "best_student_debug": best_student_debug,
+        "best_similarity_debug": round(float(best_similarity_debug), 4) if best_similarity_debug is not None else None,
         "unknown_similar_id": unknown_similar_id,
         "unknown_similar_similarity": round(float(unknown_similar_similarity), 4) if unknown_similar_similarity is not None else None,
         "graduation_tags": _ordered_cluster_tags(priority_meta),
@@ -2247,17 +2265,18 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             graduation_tags = _ordered_cluster_tags(priority_meta)
             debug_graduation_source = _resolve_cluster_graduation_source(priority_meta)
             suggested_student, suggested_similarity = _best_student_match(centroid)
-            if suggested_student:
-                print(f"[STUDENT MATCH] cluster_{len(clusters)+1} best={suggested_student} sim={suggested_similarity:.2f}")
-            elif identified_centroids:
-                # Log best match even below threshold for debugging
-                best_name, best_sim = None, 0.0
+            # Always save best match (even below threshold) for debug display
+            best_debug_name, best_debug_sim = None, 0.0
+            if identified_centroids and centroid is not None:
                 for name, ref_cent in identified_centroids:
                     sim = float(np.dot(centroid, ref_cent))
-                    if sim > best_sim:
-                        best_sim = sim
-                        best_name = name
-                print(f"[STUDENT MATCH] cluster_{len(clusters)+1} no_match best={best_name} sim={best_sim:.2f}")
+                    if sim > best_debug_sim:
+                        best_debug_sim = sim
+                        best_debug_name = name
+            if suggested_student:
+                print(f"[STUDENT MATCH] cluster_{len(clusters)+1} best={suggested_student} sim={suggested_similarity:.2f}")
+            elif best_debug_name:
+                print(f"[STUDENT MATCH] cluster_{len(clusters)+1} no_match best={best_debug_name} sim={best_debug_sim:.2f}")
 
             cluster_num = len(clusters) + 1
             cluster_centroids.append((f"cluster_{cluster_num}", centroid.copy(), comp_idxs))
@@ -2272,6 +2291,8 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 "priority_score": round(float(priority_score), 4),
                 "suggested_student": suggested_student,
                 "suggested_similarity": round(suggested_similarity, 4) if suggested_student else None,
+                "best_student_debug": best_debug_name,
+                "best_similarity_debug": round(best_debug_sim, 4) if best_debug_name else None,
                 "graduation_tags": graduation_tags,
                 "has_gown": cluster_has_gown,
                 "has_diploma": cluster_has_diploma,
@@ -2574,7 +2595,9 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                    MAX(u.suggested_student) AS suggested_student,
                    MAX(u.suggested_similarity) AS suggested_similarity,
                    MAX(u.unknown_similar_id) AS unknown_similar_id,
-                   MAX(u.unknown_similar_similarity) AS unknown_similar_similarity
+                   MAX(u.unknown_similar_similarity) AS unknown_similar_similarity,
+                   MAX(u.best_student_debug) AS best_student_debug,
+                   MAX(u.best_similarity_debug) AS best_similarity_debug
             FROM unknown_face_clusters u
             JOIN ocorrencias o ON o.rowid = u.face_id
             WHERE {ignored_filter_sql}
@@ -2602,7 +2625,8 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                        o.manual_graduation_tags,
                        o.is_foreground, o.foreground_score, o.background_penalty_reason,
                         u.suggested_student, u.suggested_similarity,
-                        u.unknown_similar_id, u.unknown_similar_similarity
+                        u.unknown_similar_id, u.unknown_similar_similarity,
+                        u.best_student_debug, u.best_similarity_debug
                  FROM unknown_face_clusters u
                  JOIN ocorrencias o ON o.rowid = u.face_id
                  WHERE u.cluster_id IN ({placeholders})
@@ -2682,7 +2706,8 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
                    o.manual_graduation_tags,
                    o.is_foreground, o.foreground_score, o.background_penalty_reason,
                     u.suggested_student, u.suggested_similarity,
-                    u.unknown_similar_id, u.unknown_similar_similarity
+                    u.unknown_similar_id, u.unknown_similar_similarity,
+                    u.best_student_debug, u.best_similarity_debug
              FROM unknown_face_clusters u
              JOIN ocorrencias o ON o.rowid = u.face_id
              WHERE u.cluster_id = ?

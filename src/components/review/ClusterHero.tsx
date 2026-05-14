@@ -171,9 +171,9 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
             <Sparkles size={12} />
             <span>Possível: <strong>{cluster.suggested_student}</strong> — {Math.round(cluster.suggested_similarity * 100)}%</span>
           </div>
-        ) : cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.30 && !isAssigned ? (
+        ) : cluster.best_student_debug && cluster.best_similarity_debug && cluster.best_similarity_debug >= 0.30 && !isAssigned ? (
           <div className={styles.suggestionRowDebug}>
-            <span>Fraco: {cluster.suggested_student} — {Math.round(cluster.suggested_similarity * 100)}%</span>
+            <span>Fraco: {cluster.best_student_debug} — {Math.round(cluster.best_similarity_debug * 100)}%</span>
           </div>
         ) : cluster.unknown_similar_id && cluster.unknown_similar_number && cluster.unknown_similar_similarity && cluster.unknown_similar_similarity >= 0.55 && !isAssigned ? (
           <div className={styles.unknownMatchRow}>

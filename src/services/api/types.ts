@@ -221,6 +221,8 @@ export interface RichCluster {
   discovered_at?: string;
   suggested_student?: string | null;
   suggested_similarity?: number | null;
+  best_student_debug?: string | null;
+  best_similarity_debug?: number | null;
   unknown_similar_id?: string | null;
   unknown_similar_number?: number | null;
   unknown_similar_similarity?: number | null;

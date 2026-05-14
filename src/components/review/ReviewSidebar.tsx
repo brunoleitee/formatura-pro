@@ -104,9 +104,9 @@ const ClusterItem = memo(function ClusterItem({
             <span className={styles.suggestionBadgePossible} title={`Possível: ${cluster.suggested_student} — ${Math.round(cluster.suggested_similarity * 100)}%`}>
               Possível {cluster.suggested_student}
             </span>
-          ) : cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.30 ? (
-            <span className={styles.suggestionBadgeDebug} title={`Fraco: ${cluster.suggested_student} — ${Math.round(cluster.suggested_similarity * 100)}%`}>
-              Fraco: {cluster.suggested_student}
+          ) : cluster.best_student_debug && cluster.best_similarity_debug && cluster.best_similarity_debug >= 0.30 ? (
+            <span className={styles.suggestionBadgeDebug} title={`Fraco: ${cluster.best_student_debug} — ${Math.round(cluster.best_similarity_debug * 100)}%`}>
+              Fraco: {cluster.best_student_debug}
             </span>
           ) : cluster.unknown_similar_id && cluster.unknown_similar_number && cluster.unknown_similar_similarity && cluster.unknown_similar_similarity >= 0.55 ? (
             <span className={styles.suggestionBadgeUnknown} title={`Provável mesmo formando que grupo #${cluster.unknown_similar_number} — ${Math.round(cluster.unknown_similar_similarity * 100)}%`}>
