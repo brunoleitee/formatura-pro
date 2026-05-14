@@ -1911,6 +1911,57 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             root = find(idx)
             clusters_by_root.setdefault(root, []).append(idx)
 
+        initial_cluster_count = len(clusters_by_root)
+        unit_clusters = sum(1 for v in clusters_by_root.values() if len(v) < 2)
+        print(f"[CLUSTER] clusters iniciais: {initial_cluster_count}, unitarios: {unit_clusters}")
+
+        # Merge post-processing: merge small clusters with nearest larger one
+        MERGE_THRESHOLD = max(threshold - 0.08, 0.45)
+        root_list = list(clusters_by_root.keys())
+        if len(root_list) > 1:
+            changed = True
+            while changed:
+                changed = False
+                root_list = list(clusters_by_root.keys())
+                if len(root_list) < 2:
+                    break
+                centroids = {}
+                for r in root_list:
+                    idxs = clusters_by_root[r]
+                    comp_emb = embeddings[idxs]
+                    cent = comp_emb.mean(axis=0)
+                    cn = np.linalg.norm(cent)
+                    centroids[r] = cent / cn if cn > 0 else np.zeros(embeddings.shape[1], dtype="float32")
+                for r in root_list:
+                    if r not in clusters_by_root:
+                        continue
+                    sz = len(clusters_by_root[r])
+                    if sz > 2:
+                        continue
+                    cent_r = centroids.get(r)
+                    if cent_r is None:
+                        continue
+                    best_target = None
+                    best_sim = 0.0
+                    for other_r in root_list:
+                        if other_r == r or other_r not in clusters_by_root:
+                            continue
+                        cent_o = centroids.get(other_r)
+                        if cent_o is None:
+                            continue
+                        sim = float(np.dot(cent_r, cent_o))
+                        if sim > best_sim:
+                            best_sim = sim
+                            best_target = other_r
+                    if best_target is not None and best_sim >= MERGE_THRESHOLD:
+                        print(f"[CLUSTER] merge: cluster {r} ({sz} faces) + {best_target} sim={best_sim:.2f}")
+                        clusters_by_root[best_target].extend(clusters_by_root[r])
+                        del clusters_by_root[r]
+                        changed = True
+                        break
+
+        print(f"[CLUSTER] clusters finais: {len(clusters_by_root)}")
+
         import datetime as _dt
 
         clusters = []
