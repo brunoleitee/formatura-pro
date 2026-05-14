@@ -1,11 +1,13 @@
 # ── Node / Frontend ──────────────────────────────────────────
-node_modules
-dist
-dist-ssr
+node_modules/
+node_modules/.vite/
+dist/
+dist-ssr/
 *.local
+.vite/
 
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -15,7 +17,7 @@ pnpm-debug.log*
 # Editor
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
@@ -33,6 +35,7 @@ __pycache__/
 .eggs/
 build/
 *.spec
+*.pyc
 
 # Ambientes virtuais
 venv/
@@ -45,8 +48,11 @@ backend/catalogos/
 backend/backups/
 backend/thumb_cache/
 backend/embedding_cache_v2.db
+backend/blur_cache.json
 data/.cache/
 data/cloud/
+data/catalogs/*.db
+data/catalogs_backup_teste/
 backend/export_history.json
 backend/debug_timing.txt
 backend/app_settings.json
@@ -60,8 +66,27 @@ backend/binaries/
 .env.*
 app_settings.json
 
-# ---- Ligação Google Drive (se aplicável) ───────────────────────────────
+# Ligação Google Drive
 data/cloud/client_secrets.json
 data/cloud/google_token.json
-# Bancos de dados de catalogo (gerados em runtime)
-data/catalogs/*.db
+
+# ── Rust / Tauri ─────────────────────────────────────────────
+src-tauri/target/
+
+# ── Temp / Backup ────────────────────────────────────────────
+*.bak
+*.tmp
+*.old
+
+# ── Python virtual env local ─────────────────────────────────
+.insightface/
+
+# ── Coverage ─────────────────────────────────────────────────
+coverage/
+.coverage/
+htmlcov/
+
+# ── Outros caches ────────────────────────────────────────────
+.eslintcache
+*.tsbuildinfo
+tsconfig.tsbuildinfo
