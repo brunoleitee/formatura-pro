@@ -2186,6 +2186,7 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
         clusters = []
         now_iso = _dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         cluster_centroids: list[tuple[str, np.ndarray, list[int]]] = []
+        cluster_num = 0  # safe default
 
         for comp_idxs in clusters_by_root.values():
             if len(comp_idxs) < min_cluster_size:
@@ -2228,8 +2229,8 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             debug_graduation_source = _resolve_cluster_graduation_source(priority_meta)
             suggested_student, suggested_similarity = _best_student_match(centroid)
 
-            cluster_centroids.append((f"cluster_{cluster_num}", centroid.copy(), comp_idxs))
             cluster_num = len(clusters) + 1
+            cluster_centroids.append((f"cluster_{cluster_num}", centroid.copy(), comp_idxs))
             clusters.append({
                 "cluster_id": f"cluster_{cluster_num}",
                 "cluster_number": cluster_num,
