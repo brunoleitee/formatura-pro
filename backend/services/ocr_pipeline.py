@@ -615,10 +615,13 @@ def _segment_digits_in_plate(binary: np.ndarray, min_height_ratio: float = 0.3) 
             continue
         raw.append((x, y, bw, bh, area, binary[y:y + bh, x:x + bw]))
     raw.sort(key=lambda b: b[0])
+    widths = [b[2] for b in raw]
+    median_w = float(np.median(widths)) if widths else 0
     final: List[Tuple[int, int, int, int, np.ndarray]] = []
     for x, y, bw, bh, area, crop in raw:
         aspect = bw / max(bh, 1)
-        if aspect <= 1.6:
+        is_wide = aspect > 1.6 or (bw > median_w * 1.5 and len(raw) < 5)
+        if not is_wide:
             final.append((x, y, bw, bh, crop))
         else:
             sub = _try_split_blob(crop, x, y)
@@ -687,7 +690,7 @@ def _segmented_plate_ocr(plate_bgr: np.ndarray, plate_score: float, start: float
     prep_variants = [
         ("adaptive_31_12", lambda g: cv2.adaptiveThreshold(g, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 12)),
         ("adaptive_21_8", lambda g: cv2.adaptiveThreshold(g, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 8)),
-        ("otsu", lambda g: cv2.threshold(g, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]),
+        ("adaptive_15_3", lambda g: cv2.adaptiveThreshold(g, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, 3)),
     ]
 
     best_digits: Optional[List[str]] = None
@@ -700,9 +703,9 @@ def _segmented_plate_ocr(plate_bgr: np.ndarray, plate_score: float, start: float
         mean_val = np.mean(binary)
         if mean_val < 127:
             binary = 255 - binary
-        kernel_close = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel_close)
-        binary = _remove_small_components(binary, 30)
+        kernel_h = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 5))
+        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel_h)
+        binary = _remove_small_components(binary, 20)
 
         _save_debug_plate(local_path, f"debug_threshold_{crop_idx}_{var_name}.jpg", binary)
 
