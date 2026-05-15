@@ -1,7 +1,7 @@
 .zoomWrap {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1);
 }
 
 .zoomSlider {
@@ -9,7 +9,7 @@
   appearance: none;
   width: 80px;
   height: 4px;
-  border-radius: 10px;
+  border-radius: var(--radius-full);
   background: rgba(255, 255, 255, 0.1);
   outline: none;
   cursor: pointer;
@@ -20,18 +20,18 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #3b82f6;
+  background: var(--accent);
   cursor: pointer;
-  transition: transform 0.15s;
+  transition: transform var(--transition-fast);
 }
 
 .zoomSlider::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
+  transform: scale(1.25);
 }
 
 .zoomLabel {
-  font-size: 0.72rem;
-  color: #475569;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
   min-width: 32px;
   text-align: center;
 }

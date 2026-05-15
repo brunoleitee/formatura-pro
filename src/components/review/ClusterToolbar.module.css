@@ -29,16 +29,26 @@
 
 .select {
   appearance: none;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 7px;
-  color: #94a3b8;
-  font-size: 0.74rem;
-  padding: 4px 24px 4px 9px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  padding: 0 24px 0 9px;
+  height: 26px;
   cursor: pointer;
   outline: none;
   font-family: inherit;
-  transition: border-color 0.15s, color 0.15s;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+.select option {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+.select:hover,
+.select:focus {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
 }
 
 .select option {
@@ -142,10 +152,22 @@
   appearance: none;
   width: 80px;
   height: 4px;
-  border-radius: 10px;
+  border-radius: var(--radius-full);
   background: rgba(255, 255, 255, 0.1);
   outline: none;
   cursor: pointer;
+}
+.zoomSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  transition: transform var(--transition-fast);
+}
+.zoomSlider::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
 }
 
 .zoomSlider::-webkit-slider-thumb {
