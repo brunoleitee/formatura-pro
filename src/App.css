@@ -569,6 +569,39 @@ input[type="checkbox"], input[type="radio"] {
   border-color: rgba(220, 38, 38, 0.7);
 }
 
+/* ── Scrollbar ── */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  border-radius: 2px;
+}
+
+.scrollbar-overlay::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.scrollbar-overlay::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-overlay::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+}
+.scrollbar-overlay::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+.scrollbar-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
 /* ── Badge System ── */
 .badge {
   display: inline-flex;
@@ -803,6 +836,16 @@ input[type="checkbox"], input[type="radio"] {
   padding: var(--space-6);
   overflow: hidden;
   position: relative;
+  scrollbar-gutter: stable;
+}
+
+.view-scroll {
+  overflow-y: auto;
+  padding-right: var(--space-1);
+}
+
+.view-scroll > .view-header:first-child {
+  margin-top: 0;
 }
 
 .view-header {
@@ -1410,6 +1453,8 @@ input[type="checkbox"], input[type="radio"] {
   flex-direction: column;
   gap: 4px;
   margin-top: 4px;
+  padding-right: var(--space-1);
+  scrollbar-gutter: stable;
 }
 
 .export-person-row {

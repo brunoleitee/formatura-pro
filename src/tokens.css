@@ -72,6 +72,13 @@
   --btn-height-lg: 40px;
   --toolbar-height: 48px;
 
+  /* ── Scrollbar ── */
+  --scrollbar-width: 6px;
+  --scrollbar-radius: 3px;
+  --scrollbar-track: var(--bg-primary);
+  --scrollbar-thumb: var(--bg-tertiary);
+  --scrollbar-thumb-hover: var(--text-muted);
+
   /* ── Cards ── */
   --card-bg: var(--bg-secondary);
   --card-border: var(--border-default);
