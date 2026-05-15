@@ -338,3 +338,56 @@ export interface Stats {
 }
 
 export interface SearchResult { name: string; catalog: string; }
+
+export interface ExplorerPhoto {
+  name: string;
+  path: string;
+  ext: string;
+  size: number | null;
+  mtime: number | null;
+  is_raw: boolean;
+  is_video: boolean;
+}
+
+export interface ExplorerPhotosResponse {
+  ok: boolean;
+  error: string;
+  path: string;
+  total: number;
+  photos: ExplorerPhoto[];
+}
+
+export interface FolderTreeCounts {
+  RAW: number;
+  JPG: number;
+  PNG: number;
+  HEIC: number;
+  MOV: number;
+}
+
+export interface FolderTreeItem {
+  name: string;
+  path: string;
+  type: string;
+  direct_files: number;
+  total_files: number;
+  has_children: boolean;
+  counts: FolderTreeCounts;
+  children: FolderTreeItem[];
+  camera?: string | null;
+}
+
+export interface FolderTreeResponse {
+  ok: boolean;
+  error: string;
+  path: string;
+  name: string;
+  direct_files: number;
+  total_files: number;
+  total_photos: number;
+  total_raw: number;
+  total_jpg: number;
+  has_children: boolean;
+  children: FolderTreeItem[];
+  camera?: string | null;
+}

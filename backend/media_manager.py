@@ -1320,3 +1320,250 @@ def get_discard_candidates(catalog: str = ""):
         items.append(item)
 
     return items
+
+
+RAW_EXTENSIONS = (".cr2", ".cr3", ".nef", ".arw", ".dng", ".orf", ".rw2", ".raf", ".srw", ".x3f")
+VIDEO_EXTENSIONS = (".mov", ".mp4", ".avi", ".mts", ".m2ts", ".insv", ".360")
+IMAGE_EXT = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff")
+HEIC_EXT = (".heic", ".heif")
+
+
+def _get_camera_model(file_path):
+    """Helper to extract camera model from EXIF."""
+    try:
+        with Image.open(file_path) as img:
+            exif = img._getexif()
+            if not exif:
+                return None
+            make = exif.get(271, "")  # Make
+            model = exif.get(272, "") # Model
+            if not make and not model:
+                return None
+            full = f"{make} {model}".strip()
+            # Clean up common strings
+            return full.replace("CORPORATION", "").replace("Canon ", "").replace("NIKON ", "").strip()
+    except Exception:
+        return None
+
+
+def _scan_tree(path, depth=0, max_depth=2):
+    """Recursively scan folder structure up to max_depth.
+    Returns (children, direct_files, direct_counts, has_children).
+    """
+    try:
+        entries = sorted(os.scandir(path), key=lambda e: e.name.lower())
+    except PermissionError:
+        return [], 0, {"RAW": 0, "JPG": 0, "PNG": 0, "HEIC": 0, "MOV": 0}, False
+
+    children = []
+    direct_files = 0
+    direct_counts = {"RAW": 0, "JPG": 0, "PNG": 0, "HEIC": 0, "MOV": 0}
+    has_children = False
+    camera_model = None
+    first_image = None
+
+    for e in entries:
+        try:
+            if e.is_dir():
+                reached_limit = max_depth is not None and (depth + 1) >= max_depth
+
+                if reached_limit:
+                    # At depth limit: shallow scan to get counts for THIS folder
+                    sub_has = False
+                    sub_direct = 0
+                    sub_counts = {"RAW": 0, "JPG": 0, "PNG": 0, "HEIC": 0, "MOV": 0}
+                    try:
+                        with os.scandir(e.path) as sub_entries:
+                            for s in sub_entries:
+                                if s.is_dir():
+                                    sub_has = True
+                                elif s.is_file():
+                                    ext = os.path.splitext(s.name)[1].lower()
+                                    if ext in RAW_EXTENSIONS: sub_counts["RAW"] += 1; sub_direct += 1
+                                    elif ext in IMAGE_EXT: sub_counts["JPG"] += 1; sub_direct += 1
+                                    elif ext in HEIC_EXT: sub_counts["HEIC"] += 1; sub_direct += 1
+                                    elif ext in VIDEO_EXTENSIONS: sub_counts["MOV"] += 1; sub_direct += 1
+                    except Exception: pass
+
+                    children.append({
+                        "name": e.name,
+                        "path": e.path,
+                        "type": "folder",
+                        "direct_files": sub_direct,
+                        "total_files": sub_direct,
+                        "has_children": sub_has,
+                        "counts": sub_counts,
+                        "children": [],
+                        "camera": None
+                    })
+                    has_children = True
+                else:
+                    sub_children, sub_direct, sub_counts, sub_has, sub_camera = _scan_tree(e.path, depth + 1, max_depth)
+
+                    # Aggregate totals for this subfolder
+                    sub_total = sub_direct
+                    agg_counts = dict(sub_counts)
+                    for sub in sub_children:
+                        sub_total += sub["total_files"]
+                        for k in agg_counts:
+                            agg_counts[k] = agg_counts.get(k, 0) + sub["counts"].get(k, 0)
+
+                    children.append({
+                        "name": e.name,
+                        "path": e.path,
+                        "type": "folder",
+                        "direct_files": sub_direct,
+                        "total_files": sub_total,
+                        "has_children": sub_has or len(sub_children) > 0,
+                        "counts": agg_counts,
+                        "children": sub_children,
+                        "camera": sub_camera
+                    })
+                    has_children = True
+
+            elif e.is_file():
+                ext = os.path.splitext(e.name)[1].lower()
+                if ext in RAW_EXTENSIONS:
+                    direct_counts["RAW"] += 1
+                    direct_files += 1
+                elif ext in IMAGE_EXT:
+                    direct_counts["JPG"] += 1
+                    direct_files += 1
+                elif ext in HEIC_EXT:
+                    direct_counts["HEIC"] += 1
+                    direct_files += 1
+                elif ext in VIDEO_EXTENSIONS:
+                    direct_counts["MOV"] += 1
+                    direct_files += 1
+                
+                if not camera_model and ext in IMAGE_EXT:
+                    camera_model = _get_camera_model(e.path)
+        except PermissionError:
+            continue
+        except Exception:
+            continue
+
+    return children, direct_files, direct_counts, has_children, camera_model
+
+
+def explorer_tree(path: str, max_depth: int = 10):
+    dec = urllib.parse.unquote(path)
+    if not dec or not os.path.isdir(dec):
+        return {"ok": False, "error": "Pasta não encontrada", "path": path, "name": "", "direct_files": 0, "total_files": 0, "children": []}
+
+    base_name = os.path.basename(dec) or dec
+    children, direct_files, direct_counts, has_children, camera_model = _scan_tree(dec, 0, max_depth)
+
+    # Calculate totals: root files + recursive children
+    total_files = direct_files
+    total_raw = direct_counts.get("RAW", 0)
+    total_jpg = direct_counts.get("JPG", 0)
+    total_photos = direct_counts.get("JPG", 0) + direct_counts.get("HEIC", 0) + direct_counts.get("PNG", 0)
+
+    for c in children:
+        total_files += c["total_files"]
+        total_raw += c["counts"].get("RAW", 0)
+        total_jpg += c["counts"].get("JPG", 0)
+        total_photos += c["counts"].get("JPG", 0) + c["counts"].get("HEIC", 0) + c["counts"].get("PNG", 0)
+
+    return {
+        "ok": True,
+        "error": "",
+        "path": dec,
+        "name": base_name,
+        "direct_files": direct_files,
+        "total_files": total_files,
+        "total_photos": total_photos,
+        "total_raw": total_raw,
+        "total_jpg": total_jpg,
+        "has_children": has_children,
+        "children": children,
+        "camera": camera_model
+    }
+
+
+def explorer_photos(path: str, recursive: bool = False, limit: int = 0, offset: int = 0, include_raw: bool = True, include_video: bool = True):
+    if not path:
+        return {"ok": False, "error": "Path obrigatório", "path": "", "total": 0, "photos": []}
+
+    dec = urllib.parse.unquote(path)
+    dec = dec.replace("\\", "/").rstrip("/")
+
+    if not os.path.exists(dec):
+        return {"ok": False, "error": "Pasta não encontrada", "path": dec, "total": 0, "photos": []}
+
+    if not os.path.isdir(dec):
+        return {"ok": False, "error": "Caminho não é uma pasta", "path": dec, "total": 0, "photos": []}
+
+    photo_paths = []
+    SUPPORTED = set()
+    SUPPORTED.update(RAW_EXTENSIONS)
+    SUPPORTED.update(IMAGE_EXT)
+    SUPPORTED.update(HEIC_EXT)
+    if include_video:
+        SUPPORTED.update(VIDEO_EXTENSIONS)
+
+    try:
+        if recursive:
+            for root, _dirs, files in os.walk(dec):
+                for fname in files:
+                    if fname.startswith(".") or fname.startswith("~"):
+                        continue
+                    ext = os.path.splitext(fname)[1].lower()
+                    if ext in SUPPORTED:
+                        full = os.path.join(root, fname)
+                        photo_paths.append(full)
+        else:
+            for e in os.scandir(dec):
+                if e.name.startswith(".") or e.name.startswith("~"):
+                    continue
+                if e.is_file():
+                    ext = os.path.splitext(e.name)[1].lower()
+                    if ext in SUPPORTED:
+                        photo_paths.append(e.path)
+    except PermissionError:
+        return {"ok": False, "error": "Sem permissão para acessar a pasta", "path": dec, "total": 0, "photos": []}
+
+    if not include_raw:
+        photo_paths = [p for p in photo_paths if os.path.splitext(p)[1].lower() not in RAW_EXTENSIONS]
+
+    photo_paths.sort(key=lambda p: os.path.basename(p).lower())
+    total = len(photo_paths)
+    start = offset if offset > 0 else 0
+    end = start + limit if limit > 0 else total
+    page = photo_paths[start:end]
+
+    photos = []
+    for fp in page:
+        ext = os.path.splitext(fp)[1].lower()
+        is_raw = ext in RAW_EXTENSIONS
+        is_video = ext in VIDEO_EXTENSIONS
+        info = explorer_entry_info(fp, "img")
+        fname = info["name"]
+        parent = os.path.basename(os.path.dirname(fp))
+        ftype = "raw" if is_raw else "video" if is_video else "image"
+        encoded = urllib.parse.quote(fp, safe='')
+        photos.append({
+            "name": fname,
+            "folder": parent,
+            "path": info["path"],
+            "ext": ext,
+            "type": ftype,
+            "size": info["size"],
+            "mtime": info["mtime"],
+            "is_raw": is_raw,
+            "is_video": is_video,
+            "thumb_url": f"/api/image_thumb?path={encoded}&size=300",
+            "preview_url": f"/api/image_thumb?path={encoded}&size=1200",
+        })
+
+    return {
+        "ok": True,
+        "error": "",
+        "path": dec,
+        "recursive": recursive,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "photos": photos,
+    }

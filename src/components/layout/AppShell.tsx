@@ -212,9 +212,9 @@ export function AppShell() {
       }));
     }
 
-    if (st.is_scanning && (!prev || !prev.is_scanning) && !scanCenterDismissedRef.current) {
-      setShowScanCenter(true);
-    }
+    // if (st.is_scanning && (!prev || !prev.is_scanning) && !scanCenterDismissedRef.current) {
+    //   setShowScanCenter(true);
+    // }
 
     syncTimelineFromStatus(prev, st);
 
@@ -252,7 +252,7 @@ export function AppShell() {
   const handleScanStarted = (meta: { catalogName: string; oriPath: string; refPath: string }) => {
     setIsScanning(true);
     setScanMsg('Escaneamento iniciado...');
-    setShowScanCenter(true);
+    setShowScanCenter(false); // Do not show old scan center
     setIsScanFeedPaused(false);
     setScanTimeline([
       buildTimelineEntry('system', `Scanner iniciado para ${meta.catalogName}.`),
@@ -280,11 +280,6 @@ export function AppShell() {
 
   const handleScanClick = () => {
     if (!currentCatalog) { setShowCatalogModal(true); return; }
-    if (isScanning) {
-      scanCenterDismissedRef.current = false;
-      setShowScanCenter(true);
-      return;
-    }
     navigate('scanner');
   };
 
@@ -420,26 +415,7 @@ function autoCatalogName(): string {
       />
       <div className="main-content">
         <div className="view-area">
-          {showScanCenter ? (
-            <ScanProcessingCenter
-              currentCatalog={scanSession?.catalogName || currentCatalog}
-              scanStatus={scanStatus}
-              scanMsg={scanMsg}
-              isScanning={isScanning}
-              timeline={scanTimeline}
-              sourcePath={scanSession?.oriPath || scanStatus?.last_folder_scanned}
-              isFeedPaused={isScanFeedPaused}
-              isCompleted={scanCompleted}
-              onToggleFeedPaused={() => setIsScanFeedPaused(prev => !prev)}
-              onCancel={handleCancelScan}
-              onClose={handleCloseScanCenter}
-              onOpenReview={handleOpenReview}
-              onNewScan={handleNewScan}
-              canOpenReview={canOpenReview}
-            />
-          ) : (
-            renderView()
-          )}
+          {renderView()}
         </div>
       </div>
       {showCatalogModal && (

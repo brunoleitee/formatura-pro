@@ -1540,6 +1540,21 @@ def get_image_preview(
 def explorer_ls(path: str = "", catalog: str = ""):
     return mm.explorer_ls(path, catalog)
 
+
+@app.get("/api/explorer/tree")
+def explorer_tree(path: str = "", max_depth: int = 2):
+    return mm.explorer_tree(path, max_depth)
+
+
+@app.get("/api/explorer/photos")
+def explorer_photos(path: str = "", recursive: bool = False, limit: int = 0, offset: int = 0, include_raw: bool = True, include_video: bool = True):
+    try:
+        return mm.explorer_photos(path, recursive, limit, offset, include_raw, include_video)
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"ok": False, "error": str(e), "path": path, "total": 0, "photos": []}
+
 ManualIdentifyReq = rm.ManualIdentifyReq
 ManualSearchReq = rm.ManualSearchReq
 

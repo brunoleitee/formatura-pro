@@ -1,0 +1,194 @@
+.treeContainer {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.treeNode {
+  display: flex;
+  flex-direction: column;
+}
+
+.treeItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+  min-height: 28px;
+  border-radius: 4px;
+}
+
+.treeItem:hover {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.treeItemSelected {
+  background: rgba(37, 99, 235, 0.15);
+  border-left: 2px solid #3b82f6;
+}
+
+.itemLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.expandBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: #5a6577;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.expandBtn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #94a3b8;
+}
+
+.expandSpacer {
+  width: 18px;
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.statusGreen { background: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.4); }
+.statusYellow { background: #f59e0b; box-shadow: 0 0 6px rgba(245, 158, 11, 0.4); }
+.statusRed { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
+
+.folderIcon {
+  color: #eab308;
+  flex-shrink: 0;
+}
+
+.iconActive {
+  color: #facc15;
+}
+
+.itemMeta {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  min-width: 0;
+}
+
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cameraRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 8px;
+  color: #5a6577;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+.itemName {
+  font-size: 11px;
+  font-weight: 500;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rootBadge {
+  font-size: 8px;
+  background: #1e293b;
+  color: #94a3b8;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.itemRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.badges {
+  display: flex;
+  gap: 3px;
+}
+
+.badge {
+  font-size: 8px;
+  font-weight: 800;
+  padding: 1px 4px;
+  border-radius: 3px;
+  letter-spacing: 0.02em;
+}
+
+.badgeRaw { background: rgba(59, 130, 246, 0.1); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2); }
+.badgeJpg { background: rgba(59, 130, 246, 0.1); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2); }
+.badgeHeic { background: rgba(245, 158, 11, 0.1); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.2); }
+.badgeMov { background: rgba(239, 68, 68, 0.1); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.2); }
+
+.fileCount {
+  font-size: 10px;
+  font-weight: 700;
+  color: #5a6577;
+  min-width: 40px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.treeChildren {
+  margin-left: 14px;
+  padding-left: 4px;
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.loadingState, .errorState, .emptyState {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #5a6577;
+  font-size: 11px;
+  text-align: center;
+}
+
+.retryBtn {
+  margin-top: 4px;
+  background: #1a1c23;
+  border: 1px solid #2d2f36;
+  color: #e2e8f0;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.retryBtn:hover {
+  background: #2d2f36;
+}

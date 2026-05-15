@@ -1,5 +1,5 @@
 import { API_BASE, fetchJSON, post } from './core';
-import type { Photo, PhotoContextResponse, QualityAuditStatus, ScanStatus } from './types';
+import type { ExplorerPhotosResponse, FolderTreeResponse, Photo, PhotoContextResponse, QualityAuditStatus, ScanStatus } from './types';
 
 export const photoApi = {
   getPhotos: (path = '', catalog = '') =>
@@ -15,6 +15,21 @@ export const photoApi = {
   getPhotoContext: (path: string, catalog = '') =>
     fetchJSON<PhotoContextResponse>(
       `${API_BASE}/photos/context?path=${encodeURIComponent(path)}&catalog=${encodeURIComponent(catalog)}`
+    ),
+
+  // Folder Tree
+  exploreTree: (path: string, max_depth = 2) =>
+    fetchJSON<FolderTreeResponse>(`${API_BASE}/explorer/tree?path=${encodeURIComponent(path)}&max_depth=${max_depth}`),
+
+  // Folder Photos
+  explorePhotos: (path: string, options?: { recursive?: boolean; limit?: number; offset?: number; include_raw?: boolean; include_video?: boolean }) =>
+    fetchJSON<ExplorerPhotosResponse>(
+      `${API_BASE}/explorer/photos?path=${encodeURIComponent(path)}` +
+      `${options?.recursive ? '&recursive=true' : ''}` +
+      `${options?.limit ? `&limit=${options.limit}` : ''}` +
+      `${options?.offset ? `&offset=${options.offset}` : ''}` +
+      `${options?.include_raw === false ? '&include_raw=false' : ''}` +
+      `${options?.include_video === false ? '&include_video=false' : ''}`
     ),
 
   // Scan
