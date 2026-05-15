@@ -175,12 +175,10 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
   const [renameValue, setRenameValue] = useState('');
   const [error, setError] = useState('');
 
-  // Estados de Visualização e Paginação
+  // Estados de Visualização
   const [viewMode, setViewMode] = useState<'cards' | 'list'>(() => {
     return (localStorage.getItem('identifiedViewMode') as 'cards' | 'list') || 'list';
   });
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   useEffect(() => {
     localStorage.setItem('identifiedViewMode', viewMode);
@@ -243,16 +241,6 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
     !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.id.toLowerCase().includes(search.toLowerCase())
   ), [people, search]);
 
-  // Lógica de Paginação
-  const totalItems = filtered.length;
-  const totalPages = Math.ceil(totalItems / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedPeople = useMemo(() => filtered.slice(startIndex, startIndex + itemsPerPage), [filtered, startIndex, itemsPerPage]);
-
-  useEffect(() => { 
-    setCurrentPage(1); 
-  }, [search, itemsPerPage, viewMode]);
-
   return (
     <div className="view-container" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className={styles.viewHeader}>
@@ -261,7 +249,7 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
             <Users size={28} />
             <h1>Identificados</h1>
           </div>
-          <p>{totalItems} pessoas identificadas</p>
+          <p>{filtered.length} pessoas identificadas</p>
         </div>
 
         <div className={styles.headerActions}>
@@ -319,74 +307,23 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
             <p>Escaneie uma pasta para identificar as pessoas nas fotos.</p>
           </div>
         ) : (
-          <>
-            <div className={viewMode === 'list' ? styles.grid : styles.gridCards}>
-              {paginatedPeople.map((person) => (
-                <PeopleCard
-                  key={person.id || person.name}
-                  person={person}
-                  viewMode={viewMode}
-                  isRenaming={renamingId === person.id}
-                  renameValue={renameValue}
-                  onOpen={handleOpenPerson}
-                  onStartRename={handleStartRename}
-                  onCancelRename={handleCancelRename}
-                  onRenameValue={handleRenameValue}
-                  onConfirmRename={handleRenameSubmit}
-                  onDelete={handleDeletePerson}
-                />
-              ))}
-            </div>
-
-            {/* Pagination Footer */}
-            <div className={styles.paginationFooter}>
-              <div className={styles.paginationStats}>
-                Mostrando {startIndex + 1} a {Math.min(startIndex + itemsPerPage, totalItems)} de {totalItems} pessoas
-              </div>
-              
-              <div className={styles.paginationControls}>
-                <button 
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage(prev => prev - 1)}
-                  className={styles.carouselArrow}
-                >
-                  <ChevronDown size={13} style={{ transform: 'rotate(90deg)' }} />
-                </button>
-
-                <div className={styles.carouselDots}>
-                  {[...Array(totalPages)].map((_, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setCurrentPage(i + 1)}
-                      className={`${styles.carouselDot} ${currentPage === i + 1 ? styles.carouselDotActive : ''}`}
-                    />
-                  ))}
-                </div>
-
-                <button 
-                  disabled={currentPage === totalPages}
-                  onClick={() => setCurrentPage(prev => prev + 1)}
-                  className={styles.carouselArrow}
-                >
-                  <ChevronDown size={13} style={{ transform: 'rotate(-90deg)' }} />
-                </button>
-              </div>
-
-              <div className={styles.paginationLimit}>
-                <span>Itens por página:</span>
-                <select 
-                  value={itemsPerPage} 
-                  onChange={e => setItemsPerPage(Number(e.target.value))}
-                  className={styles.limitSelect}
-                >
-                  <option value={8}>8</option>
-                  <option value={10}>10</option>
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                </select>
-              </div>
-            </div>
-          </>
+          <div className={viewMode === 'list' ? styles.grid : styles.gridCards}>
+            {filtered.map((person) => (
+              <PeopleCard
+                key={person.id || person.name}
+                person={person}
+                viewMode={viewMode}
+                isRenaming={renamingId === person.id}
+                renameValue={renameValue}
+                onOpen={handleOpenPerson}
+                onStartRename={handleStartRename}
+                onCancelRename={handleCancelRename}
+                onRenameValue={handleRenameValue}
+                onConfirmRename={handleRenameSubmit}
+                onDelete={handleDeletePerson}
+              />
+            ))}
+          </div>
         )}
       </div>
     </div>

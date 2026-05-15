@@ -10,6 +10,9 @@ export interface Person {
   name: string;
   class_name: string;
   total_photos: number;
+  favorites_count?: number;
+  discarded_count?: number;
+  avg_quality?: number;
   cover_path: string | null;
   cover_box: [number, number, number, number] | null;
   avatar_path?: string | null;
