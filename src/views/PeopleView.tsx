@@ -49,35 +49,21 @@ const PersonAvatar = memo(function PersonAvatar({ person }: { person: Person }) 
 
 const Collage = memo(function Collage({ person, onPhotoClick }: { person: Person, onPhotoClick?: (path: string) => void }) {
   const photos = (person.sample_photos ?? []);
-  const [current, setCurrent] = useState(0);
   if (photos.length === 0) return null;
 
   return (
     <div className={styles.collage} onClick={e => e.stopPropagation()}>
-      <div className={styles.carouselTrack} style={{ transform: `translateX(-${current * 58}px)` }}>
-        {photos.map((sp, i) => (
-          <img
-            key={i}
-            className={styles.collageImg}
-            src={faceThumb(sp.path, sp.box, 150)}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            onClick={() => onPhotoClick?.(sp.path)}
-          />
-        ))}
-      </div>
-      {photos.length > 1 && (
-        <div className={styles.carouselDots}>
-          {photos.map((_, i) => (
-            <button
-              key={i}
-              className={`${styles.carouselDot} ${i === current ? styles.carouselDotActive : ''}`}
-              onClick={() => setCurrent(i)}
-            />
-          ))}
-        </div>
-      )}
+      {photos.map((sp, i) => (
+        <img
+          key={i}
+          className={styles.collageImg}
+          src={faceThumb(sp.path, sp.box, 150)}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onClick={() => onPhotoClick?.(sp.path)}
+        />
+      ))}
     </div>
   );
 });
@@ -362,36 +348,27 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
                 <button 
                   disabled={currentPage === 1}
                   onClick={() => setCurrentPage(prev => prev - 1)}
-                  className={styles.pageBtn}
+                  className={styles.carouselArrow}
                 >
-                  <ChevronDown size={14} style={{ transform: 'rotate(90deg)' }} />
+                  <ChevronDown size={13} style={{ transform: 'rotate(90deg)' }} />
                 </button>
-                
-                {[...Array(totalPages)].map((_, i) => {
-                  const p = i + 1;
-                  if (totalPages > 7) {
-                    if (p > 3 && p < totalPages - 2 && Math.abs(p - currentPage) > 1) {
-                      if (p === 4 || p === totalPages - 3) return <span key={p} className={styles.pageDots}>...</span>;
-                      return null;
-                    }
-                  }
-                  return (
+
+                <div className={styles.carouselDots}>
+                  {[...Array(totalPages)].map((_, i) => (
                     <button
-                      key={p}
-                      onClick={() => setCurrentPage(p)}
-                      className={`${styles.pageBtn} ${currentPage === p ? styles.pageBtnActive : ''}`}
-                    >
-                      {p}
-                    </button>
-                  );
-                })}
+                      key={i}
+                      onClick={() => setCurrentPage(i + 1)}
+                      className={`${styles.carouselDot} ${currentPage === i + 1 ? styles.carouselDotActive : ''}`}
+                    />
+                  ))}
+                </div>
 
                 <button 
                   disabled={currentPage === totalPages}
                   onClick={() => setCurrentPage(prev => prev + 1)}
-                  className={styles.pageBtn}
+                  className={styles.carouselArrow}
                 >
-                  <ChevronDown size={14} style={{ transform: 'rotate(-90deg)' }} />
+                  <ChevronDown size={13} style={{ transform: 'rotate(-90deg)' }} />
                 </button>
               </div>
 
