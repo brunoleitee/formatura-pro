@@ -94,6 +94,7 @@ def global_search(q: str = ""):
 
 
 def get_people(unknown: bool = False):
+    invalidate_people_cache()
     cached = _get_cached_people(unknown)
     if cached is not None:
         return cached
@@ -169,6 +170,7 @@ def get_people(unknown: bool = False):
 
 
 def get_people(unknown: bool = False):
+    invalidate_people_cache()
     cached = _get_cached_people(unknown)
     if cached is not None:
         return cached
@@ -188,7 +190,6 @@ def get_people(unknown: bool = False):
                        OR aluno_id LIKE 'Pessoa%'
                     GROUP BY aluno_id ORDER BY total DESC, aluno_id ASC
                 """)
-                rows = cur.fetchall()
                 results = [{
                     "id": row["aluno_id"],
                     "name": row["aluno_id"],
@@ -199,29 +200,37 @@ def get_people(unknown: bool = False):
                     "avatar_path": None,
                 } for row in rows]
             else:
+                # 1. Buscar estatísticas e metadados principais
                 cur.execute("""
-                    WITH counts AS (
-                        SELECT aluno_id, COUNT(*) AS total
-                        FROM ocorrencias
-                        WHERE lower(aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__')
-                          AND aluno_id NOT LIKE 'Pessoa%'
-                        GROUP BY aluno_id
-                    ),
-                    first_rows AS (
-                        SELECT aluno_id, MIN(rowid) AS first_rowid
-                        FROM ocorrencias
-                        GROUP BY aluno_id
+                    WITH stats AS (
+                        SELECT 
+                            o.aluno_id, 
+                            COUNT(*) AS total,
+                            AVG(COALESCE(o.foreground_score, 0)) AS avg_quality,
+                            COUNT(CASE WHEN pm.favorite = 1 THEN 1 END) AS favorites_count,
+                            COUNT(CASE WHEN dp.foto_path IS NOT NULL THEN 1 END) AS discarded_count
+                        FROM ocorrencias o
+                        LEFT JOIN photo_meta pm ON pm.foto_path = o.foto_path
+                        LEFT JOIN discarded_photos dp ON dp.foto_path = o.foto_path
+                        WHERE lower(o.aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__')
+                          AND o.aluno_id NOT LIKE 'Pessoa%'
+                        GROUP BY o.aluno_id
                     ),
                     covers AS (
-                        SELECT o.aluno_id, o.foto_path, o.x1, o.y1, o.x2, o.y2
-                        FROM ocorrencias o
-                        JOIN first_rows f
-                          ON f.aluno_id = o.aluno_id
-                         AND f.first_rowid = o.rowid
+                        SELECT aluno_id, foto_path, x1, y1, x2, y2
+                        FROM (
+                            SELECT 
+                                aluno_id, foto_path, x1, y1, x2, y2,
+                                ROW_NUMBER() OVER (PARTITION BY aluno_id ORDER BY (x1 IS NULL), rowid ASC) as rn
+                            FROM ocorrencias
+                        ) WHERE rn = 1
                     )
                     SELECT
-                        c.aluno_id,
-                        c.total,
+                        s.aluno_id,
+                        s.total,
+                        s.avg_quality,
+                        s.favorites_count,
+                        s.discarded_count,
                         cov.foto_path AS cover_path,
                         cov.x1,
                         cov.y1,
@@ -229,12 +238,38 @@ def get_people(unknown: bool = False):
                         cov.y2,
                         a.face_cache_path,
                         a.class_name
-                    FROM counts c
-                    LEFT JOIN covers cov ON cov.aluno_id = c.aluno_id
-                    LEFT JOIN alunos a ON a.aluno_id = c.aluno_id
-                    ORDER BY c.aluno_id ASC
+                    FROM stats s
+                    LEFT JOIN covers cov ON cov.aluno_id = s.aluno_id
+                    LEFT JOIN alunos a ON a.aluno_id = s.aluno_id
+                    ORDER BY s.aluno_id ASC
                 """)
                 rows = cur.fetchall()
+                
+                # 2. Buscar todas as sample photos de uma vez (as primeiras 4 de cada aluno)
+                # Usamos Window Function para eficiência
+                cur.execute("""
+                    WITH ranked AS (
+                        SELECT 
+                            aluno_id, foto_path, x1, y1, x2, y2,
+                            ROW_NUMBER() OVER (PARTITION BY aluno_id ORDER BY rowid ASC) as rn
+                        FROM ocorrencias
+                        WHERE x1 IS NOT NULL
+                          AND lower(aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__')
+                          AND aluno_id NOT LIKE 'Pessoa%'
+                    )
+                    SELECT * FROM ranked WHERE rn <= 4
+                """)
+                samples_data = cur.fetchall()
+                samples_by_aluno = {}
+                for s in samples_data:
+                    aid = s["aluno_id"]
+                    if aid not in samples_by_aluno:
+                        samples_by_aluno[aid] = []
+                    samples_by_aluno[aid].append({
+                        "path": s["foto_path"],
+                        "box": [s["x1"], s["y1"], s["x2"], s["y2"]],
+                    })
+
                 results = []
                 for row in rows:
                     aluno_id = row["aluno_id"]
@@ -252,29 +287,18 @@ def get_people(unknown: bool = False):
                     else:
                         avatar_path = cover_path if cover_path else None
 
-                    sample_photos = []
-                    try:
-                        cur.execute(
-                            "SELECT foto_path, x1, y1, x2, y2 FROM ocorrencias WHERE aluno_id = ? AND x1 IS NOT NULL ORDER BY rowid ASC LIMIT 4",
-                            (aluno_id,),
-                        )
-                        for s in cur.fetchall():
-                            sample_photos.append({
-                                "path": s["foto_path"],
-                                "box": [s["x1"], s["y1"], s["x2"], s["y2"]],
-                            })
-                    except Exception:
-                        pass
-
                     results.append({
                         "id": aluno_id,
                         "name": aluno_id,
                         "class_name": str(row["class_name"] or "").strip() or "Sem turma",
                         "total_photos": row["total"],
+                        "favorites_count": row["favorites_count"],
+                        "discarded_count": row["discarded_count"],
+                        "avg_quality": row["avg_quality"],
                         "cover_path": cover_path,
                         "cover_box": cover_box,
                         "avatar_path": avatar_path,
-                        "sample_photos": sample_photos,
+                        "sample_photos": samples_by_aluno.get(aluno_id, []),
                     })
 
         with _people_cache_lock:
