@@ -532,7 +532,6 @@ def bulk_manual_identify(req: BulkManualIdentifyReq):
                 old_id = str(old["aluno_id"]) if old else ""
                 print(f"[RESET UNKNOWN] rowid={rid} old_student={old_id}")
             placeholders = ",".join(["?"] * len(rowids))
-            cur.execute(f"DELETE FROM face_embeddings WHERE occurrence_rowid IN ({placeholders})", rowids)
             cur.execute(f"DELETE FROM unknown_face_clusters WHERE face_id IN ({placeholders})", rowids)
         conn.commit()
         logging.info(f"[bulk_manual_identify] catalog={req.catalog} name={new_name!r} rowids={len(rowids)} updated={updated}")
@@ -2999,44 +2998,43 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
                             cents.append((name, c / cn))
                     
                     if cents:
-                            best_n, best_s = None, 0.0
+                        best_n, best_s = None, 0.0
+                        
+                        rowids = [f.get("rowid") for f in cluster.get("faces", []) if f.get("rowid")]
+                        if rowids:
+                            ph = ",".join(["?"] * len(rowids))
+                            cur.execute(f"SELECT embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", rowids)
+                            cl_embs = []
+                            for er in cur.fetchall():
+                                e = np.frombuffer(er["embedding"], dtype="float32")
+                                en = np.linalg.norm(e)
+                                if en > 0:
+                                    cl_embs.append(e / en)
                             
-                            rowids = [f.get("rowid") for f in cluster.get("faces", []) if f.get("rowid")]
-                            if rowids:
-                                ph = ",".join(["?"] * len(rowids))
-                                cur.execute(f"SELECT embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", rowids)
-                                cl_embs = []
-                                for er in cur.fetchall():
-                                    e = np.frombuffer(er["embedding"], dtype="float32")
-                                    en = np.linalg.norm(e)
-                                    if en > 0:
-                                        cl_embs.append(e / en)
-                                
-                                if cl_embs:
-                                    cluster_centroid = np.mean(cl_embs, axis=0)
-                                    ccn = np.linalg.norm(cluster_centroid)
-                                    if ccn > 0:
-                                        cluster_centroid /= ccn
-                                    for name, ref in cents:
-                                        sim = float(np.dot(cluster_centroid, ref))
-                                        if sim > best_s:
-                                            best_s = sim
-                                            best_n = name
-                            
-                            if not best_n:
-                                # Heurística de caminho (fallback se não houver embeddings ou match facial)
-                                path_id = _extract_student_from_path(cluster.get("preview_image"))
-                                if path_id:
-                                    best_n = path_id
-                                    best_s = 0.99
-                                    print(f"[DETAIL PATH HEURISTIC] {cluster_id} match={path_id}")
+                            if cl_embs:
+                                cluster_centroid = np.mean(cl_embs, axis=0)
+                                ccn = np.linalg.norm(cluster_centroid)
+                                if ccn > 0:
+                                    cluster_centroid /= ccn
+                                for name, ref in cents:
+                                    sim = float(np.dot(cluster_centroid, ref))
+                                    if sim > best_s:
+                                        best_s = sim
+                                        best_n = name
+                        
+                        if not best_n:
+                            path_id = _extract_student_from_path(cluster.get("preview_image"))
+                            if path_id:
+                                best_n = path_id
+                                best_s = 0.99
+                                print(f"[DETAIL PATH HEURISTIC] {cluster_id} match={path_id}")
 
-                            if best_n:
-                                cluster["best_student_debug"] = best_n
-                                cluster["best_similarity_debug"] = round(best_s, 4)
-                                if best_s >= 0.45:
-                                    cluster["suggested_student"] = best_n
-                                    cluster["suggested_similarity"] = round(best_s, 4)
+                        if best_n:
+                            cluster["best_student_debug"] = best_n
+                            cluster["best_similarity_debug"] = round(best_s, 4)
+                            if best_s >= 0.45:
+                                cluster["suggested_student"] = best_n
+                                cluster["suggested_similarity"] = round(best_s, 4)
             except Exception as e:
                 print(f"[DETAIL STUDENT PATCH] erro: {e}")
 
