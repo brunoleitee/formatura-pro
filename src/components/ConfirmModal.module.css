@@ -4,47 +4,44 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
-  background: rgba(6, 8, 11, 0.46);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  padding: var(--space-5);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
   z-index: 2000;
 }
 
 .modal {
   position: relative;
   width: min(100%, 620px);
-  border-radius: 24px;
-  padding: 28px 28px 26px;
-  background:
-    linear-gradient(180deg, rgba(20, 24, 31, 0.98) 0%, rgba(13, 16, 22, 0.98) 100%);
-  border: 1px solid rgba(203, 211, 223, 0.14);
-  box-shadow:
-    0 30px 90px rgba(0, 0, 0, 0.62),
-    0 0 0 1px rgba(255, 255, 255, 0.02),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  color: #eef3f8;
+  border-radius: var(--radius-2xl);
+  padding: var(--space-6) var(--space-6) var(--space-5);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
 }
 
 .closeBtn {
   position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 34px;
-  height: 34px;
+  top: var(--space-4);
+  right: var(--space-4);
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
-  border: 1px solid rgba(196, 205, 217, 0.12);
-  background: rgba(12, 15, 20, 0.88);
-  color: rgba(225, 233, 241, 0.72);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-muted);
   cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .closeBtn:hover {
-  background: rgba(20, 25, 32, 0.98);
-  color: #ffffff;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
 }
 
 .iconWrap {
@@ -85,29 +82,30 @@
 .actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin-top: 28px;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
 }
 
 .cancelBtn,
 .confirmBtn {
-  min-height: 52px;
-  border-radius: 16px;
-  border: 1px solid rgba(203, 211, 223, 0.14);
+  min-height: 50px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-default);
   cursor: pointer;
-  font-size: 0.98rem;
+  font-size: var(--text-md);
   font-weight: 600;
-  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
 }
 
 .cancelBtn {
-  background: rgba(15, 18, 24, 0.92);
-  color: rgba(239, 244, 249, 0.9);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
 }
 
 .cancelBtn:hover {
   transform: translateY(-1px);
-  background: rgba(20, 24, 32, 0.98);
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .confirmBtn {
