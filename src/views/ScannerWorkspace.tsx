@@ -19,6 +19,31 @@ interface TimelineEntry {
   timestamp: number;
 }
 
+interface SelectedPhotoOcrData {
+  path: string;
+  status: 'loading' | 'done' | 'empty' | 'error';
+  fileName: string;
+  rawText?: string;
+  fields?: {
+    nome?: string | null;
+    curso?: string | null;
+    instituicao?: string | null;
+    data?: string | null;
+    tipo?: string | null;
+    numero?: string | null;
+  };
+  confidence?: number | null;
+  error?: string;
+}
+
+interface SelectedPhotoFaceItem {
+  id: string;
+  thumbnail: string;
+  suggestedName: string;
+  confidence: number;
+  badge: 'ocr' | 'ia' | 'similar' | 'sem_match';
+}
+
 // Sub-component for Collapsible Sections in Sidebar
 const CollapsibleSection = ({ title, icon: Icon, children, defaultOpen = true }: any) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -83,6 +108,14 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [processedPhotos, setProcessedPhotos] = useState<string[]>([]);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
 
+  // Selected photo details for bottom panels (OCR + Faces)
+  const [selectedPhotoOcr, setSelectedPhotoOcr] = useState<SelectedPhotoOcrData | null>(null);
+  const [selectedPhotoFaces, setSelectedPhotoFaces] = useState<{
+    status: 'waiting' | 'processing' | 'done';
+    faces: SelectedPhotoFaceItem[];
+  }>({ status: 'waiting', faces: [] });
+  const ocrCacheRef = useRef<Record<string, SelectedPhotoOcrData>>({});
+
   // Filter state
   const [showFilters, setShowFilters] = useState(false);
   const [filterSearch, setFilterSearch] = useState('');
@@ -116,10 +149,10 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const activePhotosRef = useRef<string[]>([]);
   
   const activePhotos = scanStatus?.is_scanning ? processedPhotos : folderPhotos.map(p => p.path);
+  const selectedPhotoPath = activePhotos[activePhotoIndex] ?? '';
   
-  useEffect(() => {
-    activePhotosRef.current = activePhotos;
-  }, [activePhotos]);
+  // Atualiza a ref sem causar re-render (seguro fazer durante render)
+  activePhotosRef.current = activePhotos;
 
   const handleCardClick = useCallback((path: string) => {
     const realIdx = activePhotosRef.current.indexOf(path);
@@ -179,6 +212,120 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [viewMode, activePhotoIndex, activePhotos.length]);
+
+  // Sync bottom panels (OCR + Faces) with the selected photo
+  // Guard ref para evitar loops: só atualiza se o path realmente mudou
+  const lastSelectedPathRef = useRef('');
+
+  useEffect(() => {
+    if (!selectedPhotoPath) {
+      if (lastSelectedPathRef.current !== '') {
+        lastSelectedPathRef.current = '';
+        setSelectedPhotoOcr(null);
+        setSelectedPhotoFaces(prev => {
+          if (prev.status === 'waiting' && prev.faces.length === 0) return prev;
+          return { status: 'waiting', faces: [] };
+        });
+      }
+      return;
+    }
+
+    // Se for o mesmo path que já processamos, não faz nada
+    if (lastSelectedPathRef.current === selectedPhotoPath) return;
+    lastSelectedPathRef.current = selectedPhotoPath;
+
+    const fileName = selectedPhotoPath.split(/[\\/]/).pop() || '';
+    const controller = new AbortController();
+
+    // ── HELPER: Buscar faces ──
+    const fetchFaces = () => {
+      api.getPhotoInfo(selectedPhotoPath).then(info => {
+        if (controller.signal.aborted) return;
+        if (!info || !info.faces?.length) {
+          setSelectedPhotoFaces(prev =>
+            prev.status === 'processing' ? { status: 'waiting', faces: [] } : prev
+          );
+          return;
+        }
+        setSelectedPhotoFaces({
+          status: 'done',
+          faces: info.faces.map((f, i) => ({
+            id: `face-${i}-${Date.now()}`,
+            thumbnail: api.faceThumbUrl(selectedPhotoPath, f.box[0], f.box[1], f.box[2], f.box[3], 80),
+            suggestedName: f.name || 'Desconhecido',
+            confidence: 85.0,
+            badge: f.name && f.name !== 'Desconhecido' ? 'similar' as const : 'sem_match' as const,
+          })),
+        });
+      }).catch(() => {
+        if (!controller.signal.aborted) {
+          setSelectedPhotoFaces(prev =>
+            prev.status === 'processing' ? { status: 'waiting', faces: [] } : prev
+          );
+        }
+      });
+    };
+
+    // ── VERIFICAR CACHE OCR ──
+    const cached = ocrCacheRef.current[selectedPhotoPath];
+    if (cached) {
+      setSelectedPhotoOcr(prev =>
+        prev?.path === selectedPhotoPath ? prev : cached
+      );
+      fetchFaces();
+      return;
+    }
+
+    // ── ESTADO INICIAL: LOADING ──
+    setSelectedPhotoOcr(prev => {
+      if (prev?.path === selectedPhotoPath && prev?.status === 'loading') return prev;
+      return { path: selectedPhotoPath, fileName, status: 'loading' };
+    });
+
+    setSelectedPhotoFaces({ status: 'processing', faces: [] });
+
+    // ── CHAMAR OCR ENDPOINT ──
+    fetch(`/api/scanner/preview-ocr?path=${encodeURIComponent(selectedPhotoPath)}`, {
+      signal: controller.signal,
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (controller.signal.aborted) return;
+
+        const normalized: SelectedPhotoOcrData = {
+          path: selectedPhotoPath,
+          fileName,
+          status: data.ok && data.raw_text ? 'done' : 'empty',
+          rawText: data.raw_text || '',
+          fields: data.fields || {},
+          confidence: data.confidence ?? null,
+        };
+
+        ocrCacheRef.current[selectedPhotoPath] = normalized;
+
+        setSelectedPhotoOcr(prev =>
+          prev?.path === selectedPhotoPath && prev?.status === normalized.status
+            ? prev
+            : normalized
+        );
+      })
+      .catch(err => {
+        if (err.name === 'AbortError') return;
+        setSelectedPhotoOcr({
+          path: selectedPhotoPath,
+          fileName,
+          status: 'error',
+          error: String(err),
+        });
+      });
+
+    // ── FACES ──
+    fetchFaces();
+
+    return () => {
+      controller.abort();
+    };
+  }, [selectedPhotoPath]);
 
   const handlePickOri = async () => {
     const res = await api.selectFolder().catch(() => null);
@@ -302,7 +449,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const progressPct = scanStatus ? Math.min(100, Math.max(0, (scanStatus.total_processadas / (scanStatus.total_files || 1)) * 100)) : 0;
   const etaStr = scanStatus?.eta_seconds ? new Date(scanStatus.eta_seconds * 1000).toISOString().substr(11, 8) : '00:00:00';
 
-  const faces = useMemo(() => scanStatus?.recent_faces || [], [scanStatus]);
   const navPreviewUrl = activePhotos[activePhotoIndex] ? api.thumbUrl(activePhotos[activePhotoIndex], 1200) : '';
   const navFileName = activePhotos[activePhotoIndex]?.split(/[\\/]/).pop() || '';
 
@@ -866,40 +1012,107 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
               <div className={styles.detailHeader}>
                 <span className={styles.detailTitle}><Search size={11} /> OCR / Texto detectado</span>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <span className={styles.ocrBadge}><Eye size={8} /> Ativo</span>
-                  <button className={styles.destBtn} style={{ padding: '2px 8px', fontSize: 8, height: 20 }}>Ver tudo</button>
+                  {selectedPhotoOcr ? (
+                    <span className={styles.ocrBadge}>
+                      {selectedPhotoOcr.status === 'loading' ? (
+                        <LoaderCircle size={8} className={styles.spin} />
+                      ) : (
+                        <Eye size={8} />
+                      )}
+                      {selectedPhotoOcr.status === 'loading' ? 'LENDO OCR...' : 
+                       selectedPhotoOcr.status === 'done' ? 'OCR DETECTADO' :
+                       selectedPhotoOcr.status === 'empty' ? 'SEM TEXTO' :
+                       selectedPhotoOcr.status === 'error' ? 'ERRO OCR' : 'AGUARDANDO'}
+                    </span>
+                  ) : null}
                 </div>
               </div>
-              {isScanning ? (
+              {selectedPhotoOcr ? (
                 <div className={styles.ocrGrid}>
-                  <span className={styles.ocrLabel}>Nome:</span> <span className={styles.ocrValueFound}>LARISSA ALMEIDA SOUZA <span className={styles.ocrConfidence}>98%</span></span>
-                  <span className={styles.ocrLabel}>Curso:</span> <span className={styles.ocrValueFound}>ENGENHARIA CIVIL <span className={styles.ocrConfidence}>96%</span></span>
-                  <span className={styles.ocrLabel}>Instituição:</span> <span className={styles.ocrValue}>UTFPR <span className={styles.ocrConfidence}>89%</span></span>
-                  <span className={styles.ocrLabel}>Data:</span> <span className={styles.ocrValue}>12/12/2024 <span className={styles.ocrConfidence}>94%</span></span>
-                  <span className={styles.ocrLabel}>Tipo:</span> <span className={styles.ocrValue}>COLAÇÃO DE GRAU <span className={styles.ocrConfidence}>97%</span></span>
+                  <span className={styles.ocrLabel}>Arquivo:</span>
+                  <span className={styles.ocrValue} title={selectedPhotoOcr.fileName}>
+                    {selectedPhotoOcr.fileName.length > 30
+                      ? selectedPhotoOcr.fileName.slice(0, 27) + '...'
+                      : selectedPhotoOcr.fileName}
+                  </span>
+                  <span className={styles.ocrLabel}>Nome:</span>
+                  <span className={selectedPhotoOcr.fields?.nome ? styles.ocrValueFound : styles.ocrValue}>
+                    {selectedPhotoOcr.status === 'loading' ? 'Lendo...' :
+                     selectedPhotoOcr.fields?.nome || '---'}
+                    {selectedPhotoOcr.confidence ? <span className={styles.ocrConfidence}>{Math.round(selectedPhotoOcr.confidence * 100)}%</span> : null}
+                  </span>
+                  <span className={styles.ocrLabel}>Curso:</span>
+                  <span className={selectedPhotoOcr.fields?.curso ? styles.ocrValueFound : styles.ocrValue}>
+                    {selectedPhotoOcr.status === 'loading' ? 'Lendo...' :
+                     selectedPhotoOcr.fields?.curso || '---'}
+                  </span>
+                  <span className={styles.ocrLabel}>Instituição:</span>
+                  <span className={styles.ocrValue}>
+                    {selectedPhotoOcr.status === 'loading' ? 'Lendo...' :
+                     selectedPhotoOcr.fields?.instituicao || '---'}
+                  </span>
+                  <span className={styles.ocrLabel}>Data:</span>
+                  <span className={styles.ocrValue}>
+                    {selectedPhotoOcr.status === 'loading' ? 'Lendo...' :
+                     selectedPhotoOcr.fields?.data || '---'}
+                  </span>
+                  <span className={styles.ocrLabel}>Tipo:</span>
+                  <span className={styles.ocrValue}>
+                    {selectedPhotoOcr.status === 'loading' ? 'Lendo...' :
+                     selectedPhotoOcr.fields?.tipo || '---'}
+                  </span>
+                  <span className={styles.ocrLabel}>Nº OCR:</span>
+                  <span className={styles.ocrValue}>
+                    {selectedPhotoOcr.status === 'loading' ? 'Lendo...' :
+                     selectedPhotoOcr.fields?.numero || '---'}
+                  </span>
                 </div>
               ) : (
-                <div className={styles.ocrEmpty}>Aguardando dados de OCR...</div>
+                <div className={styles.ocrEmpty}>
+                  {activePhotos.length > 0
+                    ? 'Aguardando dados de OCR...'
+                    : 'Selecione uma foto para ver dados de OCR'}
+                </div>
               )}
             </div>
             <div className={styles.detailSection}>
               <div className={styles.detailHeader}>
                 <span className={styles.detailTitle}><ScanFace size={11} /> Rostos detectados</span>
-                <span className={styles.detailCount}>{faces.length} rostos</span>
+                <span className={styles.detailCount}>
+                  {selectedPhotoFaces.status === 'waiting' ? '-' : `${selectedPhotoFaces.faces.length} rostos`}
+                </span>
               </div>
-              <div className={styles.filmstrip}>
-                {faces.map((face, i) => (
-                  <div key={i} className={styles.faceCard}>
-                    <div className={styles.faceImageWrap}>
-                      <img src={`/api/thumb?path=${encodeURIComponent(face.path)}&x1=${face.box[0]}&y1=${face.box[1]}&x2=${face.box[2]}&y2=${face.box[3]}&size=100`} className={styles.faceImage} alt="Face" />
+              {selectedPhotoFaces.status === 'waiting' || selectedPhotoFaces.faces.length === 0 ? (
+                <div className={styles.ocrEmpty}>
+                  {activePhotos.length > 0
+                    ? 'Aguardando detecção facial...'
+                    : 'Selecione uma foto para ver rostos detectados'}
+                </div>
+              ) : (
+                <div className={styles.filmstrip}>
+                  {selectedPhotoFaces.faces.map((face) => (
+                    <div key={face.id} className={styles.faceCard}>
+                      <div className={styles.faceImageWrap}>
+                        <img src={face.thumbnail} className={styles.faceImage} alt="Face" />
+                      </div>
+                      <div className={styles.faceMeta}>
+                        <span className={styles.faceName}>{face.suggestedName}</span>
+                        <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <span className={styles.faceConfidence}>{face.confidence.toFixed(1)}%</span>
+                          <span className={
+                            face.badge === 'ocr' ? `${styles.badge} ${styles.badgeBlue}` :
+                            face.badge === 'ia' ? `${styles.badge} ${styles.badgeAmber}` :
+                            face.badge === 'similar' ? `${styles.badge} ${styles.badgeGreen}` :
+                            `${styles.badge} ${styles.badgePurple}`
+                          } style={{ fontSize: 6, padding: '1px 4px', borderRadius: 3 }}>
+                            {face.badge === 'ocr' ? 'OCR' : face.badge === 'ia' ? 'IA' : face.badge === 'similar' ? 'Similar' : 'Sem match'}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div className={styles.faceMeta}>
-                      <span className={styles.faceName}>{face.name || 'Identificando...'}</span>
-                      <span className={styles.faceConfidence}>98.2%</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

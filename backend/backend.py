@@ -1961,6 +1961,90 @@ def get_quality_audit_status():
             "status_text": str(e),
         }
 
+@app.get("/api/scanner/preview-ocr")
+def scanner_preview_ocr(path: str = ""):
+    """
+    Preview OCR de uma única foto. Não salva no banco.
+    """
+    import os
+    import urllib.parse
+    
+    decoded = urllib.parse.unquote(path).strip()
+    if not decoded or not os.path.isfile(decoded):
+        return {"ok": False, "error": "Arquivo não encontrado"}
+    
+    # Verificar se o arquivo é uma imagem válida
+    ext = os.path.splitext(decoded)[1].lower()
+    if ext not in (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif"):
+        return {"ok": False, "error": "Formato de imagem não suportado"}
+    
+    try:
+        from services.ocr_pipeline import process_ocr
+        
+        result = process_ocr(decoded)
+        
+        if not result:
+            return {
+                "ok": True,
+                "path": decoded,
+                "raw_text": "",
+                "fields": {
+                    "nome": None,
+                    "curso": None,
+                    "instituicao": None,
+                    "data": None,
+                    "tipo": None,
+                    "numero": None,
+                },
+                "confidence": 0.0,
+            }
+        
+        raw_text = result.get("ocr_text", "") or ""
+        confidence = result.get("ocr_confidence", 0.0) or 0.0
+        
+        # Extrair campos estruturados do texto bruto
+        lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
+        fields = {
+            "nome": lines[0] if len(lines) > 0 else None,
+            "curso": lines[1] if len(lines) > 1 else None,
+            "instituicao": lines[2] if len(lines) > 2 else None,
+            "data": None,
+            "tipo": None,
+            "numero": None,
+        }
+        
+        # Tentar extrair data (dd/mm/aaaa, dd.mm.aaaa, etc.)
+        import re
+        for line in lines:
+            date_match = re.search(r"\b(\d{2})[\s/.-](\d{2})[\s/.-](\d{4})\b", line)
+            if date_match and not fields["data"]:
+                fields["data"] = f"{date_match.group(1)}/{date_match.group(2)}/{date_match.group(3)}"
+        
+        # Tentar extrair número OCR (sequência de 3-6 dígitos)
+        for line in lines:
+            num_match = re.search(r"\b(\d{3,6})\b", line)
+            if num_match and not fields["numero"]:
+                fields["numero"] = num_match.group(1)
+        
+        # Tentar identificar tipo (COLAÇÃO, FORMATURA, etc.)
+        tipo_keywords = ["COLAÇÃO", "COLACAO", "FORMATURA", "GRADUAÇÃO", "GRADUACAO", "DIPLOMA", "CERTIFICADO", "CONCLUSÃO", "CONCLUSAO"]
+        for line in lines:
+            upper = line.upper()
+            for kw in tipo_keywords:
+                if kw in upper and not fields["tipo"]:
+                    fields["tipo"] = line
+                    break
+        
+        return {
+            "ok": True,
+            "path": decoded,
+            "raw_text": raw_text,
+            "fields": fields,
+            "confidence": round(float(confidence), 4),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 @app.post("/api/app/exit")
 def exit_app():
     return scm.exit_app()

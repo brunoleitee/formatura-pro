@@ -55,6 +55,27 @@ export const photoApi = {
   faceThumbUrl: (path: string, x1: number, y1: number, x2: number, y2: number, size = 120, expand = 0, q = 80) =>
     `${API_BASE}/thumb?path=${encodeURIComponent(path)}&x1=${x1}&y1=${y1}&x2=${x2}&y2=${y2}&size=${size}${expand ? `&expand=${expand}` : ''}&q=${q}`,
 
+  // AI Photo Details (OCR + Face data for a single photo)
+  getAiPhotoDetails: (foto_path: string, catalog = '') =>
+    fetchJSON<{
+      processed: boolean;
+      face_detected: boolean;
+      possible_student: string | null;
+      face_confidence: number | null;
+      ocr_text: string;
+      ocr_confidence: number;
+      ocr_confidence_pct: number;
+      ocr_type: string;
+      ocr_label: string;
+      suggestions: Array<{ student: string; confidence: number }>;
+    }>(`${API_BASE}/ai/photo-details?foto_path=${encodeURIComponent(foto_path)}${catalog ? `&catalog=${encodeURIComponent(catalog)}` : ''}`),
+
+  // Photo info (faces + discard status for a single photo)
+  getPhotoInfo: (path: string) =>
+    fetchJSON<{ faces: Array<{ box: number[]; name: string }>; discarded: boolean }>(
+      `${API_BASE}/photo-info?path=${encodeURIComponent(path)}`
+    ),
+
   // Face identification
   bulkManualIdentify: (catalog: string, aluno_id: string, rowids: number[]) =>
     post(`${API_BASE}/faces/bulk_identify`, { catalog, aluno_id, rowids }),

@@ -866,7 +866,7 @@
 
 /* ── BOTTOM PANELS (OCR + Filmstrip) ── */
 .bottomPanels {
-  height: 170px;
+  height: 190px;
   border-top: 1px solid #1a1c23;
   display: flex;
   background: #0b0c10;
@@ -937,11 +937,13 @@
 .ocrValue {
   color: #94a3b8;
   font-size: 9px;
+  transition: color 0.3s ease;
 }
 
 .ocrValueFound {
   color: #34d399;
   font-weight: 600;
+  transition: color 0.3s ease;
 }
 
 .ocrConfidence {
