@@ -1,19 +1,19 @@
 .grid {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 10px 4px;
-  overflow-y: auto;
+  gap: 12px;
+  padding: 10px 20px 20px 4px;
   flex: 1;
+  align-items: stretch;
 }
 
 .gridCards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 20px;
-  padding: 10px 4px;
-  overflow-y: auto;
+  padding: 10px 20px 20px 4px;
   flex: 1;
+  align-items: start;
 }
 
 .card {
@@ -43,6 +43,22 @@
   overflow: visible;
   text-align: center;
   align-items: center;
+}
+
+.cardCompact .avatarContainer {
+  width: 80px;
+  height: 80px;
+  margin-bottom: 8px;
+}
+
+.cardCompact .name {
+  font-size: 1.3rem;
+  margin-bottom: 4px;
+}
+
+.cardCompact .badgesRow {
+  justify-content: center;
+  margin-bottom: 12px;
 }
 
 .cardCompact:hover, .card:hover {
@@ -120,10 +136,10 @@
 }
 
 .name {
-  font-size: 1.2rem;
+  font-size: 1.15rem;
   font-weight: 700;
   color: #ffffff;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -139,18 +155,18 @@
 .idBadge {
   background: #252a31;
   color: #94a3b8;
-  padding: 2px 10px;
-  border-radius: 6px;
-  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 0.65rem;
   font-weight: 600;
 }
 
 .classBadge {
   background: #2d334a;
   color: #818cf8;
-  padding: 2px 10px;
-  border-radius: 6px;
-  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 0.65rem;
   font-weight: 600;
 }
 
@@ -452,4 +468,66 @@
 .contentWrapper {
   display: flex;
   flex-direction: column;
+}
+.segmentedControl {
+  display: flex;
+  background: #111418;
+  border-radius: 8px;
+  padding: 2px;
+  border: 1px solid #2d323a;
+  gap: 1px;
+}
+
+.viewBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.viewBtn:hover:not(.viewBtnActive) {
+  background: #1a1d23;
+  color: #94a3b8;
+}
+
+.viewBtnActive {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.viewBtn svg {
+  opacity: 0.7;
+}
+
+.viewBtnActive svg {
+  opacity: 1;
+}
+
+.sortSelect {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 8px;
+  outline: none;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 0.2s ease;
+}
+
+.sortSelect:hover {
+  color: #f8fafc;
+}
+
+.sortSelect option {
+  background: #1a1d23;
+  color: #f8fafc;
 }

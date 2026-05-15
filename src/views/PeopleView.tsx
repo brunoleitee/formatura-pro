@@ -121,14 +121,14 @@ const PeopleCard = memo(function PeopleCard({
               <span className={styles.idBadge}>ID {person.id.substring(0, 6)}</span>
               <span className={styles.classBadge}>{person.class_name || 'Sem turma'}</span>
             </div>
-            <div className={styles.statsRow} style={{ justifyContent: isList ? 'flex-start' : 'center', flexWrap: isList ? 'nowrap' : 'wrap' }}>
+            <div className={styles.statsRow} style={{ justifyContent: isList ? 'flex-start' : 'center', flexWrap: isList ? 'nowrap' : 'wrap', gap: isList ? '16px' : '12px' }}>
               <div className={styles.statItem}>
                 <Users size={14} />
                 <span className={`${styles.statValue} ${styles.photos}`}>{person.total_photos} fotos</span>
               </div>
               <div className={styles.statItem}>
                 <Star size={14} />
-                <span className={`${styles.statValue} ${styles.favorites}`}>{person.favorites_count || 0} favoritas</span>
+                <span className={`${styles.statValue} ${styles.favorites}`}>{person.favorites_count || 0} fav</span>
               </div>
               {isList && (
                 <>
@@ -175,7 +175,8 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
   const [renameValue, setRenameValue] = useState('');
   const [error, setError] = useState('');
 
-  // Estados de Visualização
+  const [sortBy, setSortBy] = useState<'name' | 'id' | 'photos' | 'quality'>('name');
+  const [filterFavorites, setFilterFavorites] = useState(false);
   const [viewMode, setViewMode] = useState<'cards' | 'list'>(() => {
     return (localStorage.getItem('identifiedViewMode') as 'cards' | 'list') || 'list';
   });
@@ -237,9 +238,27 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
     } catch { setError('Erro ao excluir.'); }
   }, [load, onRequestConfirm]);
 
-  const filtered = useMemo(() => people.filter(p =>
-    !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.id.toLowerCase().includes(search.toLowerCase())
-  ), [people, search]);
+  const filtered = useMemo(() => {
+    let result = people.filter(p =>
+      !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.id.toLowerCase().includes(search.toLowerCase())
+    );
+
+    if (filterFavorites) {
+      result = result.filter(p => (p.favorites_count || 0) > 0);
+    }
+
+    return result.sort((a, b) => {
+      if (sortBy === 'name') return a.name.localeCompare(b.name);
+      if (sortBy === 'id') {
+        const idA = parseInt(a.id) || 0;
+        const idB = parseInt(b.id) || 0;
+        return idA - idB;
+      }
+      if (sortBy === 'photos') return (b.total_photos || 0) - (a.total_photos || 0);
+      if (sortBy === 'quality') return (b.avg_quality || 0) - (a.avg_quality || 0);
+      return 0;
+    });
+  }, [people, search, filterFavorites, sortBy]);
 
   return (
     <div className="view-container" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -247,42 +266,61 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
         <div className={styles.headerTitleSection}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <Users size={28} />
-            <h1>Identificados</h1>
+            <h1>Formandos</h1>
           </div>
-          <p>{filtered.length} pessoas identificadas</p>
+          <p>{filtered.length} formandos identificados</p>
         </div>
 
         <div className={styles.headerActions}>
-          <div className={styles.searchContainer}>
-            <Search size={18} className={styles.searchIcon} />
-            <input
-              className={styles.searchInline}
-              placeholder="Buscar por nome ou ID..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className={styles.searchContainer} style={{ width: '180px' }}>
+              <Search size={16} className={styles.searchIcon} />
+              <input
+                className={styles.searchInline}
+                placeholder="Buscar..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#111418', borderRadius: '8px', padding: '2px', border: '1px solid #2d323a' }}>
+              <select 
+                className={styles.sortSelect}
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value as any)}
+                title="Ordenar por"
+              >
+                <option value="name">Nome (A-Z)</option>
+                <option value="id">Nº Identificador</option>
+                <option value="photos">Total de Fotos</option>
+                <option value="quality">Qualidade IA</option>
+              </select>
+            </div>
+
+            <button 
+              className="icon-btn small"
+              style={{ background: filterFavorites ? '#2563eb' : 'transparent', color: filterFavorites ? '#fff' : '#64748b', border: '1px solid #2d323a' }}
+              onClick={() => setFilterFavorites(!filterFavorites)}
+              title={filterFavorites ? "Mostrando apenas favoritas" : "Filtrar favoritas"}
+            >
+              <Star size={14} fill={filterFavorites ? "currentColor" : "none"} />
+            </button>
           </div>
 
-          <button className={styles.filterBtn}>
-            <Filter size={16} /> Filtros
-          </button>
-
-          <div className="segmented-control" style={{ display: 'flex', background: '#111418', borderRadius: '8px', padding: '2px', border: '1px solid #2d323a' }}>
+          <div className={styles.segmentedControl}>
             <button 
-              className="icon-btn small" 
-              style={{ background: viewMode === 'cards' ? '#2563eb' : 'transparent', color: viewMode === 'cards' ? '#fff' : '#64748b' }}
+              className={`${styles.viewBtn} ${viewMode === 'cards' ? styles.viewBtnActive : ''}`}
               onClick={() => setViewMode('cards')}
-              title="Visualização em cards"
+              title="Visualização em mosaico"
             >
-              <LayoutGrid size={16} />
+              <LayoutGrid size={18} />
             </button>
             <button 
-              className="icon-btn small" 
-              style={{ background: viewMode === 'list' ? '#2563eb' : 'transparent', color: viewMode === 'list' ? '#fff' : '#64748b' }}
+              className={`${styles.viewBtn} ${viewMode === 'list' ? styles.viewBtnActive : ''}`}
               onClick={() => setViewMode('list')}
               title="Visualização em lista"
             >
-              <List size={16} />
+              <List size={18} />
             </button>
           </div>
 
@@ -294,7 +332,7 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
 
       {error && <p className="error-msg">{error}</p>}
 
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
         {loading && people.length === 0 ? (
           <div className="empty-state">
             <RefreshCw size={32} className="spin" />

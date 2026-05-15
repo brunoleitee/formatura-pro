@@ -67,7 +67,7 @@ export function Sidebar({
   const navItems: { view: ViewName; icon: React.ReactNode; label: string }[] = [
     { view: 'dashboard', icon: <LayoutDashboard size={17} />, label: 'Painel' },
     { view: 'photos',  icon: <ImageIcon size={17} />, label: 'Catálogo' },
-    { view: 'people',  icon: <Users size={17} />,     label: 'Identificados' },
+    { view: 'people',  icon: <Users size={17} />,     label: 'Formandos' },
     { view: 'review',  icon: <UserCheck size={17} />, label: 'Revisão IA' },
   ];
 

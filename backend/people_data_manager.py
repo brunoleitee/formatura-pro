@@ -1,4 +1,4 @@
-import os
+﻿import os
 import time
 import threading
 
@@ -104,82 +104,6 @@ def get_people(unknown: bool = False):
         cat = current_catalog()
         if not cat:
             return []
-        with get_db() as conn:
-            cur = conn.cursor()
-            if unknown:
-                cur.execute("""
-                    SELECT aluno_id, COUNT(*) as total FROM ocorrencias
-                    WHERE lower(aluno_id) IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'não_mapeado', '__unknown__')
-                       OR aluno_id LIKE 'Pessoa%'
-                    GROUP BY aluno_id ORDER BY total DESC, aluno_id ASC
-                """)
-            else:
-                cur.execute("""
-                    SELECT aluno_id, COUNT(*) as total FROM ocorrencias
-                    WHERE lower(aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'não_mapeado', '__unknown__')
-                      AND aluno_id NOT LIKE 'Pessoa%'
-                    GROUP BY aluno_id ORDER BY aluno_id ASC
-                """)
-
-            rows = cur.fetchall()
-            results = []
-
-            for row in rows:
-                aluno_id = row["aluno_id"]
-                cover_path = None
-                cover_box = None
-                class_name = "Sem turma"
-                try:
-                    cur.execute("SELECT foto_path, x1, y1, x2, y2 FROM ocorrencias WHERE aluno_id = ? LIMIT 1", (aluno_id,))
-                    cover_row = cur.fetchone()
-                    if cover_row:
-                        cover_path = cover_row["foto_path"]
-                        if cover_row["x1"] is not None:
-                            cover_box = [cover_row["x1"], cover_row["y1"], cover_row["x2"], cover_row["y2"]]
-                    cur.execute("SELECT face_cache_path, class_name FROM alunos WHERE aluno_id = ?", (aluno_id,))
-                    ref_row = cur.fetchone()
-                    if ref_row and ref_row["face_cache_path"]:
-                        ref_path = ref_row["face_cache_path"]
-                        if os.path.exists(ref_path):
-                            cover_path = ref_path
-                            cover_box = None
-                    if ref_row and ref_row["class_name"]:
-                        class_name = str(ref_row["class_name"]).strip() or "Sem turma"
-                except:
-                    pass
-
-                results.append({
-                    "id": aluno_id,
-                    "name": aluno_id,
-                    "class_name": class_name,
-                    "total_photos": row["total"],
-                    "cover_path": cover_path,
-                    "cover_box": cover_box,
-                })
-
-        with _people_cache_lock:
-            key = f"{cat}:{unknown}"
-            _people_cache[key] = (results, time.time())
-
-        return results
-    except Exception as e:
-        import traceback
-        print(f"ERRO em get_people: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-def get_people(unknown: bool = False):
-    invalidate_people_cache()
-    cached = _get_cached_people(unknown)
-    if cached is not None:
-        return cached
-
-    try:
-        get_db = _get("get_db")
-        cat = current_catalog()
-        if not cat:
-            return []
 
         with get_db() as conn:
             cur = conn.cursor()
@@ -190,6 +114,7 @@ def get_people(unknown: bool = False):
                        OR aluno_id LIKE 'Pessoa%'
                     GROUP BY aluno_id ORDER BY total DESC, aluno_id ASC
                 """)
+                rows = cur.fetchall()
                 results = [{
                     "id": row["aluno_id"],
                     "name": row["aluno_id"],
@@ -200,7 +125,7 @@ def get_people(unknown: bool = False):
                     "avatar_path": None,
                 } for row in rows]
             else:
-                # 1. Buscar estatísticas e metadados principais
+                # 1. Buscar estatÃ­sticas e metadados principais
                 cur.execute("""
                     WITH stats AS (
                         SELECT 
@@ -246,7 +171,7 @@ def get_people(unknown: bool = False):
                 rows = cur.fetchall()
                 
                 # 2. Buscar todas as sample photos de uma vez (as primeiras 4 de cada aluno)
-                # Usamos Window Function para eficiência
+                # Usamos Window Function para eficiÃªncia
                 cur.execute("""
                     WITH ranked AS (
                         SELECT 
