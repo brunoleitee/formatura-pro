@@ -1,5 +1,5 @@
 import { memo, useState, useEffect, useCallback, useMemo } from 'react';
-import { Users, RefreshCw, Edit2, Trash2, ChevronRight, Check, X } from 'lucide-react';
+import { Users, RefreshCw, Edit2, Trash2, Check, X, Star, Trash, Award, Search, ExternalLink, Filter, LayoutGrid, List, Download, ChevronDown } from 'lucide-react';
 import { api, type Person } from '../services/api';
 import { useApp } from '../context/AppContext';
 import { getAvatarThumbUrl } from '../utils/imageUrls';
@@ -12,51 +12,79 @@ interface PeopleViewProps {
 
 const PersonAvatar = memo(function PersonAvatar({ person }: { person: Person }) {
   const [failed, setFailed] = useState(false);
-  const avatarPath = person.avatar_path || person.cover_path || '';
+  const quality = Math.round((person.avg_quality || 0) * 100);
+  
+  const avatarUrl = useMemo(() => {
+    // 1. SEMPRE preferir crop de face gerado na hora se tivermos o box (Garante close-up do rosto)
+    if (person.cover_path && person.cover_box) {
+      return faceThumb(person.cover_path, person.cover_box, 200);
+    }
+    // 2. Fallback para cache de face (avatar_path)
+    if (person.avatar_path) return getAvatarThumbUrl(person.avatar_path);
+    // 3. Fallback final para miniatura da foto inteira
+    return getAvatarThumbUrl(person.cover_path || '');
+  }, [person.avatar_path, person.cover_path, person.cover_box]);
 
-  useEffect(() => { setFailed(false); }, [avatarPath]);
-
-  if (!avatarPath || failed) {
-    return <div className={styles.avatarPlaceholder}>{person.name.charAt(0).toUpperCase()}</div>;
-  }
+  useEffect(() => { setFailed(false); }, [avatarUrl]);
 
   return (
-    <img
-      src={getAvatarThumbUrl(avatarPath) ?? ''}
-      alt={person.name}
-      loading="eager"
-      decoding="async"
-      onError={() => setFailed(true)}
-    />
+    <div className={styles.avatarContainer}>
+      <div className={styles.avatarWrap}>
+        {!avatarUrl || failed ? (
+          <div className={styles.avatarPlaceholder}>{person.name.charAt(0).toUpperCase()}</div>
+        ) : (
+          <img
+            src={avatarUrl}
+            alt={person.name}
+            loading="eager"
+            decoding="async"
+            onError={() => setFailed(true)}
+          />
+        )}
+      </div>
+      {quality > 0 && <div className={styles.qualityBadge}>{quality}</div>}
+    </div>
   );
 });
 
-const Collage = memo(function Collage({ person }: { person: Person }) {
-  const photos = (person.sample_photos ?? []).slice(0, 3);
+const Collage = memo(function Collage({ person, onPhotoClick }: { person: Person, onPhotoClick?: (path: string) => void }) {
+  const photos = (person.sample_photos ?? []);
+  const [current, setCurrent] = useState(0);
   if (photos.length === 0) return null;
 
   return (
-    <div className={styles.collage}>
-      {photos.map((sp, i) => (
-        sp.path && sp.box ? (
+    <div className={styles.collage} onClick={e => e.stopPropagation()}>
+      <div className={styles.carouselTrack} style={{ transform: `translateX(-${current * 58}px)` }}>
+        {photos.map((sp, i) => (
           <img
             key={i}
             className={styles.collageImg}
-            src={faceThumb(sp.path, sp.box, 80)}
+            src={faceThumb(sp.path, sp.box, 150)}
             alt=""
             loading="lazy"
             decoding="async"
+            onClick={() => onPhotoClick?.(sp.path)}
           />
-        ) : (
-          <div key={i} className={styles.collagePlaceholder} />
-        )
-      ))}
+        ))}
+      </div>
+      {photos.length > 1 && (
+        <div className={styles.carouselDots}>
+          {photos.map((_, i) => (
+            <button
+              key={i}
+              className={`${styles.carouselDot} ${i === current ? styles.carouselDotActive : ''}`}
+              onClick={() => setCurrent(i)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 });
 
 const PeopleCard = memo(function PeopleCard({
   person,
+  viewMode,
   isRenaming,
   renameValue,
   onOpen,
@@ -67,6 +95,7 @@ const PeopleCard = memo(function PeopleCard({
   onDelete,
 }: {
   person: Person;
+  viewMode: 'cards' | 'list';
   isRenaming: boolean;
   renameValue: string;
   onOpen: (id: string) => void;
@@ -76,17 +105,18 @@ const PeopleCard = memo(function PeopleCard({
   onConfirmRename: (id: string) => void;
   onDelete: (person: Person) => void;
 }) {
-  return (
-    <div className={styles.card}>
-      <div className={styles.avatarWrap} onClick={() => onOpen(person.id)}>
-        <PersonAvatar person={person} />
-      </div>
+  const quality = Math.round((person.avg_quality || 0) * 100);
+  const isList = viewMode === 'list';
 
-      <div className={styles.body} onClick={() => onOpen(person.id)}>
+  return (
+    <div className={isList ? styles.card : styles.cardCompact} onClick={() => !isRenaming && onOpen(person.id)}>
+      <PersonAvatar person={person} />
+
+      <div className={styles.infoSection}>
         {isRenaming ? (
-          <>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
             <input
-              className={styles.renameInput}
+              className={styles.searchInline}
               autoFocus
               value={renameValue}
               onChange={e => onRenameValue(e.target.value)}
@@ -95,34 +125,56 @@ const PeopleCard = memo(function PeopleCard({
                 if (e.key === 'Escape') onCancelRename();
               }}
             />
-            <div className={styles.renameActions}>
-              <button className="icon-btn success" onClick={() => onConfirmRename(person.id)}><Check size={13} /></button>
-              <button className="icon-btn" onClick={onCancelRename}><X size={13} /></button>
-            </div>
-          </>
+            <button className="icon-btn success" onClick={() => onConfirmRename(person.id)}><Check size={14} /></button>
+            <button className="icon-btn" onClick={onCancelRename}><X size={14} /></button>
+          </div>
         ) : (
           <>
-            <span className={styles.name} title={person.name}>{person.name}</span>
-            <div className={styles.meta}>
+            <h3 className={styles.name}>{person.name}</h3>
+            <div className={styles.badgesRow} style={{ justifyContent: isList ? 'flex-start' : 'center' }}>
+              <span className={styles.idBadge}>ID {person.id.substring(0, 6)}</span>
               <span className={styles.classBadge}>{person.class_name || 'Sem turma'}</span>
-              <span>{person.total_photos} foto{person.total_photos !== 1 ? 's' : ''}</span>
+            </div>
+            <div className={styles.statsRow} style={{ justifyContent: isList ? 'flex-start' : 'center', flexWrap: isList ? 'nowrap' : 'wrap' }}>
+              <div className={styles.statItem}>
+                <Users size={14} />
+                <span className={`${styles.statValue} ${styles.photos}`}>{person.total_photos} fotos</span>
+              </div>
+              <div className={styles.statItem}>
+                <Star size={14} />
+                <span className={`${styles.statValue} ${styles.favorites}`}>{person.favorites_count || 0} favoritas</span>
+              </div>
+              {isList && (
+                <>
+                  <div className={styles.statItem}>
+                    <Trash size={14} />
+                    <span className={`${styles.statValue} ${styles.discarded}`}>{person.discarded_count || 0} descartes</span>
+                  </div>
+                  <div className={styles.statItem}>
+                    <Award size={14} />
+                    <span className={`${styles.statValue} ${styles.quality}`}>{quality}% qualidade IA</span>
+                  </div>
+                </>
+              )}
             </div>
           </>
         )}
       </div>
 
-      <Collage person={person} />
+      {isList && <Collage person={person} onPhotoClick={() => onOpen(person.id)} />}
 
-      <div className={styles.actions}>
-        <button className={styles.actionBtn} title="Ver fotos" onClick={() => onOpen(person.id)}>
-          <ChevronRight size={15} />
-        </button>
-        <button className={styles.actionBtn} title="Renomear" onClick={() => onStartRename(person)}>
-          <Edit2 size={13} />
-        </button>
-        <button className={`${styles.actionBtn} ${styles.actionBtnDanger}`} title="Excluir" onClick={() => onDelete(person)}>
-          <Trash2 size={13} />
-        </button>
+      <div className={isList ? styles.actionsSection : styles.actionsSectionCompact} onClick={e => e.stopPropagation()} style={!isList ? { marginTop: '20px', width: '100%', borderLeft: 'none', borderTop: '1px solid #2a2e35', paddingTop: '12px' } : {}}>
+        <div style={{ display: 'flex', flexDirection: isList ? 'column' : 'row', gap: '4px', justifyContent: 'center' }}>
+          <button className={styles.actionBtn} onClick={() => onOpen(person.id)} title="Abrir">
+            <ExternalLink size={14} /> {isList && 'Abrir'}
+          </button>
+          <button className={styles.actionBtn} onClick={() => onStartRename(person)} title="Renomear">
+            <Edit2 size={14} /> {isList && 'Renomear'}
+          </button>
+          <button className={`${styles.actionBtn} ${styles.actionBtnDanger}`} onClick={() => onDelete(person)} title="Excluir">
+            <Trash2 size={14} /> {isList && 'Excluir'}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -136,6 +188,17 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [error, setError] = useState('');
+
+  // Estados de Visualização e Paginação
+  const [viewMode, setViewMode] = useState<'cards' | 'list'>(() => {
+    return (localStorage.getItem('identifiedViewMode') as 'cards' | 'list') || 'list';
+  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+
+  useEffect(() => {
+    localStorage.setItem('identifiedViewMode', viewMode);
+  }, [viewMode]);
 
   const load = useCallback(async () => {
     if (!currentCatalog) return;
@@ -191,63 +254,164 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
   }, [load, onRequestConfirm]);
 
   const filtered = useMemo(() => people.filter(p =>
-    !search || p.name.toLowerCase().includes(search.toLowerCase())
+    !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.id.toLowerCase().includes(search.toLowerCase())
   ), [people, search]);
 
+  // Lógica de Paginação
+  const totalItems = filtered.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedPeople = useMemo(() => filtered.slice(startIndex, startIndex + itemsPerPage), [filtered, startIndex, itemsPerPage]);
+
+  useEffect(() => { 
+    setCurrentPage(1); 
+  }, [search, itemsPerPage, viewMode]);
+
   return (
-    <div className="view-container">
-      <div className="view-header">
-        <div>
-          <h1>Formandos Identificados</h1>
-          <p className="view-subtitle">
-            {currentCatalog && <><strong>{currentCatalog}</strong> · </>}
-            {filtered.length === 1 ? '1 pessoa' : `${filtered.length} pessoas`}
-          </p>
+    <div className="view-container" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div className={styles.viewHeader}>
+        <div className={styles.headerTitleSection}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <Users size={28} />
+            <h1>Identificados</h1>
+          </div>
+          <p>{totalItems} pessoas identificadas</p>
         </div>
-        <div className="view-header-actions">
-          <input
-            className="search-inline"
-            placeholder="Filtrar por nome..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          <button className="icon-btn" title="Atualizar" onClick={load}>
-            <RefreshCw size={16} className={loading ? 'spin' : ''} />
+
+        <div className={styles.headerActions}>
+          <div className={styles.searchContainer}>
+            <Search size={18} className={styles.searchIcon} />
+            <input
+              className={styles.searchInline}
+              placeholder="Buscar por nome ou ID..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+
+          <button className={styles.filterBtn}>
+            <Filter size={16} /> Filtros
+          </button>
+
+          <div className="segmented-control" style={{ display: 'flex', background: '#111418', borderRadius: '8px', padding: '2px', border: '1px solid #2d323a' }}>
+            <button 
+              className="icon-btn small" 
+              style={{ background: viewMode === 'cards' ? '#2563eb' : 'transparent', color: viewMode === 'cards' ? '#fff' : '#64748b' }}
+              onClick={() => setViewMode('cards')}
+              title="Visualização em cards"
+            >
+              <LayoutGrid size={16} />
+            </button>
+            <button 
+              className="icon-btn small" 
+              style={{ background: viewMode === 'list' ? '#2563eb' : 'transparent', color: viewMode === 'list' ? '#fff' : '#64748b' }}
+              onClick={() => setViewMode('list')}
+              title="Visualização em lista"
+            >
+              <List size={16} />
+            </button>
+          </div>
+
+          <button className="icon-btn" onClick={load} title="Atualizar">
+            <RefreshCw size={18} className={loading ? 'spin' : ''} />
           </button>
         </div>
       </div>
 
       {error && <p className="error-msg">{error}</p>}
 
-      {loading && people.length === 0 ? (
-        <div className="empty-state">
-          <RefreshCw size={32} className="spin" />
-          <p>Carregando formandos...</p>
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="empty-state">
-          <Users size={48} opacity={0.3} />
-          <h3>Nenhum formando identificado</h3>
-          <p>Escaneie uma pasta para identificar as pessoas nas fotos.</p>
-        </div>
-      ) : (
-        <div className={styles.grid}>
-          {filtered.map((person) => (
-            <PeopleCard
-              key={person.id || person.name}
-              person={person}
-              isRenaming={renamingId === person.id}
-              renameValue={renameValue}
-              onOpen={handleOpenPerson}
-              onStartRename={handleStartRename}
-              onCancelRename={handleCancelRename}
-              onRenameValue={handleRenameValue}
-              onConfirmRename={handleRenameSubmit}
-              onDelete={handleDeletePerson}
-            />
-          ))}
-        </div>
-      )}
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        {loading && people.length === 0 ? (
+          <div className="empty-state">
+            <RefreshCw size={32} className="spin" />
+            <p>Carregando formandos...</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="empty-state">
+            <Users size={48} opacity={0.3} />
+            <h3>Nenhum formando identificado</h3>
+            <p>Escaneie uma pasta para identificar as pessoas nas fotos.</p>
+          </div>
+        ) : (
+          <>
+            <div className={viewMode === 'list' ? styles.grid : styles.gridCards}>
+              {paginatedPeople.map((person) => (
+                <PeopleCard
+                  key={person.id || person.name}
+                  person={person}
+                  viewMode={viewMode}
+                  isRenaming={renamingId === person.id}
+                  renameValue={renameValue}
+                  onOpen={handleOpenPerson}
+                  onStartRename={handleStartRename}
+                  onCancelRename={handleCancelRename}
+                  onRenameValue={handleRenameValue}
+                  onConfirmRename={handleRenameSubmit}
+                  onDelete={handleDeletePerson}
+                />
+              ))}
+            </div>
+
+            {/* Pagination Footer */}
+            <div className={styles.paginationFooter}>
+              <div className={styles.paginationStats}>
+                Mostrando {startIndex + 1} a {Math.min(startIndex + itemsPerPage, totalItems)} de {totalItems} pessoas
+              </div>
+              
+              <div className={styles.paginationControls}>
+                <button 
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(prev => prev - 1)}
+                  className={styles.pageBtn}
+                >
+                  <ChevronDown size={14} style={{ transform: 'rotate(90deg)' }} />
+                </button>
+                
+                {[...Array(totalPages)].map((_, i) => {
+                  const p = i + 1;
+                  if (totalPages > 7) {
+                    if (p > 3 && p < totalPages - 2 && Math.abs(p - currentPage) > 1) {
+                      if (p === 4 || p === totalPages - 3) return <span key={p} className={styles.pageDots}>...</span>;
+                      return null;
+                    }
+                  }
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setCurrentPage(p)}
+                      className={`${styles.pageBtn} ${currentPage === p ? styles.pageBtnActive : ''}`}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+
+                <button 
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(prev => prev + 1)}
+                  className={styles.pageBtn}
+                >
+                  <ChevronDown size={14} style={{ transform: 'rotate(-90deg)' }} />
+                </button>
+              </div>
+
+              <div className={styles.paginationLimit}>
+                <span>Itens por página:</span>
+                <select 
+                  value={itemsPerPage} 
+                  onChange={e => setItemsPerPage(Number(e.target.value))}
+                  className={styles.limitSelect}
+                >
+                  <option value={8}>8</option>
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                </select>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
