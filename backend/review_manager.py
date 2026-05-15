@@ -2731,17 +2731,48 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
             except Exception as e:
                 print(f"[PAGE STUDENT PATCH] erro: {e}")
 
-            if identified_centroids:
-                for cl in clusters:
-                    cl_id = cl["cluster_id"]
-                    comp_items_for_cl = grouped_items.get(cl_id, [])
-                    all_rowids = [f.get("rowid") for f in comp_items_for_cl if f.get("rowid")]
-                    if not all_rowids:
-                        continue
-                    try:
-                        best_name, best_sim = None, 0.0
-                        
-                        ph = ",".join(["?"] * len(all_rowids))
+            for cl in clusters:
+                cl_id = cl["cluster_id"]
+                comp_items_for_cl = grouped_items.get(cl_id, [])
+                all_rowids = [f.get("rowid") for f in comp_items_for_cl if f.get("rowid")]
+                if not all_rowids:
+                    continue
+                try:
+                    best_name, best_sim = None, 0.0
+                    
+                    ph = ",".join(["?"] * len(all_rowids))
+                    cur.execute(f"SELECT occurrence_rowid, embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", all_rowids)
+                    embs = []
+                    for er in cur.fetchall():
+                        e = np.frombuffer(er["embedding"], dtype="float32")
+                        en = np.linalg.norm(e)
+                        if en > 0:
+                            embs.append(e / en)
+                    
+                    if identified_centroids and embs:
+                        centroid = np.mean(embs, axis=0)
+                        cn = np.linalg.norm(centroid)
+                        if cn > 0:
+                            centroid = centroid / cn
+                        for name, rc in identified_centroids:
+                            sim = float(np.dot(centroid, rc))
+                            if sim > best_sim:
+                                best_sim = sim
+                                best_name = name
+                    
+                    if not best_name and not embs:
+                        for item in comp_items_for_cl:
+                            try:
+                                get_cached_occurrence_embedding(cur.connection, {
+                                    "rowid": item["rowid"],
+                                    "foto_path": item["foto_path"],
+                                    "x1": item["box"][0],
+                                    "y1": item["box"][1],
+                                    "x2": item["box"][2],
+                                    "y2": item["box"][3],
+                                })
+                            except Exception:
+                                pass
                         cur.execute(f"SELECT occurrence_rowid, embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", all_rowids)
                         embs = []
                         for er in cur.fetchall():
@@ -2749,8 +2780,7 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                             en = np.linalg.norm(e)
                             if en > 0:
                                 embs.append(e / en)
-                        
-                        if embs:
+                        if identified_centroids and embs:
                             centroid = np.mean(embs, axis=0)
                             cn = np.linalg.norm(centroid)
                             if cn > 0:
@@ -2760,53 +2790,23 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                                 if sim > best_sim:
                                     best_sim = sim
                                     best_name = name
-                        
-                        if not best_name and not embs:
-                            for item in comp_items_for_cl:
-                                try:
-                                    get_cached_occurrence_embedding(cur.connection, {
-                                        "rowid": item["rowid"],
-                                        "foto_path": item["foto_path"],
-                                        "x1": item["box"][0],
-                                        "y1": item["box"][1],
-                                        "x2": item["box"][2],
-                                        "y2": item["box"][3],
-                                    })
-                                except Exception:
-                                    pass
-                            cur.execute(f"SELECT occurrence_rowid, embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", all_rowids)
-                            for er in cur.fetchall():
-                                e = np.frombuffer(er["embedding"], dtype="float32")
-                                en = np.linalg.norm(e)
-                                if en > 0:
-                                    embs.append(e / en)
-                            if embs:
-                                centroid = np.mean(embs, axis=0)
-                                cn = np.linalg.norm(centroid)
-                                if cn > 0:
-                                    centroid = centroid / cn
-                                for name, rc in identified_centroids:
-                                    sim = float(np.dot(centroid, rc))
-                                    if sim > best_sim:
-                                        best_sim = sim
-                                        best_name = name
-                                print(f"[PAGE REGENERATED] {cl['cluster_id']} embs={len(embs)} best={best_name} sim={best_sim:.2f}")
+                            print(f"[PAGE REGENERATED] {cl['cluster_id']} embs={len(embs)} best={best_name} sim={best_sim:.2f}")
 
-                        if not best_name:
-                            path_id = _extract_student_from_path(cl.get("preview_image"))
-                            if path_id:
-                                best_name = path_id
-                                best_sim = 0.99
-                                print(f"[PATH HEURISTIC PATCH] {cl['cluster_id']} match={path_id}")
+                    if not best_name:
+                        path_id = _extract_student_from_path(cl.get("preview_image"))
+                        if path_id:
+                            best_name = path_id
+                            best_sim = 0.99
+                            print(f"[PATH HEURISTIC PATCH] {cl['cluster_id']} match={path_id}")
 
-                        if best_name:
-                            cl["best_student_debug"] = best_name
-                            cl["best_similarity_debug"] = round(best_sim, 4)
-                            if best_sim >= 0.45:
-                                cl["suggested_student"] = best_name
-                                cl["suggested_similarity"] = round(best_sim, 4)
-                    except Exception as e:
-                        print(f"[PAGE STUDENT PATCH] erro: {e}")
+                    if best_name:
+                        cl["best_student_debug"] = best_name
+                        cl["best_similarity_debug"] = round(best_sim, 4)
+                        if best_sim >= 0.45:
+                            cl["suggested_student"] = best_name
+                            cl["suggested_similarity"] = round(best_sim, 4)
+                except Exception as e:
+                    print(f"[PAGE STUDENT PATCH] erro: {e}")
 
         for c in clusters[:5]:
             print(f"[PAGE CLUSTER] {c['cluster_id']}: suggested={c.get('suggested_student')} sim={c.get('suggested_similarity')}")
@@ -3045,6 +3045,7 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
                       AND fe.embedding IS NOT NULL
                 """)
                 rows_st = cur.fetchall()
+                cents = []
                 if rows_st:
                     id_map = {}
                     for r in rows_st:
@@ -3053,85 +3054,83 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
                         norm = np.linalg.norm(e)
                         if norm > 0:
                             id_map.setdefault(n, []).append(e / norm)
-                    
-                    cents = []
                     for name, embs in id_map.items():
                         c = np.mean(embs, axis=0)
                         cn = np.linalg.norm(c)
                         if cn > 0:
                             cents.append((name, c / cn))
-                    
-                    if cents:
-                        best_n, best_s = None, 0.0
-                        
-                        rowids = [f.get("rowid") for f in cluster.get("faces", []) if f.get("rowid")]
-                        if rowids:
-                            ph = ",".join(["?"] * len(rowids))
-                            cur.execute(f"SELECT embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", rowids)
-                            cl_embs = []
-                            for er in cur.fetchall():
-                                e = np.frombuffer(er["embedding"], dtype="float32")
-                                en = np.linalg.norm(e)
-                                if en > 0:
-                                    cl_embs.append(e / en)
-                            
-                            if cl_embs:
-                                cluster_centroid = np.mean(cl_embs, axis=0)
-                                ccn = np.linalg.norm(cluster_centroid)
-                                if ccn > 0:
-                                    cluster_centroid /= ccn
-                                for name, ref in cents:
-                                    sim = float(np.dot(cluster_centroid, ref))
-                                    if sim > best_s:
-                                        best_s = sim
-                                        best_n = name
-                        
-                        if not best_n and not cl_embs:
-                            for face in cluster.get("faces", []):
-                                try:
-                                    box = face.get("box", [0,0,0,0])
-                                    get_cached_occurrence_embedding(cur.connection, {
-                                        "rowid": face["rowid"],
-                                        "foto_path": face["path"],
-                                        "x1": box[0],
-                                        "y1": box[1],
-                                        "x2": box[2],
-                                        "y2": box[3],
-                                    })
-                                except Exception:
-                                    pass
-                            if rowids:
-                                cur.execute(f"SELECT embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", rowids)
-                                for er in cur.fetchall():
-                                    e = np.frombuffer(er["embedding"], dtype="float32")
-                                    en = np.linalg.norm(e)
-                                    if en > 0:
-                                        cl_embs.append(e / en)
-                                if cl_embs:
-                                    cluster_centroid = np.mean(cl_embs, axis=0)
-                                    ccn = np.linalg.norm(cluster_centroid)
-                                    if ccn > 0:
-                                        cluster_centroid /= ccn
-                                    for name, ref in cents:
-                                        sim = float(np.dot(cluster_centroid, ref))
-                                        if sim > best_s:
-                                            best_s = sim
-                                            best_n = name
-                                    print(f"[DETAIL REGENERATED] {cluster_id} embs={len(cl_embs)} best={best_n} sim={best_s:.2f}")
 
-                        if not best_n:
-                            path_id = _extract_student_from_path(cluster.get("preview_image"))
-                            if path_id:
-                                best_n = path_id
-                                best_s = 0.99
-                                print(f"[DETAIL PATH HEURISTIC] {cluster_id} match={path_id}")
+                best_n, best_s = None, 0.0
+                rowids = [f.get("rowid") for f in cluster.get("faces", []) if f.get("rowid")]
+                cl_embs = []
+                if rowids:
+                    ph = ",".join(["?"] * len(rowids))
+                    cur.execute(f"SELECT embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", rowids)
+                    for er in cur.fetchall():
+                        e = np.frombuffer(er["embedding"], dtype="float32")
+                        en = np.linalg.norm(e)
+                        if en > 0:
+                            cl_embs.append(e / en)
 
-                        if best_n:
-                            cluster["best_student_debug"] = best_n
-                            cluster["best_similarity_debug"] = round(best_s, 4)
-                            if best_s >= 0.45:
-                                cluster["suggested_student"] = best_n
-                                cluster["suggested_similarity"] = round(best_s, 4)
+                if cents and cl_embs:
+                    cluster_centroid = np.mean(cl_embs, axis=0)
+                    ccn = np.linalg.norm(cluster_centroid)
+                    if ccn > 0:
+                        cluster_centroid /= ccn
+                    for name, ref in cents:
+                        sim = float(np.dot(cluster_centroid, ref))
+                        if sim > best_s:
+                            best_s = sim
+                            best_n = name
+                    print(f"[DETAIL FACIAL MATCH] {cluster_id} best={best_n} sim={best_s:.2f}")
+
+                if not best_n and not cl_embs:
+                    for face in cluster.get("faces", []):
+                        try:
+                            box = face.get("box", [0,0,0,0])
+                            get_cached_occurrence_embedding(cur.connection, {
+                                "rowid": face["rowid"],
+                                "foto_path": face["path"],
+                                "x1": box[0],
+                                "y1": box[1],
+                                "x2": box[2],
+                                "y2": box[3],
+                            })
+                        except Exception:
+                            pass
+                    if rowids:
+                        cur.execute(f"SELECT embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", rowids)
+                        cl_embs = []
+                        for er in cur.fetchall():
+                            e = np.frombuffer(er["embedding"], dtype="float32")
+                            en = np.linalg.norm(e)
+                            if en > 0:
+                                cl_embs.append(e / en)
+                        if cents and cl_embs:
+                            cluster_centroid = np.mean(cl_embs, axis=0)
+                            ccn = np.linalg.norm(cluster_centroid)
+                            if ccn > 0:
+                                cluster_centroid /= ccn
+                            for name, ref in cents:
+                                sim = float(np.dot(cluster_centroid, ref))
+                                if sim > best_s:
+                                    best_s = sim
+                                    best_n = name
+                            print(f"[DETAIL REGENERATED] {cluster_id} embs={len(cl_embs)} best={best_n} sim={best_s:.2f}")
+
+                if not best_n:
+                    path_id = _extract_student_from_path(cluster.get("preview_image"))
+                    if path_id:
+                        best_n = path_id
+                        best_s = 0.99
+                        print(f"[DETAIL PATH HEURISTIC] {cluster_id} match={path_id}")
+
+                if best_n:
+                    cluster["best_student_debug"] = best_n
+                    cluster["best_similarity_debug"] = round(best_s, 4)
+                    if best_s >= 0.45:
+                        cluster["suggested_student"] = best_n
+                        cluster["suggested_similarity"] = round(best_s, 4)
             except Exception as e:
                 print(f"[DETAIL STUDENT PATCH] erro: {e}")
 
