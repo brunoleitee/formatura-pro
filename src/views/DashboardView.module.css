@@ -2,11 +2,11 @@
   min-height: 100%;
   min-height: 0;
   height: 100%;
-  padding: 24px;
-  padding-bottom: 48px;
+  padding: var(--space-5);
+  padding-bottom: var(--space-6);
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--space-3);
   background: linear-gradient(180deg, #0a0d14 0%, #090c12 100%);
   color: #e5e7eb;
   overflow-y: auto;
@@ -18,47 +18,47 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--space-3);
 }
 
 .kicker {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: #7c8aa1;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .title {
-  font-size: 1.55rem;
+  font-size: 1.3rem;
   line-height: 1.1;
   color: #f9fafb;
   margin: 0;
 }
 
 .subtitle {
-  margin: 8px 0 0;
+  margin: 4px 0 0;
   color: #9ca3af;
-  font-size: 0.95rem;
+  font-size: var(--text-sm);
 }
 
 .headerMeta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-1);
   justify-content: flex-end;
 }
 
 .metaPill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-radius: 999px;
+  gap: var(--space-1);
+  padding: 5px 10px;
+  border-radius: var(--radius-full);
   border: 1px solid #1f2937;
   background: rgba(17, 24, 39, 0.82);
   color: #d1d5db;
-  font-size: 0.82rem;
+  font-size: var(--text-xs);
 }
 
 .errorBanner {
@@ -73,14 +73,14 @@
 .cardsGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: var(--space-2);
 }
 
 .metricCard,
 .summaryCard,
 .ringCard,
 .coverageSection {
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   border: 1px solid #1f2937;
   background: linear-gradient(180deg, rgba(15, 20, 30, 0.98) 0%, rgba(11, 15, 24, 0.98) 100%);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
@@ -88,8 +88,8 @@
 
 .metricCard {
   position: relative;
-  padding: 18px;
-  min-height: 148px;
+  padding: 14px;
+  min-height: 110px;
   overflow: hidden;
 }
 
@@ -99,39 +99,39 @@
 .metricCard[data-tone='violet'] .metricIcon { color: #c4b5fd; background: rgba(124, 58, 237, 0.14); }
 
 .metricIcon {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
-  margin-bottom: 18px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 10px;
 }
 
 .metricLabel {
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
   color: #9ca3af;
-  margin-bottom: 6px;
+  margin-bottom: 2px;
 }
 
 .metricValue {
-  font-size: 2rem;
+  font-size: 1.6rem;
   line-height: 1;
   font-weight: 700;
   color: #f9fafb;
-  letter-spacing: 0;
+  letter-spacing: -0.02em;
 }
 
 .metricCaption {
-  margin-top: 10px;
+  margin-top: 4px;
   color: #6b7280;
-  font-size: 0.82rem;
+  font-size: var(--text-xs);
 }
 
 .metricProgressTrack {
-  margin-top: 14px;
-  height: 7px;
-  border-radius: 999px;
+  margin-top: 8px;
+  height: 5px;
+  border-radius: var(--radius-full);
   background: rgba(31, 41, 55, 0.95);
   overflow: hidden;
 }
@@ -143,20 +143,20 @@
 }
 
 .coverageSection {
-  padding: 18px;
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-3);
   min-height: auto;
 }
 
 .classCoverageSection {
-  padding: 18px;
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-3);
   min-height: auto;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   border: 1px solid #1f2937;
   background: linear-gradient(180deg, rgba(15, 20, 30, 0.98) 0%, rgba(11, 15, 24, 0.98) 100%);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
@@ -166,7 +166,7 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .coverageHeader h2,
@@ -177,58 +177,58 @@
 
 .coverageHeader h2 {
   color: #f9fafb;
-  font-size: 1.03rem;
+  font-size: 0.95rem;
 }
 
 .coverageHeader p,
 .ringHeader p {
-  margin-top: 6px;
+  margin-top: 4px;
   color: #9ca3af;
-  font-size: 0.86rem;
+  font-size: var(--text-xs);
 }
 
 .coverageStats {
   display: flex;
-  gap: 8px;
+  gap: var(--space-1);
   flex-wrap: wrap;
   justify-content: flex-end;
   color: #8b98ab;
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
 }
 
 .coverageList {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-2);
   overflow: auto;
-  max-height: clamp(260px, 42vh, 480px);
+  max-height: clamp(200px, 34vh, 360px);
   padding-right: 4px;
 }
 
 .coverageEmpty {
   color: #9ca3af;
   border: 1px dashed #243041;
-  border-radius: 14px;
-  padding: 16px;
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
   text-align: center;
   background: rgba(10, 14, 22, 0.65);
 }
 
 .coverageRow {
-  padding: 12px 0 0;
+  padding: 6px 0 0;
 }
 
 .coverageRowTop {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: var(--space-2);
+  margin-bottom: 4px;
 }
 
 .coverageName {
   color: #f3f4f6;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -237,15 +237,15 @@
 
 .coverageCount {
   color: #9ca3af;
-  font-size: 0.82rem;
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   flex: 0 0 auto;
 }
 
 .coverageBar {
   width: 100%;
-  height: 9px;
-  border-radius: 999px;
+  height: 6px;
+  border-radius: var(--radius-full);
   background: rgba(31, 41, 55, 0.96);
   overflow: hidden;
 }
@@ -263,105 +263,105 @@
 
 .classCoverageGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-2);
 }
 
 .classCoverageCard {
-  padding: 14px;
-  border-radius: 14px;
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
   border: 1px solid rgba(31, 41, 55, 0.96);
   background: rgba(15, 20, 30, 0.84);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .classCoverageTop {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-2);
 }
 
 .classCoverageTop strong {
   color: #f9fafb;
-  font-size: 0.95rem;
+  font-size: var(--text-base);
 }
 
 .classCoverageTop span {
   color: #9ca3af;
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
 
 .classCoverageMeta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 10px;
+  gap: 4px 8px;
   color: #9ca3af;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
 }
 
 .classCoverageMeta span {
-  padding: 4px 8px;
-  border-radius: 999px;
+  padding: 2px 6px;
+  border-radius: var(--radius-full);
   background: rgba(17, 24, 39, 0.82);
   border: 1px solid rgba(31, 41, 55, 0.9);
 }
 
 .bottomGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
-  gap: 14px;
+  grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
+  gap: var(--space-2);
 }
 
 .summaryCard,
 .ringCard {
-  padding: 18px;
+  padding: var(--space-4);
 }
 
 .summaryLabel {
   color: #9ca3af;
-  font-size: 0.76rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin-bottom: 14px;
+  margin-bottom: var(--space-2);
 }
 
 .summaryList {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--space-2);
 }
 
 .summaryList div {
-  padding: 14px;
-  border-radius: 14px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
   background: rgba(15, 20, 30, 0.8);
   border: 1px solid rgba(31, 41, 55, 0.9);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 3px;
 }
 
 .summaryList span {
   color: #9ca3af;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
 }
 
 .summaryList strong {
   color: #f9fafb;
-  font-size: 1.1rem;
+  font-size: var(--text-md);
 }
 
 .ringCard {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-2);
   align-items: center;
   justify-content: center;
-  min-height: 260px;
+  min-height: 200px;
 }
 
 .ringHeader {
@@ -369,12 +369,12 @@
 }
 
 .ring {
-  width: 172px;
-  height: 172px;
+  width: 140px;
+  height: 140px;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  padding: 12px;
+  padding: 10px;
   box-shadow: inset 0 0 0 1px rgba(31, 41, 55, 0.92);
 }
 
@@ -386,69 +386,61 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 2px;
   background: radial-gradient(circle at 30% 20%, rgba(30, 41, 59, 0.95), rgba(8, 12, 20, 0.98));
   border: 1px solid rgba(31, 41, 55, 0.9);
 }
 
 .ringInner strong {
-  font-size: 2rem;
+  font-size: 1.5rem;
   color: #f8fafc;
   line-height: 1;
 }
 
 .ringInner span {
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
   color: #9ca3af;
 }
 
 .loadingGrid {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-3);
 }
 
 .skeletonRow {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: var(--space-2);
 }
 
-.skeletonCard,
-.skeletonPanel {
-  border-radius: 16px;
+.skeletonCard {
+  border-radius: var(--radius-lg);
   border: 1px solid #1f2937;
   background: linear-gradient(90deg, rgba(17, 24, 39, 0.95) 0%, rgba(24, 31, 44, 0.95) 45%, rgba(17, 24, 39, 0.95) 100%);
   background-size: 200% 100%;
   animation: shimmer 1.2s ease-in-out infinite;
-}
-
-.skeletonCard {
-  min-height: 148px;
-}
-
-.skeletonPanel {
-  min-height: 420px;
+  min-height: 110px;
 }
 
 .emptyState {
-  min-height: 56vh;
+  min-height: 40vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: var(--space-2);
   border: 1px dashed #243041;
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   background: rgba(12, 16, 25, 0.7);
   color: #cbd5e1;
   text-align: center;
-  padding: 24px;
+  padding: var(--space-5);
 }
 
 .emptyState h2 {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: var(--text-md);
   color: #f9fafb;
 }
 
