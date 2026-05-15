@@ -3,14 +3,13 @@
 .toolbar {
   display: flex;
   align-items: center;
-  gap: var(--toolbar-gap, 7px);
-  padding: 0 var(--space-5);
-  height: var(--toolbar-height, 42px);
-  border-bottom: 1px solid var(--toolbar-sep-color, rgba(255, 255, 255, 0.04));
-  border-top: 1px solid var(--toolbar-sep-color, rgba(255, 255, 255, 0.04));
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  height: var(--toolbar-height);
+  border-bottom: 1px solid var(--toolbar-sep-color);
+  border-top: 1px solid var(--toolbar-sep-color);
   flex-shrink: 0;
-  background: var(--toolbar-bg, rgba(255, 255, 255, 0.01));
-  flex-wrap: wrap;
+  background: var(--toolbar-bg);
 }
 
 /* ── Select wrapper ── */
@@ -108,28 +107,28 @@
 .viewToggle {
   display: flex;
   gap: 2px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
   padding: 2px;
 }
 
 .viewBtn {
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
   border: none;
   background: transparent;
-  color: #475569;
+  color: var(--text-muted);
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 500;
   font-family: inherit;
   white-space: nowrap;
-  transition: color 0.15s, background 0.15s;
+  transition: color var(--transition-fast), background var(--transition-fast);
 }
 
 .viewBtn:hover {
@@ -165,6 +164,52 @@
   background: var(--accent);
   cursor: pointer;
   transition: transform var(--transition-fast);
+}
+.zoomSlider::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
+}
+
+/* ── Compare button ── */
+.compareBtn {
+  height: 26px;
+  padding: 0 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: rgba(59, 130, 246, 0.08);
+  color: #60a5fa;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 600;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.compareBtn:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.16);
+  border-color: rgba(59, 130, 246, 0.45);
+  color: #93c5fd;
+}
+
+.compareBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  border-color: var(--border-default);
+  background: transparent;
+  color: var(--text-muted);
+}
+
+/* ── Counter (direita) ── */
+.counter {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding-left: var(--space-2);
 }
 .zoomSlider::-webkit-slider-thumb:hover {
   transform: scale(1.25);

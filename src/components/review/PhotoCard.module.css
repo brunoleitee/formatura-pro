@@ -30,20 +30,18 @@
 .photoCardImageWrap {
   position: relative;
   width: 100%;
-  background: #090b10;
+  background: var(--bg-primary);
   overflow: hidden;
   display: block;
 }
 
-/* MODO FOTO: altura fixa controlada pela variável do grid */
 .photoCardPhotoMode .photoCardImageWrap {
   height: var(--photo-img-h, 220px);
 }
 
-/* MODO ROSTO: quadrado — a thumbnail do backend já tem crop real do rosto */
 .photoCardFaceMode .photoCardImageWrap {
   aspect-ratio: 1 / 1;
-  background: #0c0e18;
+  background: var(--bg-primary);
 }
 
 /* ── Imagem ── */
@@ -59,10 +57,14 @@
   opacity: 1;
 }
 
-/* MODO FOTO: imagem inteira preservada */
 .photoCardPhotoMode .photoCardImage {
-  object-fit: contain;
-  object-position: center center;
+  object-fit: cover;
+  object-position: center 30%;
+}
+
+.photoCardFaceMode .photoCardImage {
+  object-fit: cover;
+  object-position: center 20%;
 }
 
 /* MODO ROSTO: a thumbnail já é o crop do rosto; cover preenche o quadrado sem distorção */

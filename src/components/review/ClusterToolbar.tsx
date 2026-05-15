@@ -1,4 +1,4 @@
-import { Image as ImageIcon, User, Maximize2, Sparkles, ChevronDown, ScanFace, GitCompare } from 'lucide-react';
+import { Image as ImageIcon, Sparkles, ChevronDown, ScanFace, GitCompare } from 'lucide-react';
 import styles from './ClusterToolbar.module.css';
 
 export type FilterOption = 'all' | 'best' | 'sharp';
@@ -129,11 +129,6 @@ export default function ClusterToolbar({
           title={`Altura: ${zoom}px`}
         />
       </div>
-
-      {/* Fullscreen icon */}
-      <button className={styles.iconBtn} title="Tela cheia">
-        <Maximize2 size={14} />
-      </button>
 
       {/* Compare button */}
       {(() => {
