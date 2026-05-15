@@ -25,6 +25,7 @@
   --danger-soft: rgba(239, 68, 68, 0.12);
 
   --border-default: rgba(255, 255, 255, 0.08);
+  --border-color: var(--border-default);
   --border-strong: rgba(255, 255, 255, 0.12);
   --border-accent: rgba(59, 130, 246, 0.35);
 
