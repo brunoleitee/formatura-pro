@@ -237,6 +237,7 @@ def get_people(unknown: bool = False):
                 rows = cur.fetchall()
                 results = []
                 for row in rows:
+                    aluno_id = row["aluno_id"]
                     cover_path = row["cover_path"]
                     cover_box = None
                     if cover_path and row["x1"] is not None:
@@ -251,14 +252,29 @@ def get_people(unknown: bool = False):
                     else:
                         avatar_path = cover_path if cover_path else None
 
+                    sample_photos = []
+                    try:
+                        cur.execute(
+                            "SELECT foto_path, x1, y1, x2, y2 FROM ocorrencias WHERE aluno_id = ? AND x1 IS NOT NULL ORDER BY rowid ASC LIMIT 4",
+                            (aluno_id,),
+                        )
+                        for s in cur.fetchall():
+                            sample_photos.append({
+                                "path": s["foto_path"],
+                                "box": [s["x1"], s["y1"], s["x2"], s["y2"]],
+                            })
+                    except Exception:
+                        pass
+
                     results.append({
-                        "id": row["aluno_id"],
-                        "name": row["aluno_id"],
+                        "id": aluno_id,
+                        "name": aluno_id,
                         "class_name": str(row["class_name"] or "").strip() or "Sem turma",
                         "total_photos": row["total"],
                         "cover_path": cover_path,
                         "cover_box": cover_box,
                         "avatar_path": avatar_path,
+                        "sample_photos": sample_photos,
                     })
 
         with _people_cache_lock:

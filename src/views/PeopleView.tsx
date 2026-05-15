@@ -1,8 +1,9 @@
-﻿import { memo, useState, useEffect, useCallback, useMemo } from 'react';
-import { Users, RefreshCw, Edit2, Trash2, ChevronRight, Check, X } from 'lucide-react';
+import { memo, useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Users, RefreshCw, Edit2, Trash2, ChevronRight, Check, X, Camera, BookOpen, Image as ImageIcon } from 'lucide-react';
 import { api, type Person } from '../services/api';
 import { useApp } from '../context/AppContext';
 import { getAvatarThumbUrl } from '../utils/imageUrls';
+import { faceThumb } from '../components/review/FaceCard';
 import styles from './PeopleView.module.css';
 
 interface PeopleViewProps {
@@ -18,11 +19,7 @@ const PersonAvatar = memo(function PersonAvatar({ person }: { person: Person }) 
   }, [avatarPath]);
 
   if (!avatarPath || failed) {
-    return (
-      <div className="avatar-placeholder">
-        {person.name.charAt(0).toUpperCase()}
-      </div>
-    );
+    return <div className={styles.avatarPlaceholder}>{person.name.charAt(0).toUpperCase()}</div>;
   }
 
   return (
@@ -34,6 +31,52 @@ const PersonAvatar = memo(function PersonAvatar({ person }: { person: Person }) 
       onError={() => setFailed(true)}
     />
   );
+});
+
+const CoverPhoto = memo(function CoverPhoto({ person }: { person: Person }) {
+  const [failed, setFailed] = useState(false);
+  const coverPath = person.cover_path || '';
+  useEffect(() => { setFailed(false); }, [coverPath]);
+
+  if (!coverPath || failed) {
+    return <div className={styles.coverFallback}>{person.name.charAt(0).toUpperCase()}</div>;
+  }
+
+  return (
+    <img
+      className={styles.coverImg}
+      src={getAvatarThumbUrl(coverPath) ?? ''}
+      alt={person.name}
+      loading="eager"
+      decoding="async"
+      onError={() => setFailed(true)}
+    />
+  );
+});
+
+const Collage = memo(function Collage({ person }: { person: Person }) {
+  const photos = (person.sample_photos ?? []).slice(0, 4);
+  const items: React.ReactNode[] = [];
+
+  for (let i = 0; i < 4; i++) {
+    const sp = photos[i];
+    if (sp && sp.path && sp.box) {
+      items.push(
+        <img
+          key={i}
+          className={styles.collageImg}
+          src={faceThumb(sp.path, sp.box, 120)}
+          alt=""
+          loading="lazy"
+          decoding="async"
+        />
+      );
+    } else {
+      items.push(<div key={i} className={styles.collagePlaceholder} />);
+    }
+  }
+
+  return <div className={styles.collage}>{items}</div>;
 });
 
 const PeopleCard = memo(function PeopleCard({
@@ -58,18 +101,31 @@ const PeopleCard = memo(function PeopleCard({
   onDelete: (person: Person) => void;
 }) {
   return (
-    <div className={`person-card ${styles.personCard}`}>
-      <div
-        className={`person-avatar ${styles.personAvatar}`}
-        onClick={() => onOpen(person.id)}
-      >
-        <PersonAvatar person={person} />
+    <div className={styles.card}>
+      <div className={styles.coverWrap} onClick={() => onOpen(person.id)}>
+        <CoverPhoto person={person} />
+        <div className={styles.avatarOverlay}>
+          <PersonAvatar person={person} />
+        </div>
       </div>
 
-      <div className="person-info">
+      <div className={styles.actions}>
+        <button className={styles.actionBtn} title="Ver fotos" onClick={() => onOpen(person.id)}>
+          <ChevronRight size={15} />
+        </button>
+        <button className={styles.actionBtn} title="Renomear" onClick={() => onStartRename(person)}>
+          <Edit2 size={13} />
+        </button>
+        <button className={`${styles.actionBtn} ${styles.actionBtnDanger}`} title="Excluir" onClick={() => onDelete(person)}>
+          <Trash2 size={13} />
+        </button>
+      </div>
+
+      <div className={styles.body}>
         {isRenaming ? (
-          <div className="rename-inline">
+          <>
             <input
+              className={styles.renameInput}
               autoFocus
               value={renameValue}
               onChange={e => onRenameValue(e.target.value)}
@@ -78,40 +134,23 @@ const PeopleCard = memo(function PeopleCard({
                 if (e.key === 'Escape') onCancelRename();
               }}
             />
-            <button className={`icon-btn success ${styles.actionBtn}`} onClick={() => onConfirmRename(person.id)}><Check size={14} /></button>
-            <button className={`icon-btn ${styles.actionBtn}`} onClick={onCancelRename}><X size={14} /></button>
-          </div>
+            <div className={styles.renameActions}>
+              <button className={`icon-btn success`} onClick={() => onConfirmRename(person.id)}><Check size={13} /></button>
+              <button className={`icon-btn`} onClick={onCancelRename}><X size={13} /></button>
+            </div>
+          </>
         ) : (
-          <span className="person-name" title={person.name}>{person.name}</span>
+          <>
+            <span className={styles.name} title={person.name}>{person.name}</span>
+            <div className={styles.meta}>
+              <span className={styles.classBadge}>{person.class_name || 'Sem turma'}</span>
+              <span>{person.total_photos} foto{person.total_photos !== 1 ? 's' : ''}</span>
+            </div>
+          </>
         )}
-        <span className="person-count">
-          {(person.class_name || 'Sem turma')} · {person.total_photos} foto{person.total_photos !== 1 ? 's' : ''}
-        </span>
       </div>
 
-      <div className="person-actions">
-        <button
-          className={`icon-btn ${styles.actionBtn}`}
-          title="Ver fotos"
-          onClick={() => onOpen(person.id)}
-        >
-          <ChevronRight size={16} />
-        </button>
-        <button
-          className={`icon-btn ${styles.actionBtn}`}
-          title="Renomear"
-          onClick={() => onStartRename(person)}
-        >
-          <Edit2 size={14} />
-        </button>
-        <button
-          className={`icon-btn danger ${styles.actionBtn}`}
-          title="Excluir"
-          onClick={() => onDelete(person)}
-        >
-          <Trash2 size={14} />
-        </button>
-      </div>
+      <Collage person={person} />
     </div>
   );
 });
@@ -227,7 +266,7 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
           <p>Escaneie uma pasta para identificar as pessoas nas fotos.</p>
         </div>
       ) : (
-        <div className="people-grid">
+        <div className={styles.grid}>
           {filtered.map((person) => (
             <PeopleCard
               key={person.id || person.name}
@@ -247,9 +286,3 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
     </div>
   );
 }
-
-
-
-
-
-

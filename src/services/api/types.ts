@@ -13,6 +13,7 @@ export interface Person {
   cover_path: string | null;
   cover_box: [number, number, number, number] | null;
   avatar_path?: string | null;
+  sample_photos?: Array<{ path: string; box: [number, number, number, number] }>;
 }
 
 export interface PhotoFace {
