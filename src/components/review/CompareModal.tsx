@@ -39,6 +39,7 @@ export default function CompareModal({
     
     api.getStudentMatchPreview(catalog, cluster.cluster_id, bestName)
       .then(data => {
+        console.log('[COMPARE PREVIEW RESPONSE]', data);
         setMatchData(data);
       })
       .catch(err => {
