@@ -20,14 +20,43 @@
   position: relative;
   display: flex;
   align-items: center;
-  background: #1a1d23;
-  border: 1px solid #2a2e35;
-  border-radius: 14px;
-  padding: 16px 24px;
-  transition: all 0.2s ease;
+  background: var(--card-bg, var(--bg-secondary));
+  border: 1px solid var(--card-border, var(--border-default));
+  border-radius: var(--card-radius, var(--radius-lg));
+  padding: var(--space-4) var(--space-6);
+  transition: var(--card-transition);
   cursor: pointer;
   min-height: 130px;
   overflow: visible;
+}
+
+.card:hover {
+  background: var(--bg-elevated, #1a1e2e);
+  border-color: var(--card-border-hover, var(--border-strong));
+  box-shadow: var(--card-shadow-hover, var(--shadow-lg));
+  transform: var(--card-hover-transform, translateY(-1px));
+}
+
+.cardCompact {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--card-bg, var(--bg-secondary));
+  border: 1px solid var(--card-border, var(--border-default));
+  border-radius: calc(var(--card-radius, var(--radius-lg)) + 2px);
+  padding: var(--space-5);
+  transition: var(--card-transition);
+  cursor: pointer;
+  overflow: visible;
+  text-align: center;
+  align-items: center;
+}
+
+.cardCompact:hover {
+  background: var(--bg-elevated, #1a1e2e);
+  border-color: var(--card-border-hover, var(--border-strong));
+  box-shadow: var(--card-shadow-hover, var(--shadow-lg));
+  transform: var(--card-hover-transform, translateY(-1px));
 }
 
 .cardCompact {

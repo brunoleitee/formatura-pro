@@ -71,6 +71,18 @@
   --btn-height-md: 34px;
   --btn-height-lg: 40px;
   --toolbar-height: 48px;
+
+  /* ── Cards ── */
+  --card-bg: var(--bg-secondary);
+  --card-border: var(--border-default);
+  --card-border-hover: var(--border-strong);
+  --card-border-selected: rgba(96, 165, 250, 0.6);
+  --card-radius: var(--radius-lg);
+  --card-padding: var(--space-4);
+  --card-shadow: var(--shadow-sm);
+  --card-shadow-hover: var(--shadow-lg);
+  --card-transition: transform var(--transition-base), border-color var(--transition-base), box-shadow var(--transition-base);
+  --card-hover-transform: translateY(-1px);
   --toolbar-padding: 0 var(--space-5);
   --toolbar-gap: var(--space-2);
   --toolbar-sep-color: rgba(255, 255, 255, 0.06);
