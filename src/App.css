@@ -966,13 +966,18 @@ input[type="checkbox"], input[type="radio"] {
 .tab-group { display: flex; gap: 4px; }
 
 .tab-btn {
-  padding: 6px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   color: var(--text-secondary);
   transition: background var(--transition-fast), color var(--transition-fast);
   background: transparent;
-  height: var(--btn-height-sm);
+  height: var(--btn-height-md);
+  line-height: 1;
 }
 .tab-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 .tab-btn.active { background: var(--bg-active); color: var(--accent); font-weight: 600; }
@@ -1563,6 +1568,28 @@ input[type="checkbox"], input[type="radio"] {
   gap: var(--space-1);
   margin-bottom: var(--space-5);
   flex-shrink: 0;
+}
+
+.settings-tabs .tab-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  line-height: 1;
+  padding: 0 var(--space-3);
+  height: var(--btn-height-md);
+}
+
+.settings-tabs .tab-btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.settings-tabs .tab-btn span {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 
 .settings-layout {
