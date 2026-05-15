@@ -4309,16 +4309,9 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
                      "message": f"Não foi possível comparar faces para o aluno {target_id}"
                  }
 
-            # 3. Obter metadados amigáveis do aluno (nome, pasta, etc)
+            # 3. Obter metadados do aluno
             student_id_real = best_face["aluno_id"]
-            cur.execute("SELECT aluno_id, nome, folder FROM alunos WHERE aluno_id = ?", (student_id_real,))
-            meta = cur.fetchone()
-            
-            student_name = meta["nome"] if (meta and "nome" in meta.keys()) else None
-            student_folder = meta["folder"] if (meta and "folder" in meta.keys()) else student_id_real
-            
-            # Label prioritário: Nome Real > Pasta/ID
-            student_label = student_name if student_name else student_folder
+            student_label = student_id_real
 
             print(f"[COMPARE PREVIEW SUCCESS] cluster={cluster_id} student={target_id} sim={best_sim:.4f}")
 
@@ -4328,8 +4321,8 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
                 "matched_student_face_box": [best_face["x1"], best_face["y1"], best_face["x2"], best_face["y2"]],
                 "matched_similarity": round(best_sim, 4),
                 "matched_student_id": student_id_real,
-                "matched_student_name": student_name,
-                "matched_student_folder": student_folder,
+                "matched_student_name": student_label,
+                "matched_student_folder": student_id_real,
                 "matched_student_label": student_label
             }
     except Exception as e:
