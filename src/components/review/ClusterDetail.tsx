@@ -198,29 +198,33 @@ export default function ClusterDetail({
   const thumbSize = gridZoom >= 240 ? 600 : 400;
   const photoImgH = Math.round(gridZoom * 0.85);
 
+  console.log("[DETAIL RAW CLUSTER]", {
+    suggested_student: cluster?.suggested_student,
+    suggested_similarity: cluster?.suggested_similarity,
+    best_student_debug: cluster?.best_student_debug,
+    best_similarity_debug: cluster?.best_similarity_debug,
+  });
+
   const cleanName = (n: any) => (!n || n === 'null' || n === 'unknown') ? null : n;
-  
-  let bestName = cleanName(cluster.suggested_student);
-  let bestSim = bestName ? (cluster.suggested_similarity ?? 0) : 0;
 
-  if (!bestName) {
-    const debugName = cleanName(cluster.best_student_debug);
-    const debugSim = cluster.best_similarity_debug ?? 0;
-    if (debugName && debugSim >= 0.30) {
-      bestName = debugName;
-      bestSim = debugSim;
-    }
-  }
+  const compareStudent =
+    cleanName(cluster.suggested_student) ||
+    cleanName(cluster.best_student_debug);
 
-  if (bestName === rejectedName) {
-    bestName = null;
-    bestSim = 0;
-  }
+  const compareSimilarity =
+    compareStudent === cleanName(cluster.suggested_student)
+      ? (cluster.suggested_similarity ?? 0)
+      : (cluster.best_similarity_debug ?? 0);
+
+  console.log("[DETAIL COMPARE PROPS]", {
+    compareStudent,
+    compareSimilarity,
+  });
 
   // Buscar label amigável (nome real) se houver um melhor match
   useEffect(() => {
-    if (bestName && !matchedLabel) {
-      api.getStudentMatchPreview(catalog, cluster.cluster_id, bestName)
+    if (compareStudent && !matchedLabel) {
+      api.getStudentMatchPreview(catalog, cluster.cluster_id, compareStudent)
         .then(data => {
           if (data.matched_student_label) {
             setMatchedLabel(data.matched_student_label);
@@ -230,9 +234,10 @@ export default function ClusterDetail({
           // Fallback silencioso para o ID original
         });
     }
-  }, [bestName, catalog, cluster.cluster_id]);
+  }, [compareStudent, catalog, cluster.cluster_id]);
 
-  const displayBestName = matchedLabel || bestName;
+  const displayCompareName = matchedLabel || compareStudent;
+
 
 
   return (
@@ -280,8 +285,8 @@ export default function ClusterDetail({
         onViewMode={setViewMode}
         onZoom={setZoom}
         onSelectBest={handleSelectBest}
-        bestStudentName={displayBestName}
-        bestStudentSim={bestSim}
+        compareStudent={displayCompareName}
+        compareSimilarity={compareSimilarity}
         onCompare={() => setIsCompareOpen(true)}
       />
 
@@ -316,12 +321,12 @@ export default function ClusterDetail({
         )}
       </div>
 
-      {isCompareOpen && bestName && (
+      {isCompareOpen && compareStudent && (
         <CompareModal
           cluster={cluster}
           catalog={catalog}
-          bestName={bestName}
-          bestSim={bestSim}
+          bestName={compareStudent}
+          bestSim={compareSimilarity}
           onConfirm={async (name) => {
             setIsCompareOpen(false);
             if (onAssigned) {

@@ -17,8 +17,8 @@ interface ClusterToolbarProps {
   onViewMode: (v: ViewMode) => void;
   onZoom: (z: number) => void;
   onSelectBest: () => void;
-  bestStudentName?: string | null;
-  bestStudentSim?: number | null;
+  compareStudent?: string | null;
+  compareSimilarity?: number | null;
   onCompare?: () => void;
 }
 
@@ -46,8 +46,8 @@ export default function ClusterToolbar({
   onViewMode,
   onZoom,
   onSelectBest,
-  bestStudentName,
-  bestStudentSim,
+  compareStudent,
+  compareSimilarity,
   onCompare,
 }: ClusterToolbarProps) {
   // Ranges por modo: FOTO controla largura da coluna (240-380px), ROSTO controla tamanho do quadrado (130-280px)
@@ -137,15 +137,19 @@ export default function ClusterToolbar({
 
       {/* Compare button */}
       {(() => {
-        const isValid = bestStudentName && bestStudentName !== 'null' && bestStudentName !== 'unknown';
-        console.log('[COMPARE BUTTON]\nstudent=' + bestStudentName + '\nsimilarity=' + bestStudentSim + '\nenabled=' + !!isValid);
+        const compareEnabled = !!compareStudent && (compareSimilarity ?? 0) >= 0.30;
+        console.log("[TOOLBAR RECEIVED PROPS]", {
+          compareStudent,
+          compareSimilarity,
+          compareEnabled,
+        });
         
         return (
           <button 
             className={styles.compareBtn} 
-            title={isValid ? `Comparar com ${bestStudentName} — ${Math.round((bestStudentSim || 0) * 100)}%` : 'Comparar'}
-            onClick={isValid ? onCompare : undefined}
-            disabled={!isValid}
+            title={compareEnabled ? `Comparar com ${compareStudent} — ${Math.round((compareSimilarity || 0) * 100)}%` : 'Comparar'}
+            onClick={compareEnabled ? onCompare : undefined}
+            disabled={!compareEnabled}
           >
             <GitCompare size={14} />
             <span>Comparar</span>
