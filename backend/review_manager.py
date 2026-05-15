@@ -2795,8 +2795,8 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                     if not best_name:
                         path_id = _extract_student_from_path(cl.get("preview_image"))
                         if path_id:
-                            best_name = path_id
-                            best_sim = 0.99
+                            cl["best_student_debug"] = path_id
+                            cl["best_similarity_debug"] = 0.99
                             print(f"[PATH HEURISTIC PATCH] {cl['cluster_id']} match={path_id}")
 
                     if best_name:
@@ -2920,8 +2920,8 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                     if not best_name:
                         path_id = _extract_student_from_path(c.get("preview_image"))
                         if path_id:
-                            best_name = path_id
-                            best_sim = 0.99
+                            c["best_student_debug"] = path_id
+                            c["best_similarity_debug"] = 0.99
                             print(f"[FINAL PATH HEURISTIC] {c['cluster_id']} match={path_id}")
 
                     if best_name:
@@ -3121,8 +3121,8 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
                 if not best_n:
                     path_id = _extract_student_from_path(cluster.get("preview_image"))
                     if path_id:
-                        best_n = path_id
-                        best_s = 0.99
+                        cluster["best_student_debug"] = path_id
+                        cluster["best_similarity_debug"] = 0.99
                         print(f"[DETAIL PATH HEURISTIC] {cluster_id} match={path_id}")
 
                 if best_n:
