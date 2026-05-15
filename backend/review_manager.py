@@ -4253,7 +4253,16 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
              student_faces = cur.fetchall()
 
         if not student_faces:
-            raise HTTPException(status_code=404, detail=f"Nenhuma face de referência identificada para {student_id}")
+             return {
+                 "matched_student_rowid": None,
+                 "matched_student_photo_path": None,
+                 "matched_student_face_box": None,
+                 "matched_similarity": None,
+                 "matched_student_id": student_id,
+                 "matched_student_name": None,
+                 "matched_student_folder": student_id,
+                 "matched_student_label": student_id,
+             }
 
         best_face = None
         best_sim = -1.0
@@ -4270,7 +4279,16 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
                 best_face = f
 
         if not best_face:
-             raise HTTPException(status_code=404, detail=f"Erro ao calcular similaridade para faces de {student_id}")
+             return {
+                 "matched_student_rowid": None,
+                 "matched_student_photo_path": None,
+                 "matched_student_face_box": None,
+                 "matched_similarity": None,
+                 "matched_student_id": student_id,
+                 "matched_student_name": None,
+                 "matched_student_folder": student_id,
+                 "matched_student_label": student_id,
+             }
 
         # 3. Obter metadados amigáveis do aluno (nome, pasta, etc)
         student_id_real = best_face["aluno_id"]
