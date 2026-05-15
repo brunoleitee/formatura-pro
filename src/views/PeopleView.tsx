@@ -1,5 +1,5 @@
-import { memo, useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Users, RefreshCw, Edit2, Trash2, ChevronRight, Check, X, Camera, BookOpen, Image as ImageIcon } from 'lucide-react';
+import { memo, useState, useEffect, useCallback, useMemo } from 'react';
+import { Users, RefreshCw, Edit2, Trash2, ChevronRight, Check, X } from 'lucide-react';
 import { api, type Person } from '../services/api';
 import { useApp } from '../context/AppContext';
 import { getAvatarThumbUrl } from '../utils/imageUrls';
@@ -14,9 +14,7 @@ const PersonAvatar = memo(function PersonAvatar({ person }: { person: Person }) 
   const [failed, setFailed] = useState(false);
   const avatarPath = person.avatar_path || person.cover_path || '';
 
-  useEffect(() => {
-    setFailed(false);
-  }, [avatarPath]);
+  useEffect(() => { setFailed(false); }, [avatarPath]);
 
   if (!avatarPath || failed) {
     return <div className={styles.avatarPlaceholder}>{person.name.charAt(0).toUpperCase()}</div>;
@@ -33,50 +31,28 @@ const PersonAvatar = memo(function PersonAvatar({ person }: { person: Person }) 
   );
 });
 
-const CoverPhoto = memo(function CoverPhoto({ person }: { person: Person }) {
-  const [failed, setFailed] = useState(false);
-  const coverPath = person.cover_path || '';
-  useEffect(() => { setFailed(false); }, [coverPath]);
-
-  if (!coverPath || failed) {
-    return <div className={styles.coverFallback}>{person.name.charAt(0).toUpperCase()}</div>;
-  }
+const Collage = memo(function Collage({ person }: { person: Person }) {
+  const photos = (person.sample_photos ?? []).slice(0, 3);
+  if (photos.length === 0) return null;
 
   return (
-    <img
-      className={styles.coverImg}
-      src={getAvatarThumbUrl(coverPath) ?? ''}
-      alt={person.name}
-      loading="eager"
-      decoding="async"
-      onError={() => setFailed(true)}
-    />
+    <div className={styles.collage}>
+      {photos.map((sp, i) => (
+        sp.path && sp.box ? (
+          <img
+            key={i}
+            className={styles.collageImg}
+            src={faceThumb(sp.path, sp.box, 80)}
+            alt=""
+            loading="lazy"
+            decoding="async"
+          />
+        ) : (
+          <div key={i} className={styles.collagePlaceholder} />
+        )
+      ))}
+    </div>
   );
-});
-
-const Collage = memo(function Collage({ person }: { person: Person }) {
-  const photos = (person.sample_photos ?? []).slice(0, 4);
-  const items: React.ReactNode[] = [];
-
-  for (let i = 0; i < 4; i++) {
-    const sp = photos[i];
-    if (sp && sp.path && sp.box) {
-      items.push(
-        <img
-          key={i}
-          className={styles.collageImg}
-          src={faceThumb(sp.path, sp.box, 120)}
-          alt=""
-          loading="lazy"
-          decoding="async"
-        />
-      );
-    } else {
-      items.push(<div key={i} className={styles.collagePlaceholder} />);
-    }
-  }
-
-  return <div className={styles.collage}>{items}</div>;
 });
 
 const PeopleCard = memo(function PeopleCard({
@@ -102,26 +78,11 @@ const PeopleCard = memo(function PeopleCard({
 }) {
   return (
     <div className={styles.card}>
-      <div className={styles.coverWrap} onClick={() => onOpen(person.id)}>
-        <CoverPhoto person={person} />
-        <div className={styles.avatarOverlay}>
-          <PersonAvatar person={person} />
-        </div>
+      <div className={styles.avatarWrap} onClick={() => onOpen(person.id)}>
+        <PersonAvatar person={person} />
       </div>
 
-      <div className={styles.actions}>
-        <button className={styles.actionBtn} title="Ver fotos" onClick={() => onOpen(person.id)}>
-          <ChevronRight size={15} />
-        </button>
-        <button className={styles.actionBtn} title="Renomear" onClick={() => onStartRename(person)}>
-          <Edit2 size={13} />
-        </button>
-        <button className={`${styles.actionBtn} ${styles.actionBtnDanger}`} title="Excluir" onClick={() => onDelete(person)}>
-          <Trash2 size={13} />
-        </button>
-      </div>
-
-      <div className={styles.body}>
+      <div className={styles.body} onClick={() => onOpen(person.id)}>
         {isRenaming ? (
           <>
             <input
@@ -135,8 +96,8 @@ const PeopleCard = memo(function PeopleCard({
               }}
             />
             <div className={styles.renameActions}>
-              <button className={`icon-btn success`} onClick={() => onConfirmRename(person.id)}><Check size={13} /></button>
-              <button className={`icon-btn`} onClick={onCancelRename}><X size={13} /></button>
+              <button className="icon-btn success" onClick={() => onConfirmRename(person.id)}><Check size={13} /></button>
+              <button className="icon-btn" onClick={onCancelRename}><X size={13} /></button>
             </div>
           </>
         ) : (
@@ -151,6 +112,18 @@ const PeopleCard = memo(function PeopleCard({
       </div>
 
       <Collage person={person} />
+
+      <div className={styles.actions}>
+        <button className={styles.actionBtn} title="Ver fotos" onClick={() => onOpen(person.id)}>
+          <ChevronRight size={15} />
+        </button>
+        <button className={styles.actionBtn} title="Renomear" onClick={() => onStartRename(person)}>
+          <Edit2 size={13} />
+        </button>
+        <button className={`${styles.actionBtn} ${styles.actionBtnDanger}`} title="Excluir" onClick={() => onDelete(person)}>
+          <Trash2 size={13} />
+        </button>
+      </div>
     </div>
   );
 });
@@ -188,13 +161,9 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
     setRenameValue(person.name);
   }, []);
 
-  const handleCancelRename = useCallback(() => {
-    setRenamingId(null);
-  }, []);
+  const handleCancelRename = useCallback(() => { setRenamingId(null); }, []);
 
-  const handleRenameValue = useCallback((value: string) => {
-    setRenameValue(value);
-  }, []);
+  const handleRenameValue = useCallback((value: string) => { setRenameValue(value); }, []);
 
   const handleRenameSubmit = useCallback(async (old_id: string) => {
     const trimmed = renameValue.trim();
@@ -203,9 +172,7 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
     try {
       await api.renamePerson(old_id, trimmed);
       await load();
-    } catch {
-      setError('Erro ao renomear.');
-    }
+    } catch { setError('Erro ao renomear.'); }
     setRenamingId(null);
   }, [load, renameValue]);
 
@@ -220,9 +187,7 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
     try {
       await api.deletePerson(person.id);
       await load();
-    } catch {
-      setError('Erro ao excluir.');
-    }
+    } catch { setError('Erro ao excluir.'); }
   }, [load, onRequestConfirm]);
 
   const filtered = useMemo(() => people.filter(p =>
