@@ -52,7 +52,7 @@ export default function CompareModal({
   const leftImg = rep ? faceThumb(rep.path, rep.box, 400) : '';
 
   let rightImg = '';
-  if (matchData) {
+  if (matchData && matchData.matched_student_face_box && matchData.matched_student_photo_path) {
     const box = matchData.matched_student_face_box;
     rightImg = api.faceThumbUrl(
       matchData.matched_student_photo_path,
