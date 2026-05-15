@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Save, RefreshCw, Trash2, Info, Camera, Image, Settings2, Cpu, FolderOpen, Archive } from 'lucide-react';
+import { Save, RefreshCw, Trash2, Info, Image, Settings2, Cpu, FolderOpen } from 'lucide-react';
 import { api, type QualitySettings, type AppSettings } from '../services/api';
 import { useApp } from '../context/AppContext';
 

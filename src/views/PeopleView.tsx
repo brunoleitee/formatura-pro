@@ -1,5 +1,5 @@
 import { memo, useState, useEffect, useCallback, useMemo } from 'react';
-import { Users, RefreshCw, Edit2, Trash2, Check, X, Star, Trash, Award, Search, ExternalLink, Filter, LayoutGrid, List, Download, ChevronDown } from 'lucide-react';
+import { Users, RefreshCw, Edit2, Trash2, Check, X, Star, Award, LayoutGrid, List, Search, ExternalLink, Trash } from 'lucide-react';
 import { api, type Person } from '../services/api';
 import { useApp } from '../context/AppContext';
 import { getAvatarThumbUrl } from '../utils/imageUrls';

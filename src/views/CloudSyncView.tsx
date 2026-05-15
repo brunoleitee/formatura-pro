@@ -753,10 +753,10 @@ export default function CloudSyncView() {
                           <span className={styles.aiStatusOk}>✓ OCR detectado</span>
                           <label className={styles.aiLabel}>OCR</label>
                           <span className={styles.aiValue}>{aiDetails.ocr_text}</span>
-                          {aiDetails.ocr_confidence > 0 && (
+                          {(aiDetails.ocr_confidence ?? 0) > 0 && (
                             <>
                               <label className={styles.aiLabel}>Confiança OCR</label>
-                              <span className={styles.aiValue}>{(aiDetails.ocr_confidence * 100).toFixed(0)}%</span>
+                              <span className={styles.aiValue}>{((aiDetails.ocr_confidence ?? 0) * 100).toFixed(0)}%</span>
                             </>
                           )}
                         </div>

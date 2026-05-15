@@ -1,4 +1,4 @@
-import { aiCacheStore, type AIStatus } from "./AICacheStore";
+import { aiCacheStore } from "./AICacheStore";
 import { aiApi } from "./aiApi";
 
 interface QueueItem {

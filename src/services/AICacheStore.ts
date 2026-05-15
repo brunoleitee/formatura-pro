@@ -63,7 +63,6 @@ class AICacheStore {
       updated_at: Date.now(),
       ...prev,
       ...result,
-      path,
     });
     this.notify();
   }
