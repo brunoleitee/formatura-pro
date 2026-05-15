@@ -1267,6 +1267,11 @@ def get_student_match_preview(catalog: str, cluster_id: str, student: str):
     return rm.get_student_match_preview(catalog, cluster_id, student)
 
 
+@app.post("/api/review/generate-all-embeddings")
+def generate_all_embeddings(req: dict = {}):
+    return rm.generate_all_embeddings(req.get("catalog", ""))
+
+
 BulkManualIdentifyReq = rm.BulkManualIdentifyReq
 
 
