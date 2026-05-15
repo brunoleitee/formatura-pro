@@ -198,13 +198,6 @@ export default function ClusterDetail({
   const thumbSize = gridZoom >= 240 ? 600 : 400;
   const photoImgH = Math.round(gridZoom * 0.85);
 
-  console.log("[DETAIL RAW CLUSTER]", {
-    suggested_student: cluster?.suggested_student,
-    suggested_similarity: cluster?.suggested_similarity,
-    best_student_debug: cluster?.best_student_debug,
-    best_similarity_debug: cluster?.best_similarity_debug,
-  });
-
   const cleanName = (n: any) => (!n || n === 'null' || n === 'unknown') ? null : n;
 
   const compareStudent =
@@ -215,11 +208,6 @@ export default function ClusterDetail({
     compareStudent === cleanName(cluster.suggested_student)
       ? (cluster.suggested_similarity ?? 0)
       : (cluster.best_similarity_debug ?? 0);
-
-  console.log("[DETAIL COMPARE PROPS]", {
-    compareStudent,
-    compareSimilarity,
-  });
 
   // Buscar label amigável (nome real) se houver um melhor match
   useEffect(() => {

@@ -138,12 +138,6 @@ export default function ClusterToolbar({
       {/* Compare button */}
       {(() => {
         const compareEnabled = !!compareStudent && (compareSimilarity ?? 0) >= 0.30;
-        console.log("[TOOLBAR RECEIVED PROPS]", {
-          compareStudent,
-          compareSimilarity,
-          compareEnabled,
-        });
-        
         return (
           <button 
             className={styles.compareBtn} 

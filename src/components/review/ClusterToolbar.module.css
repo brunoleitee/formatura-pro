@@ -40,6 +40,11 @@
   transition: border-color 0.15s, color 0.15s;
 }
 
+.select option {
+  background: #1a1d2e;
+  color: #cbd5e1;
+}
+
 .select:hover,
 .select:focus {
   border-color: rgba(255, 255, 255, 0.15);

@@ -33,13 +33,9 @@ export default function CompareModal({
     if (!bestName || !cluster.cluster_id) return;
     setIsLoading(true);
     
-    // Obter o catálogo atual (a partir da URL ou injetado, no ClusterDetail temos prop catalog)
-    // Como CompareModal não recebe catalog, vamos assumir que ele pode ser extraído ou passado.
-    // Olhando ClusterDetail, ele tem catalog. Vamos precisar passar catalog para o CompareModal.
     
     api.getStudentMatchPreview(catalog, cluster.cluster_id, bestName)
       .then(data => {
-        console.log('[COMPARE PREVIEW RESPONSE]', data);
         setMatchData(data);
       })
       .catch(err => {
