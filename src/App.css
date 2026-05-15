@@ -533,6 +533,9 @@ input[type="checkbox"], input[type="radio"] {
 /* Tab group (segmented filter) */
 .tab-group { display: flex; gap: var(--space-1); }
 .tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   padding: 0 var(--space-3);
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
@@ -540,6 +543,7 @@ input[type="checkbox"], input[type="radio"] {
   transition: background var(--transition-fast), color var(--transition-fast);
   background: transparent;
   height: var(--btn-height-sm);
+  line-height: 1;
 }
 .tab-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 .tab-btn.active { background: var(--bg-active); color: var(--accent); font-weight: 600; }
@@ -966,13 +970,17 @@ input[type="checkbox"], input[type="radio"] {
 .tab-group { display: flex; gap: 4px; }
 
 .tab-btn {
-  padding: 6px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   color: var(--text-secondary);
   transition: background var(--transition-fast), color var(--transition-fast);
   background: transparent;
   height: var(--btn-height-sm);
+  line-height: 1;
 }
 .tab-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 .tab-btn.active { background: var(--bg-active); color: var(--accent); font-weight: 600; }
