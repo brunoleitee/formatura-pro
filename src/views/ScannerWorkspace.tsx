@@ -112,6 +112,36 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     });
   }, [processedPhotos, filterSearch, filterType]);
 
+  // Refs para estabilizar os callbacks e evitar re-renders do grid inteiro
+  const activePhotosRef = useRef<string[]>([]);
+  
+  const activePhotos = scanStatus?.is_scanning ? processedPhotos : folderPhotos.map(p => p.path);
+  
+  useEffect(() => {
+    activePhotosRef.current = activePhotos;
+  }, [activePhotos]);
+
+  const handleCardClick = useCallback((path: string) => {
+    const realIdx = activePhotosRef.current.indexOf(path);
+    if (realIdx >= 0) setActivePhotoIndex(realIdx);
+  }, []);
+
+  const handleCardDoubleClick = useCallback((path: string) => {
+    const realIdx = activePhotosRef.current.indexOf(path);
+    if (realIdx >= 0) {
+      setActivePhotoIndex(realIdx);
+      setViewMode('single');
+      setPreviewZoom(0);
+      setDragPos({ x: 0, y: 0 });
+    }
+  }, []);
+
+  const handleWheelZoom = useCallback((e: React.WheelEvent) => {
+    if (viewMode !== 'single') return;
+    const delta = e.deltaY * -0.1;
+    setPreviewZoom(prev => Math.min(Math.max(prev + delta, 0), 300));
+  }, [viewMode]);
+
   // Persistence Effects
   useEffect(() => {
     localStorage.setItem('scanner_selected_folder', selectedFolder);
@@ -129,6 +159,26 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     localStorage.setItem('scanner_sort_by', sortBy);
   }, [sortBy]);
   const [previewLoaded, setPreviewLoaded] = useState(false);
+
+  // Keyboard Navigation para Single View
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (viewMode !== 'single') return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      if (e.key === 'Escape') {
+        setViewMode('grid');
+        setPreviewZoom(0);
+        setDragPos({ x: 0, y: 0 });
+      } else if (e.key === 'ArrowLeft') {
+        navigatePreview(-1);
+      } else if (e.key === 'ArrowRight') {
+        navigatePreview(1);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [viewMode, activePhotoIndex, activePhotos.length]);
 
   const handlePickOri = async () => {
     const res = await api.selectFolder().catch(() => null);
@@ -253,7 +303,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const etaStr = scanStatus?.eta_seconds ? new Date(scanStatus.eta_seconds * 1000).toISOString().substr(11, 8) : '00:00:00';
 
   const faces = useMemo(() => scanStatus?.recent_faces || [], [scanStatus]);
-  const activePhotos = scanStatus?.is_scanning ? processedPhotos : folderPhotos.map(p => p.path);
   const navPreviewUrl = activePhotos[activePhotoIndex] ? api.thumbUrl(activePhotos[activePhotoIndex], 1200) : '';
   const navFileName = activePhotos[activePhotoIndex]?.split(/[\\/]/).pop() || '';
 
@@ -533,23 +582,35 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                 <input 
                   type="range" 
                   className={styles.slider} 
-                  min="0" 
-                  max="100" 
-                  value={viewMode === 'single' ? previewZoom : Math.round(((thumbSize - 120) / 280) * 100)} 
+                  min={viewMode === 'single' ? "0" : "80"} 
+                  max={viewMode === 'single' ? "300" : "300"} 
+                  value={viewMode === 'single' ? previewZoom : thumbSize} 
                   onChange={e => {
                     const val = parseInt(e.target.value);
                     if (viewMode === 'single') setPreviewZoom(val);
-                    else setThumbSize(120 + (val / 100) * 280);
+                    else setThumbSize(val);
                   }} 
                   style={{ width: 80 }} 
                 />
-                <span className={styles.zoomValue}>{viewMode === 'single' ? `${previewZoom}%` : `${Math.round(((thumbSize - 120) / 280) * 100)}%`}</span>
+                <span className={styles.zoomValue}>{viewMode === 'single' ? `${Math.round(previewZoom)}%` : `${thumbSize}px`}</span>
+                {viewMode === 'single' && (
+                  <button className={styles.toggleBtn} onClick={() => { setPreviewZoom(0); setDragPos({x:0, y:0}); }} title="Fit Screen" style={{ marginLeft: 8 }}>
+                    <Maximize2 size={12} />
+                  </button>
+                )}
               </div>
               
               {selectedFolder && (
                 <div className={styles.previewFileName}>
                   <Folder size={12} style={{marginRight: 6, verticalAlign: 'middle', color: '#60a5fa'}} />
                   {selectedFolder.split(/[\\/]/).pop()}
+                </div>
+              )}
+
+              {viewMode === 'single' && activePhotos.length > 0 && (
+                <div className={styles.singleViewMeta}>
+                  <span className={styles.singleViewIndex}>{activePhotoIndex + 1} / {activePhotos.length}</span>
+                  <span className={styles.previewFileName}>{navFileName}</span>
                 </div>
               )}
 
@@ -627,14 +688,11 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                   </div>
                 )}
               </div>
-              {viewMode === 'single' && activePhotos.length > 0 && (
-                <span className={styles.previewFileName}>{navFileName}</span>
-              )}
             </div>
             <div className={styles.headerRight}>
               <span className={styles.photoCount}>
                 {isScanning ? (
-                  `${new Intl.NumberFormat('pt-BR').format(scanStatus?.total_processadas || 0)} / ${new Intl.NumberFormat('pt-BR').format(scanStatus?.total_fotos || 0)}`
+                  `${new Intl.NumberFormat('pt-BR').format(scanStatus?.total_processadas || 0)} / ${new Intl.NumberFormat('pt-BR').format(scanStatus?.total_files || 0)}`
                 ) : (
                   new Intl.NumberFormat('pt-BR').format(totalFolderPhotos)
                 )} fotos
@@ -643,13 +701,13 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           </div>
 
           {viewMode === 'single' && activePhotos.length > 0 ? (
-            <div className={styles.previewContent}>
+            <div className={styles.singleViewContainer}>
               <div className={styles.previewMain}>
                 <button className={`${styles.previewNavBtn} ${styles.previewNavPrev}`} onClick={() => navigatePreview(-1)}>
-                  <ChevronLeft size={20} />
+                  <ChevronLeft size={32} />
                 </button>
                 <button className={`${styles.previewNavBtn} ${styles.previewNavNext}`} onClick={() => navigatePreview(1)}>
-                  <ChevronRightIcon size={20} />
+                  <ChevronRightIcon size={32} />
                 </button>
                 
                 <div 
@@ -658,12 +716,13 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                   onMouseMove={handleDragMove}
                   onMouseUp={handleDragEnd}
                   onMouseLeave={handleDragEnd}
+                  onWheel={handleWheelZoom}
                   style={{ cursor: previewZoom > 0 ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
                 >
                   <div 
                     className={styles.previewImageInner}
                     style={{ 
-                      transform: `scale(${1 + (previewZoom / 100) * 1.5}) translate(${dragPos.x / (1 + (previewZoom/100)*1.5)}px, ${dragPos.y / (1 + (previewZoom/100)*1.5)}px)`,
+                      transform: `scale(${1 + (previewZoom / 100) * 2}) translate(${dragPos.x / (1 + (previewZoom/100)*2)}px, ${dragPos.y / (1 + (previewZoom/100)*2)}px)`,
                       transition: isDragging ? 'none' : 'transform 0.2s ease-out'
                     }}
                   >
@@ -677,6 +736,31 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     />
                   </div>
                 </div>
+              </div>
+
+              <div className={styles.singleFilmstrip}>
+                {activePhotos.map((p, i) => {
+                  if (Math.abs(i - activePhotoIndex) > 30) return null;
+                  return (
+                    <div 
+                      key={p} 
+                      className={`${styles.singleFilmstripCard} ${i === activePhotoIndex ? styles.singleFilmstripCardActive : ''}`}
+                      onClick={() => {
+                        setPreviewLoaded(false);
+                        setActivePhotoIndex(i);
+                        setPreviewZoom(0);
+                        setDragPos({ x: 0, y: 0 });
+                      }}
+                      ref={el => {
+                        if (el && i === activePhotoIndex) {
+                           el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                        }
+                      }}
+                    >
+                      <img src={api.thumbUrl(p, 120)} loading="lazy" alt="thumb" />
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ) : viewMode === 'list' ? (
@@ -735,11 +819,24 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
               )}
 
               {!isLoadingPhotos && isScanning && filteredProcessedPhotos.map((path, i) => (
-                <PhotoCard key={`${path}-${i}`} path={path} />
+                <PhotoCard 
+                  key={`${path}-${i}`} 
+                  path={path} 
+                  isActive={activePhotos.indexOf(path) === activePhotoIndex}
+                  onClick={handleCardClick}
+                  onDoubleClick={handleCardDoubleClick}
+                />
               ))}
 
               {!isLoadingPhotos && !isScanning && filteredFolderPhotos.map((photo, i) => (
-                <PhotoCard key={`${photo.path}-${i}`} path={photo.path} ext={photo.ext} />
+                <PhotoCard 
+                  key={`${photo.path}-${i}`} 
+                  path={photo.path} 
+                  ext={photo.ext} 
+                  isActive={activePhotos.indexOf(photo.path) === activePhotoIndex}
+                  onClick={handleCardClick}
+                  onDoubleClick={handleCardDoubleClick}
+                />
               ))}
 
               {!isLoadingPhotos && !isScanning && folderPhotos.length > 0 && filteredFolderPhotos.length === 0 && (
@@ -910,9 +1007,25 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   );
 });
 
-const PhotoCard = ({ path, ext }: { path: string, ext?: string }) => {
+const PhotoCard = memo(({ 
+  path, 
+  ext,
+  isActive,
+  onClick,
+  onDoubleClick
+}: { 
+  path: string, 
+  ext?: string,
+  isActive: boolean,
+  onClick: (path: string) => void,
+  onDoubleClick: (path: string) => void
+}) => {
   return (
-    <div className={styles.photoCard}>
+    <div 
+      className={`${styles.photoCard} ${isActive ? styles.photoCardActive : ''}`}
+      onClick={() => onClick(path)}
+      onDoubleClick={() => onDoubleClick(path)}
+    >
       <img 
         src={api.thumbUrl(path, 300)} 
         alt="Preview" 
@@ -934,6 +1047,6 @@ const PhotoCard = ({ path, ext }: { path: string, ext?: string }) => {
       </div>
     </div>
   );
-};
+});
 
 export default ScannerWorkspace;

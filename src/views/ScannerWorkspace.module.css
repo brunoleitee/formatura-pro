@@ -725,18 +725,32 @@
   position: relative;
   width: var(--thumb-size, 200px);
   aspect-ratio: 1 / 1;
-  border: none;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 2px solid transparent;
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s cubic-bezier(0.2, 0, 0, 1), border-color 0.2s;
   display: flex;
   flex-direction: column;
   cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .photoCard:hover {
-  border-color: #3b82f6;
   transform: translateY(-6px) scale(1.02);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1);
   z-index: 10;
+}
+
+.photoCardActive {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.3), 0 10px 30px rgba(0,0,0,0.5);
+}
+
+.photoCardActive::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px solid #60a5fa;
+  border-radius: inherit;
+  pointer-events: none;
 }
 
 .cardThumb {
@@ -1300,6 +1314,87 @@
   gap: 6px;
   color: #10b981;
   font-weight: 600;
+}
+
+/* ── SINGLE VIEW CONTAINER ── */
+.singleViewContainer {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  background: #08090c;
+  animation: singleFadeIn 0.3s ease-out;
+}
+
+@keyframes singleFadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.singleFilmstrip {
+  height: 80px;
+  background: #0b0c10;
+  border-top: 1px solid #1a1c23;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  overflow-x: auto;
+  flex-shrink: 0;
+  scrollbar-width: thin;
+}
+
+.singleFilmstripCard {
+  height: 60px;
+  width: 90px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.2s;
+  background: #111216;
+}
+
+.singleFilmstripCard img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.4;
+  transition: opacity 0.2s;
+}
+
+.singleFilmstripCard:hover img {
+  opacity: 0.8;
+}
+
+.singleFilmstripCardActive {
+  border-color: #3b82f6;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+}
+
+.singleFilmstripCardActive img {
+  opacity: 1;
+}
+
+.singleViewMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-left: 1px solid #1a1c23;
+  padding-left: 12px;
+  margin-left: 12px;
+}
+
+.singleViewIndex {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: #111216;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #1a1c23;
 }
 .previewImageInner {
   width: 100%;
