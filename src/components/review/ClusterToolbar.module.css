@@ -3,12 +3,13 @@
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  gap: var(--toolbar-gap, 7px);
+  padding: 0 var(--space-5);
+  height: var(--toolbar-height, 42px);
+  border-bottom: 1px solid var(--toolbar-sep-color, rgba(255, 255, 255, 0.04));
+  border-top: 1px solid var(--toolbar-sep-color, rgba(255, 255, 255, 0.04));
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.01);
+  background: var(--toolbar-bg, rgba(255, 255, 255, 0.01));
   flex-wrap: wrap;
 }
 

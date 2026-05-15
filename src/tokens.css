@@ -70,7 +70,11 @@
   --btn-height-sm: 28px;
   --btn-height-md: 34px;
   --btn-height-lg: 40px;
-  --toolbar-height: 42px;
+  --toolbar-height: 48px;
+  --toolbar-padding: 0 var(--space-5);
+  --toolbar-gap: var(--space-2);
+  --toolbar-sep-color: rgba(255, 255, 255, 0.06);
+  --toolbar-bg: rgba(255, 255, 255, 0.01);
   --sidebar-width: 260px;
   --input-height: 34px;
 }
