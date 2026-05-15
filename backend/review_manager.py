@@ -970,8 +970,22 @@ def _sync_review_cluster_cache(cur) -> dict:
         _sync_unknown_face_clusters(cur, [])
         return {"unknown_faces": 0, "cluster_count": 0}
 
-    # Use embedding-based clustering with suggestions
     cat = _current_catalog()
+
+    # Garantir que todas as faces tenham embedding antes de clusterizar
+    if cat:
+        try:
+            cur.execute("""
+                SELECT rowid, aluno_id, foto_path, x1, y1, x2, y2
+                FROM ocorrencias
+                WHERE x1 IS NOT NULL
+            """)
+            for occ in cur.fetchall():
+                get_cached_occurrence_embedding(cur.connection, occ)
+        except Exception as e:
+            print(f"[SYNC EMBEDDINGS] erro: {e}")
+
+    # Use embedding-based clustering with suggestions
     if cat:
         try:
             result = get_unknown_clusters(catalog=cat, min_cluster_size=1, limit=200)
