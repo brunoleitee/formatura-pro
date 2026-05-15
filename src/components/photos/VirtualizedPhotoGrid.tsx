@@ -22,6 +22,7 @@ interface VirtualizedPhotoGridProps {
   onFirstThumbLoad?: () => void;
   zoom?: number;
   resetScrollKey?: string;
+  scrollRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 const GRID_GAP = 10;
@@ -60,8 +61,14 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
   onFirstThumbLoad,
   zoom = 180,
   resetScrollKey,
+  scrollRef,
 }: VirtualizedPhotoGridProps) {
   const parentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!scrollRef) return;
+    (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = parentRef.current;
+  });
   const [viewportWidth, setViewportWidth] = useState(() => 
     typeof window !== 'undefined' ? window.innerWidth - 320 : 0
   );

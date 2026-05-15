@@ -48,6 +48,8 @@ export default function CatalogView() {
   const [auditStarting, setAuditStarting] = useState(false);
   const [detailsPhoto, setDetailsPhoto] = useState<Photo | null>(null);
   const firstThumbLoadStartRef = useRef<number | null>(null);
+  const gridScrollRef = useRef<HTMLDivElement | null>(null);
+  const savedScrollRef = useRef(0);
   const firstThumbLoggedRef = useRef(false);
   const selectionCountRef = useRef(0);
   const getSelectionCount = useCallback(() => selectionCountRef.current, []);
@@ -147,6 +149,21 @@ export default function CatalogView() {
       setBulkBarVisible(false);
     }
   }, [viewerPhoto]);
+
+  // Save/restore scroll position when opening/closing viewer
+  useEffect(() => {
+    if (viewerPhoto) {
+      savedScrollRef.current = gridScrollRef.current?.scrollTop ?? 0;
+    } else if (savedScrollRef.current > 0) {
+      const target = savedScrollRef.current;
+      savedScrollRef.current = 0;
+      requestAnimationFrame(() => {
+        if (gridScrollRef.current) {
+          gridScrollRef.current.scrollTop = target;
+        }
+      });
+    }
+  }, [!!viewerPhoto]);
 
   // Space = abrir foto grande
   useEffect(() => {
@@ -337,6 +354,7 @@ export default function CatalogView() {
                 zoom={size}
                 getSelectionCount={getSelectionCount}
                 resetScrollKey={`${currentCatalog}|${catalogSubfolder ?? ''}|${filter}|${hideDiscarded ? '1' : '0'}`}
+                scrollRef={gridScrollRef}
               />
             </>
           )}
