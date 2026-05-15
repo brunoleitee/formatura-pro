@@ -1571,25 +1571,34 @@ input[type="checkbox"], input[type="radio"] {
 }
 
 .settings-tabs .tab-btn {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-1);
-  line-height: 1;
-  padding: 0 var(--space-3);
-  height: var(--btn-height-md);
+  padding: 0 14px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  line-height: normal;
+  font-family: inherit;
+  white-space: nowrap;
 }
+.settings-tabs .tab-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.settings-tabs .tab-btn.active { background: var(--bg-active); color: var(--accent); font-weight: 600; }
 
 .settings-tabs .tab-btn svg {
-  width: 16px;
-  height: 16px;
   flex-shrink: 0;
 }
 
 .settings-tabs .tab-btn span {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  line-height: 1;
+  line-height: normal;
 }
 
 .settings-layout {
