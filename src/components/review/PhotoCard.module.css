@@ -165,7 +165,7 @@
   font-size: 0.62rem;
   font-weight: 700;
   padding: 3px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   letter-spacing: 0.02em;
   backdrop-filter: blur(4px);
 }
@@ -183,7 +183,7 @@
 }
 
 .success {
-  background: rgba(22, 163, 74, 0.22);
+  background: var(--badge-green-bg, rgba(22, 163, 74, 0.2));
   color: #86efac;
-  border: 1px solid rgba(22, 163, 74, 0.25);
+  border: 1px solid rgba(52, 211, 153, 0.2);
 }
