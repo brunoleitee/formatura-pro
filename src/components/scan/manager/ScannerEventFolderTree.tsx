@@ -1,31 +1,22 @@
 import React from 'react';
-import { Folder, CheckCircle2, XCircle, Eye, ChevronRight } from 'lucide-react';
+import { Folder, Check } from 'lucide-react';
 import styles from './ScannerEventFolderManager.module.css';
 
 interface FolderData {
   name: string;
   path: string;
   imageCount: number;
-  children?: FolderData[];
 }
 
 interface TreeProps {
   folders: FolderData[];
   selectedPath: string;
   onSelect: (folder: FolderData) => void;
-  folderStatuses: Record<string, 'include' | 'ignore' | 'monitor'>;
+  selectedPaths: string[];
+  onToggle: (path: string) => void;
 }
 
-const ScannerEventFolderTree: React.FC<TreeProps> = ({ folders, selectedPath, onSelect, folderStatuses }) => {
-  const renderIcon = (status?: string) => {
-    switch (status) {
-      case 'include': return <CheckCircle2 size={12} className={styles['status-include']} />;
-      case 'ignore': return <XCircle size={12} className={styles['status-ignore']} />;
-      case 'monitor': return <Eye size={12} className={styles['status-monitor']} />;
-      default: return null;
-    }
-  };
-
+const ScannerEventFolderTree: React.FC<TreeProps> = ({ folders, selectedPath, onSelect, selectedPaths, onToggle }) => {
   return (
     <div className={styles['scanner-event-manager-tree']}>
       {folders.length === 0 ? (
@@ -35,7 +26,7 @@ const ScannerEventFolderTree: React.FC<TreeProps> = ({ folders, selectedPath, on
       ) : (
         folders.map((folder) => {
           const isActive = selectedPath === folder.path;
-          const status = folderStatuses[folder.path];
+          const isSelected = selectedPaths.includes(folder.path);
 
           return (
             <div 
@@ -43,14 +34,18 @@ const ScannerEventFolderTree: React.FC<TreeProps> = ({ folders, selectedPath, on
               className={`${styles['scanner-event-manager-tree-item']} ${isActive ? styles['scanner-event-manager-tree-item-active'] : ''}`}
               onClick={() => onSelect(folder)}
             >
-              <Folder size={14} />
-              <span className={styles['scanner-event-manager-tree-item-name']}>{folder.name}</span>
-              {folder.imageCount > 0 && (
-                <span style={{ fontSize: '9px', opacity: 0.5 }}>({folder.imageCount})</span>
-              )}
-              <div className={styles['scanner-event-manager-status-icon']}>
-                {renderIcon(status)}
+              <div 
+                className={`${styles['scanner-event-manager-checkbox']} ${isSelected ? styles['scanner-event-manager-checkbox-checked'] : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggle(folder.path);
+                }}
+              >
+                {isSelected && <Check size={10} />}
               </div>
+              
+              <Folder size={14} style={{ opacity: isSelected ? 1 : 0.4 }} />
+              <span style={{ opacity: isSelected ? 1 : 0.6 }}>{folder.name}</span>
             </div>
           );
         })

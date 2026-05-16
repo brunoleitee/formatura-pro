@@ -137,7 +137,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [filterType, setFilterType] = useState<'all' | 'jpg' | 'raw'>('all');
 
   const [showEventManager, setShowEventManager] = useState(false);
-  const [eventManagerData, setEventManagerData] = useState<{ included: string[]; ignored: string[]; monitored: string[] } | null>(null);
 
   // Filtered Photos logic
   const filteredFolderPhotos = useMemo(() => {
@@ -846,7 +845,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                   <button 
                     className={styles.manageBtn} 
                     onClick={() => setShowEventManager(!showEventManager)}
-                    style={{ display: eventFolders.length > 0 ? 'flex' : 'none' }}
                   >
                     <div className={styles.manageBtnContent}>
                       <FolderSearch size={14} className={styles.manageBtnIcon} />
@@ -860,8 +858,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                       eventPath={eventFolders[eventFolders.length - 1]}
                       catalogName={catalogName || 'default'}
                       onClose={() => setShowEventManager(false)}
-                      onApply={(data) => {
-                        setEventManagerData(data);
+                      onApply={(selectedPaths) => {
+                        console.log('Pastas selecionadas para o scanner:', selectedPaths);
                       }}
                     />
                   )}
