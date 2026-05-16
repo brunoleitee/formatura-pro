@@ -99,7 +99,6 @@ class ScanRequest(BaseModel):
     project_name: Optional[str] = Field(default="Scanner", max_length=100)
     extra_paths: List[str] = Field(default_factory=list, max_items=10)
     ai_model: Optional[str] = Field(default="FormaturaPRO - High Quality", max_length=100)
-    ocr_hybrid_enabled: Optional[bool] = Field(default=False)
     face_detection_enabled: Optional[bool] = Field(default=True)
     min_quality: Optional[int] = Field(default=70, ge=0, le=100)
     blur_treatment: Optional[str] = Field(default="Médio", max_length=50)
@@ -409,7 +408,6 @@ def _memory_cleanup_global(log_info=None):
         ss["skipped_background_faces"] = 0
         ss["scan_summary"] = None
         ss["progress"] = 0.0
-        ss["ocrResults"] = []
         ss["faces"] = []
         ss["scanQueue"] = []
         ss["processedItems"] = []
@@ -564,21 +562,6 @@ def unload_models():
                 log_info("[Scanner] Face model unloaded")
     except Exception as e:
         log_info(f"[Scanner] Error unloading face model: {e}")
-
-    # Unload EasyOCR reader
-    try:
-        import services.ocr_pipeline as ocr
-        if hasattr(ocr, '_EASYOCR_READER'):
-            reader = ocr._EASYOCR_READER
-            if reader is not None and reader is not False:
-                try:
-                    del reader
-                except Exception:
-                    pass
-                ocr._EASYOCR_READER = None
-                log_info("[Scanner] EasyOCR reader unloaded")
-    except Exception as e:
-        log_info(f"[Scanner] Error unloading EasyOCR: {e}")
 
     # Clear app_face in backend_state if present
     try:

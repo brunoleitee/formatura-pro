@@ -58,7 +58,7 @@ const PRIMARY_PIPELINE_STEPS: PipelineStep[] = [
   { key: 'scan', label: 'Scan de pastas', hint: 'Mapeando lotes e origem', icon: FolderSearch },
   { key: 'decode', label: 'Extração / decode', hint: 'Lendo imagens com segurança', icon: Cpu },
   { key: 'faces', label: 'Detectando rostos', hint: 'Separando rostos principais', icon: ScanFace },
-  { key: 'embeddings', label: 'Gerando embeddings + OCR', hint: 'OCR e vetores no mesmo fluxo', icon: Sparkles },
+  { key: 'embeddings', label: 'Gerando embeddings', hint: 'Vetores faciais para agrupamento', icon: Sparkles },
   { key: 'cluster', label: 'Clusterizando', hint: 'Agrupando semelhanças durante o scan', icon: Blocks },
   { key: 'save', label: 'Salvando banco', hint: 'Persistindo ocorrências e relações', icon: Images },
   { key: 'review', label: 'Revisão pronta', hint: 'Fila já preparada para abertura', icon: Wand2 },
@@ -154,7 +154,7 @@ function deriveCurrentStep(status: ScanStatus | null, progressPct: number) {
   if (text.includes('carreg')) return 1;
   if (text.includes('decod')) return 1;
   if (text.includes('processando lote') || text.includes('detect')) return progressPct >= 28 ? 2 : 1;
-  if (text.includes('emb') || text.includes('ocr')) return 3;
+  if (text.includes('emb')) return 3;
   if (text.includes('cluster')) return 4;
   if (text.includes('salv')) return 5;
   if (progressPct >= 94) return 6;

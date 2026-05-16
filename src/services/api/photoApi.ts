@@ -39,7 +39,6 @@ export const photoApi = {
   selectFolder: () => fetchJSON<{ path: string }>(`${API_BASE}/select-folder`),
   scanFolder: (ori_path: string, ref_path = '', project_name = '', options?: {
     ai_model?: string;
-    ocr_hybrid_enabled?: boolean;
     face_detection_enabled?: boolean;
     min_quality?: number;
     blur_treatment?: string;
@@ -50,7 +49,6 @@ export const photoApi = {
       ref_path,
       project_name,
       ...(options?.ai_model ? { ai_model: options.ai_model } : {}),
-      ...(options?.ocr_hybrid_enabled !== undefined ? { ocr_hybrid_enabled: options.ocr_hybrid_enabled } : {}),
       ...(options?.face_detection_enabled !== undefined ? { face_detection_enabled: options.face_detection_enabled } : {}),
       ...(options?.min_quality !== undefined ? { min_quality: options.min_quality } : {}),
       ...(options?.blur_treatment ? { blur_treatment: options.blur_treatment } : {}),

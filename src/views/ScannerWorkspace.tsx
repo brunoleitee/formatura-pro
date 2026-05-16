@@ -20,29 +20,12 @@ interface TimelineEntry {
   timestamp: number;
 }
 
-interface SelectedPhotoOcrData {
-  path: string;
-  status: 'loading' | 'done' | 'empty' | 'error';
-  fileName: string;
-  rawText?: string;
-  fields?: {
-    nome?: string | null;
-    curso?: string | null;
-    instituicao?: string | null;
-    data?: string | null;
-    tipo?: string | null;
-    numero?: string | null;
-  };
-  confidence?: number | null;
-  error?: string;
-}
-
 interface SelectedPhotoFaceItem {
   id: string;
   thumbnail: string;
   suggestedName: string;
   confidence: number;
-  badge: 'ocr' | 'ia' | 'similar' | 'sem_match';
+  badge: 'ia' | 'similar' | 'sem_match';
 }
 
 // Sub-component for Collapsible Sections in Sidebar
@@ -100,7 +83,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   
   // UI Options
   const [aiModel, setAiModel] = useState('FormaturaPRO - High Quality');
-  const [ocrEnabled, setOcrEnabled] = useState(false);
   const [gpuEnabled, setGpuEnabled] = useState(true);
   const [quality, setQuality] = useState(70);
   const [rawEnabled, setRawEnabled] = useState(true);
@@ -124,13 +106,11 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [processedPhotos, setProcessedPhotos] = useState<string[]>([]);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
 
-  // Selected photo details for bottom panels (OCR + Faces)
-  const [selectedPhotoOcr, setSelectedPhotoOcr] = useState<SelectedPhotoOcrData | null>(null);
+  // Selected photo details for bottom panels (Faces)
   const [selectedPhotoFaces, setSelectedPhotoFaces] = useState<{
     status: 'waiting' | 'processing' | 'done';
     faces: SelectedPhotoFaceItem[];
   }>({ status: 'waiting', faces: [] });
-  const ocrCacheRef = useRef<Record<string, SelectedPhotoOcrData>>({});
 
   // Filter state
   const [showFilters, setShowFilters] = useState(false);
@@ -284,58 +264,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
       });
     };
 
-    // ── VERIFICAR CACHE OCR ──
-    const cached = ocrCacheRef.current[selectedPhotoPath];
-    if (cached) {
-      setSelectedPhotoOcr(prev =>
-        prev?.path === selectedPhotoPath ? prev : cached
-      );
-      fetchFaces();
-      return;
-    }
-
-    // ── ESTADO INICIAL: LOADING ──
-    setSelectedPhotoOcr(prev => {
-      if (prev?.path === selectedPhotoPath && prev?.status === 'loading') return prev;
-      return { path: selectedPhotoPath, fileName, status: 'loading' };
-    });
-
     setSelectedPhotoFaces({ status: 'processing', faces: [] });
-
-    // ── CHAMAR OCR ENDPOINT ──
-    fetch(`/api/scanner/preview-ocr?path=${encodeURIComponent(selectedPhotoPath)}`, {
-      signal: controller.signal,
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (controller.signal.aborted) return;
-
-        const normalized: SelectedPhotoOcrData = {
-          path: selectedPhotoPath,
-          fileName,
-          status: data.ok && data.raw_text ? 'done' : 'empty',
-          rawText: data.raw_text || '',
-          fields: data.fields || {},
-          confidence: data.confidence ?? null,
-        };
-
-        ocrCacheRef.current[selectedPhotoPath] = normalized;
-
-        setSelectedPhotoOcr(prev =>
-          prev?.path === selectedPhotoPath && prev?.status === normalized.status
-            ? prev
-            : normalized
-        );
-      })
-      .catch(err => {
-        if (err.name === 'AbortError') return;
-        setSelectedPhotoOcr({
-          path: selectedPhotoPath,
-          fileName,
-          status: 'error',
-          error: String(err),
-        });
-      });
 
     // ── FACES ──
     fetchFaces();
@@ -436,18 +365,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
             // Atualizar faces em tempo real
             if (st.current_photo.faces) {
               setLiveFaceBoxes(st.current_photo.faces);
-            }
-
-            // Atualizar OCR em tempo real
-            if (st.current_photo.ocr_text) {
-              setSelectedPhotoOcr({
-                path: photoPath,
-                status: 'done',
-                fileName: st.current_photo.name || photoPath.split(/[\\/]/).pop() || '',
-                raw_text: st.current_photo.ocr_text,
-                fields: { numero: st.current_photo.ocr_text },
-                confidence: 0.95
-              });
             }
           }
 
@@ -596,7 +513,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     try {
       const payload = {
         ai_model: aiModel,
-        ocr_hybrid_enabled: ocrEnabled,
         face_detection_enabled: faceRecEnabled,
         min_quality: quality,
         blur_treatment: blurFilter,
@@ -695,7 +611,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
       <div className={styles.sidebarIconDivider} />
       <button className={styles.sidebarIconBtn} title="Origem"><Folder size={18} /></button>
       <button className={styles.sidebarIconBtn} title="IA"><Cpu size={18} /></button>
-      <button className={styles.sidebarIconBtn} title="OCR"><Maximize2 size={18} /></button>
     </div>
   );
 
@@ -727,7 +642,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
       <div className={styles.summaryBar}>
         <div className={styles.summaryHeader}>
           <h1>Scanner PRO</h1>
-          <p>Ingestão inteligente com IA e OCR</p>
+          <p>Ingestão inteligente com IA</p>
         </div>
 
         <div className={styles.summaryStats}>
@@ -960,7 +875,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
                 </div>
 
-                <CollapsibleSection title="5. IA e OCR" icon={Sparkles}>
+                <CollapsibleSection title="5. IA" icon={Sparkles}>
 
                   <div className={styles.formGroup}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
@@ -970,19 +885,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     <select className={styles.inputBase} value={aiModel} onChange={e => setAiModel(e.target.value)}>
                       <option>FormaturaPRO - High Quality</option>
                     </select>
-                  </div>
-                  <div className={styles.checkboxGroup} onClick={() => setOcrEnabled(!ocrEnabled)}>
-                    <div className={`${styles.checkbox} ${ocrEnabled ? styles.checked : ''}`}>
-                      {ocrEnabled && <Check size={10} color="white" />}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <span className={styles.checkboxLabel} style={{ fontSize: 12 }}>
-                        OCR Experimental
-                      </span>
-                      <span style={{ fontSize: 10, color: '#888', lineHeight: 1.2 }}>
-                        Pode aumentar muito o tempo de processamento.
-                      </span>
-                    </div>
                   </div>
                   <div className={styles.checkboxGroup} onClick={() => setFaceRecEnabled(!faceRecEnabled)}>
                     <div className={`${styles.checkbox} ${faceRecEnabled ? styles.checked : ''}`}>
@@ -1396,73 +1298,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           <div className={styles.bottomPanels}>
             <div className={styles.detailSection}>
               <div className={styles.detailHeader}>
-                <span className={styles.detailTitle}><Search size={11} /> OCR / Texto detectado</span>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  {selectedPhotoOcr ? (
-                    <span className={styles.ocrBadge}>
-                      {selectedPhotoOcr.status === 'loading' ? (
-                        <LoaderCircle size={8} className={styles.spin} />
-                      ) : (
-                        <Eye size={8} />
-                      )}
-                      {selectedPhotoOcr.status === 'loading' ? 'LENDO OCR...' : 
-                       selectedPhotoOcr.status === 'done' ? 'OCR DETECTADO' :
-                       selectedPhotoOcr.status === 'empty' ? 'SEM TEXTO' :
-                       selectedPhotoOcr.status === 'error' ? 'ERRO OCR' : 'AGUARDANDO'}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              {selectedPhotoOcr ? (
-                <div className={styles.ocrGrid}>
-                  <span className={styles.ocrLabel}>Arquivo:</span>
-                  <span className={styles.ocrValue} title={selectedPhotoOcr.fileName}>
-                    {selectedPhotoOcr.fileName.length > 30
-                      ? selectedPhotoOcr.fileName.slice(0, 27) + '...'
-                      : selectedPhotoOcr.fileName}
-                  </span>
-                  <span className={styles.ocrLabel}>Nome:</span>
-                  <span className={selectedPhotoOcr.fields?.nome ? styles.ocrValueFound : styles.ocrValue}>
-                    {selectedPhotoOcr.status === 'loading' ? 'Lendo...' :
-                     selectedPhotoOcr.fields?.nome || '---'}
-                    {selectedPhotoOcr.confidence ? <span className={styles.ocrConfidence}>{Math.round(selectedPhotoOcr.confidence * 100)}%</span> : null}
-                  </span>
-                  <span className={styles.ocrLabel}>Curso:</span>
-                  <span className={selectedPhotoOcr.fields?.curso ? styles.ocrValueFound : styles.ocrValue}>
-                    {selectedPhotoOcr.status === 'loading' ? 'Lendo...' :
-                     selectedPhotoOcr.fields?.curso || '---'}
-                  </span>
-                  <span className={styles.ocrLabel}>Instituição:</span>
-                  <span className={styles.ocrValue}>
-                    {selectedPhotoOcr.status === 'loading' ? 'Lendo...' :
-                     selectedPhotoOcr.fields?.instituicao || '---'}
-                  </span>
-                  <span className={styles.ocrLabel}>Data:</span>
-                  <span className={styles.ocrValue}>
-                    {selectedPhotoOcr.status === 'loading' ? 'Lendo...' :
-                     selectedPhotoOcr.fields?.data || '---'}
-                  </span>
-                  <span className={styles.ocrLabel}>Tipo:</span>
-                  <span className={styles.ocrValue}>
-                    {selectedPhotoOcr.status === 'loading' ? 'Lendo...' :
-                     selectedPhotoOcr.fields?.tipo || '---'}
-                  </span>
-                  <span className={styles.ocrLabel}>Nº OCR:</span>
-                  <span className={styles.ocrValue}>
-                    {selectedPhotoOcr.status === 'loading' ? 'Lendo...' :
-                     selectedPhotoOcr.fields?.numero || '---'}
-                  </span>
-                </div>
-              ) : (
-                <div className={styles.ocrEmpty}>
-                  {activePhotos.length > 0
-                    ? 'Aguardando dados de OCR...'
-                    : 'Selecione uma foto para ver dados de OCR'}
-                </div>
-              )}
-            </div>
-            <div className={styles.detailSection}>
-              <div className={styles.detailHeader}>
                 <span className={styles.detailTitle}><ScanFace size={11} /> Rostos detectados</span>
                 <span className={styles.detailCount}>
                   {selectedPhotoFaces.status === 'waiting' ? '-' : `${selectedPhotoFaces.faces.length} rostos`}
@@ -1486,12 +1321,11 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                         <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                           <span className={styles.faceConfidence}>{face.confidence.toFixed(1)}%</span>
                           <span className={
-                            face.badge === 'ocr' ? `${styles.badge} ${styles.badgeBlue}` :
                             face.badge === 'ia' ? `${styles.badge} ${styles.badgeAmber}` :
                             face.badge === 'similar' ? `${styles.badge} ${styles.badgeGreen}` :
                             `${styles.badge} ${styles.badgePurple}`
                           } style={{ fontSize: 6, padding: '1px 4px', borderRadius: 3 }}>
-                            {face.badge === 'ocr' ? 'OCR' : face.badge === 'ia' ? 'IA' : face.badge === 'similar' ? 'Similar' : 'Sem match'}
+                            {face.badge === 'ia' ? 'IA' : face.badge === 'similar' ? 'Similar' : 'Sem match'}
                           </span>
                         </div>
                       </div>
@@ -1534,10 +1368,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
               <div className={styles.queueItem}>
                 <div className={styles.queueLabel}><div className={styles.dot} style={{ background: '#10b981' }} /> Análise IA</div>
                 <div className={styles.queueValue}><span>{new Intl.NumberFormat('pt-BR').format(scanStatus?.total_processadas || 0)}</span> <CheckCircle2 size={10} color="#10b981" /></div>
-              </div>
-              <div className={styles.queueItem}>
-                <div className={styles.queueLabel}><div className={styles.dot} style={{ background: '#0ea5e9' }} /> OCR</div>
-                <div className={styles.queueValue}><span>{new Intl.NumberFormat('pt-BR').format(Math.floor((scanStatus?.total_processadas || 0) * 0.9))}</span></div>
               </div>
               <div className={styles.queueItem}>
                 <div className={styles.queueLabel}><div className={styles.dot} style={{ background: '#3b82f6' }} /> Rostos</div>

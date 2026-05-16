@@ -97,7 +97,6 @@ export interface LiveScannerStatus {
 export interface ScanCurrentPhoto {
   path: string;
   name: string;
-  ocr_text: string;
   faces: { bbox: number[]; confidence: number }[];
   timestamp: number;
 }

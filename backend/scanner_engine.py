@@ -688,18 +688,6 @@ def run_scanner_worker(req):
         scan_state["status_text"] = "Carregando Referências..."
         load_references(req.ref_path)
 
-        process_ocr_fn = None
-        if req.ocr_hybrid_enabled:
-            try:
-                from services.ocr_pipeline import process_ocr as p_ocr
-                process_ocr_fn = p_ocr
-                log_info("[SCAN] OCR Híbrido Ativado e carregado.")
-                _log_memory("after loading OCR model")
-            except Exception as e:
-                log_info(f"[SCAN] Falha ao carregar OCR: {e}")
-        else:
-            log_info("[Scanner] OCR disabled, skipping model load")
-
         scan_roots = [req.ori_path]
         for extra in (req.extra_paths or []):
             if extra and os.path.isdir(extra):
@@ -794,7 +782,7 @@ def run_scanner_worker(req):
                         continue
 
                     if _cancel_requested():
-                        log_info("[Scanner] CANCEL AFTER FACE — pulando OCR e DB")
+                        log_info("[Scanner] CANCEL AFTER FACE — pulando face e DB")
                         try: del img; del faces
                         except: pass
                         scan_state["status_text"] = "Scanner interrompido"
@@ -825,10 +813,7 @@ def run_scanner_worker(req):
                         b_status = blur_info.get("blur_status")
                         t_blur = (time.time() - t0_blur) * 1000
 
-                        ocr_text = ""
-                        primary_face = None
                         t_face = 0
-                        t_ocr = 0
 
                         if not valid_faces:
                             # Inserir entrada dummy para rastrear a foto mesmo sem faces
@@ -919,31 +904,12 @@ def run_scanner_worker(req):
                                     (nome, "n/a", detected_class),
                                 )
                                 
-                                if primary_face is None:
-                                    primary_face = (x1, y1, x2, y2)
-
                                 current_time = time.time()
                                 if current_time - last_face_update_time > 0.5:
                                     new_face = {"name": nome, "path": p, "box": [x1, y1, x2, y2]}
                                     scan_state["recent_faces"].insert(0, new_face)
                                     scan_state["recent_faces"] = scan_state["recent_faces"][:20]
                                     last_face_update_time = current_time
-
-                        # Rodar OCR se habilitado
-                        if process_ocr_fn:
-                            if _cancel_requested():
-                                log_info("[Scanner] Cancel before OCR")
-                                scan_state["status_text"] = "Scanner interrompido"
-                                break
-                            try:
-                                t0_ocr_run = time.time()
-                                ocr_res = process_ocr_fn(p, primary_face)
-                                t_ocr = (time.time() - t0_ocr_run) * 1000
-                                ocr_text = ocr_res.get("ocr_text", "") if ocr_res else ""
-                                if ocr_text:
-                                    log_debug(f"[SCAN-OCR] Detectado: {ocr_text}")
-                            except Exception as ocr_err:
-                                log_debug(f"[SCAN-OCR] Erro: {ocr_err}")
 
                         # Log Benchmark
                         total_ms = (time.time() - t0_photo) * 1000
@@ -952,15 +918,13 @@ def run_scanner_worker(req):
                             f"total={total_ms:.0f}ms | "
                             f"decode={t_decode:.0f}ms | "
                             f"blur={t_blur:.0f}ms | "
-                            f"face={t_face:.0f}ms | "
-                            f"ocr={t_ocr:.0f}ms"
+                            f"face={t_face:.0f}ms"
                         )
 
                         # Atualizar current_photo com dados reais para o carrossel live
                         scan_state["current_photo"] = {
                             "path": p,
                             "name": os.path.basename(p),
-                            "ocr_text": ocr_text,
                             "faces": [{"bbox": [f[1], f[2], f[3], f[4]], "confidence": 0.95} for f in valid_faces],
                             "timestamp": time.time()
                         }
