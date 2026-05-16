@@ -19,6 +19,7 @@ import { lazy, Suspense } from 'react';
 
 const CloudSyncView = lazy(() => import('../../views/CloudSyncView'));
 const ScannerWorkspace = lazy(() => import('../../views/ScannerWorkspace'));
+const EventsReferencesView = lazy(() => import('../../views/EventsReferencesView'));
 
 interface ScanSessionMeta {
   catalogName: string;
@@ -397,6 +398,7 @@ function autoCatalogName(): string {
       case 'settings':      return <SettingsView />;
       case 'cloud-sync':     return <Suspense fallback={<div style={{padding:40,color:'#9ca3af'}}>Carregando...</div>}><CloudSyncView /></Suspense>;
       case 'scanner':        return <ScannerWorkspace />;
+      case 'events-references': return <EventsReferencesView />;
       default:              return <CatalogView />;
     }
   };

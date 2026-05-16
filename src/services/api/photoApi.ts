@@ -34,8 +34,25 @@ export const photoApi = {
 
   // Scan
   selectFolder: () => fetchJSON<{ path: string }>(`${API_BASE}/select-folder`),
-  scanFolder: (ori_path: string, ref_path = '', project_name = '') =>
-    post(`${API_BASE}/scan/start`, { ori_path, ref_path, project_name }),
+  scanFolder: (ori_path: string, ref_path = '', project_name = '', options?: {
+    ai_model?: string;
+    ocr_hybrid_enabled?: boolean;
+    face_detection_enabled?: boolean;
+    min_quality?: number;
+    blur_treatment?: string;
+    selected_folders?: string[];
+  }) =>
+    post(`${API_BASE}/scan/start`, {
+      ori_path,
+      ref_path,
+      project_name,
+      ...(options?.ai_model ? { ai_model: options.ai_model } : {}),
+      ...(options?.ocr_hybrid_enabled !== undefined ? { ocr_hybrid_enabled: options.ocr_hybrid_enabled } : {}),
+      ...(options?.face_detection_enabled !== undefined ? { face_detection_enabled: options.face_detection_enabled } : {}),
+      ...(options?.min_quality !== undefined ? { min_quality: options.min_quality } : {}),
+      ...(options?.blur_treatment ? { blur_treatment: options.blur_treatment } : {}),
+      ...(options?.selected_folders ? { selected_folders: options.selected_folders } : {}),
+    }),
   getScanStatus: () => fetchJSON<ScanStatus>(`${API_BASE}/scan/status`),
   stopScan: () => post(`${API_BASE}/scan/stop`, {}),
   clearScanSummary: () => post(`${API_BASE}/scan/clear_summary`, {}),

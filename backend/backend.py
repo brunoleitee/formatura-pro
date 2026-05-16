@@ -993,6 +993,14 @@ class DbConnection:
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_ocor_unique
                 ON ocorrencias(aluno_id, foto_path, x1, y1, x2, y2)
             """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS catalog_settings (
+                catalog_name TEXT PRIMARY KEY,
+                scan_paths TEXT DEFAULT '',
+                root_path TEXT DEFAULT '',
+                selected_folders TEXT DEFAULT '{}'
+            )
+        """)
         self.conn.commit()
         return self
     
@@ -1070,13 +1078,20 @@ def get_catalog_settings(catalog: str = ""):
     try:
         with cm.get_db(catalog) as conn:
             cur = conn.cursor()
-            cur.execute("SELECT scan_paths, root_path FROM catalog_settings WHERE catalog_name = ?", (catalog,))
+            cur.execute("SELECT scan_paths, root_path, selected_folders FROM catalog_settings WHERE catalog_name = ?", (catalog,))
             row = cur.fetchone()
+            selected_folders = {}
+            if row and row[2]:
+                try:
+                    selected_folders = json.loads(row[2])
+                except Exception:
+                    selected_folders = {}
             if row:
                 return {
                     "catalog": catalog,
                     "scan_paths": row[0].split("|") if row[0] else [],
                     "root_path": row[1] or "",
+                    "selected_folders": selected_folders,
                     "quality": {},
                     "scanner": {},
                     "export": {},
@@ -1086,6 +1101,7 @@ def get_catalog_settings(catalog: str = ""):
                 "catalog": catalog,
                 "scan_paths": [],
                 "root_path": "",
+                "selected_folders": {},
                 "quality": {},
                 "scanner": {},
                 "export": {},
@@ -1096,6 +1112,7 @@ def get_catalog_settings(catalog: str = ""):
             "catalog": catalog,
             "scan_paths": [],
             "root_path": "",
+            "selected_folders": {},
             "quality": {},
             "scanner": {},
             "export": {},
@@ -1106,6 +1123,7 @@ class CatalogSettingsReq(BaseModel):
     catalog: str
     scan_paths: list = []
     root_path: str = ""
+    selected_folders: dict = {}
 
 @app.post("/api/catalogs/settings")
 def save_catalog_settings(req: CatalogSettingsReq):
@@ -1113,10 +1131,11 @@ def save_catalog_settings(req: CatalogSettingsReq):
         with cm.get_db(req.catalog) as conn:
             cur = conn.cursor()
             scan_paths_str = "|".join(req.scan_paths) if req.scan_paths else ""
+            selected_folders_str = json.dumps(req.selected_folders) if req.selected_folders else ""
             cur.execute("""
-                INSERT OR REPLACE INTO catalog_settings (catalog_name, scan_paths, root_path)
-                VALUES (?, ?, ?)
-            """, (req.catalog, scan_paths_str, req.root_path or ""))
+                INSERT OR REPLACE INTO catalog_settings (catalog_name, scan_paths, root_path, selected_folders)
+                VALUES (?, ?, ?, ?)
+            """, (req.catalog, scan_paths_str, req.root_path or "", selected_folders_str))
             conn.commit()
         return {"success": True, "catalog": req.catalog}
     except Exception as e:

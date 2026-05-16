@@ -5,6 +5,17 @@ export interface CatalogsResponse {
   catalog_meta: Record<string, CatalogMeta>;
 }
 
+export interface CatalogSettingsResponse {
+  catalog: string;
+  scan_paths: string[];
+  root_path: string;
+  selected_folders?: Record<string, string>;
+  quality?: Record<string, unknown>;
+  scanner?: Record<string, unknown>;
+  export?: Record<string, unknown>;
+  ui?: Record<string, unknown>;
+}
+
 export interface Person {
   id: string;
   name: string;

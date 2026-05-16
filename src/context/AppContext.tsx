@@ -9,7 +9,8 @@ export type ViewName =
   | 'review'
   | 'export'
   | 'settings'
-  | 'cloud-sync';
+  | 'cloud-sync'
+  | 'events-references';
 
 interface AppContextValue {
   currentCatalog: string;

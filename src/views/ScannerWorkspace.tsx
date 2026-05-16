@@ -97,6 +97,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   
   // UI Options
+  const [aiModel, setAiModel] = useState('FormaturaPRO - High Quality');
   const [ocrEnabled, setOcrEnabled] = useState(true);
   const [gpuEnabled, setGpuEnabled] = useState(true);
   const [quality, setQuality] = useState(70);
@@ -106,6 +107,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [blurFilter, setBlurFilter] = useState('Médio');
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const filmstripRef = useRef<HTMLDivElement | null>(null);
   const [processedPhotos, setProcessedPhotos] = useState<string[]>([]);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
 
@@ -427,7 +429,13 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     setTimeline([{ id: `start-${Date.now()}`, kind: 'system', text: `Scanner PRO v2.1 iniciado em ${new Date().toLocaleTimeString()}`, timestamp: Date.now() }]);
     
     try {
-      await api.scanFolder(oriPath, refPath || '', name);
+      await api.scanFolder(oriPath, refPath || '', name, {
+        ai_model: aiModel,
+        ocr_hybrid_enabled: ocrEnabled,
+        face_detection_enabled: faceRecEnabled,
+        min_quality: quality,
+        blur_treatment: blurFilter,
+      });
       await setCatalog(name);
       await refreshCatalogs();
       startPolling();
@@ -673,7 +681,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                       <label className={styles.label}>Modelo</label>
                       <span className={`${styles.badge} ${styles.badgeBlue}`}>v2.1 PRO</span>
                     </div>
-                    <select className={styles.inputBase}>
+                    <select className={styles.inputBase} value={aiModel} onChange={e => setAiModel(e.target.value)}>
                       <option>FormaturaPRO - High Quality</option>
                     </select>
                   </div>
@@ -926,7 +934,16 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                 </div>
               </div>
 
-              <div className={styles.singleFilmstrip}>
+              <div 
+                className={styles.singleFilmstrip}
+                ref={filmstripRef}
+                onWheel={(e) => {
+                  if (filmstripRef.current) {
+                    filmstripRef.current.scrollLeft += e.deltaY;
+                    e.preventDefault();
+                  }
+                }}
+              >
                 {activePhotos.map((p, i) => {
                   if (Math.abs(i - activePhotoIndex) > 30) return null;
                   return (
