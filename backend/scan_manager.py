@@ -89,7 +89,7 @@ class ScanRequest(BaseModel):
     project_name: Optional[str] = Field(default="Scanner", max_length=100)
     extra_paths: List[str] = Field(default_factory=list, max_items=10)
     ai_model: Optional[str] = Field(default="FormaturaPRO - High Quality", max_length=100)
-    ocr_hybrid_enabled: Optional[bool] = Field(default=True)
+    ocr_hybrid_enabled: Optional[bool] = Field(default=False)
     face_detection_enabled: Optional[bool] = Field(default=True)
     min_quality: Optional[int] = Field(default=70, ge=0, le=100)
     blur_treatment: Optional[str] = Field(default="Médio", max_length=50)

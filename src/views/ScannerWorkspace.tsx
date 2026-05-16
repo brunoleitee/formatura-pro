@@ -100,7 +100,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   
   // UI Options
   const [aiModel, setAiModel] = useState('FormaturaPRO - High Quality');
-  const [ocrEnabled, setOcrEnabled] = useState(true);
+  const [ocrEnabled, setOcrEnabled] = useState(false);
   const [gpuEnabled, setGpuEnabled] = useState(true);
   const [quality, setQuality] = useState(70);
   const [rawEnabled, setRawEnabled] = useState(true);
@@ -972,7 +972,14 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     <div className={`${styles.checkbox} ${ocrEnabled ? styles.checked : ''}`}>
                       {ocrEnabled && <Check size={10} color="white" />}
                     </div>
-                    <span className={styles.checkboxLabel}>OCR Híbrido Ativo</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span className={styles.checkboxLabel} style={{ fontSize: 12 }}>
+                        OCR Experimental
+                      </span>
+                      <span style={{ fontSize: 10, color: '#888', lineHeight: 1.2 }}>
+                        Pode aumentar muito o tempo de processamento.
+                      </span>
+                    </div>
                   </div>
                   <div className={styles.checkboxGroup} onClick={() => setFaceRecEnabled(!faceRecEnabled)}>
                     <div className={`${styles.checkbox} ${faceRecEnabled ? styles.checked : ''}`}>
