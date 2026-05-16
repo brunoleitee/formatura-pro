@@ -77,4 +77,8 @@ _EMBEDDING_DISK_CACHE_LOADED = False
 scanner_cancel = {
     "running": False,
     "cancel_requested": False,
+    "stopped": False,
+    "current_task": None,
+    "executor": None,
+    "queue": None,
 }

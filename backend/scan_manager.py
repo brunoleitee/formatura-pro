@@ -323,8 +323,9 @@ def start_scan(req: ScanRequest):
         sanitize_catalog_name = _get("sanitize_catalog_name")
         log_info = _get("log_info")
         se = _get("scanner_engine")
-        if scan_state["is_scanning"]:
-            raise HTTPException(status_code=400, detail="Scanner em andamento.")
+        from backend_state import scanner_cancel as _sc
+        if scan_state["is_scanning"] or _sc.get("running", False):
+            raise HTTPException(status_code=400, detail="Scanner já está em execução.")
         try:
             sanitize_catalog_name(req.project_name)
         except Exception as e:
@@ -375,13 +376,16 @@ def stop_scan():
     scan_state["is_scanning"] = False
     scan_state["stopped"] = True
     scan_state["status_text"] = "Scanner interrompido"
+    scan_state["current_photo"] = None
+    scan_state["recent_faces"] = []
+    scan_state.pop("processing_history", None)
     from backend_state import scanner_cancel as _sc
     _sc["cancel_requested"] = True
     _sc["running"] = False
+    _sc["stopped"] = True
     log_info = _get("log_info")
     if log_info:
         log_info("[Scanner] Stop requested — cancelamento real ativado")
-    gc.collect()
     from services.ai_processing_queue import ai_processing_queue
     try:
         ai_processing_queue.running = False
@@ -395,6 +399,11 @@ def stop_scan():
             log_info("[Scanner] AI queue emptied and stopped")
     except Exception:
         pass
+    import gc
+    for _ in range(3):
+        gc.collect()
+    if log_info:
+        log_info("[Scanner] Memory cleanup done")
     return {"message": "Cancelamento real ativado. Scanner sera interrompido em breve."}
 
 

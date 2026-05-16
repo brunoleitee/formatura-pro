@@ -578,8 +578,19 @@ def _reset_cancel():
         from backend_state import scanner_cancel
         scanner_cancel["cancel_requested"] = False
         scanner_cancel["running"] = False
+        scanner_cancel["stopped"] = False
     except Exception:
         pass
+
+
+def _memory_cleanup(scan_state=None):
+    import gc
+    if scan_state is not None:
+        scan_state["current_photo"] = None
+        scan_state["recent_faces"] = []
+        scan_state.pop("processing_history", None)
+    for _ in range(3):
+        gc.collect()
 
 
 def run_scanner_worker(req):
@@ -595,6 +606,7 @@ def run_scanner_worker(req):
     face_engine_device = _cfg["face_engine_device"]
     face_engine_gpu_error = _cfg["face_engine_gpu_error"]
 
+    log_info("[Scanner] Start")
     log_info(f"[SCAN] Worker iniciado: project={req.project_name}")
     scan_state["is_scanning"] = True
     scan_state["status_text"] = "Inicializando..."
@@ -729,7 +741,7 @@ def run_scanner_worker(req):
                         valid_faces = []
                         t0_face = time.time()
                         if _cancel_requested():
-                            log_info("[Scanner] Cancelamento antes da inferencia facial")
+                            log_info("[Scanner] Cancel before face detection")
                             scan_state["status_text"] = "Scanner interrompido"
                             break
 
@@ -873,7 +885,7 @@ def run_scanner_worker(req):
                         # Rodar OCR se habilitado
                         if process_ocr_fn:
                             if _cancel_requested():
-                                log_info("[Scanner] Cancelamento antes do OCR")
+                                log_info("[Scanner] Cancel before OCR")
                                 scan_state["status_text"] = "Scanner interrompido"
                                 break
                             try:
@@ -912,6 +924,23 @@ def run_scanner_worker(req):
                         history.append(photo_duration)
                         if len(history) > 20: history.pop(0)
                         scan_state["processing_history"] = history
+
+                        # Liberar referencias grandes da foto
+                        try:
+                            del img
+                        except NameError:
+                            pass
+                        for _vn in ('faces', 'valid_faces', 'scored_faces'):
+                            try:
+                                _v = locals().get(_vn)
+                                if _v is not None:
+                                    del _v
+                            except Exception:
+                                pass
+
+                        # Throttling para evitar 100% CPU
+                        import time as _time
+                        _time.sleep(0.005)
 
                     if _cancel_requested():
                         log_info("[Scanner] Cancelamento no fim do lote — interrompendo")
@@ -1011,9 +1040,9 @@ def run_scanner_worker(req):
         if was_cancelled:
             scan_state["stopped"] = True
             scan_state["status_text"] = "Scanner interrompido"
-            log_info("[Scanner] Scanner stopped successfully")
+            log_info("[Scanner] Fully stopped")
+        _memory_cleanup(scan_state)
         _reset_cancel()
-        gc.collect()
         log_info("[SCAN] Worker finalizado")
 
 
