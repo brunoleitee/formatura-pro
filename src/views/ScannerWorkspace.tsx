@@ -211,7 +211,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [viewMode, activePhotoIndex, activePhotos.length]);
 
-  // Sync bottom panels (OCR + Faces) with the selected photo
+  // Sync bottom panels (Faces) with the selected photo
   // Guard ref para evitar loops: só atualiza se o path realmente mudou
   const lastSelectedPathRef = useRef('');
 
@@ -219,7 +219,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     if (!selectedPhotoPath) {
       if (lastSelectedPathRef.current !== '') {
         lastSelectedPathRef.current = '';
-        setSelectedPhotoOcr(null);
         setSelectedPhotoFaces(prev => {
           if (prev.status === 'waiting' && prev.faces.length === 0) return prev;
           return { status: 'waiting', faces: [] };
