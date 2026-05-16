@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import { 
   FolderOpen, Scan, X, Plus, Cpu, ScanFace, Layers3, Sparkles, 
   Maximize2, LayoutGrid, Search, Info, AlertTriangle, Blocks, Wand2, 
-  Check, CheckCircle2, Circle, Database, Terminal, Zap, Gauge, Activity, 
+  Check, CheckCircle2, Circle, Database, Terminal, Zap, Gauge, Activity, Calendar, 
   Play, Pause, Folder, LoaderCircle, ChevronDown, List, SlidersHorizontal,
   HardDrive, Monitor, MousePointer2, Users, Eye, ChevronRight as ChevronRightIcon, ChevronLeft, FolderSearch,
   Image as ImageIcon
@@ -109,6 +109,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
   const [eventFolders, setEventFolders] = useState<string[]>([]);
   const [eventFolderStatuses, setEventFolderStatuses] = useState<Record<string, Record<string, 'include' | 'ignore' | 'monitor'>>>({});
+  const [eventPhotosCount, setEventPhotosCount] = useState(0);
+  const [eventPhotosCountStatus, setEventPhotosCountStatus] = useState<'none' | 'loading' | 'done' | 'error'>('none');
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const metricsPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -505,12 +507,41 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   }, [oriPath]);
 
   useEffect(() => {
-    if (currentCatalog) setCatalogName(currentCatalog);
     return () => { 
       if (pollRef.current) clearInterval(pollRef.current); 
       if (metricsPollRef.current) clearInterval(metricsPollRef.current); 
     };
-  }, [currentCatalog]);
+  }, []);
+  
+  useEffect(() => {
+    if (eventFolders.length === 0) {
+      setEventPhotosCount(0);
+      setEventPhotosCountStatus('none');
+      return;
+    }
+    const fetchInfo = async () => {
+      setEventPhotosCountStatus('loading');
+      try {
+        let total = 0;
+        for (const path of eventFolders) {
+          const res = await api.explorePhotos(path, { 
+            recursive: recursiveEnabled, 
+            limit: 0, 
+            include_raw: rawEnabled 
+          });
+          total += res.total || 0;
+        }
+        setEventPhotosCount(total);
+        setEventPhotosCountStatus('done');
+      } catch (e) {
+        console.error('Erro ao contar fotos de eventos:', e);
+        setEventPhotosCountStatus('error');
+      }
+    };
+    fetchInfo();
+  }, [eventFolders, recursiveEnabled, rawEnabled]);
+
+
 
   const handleScan = async () => {
     if (!oriPath) { setError('Selecione a pasta de origem.'); return; }
@@ -693,12 +724,20 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           {sidebarCollapsed ? sidebarCollapsedContent : (
             <>
               <div className={styles.leftPanelScroll}>
+                
                 <CollapsibleSection title="1. Origem" icon={Folder}>
                   <div className={styles.formGroup}>
-                    <label className={styles.label}>Pasta de origem</label>
-                    <div className={styles.formRow}>
-                      <input className={styles.inputBase} value={oriPath || 'D:\\Fotos\\Evento...'} readOnly />
-                      <button className={styles.alterBtn} onClick={handlePickOri}>Alterar</button>
+                    <div className={styles.sectionHeaderRow}>
+                      <label className={styles.label}>Pasta de origem</label>
+                      <button className={styles.toolBtn} onClick={handlePickOri} title="Alterar pasta de origem">
+                        <FolderOpen size={12} />
+                      </button>
+                    </div>
+                    <div className={styles.pathDisplay}>
+                      <Folder size={12} className={styles.pathIcon} />
+                      <span className={oriPath ? styles.pathText : styles.pathEmpty}>
+                        {oriPath || 'Nenhuma pasta selecionada'}
+                      </span>
                     </div>
                   </div>
                   <div className={styles.formGroup}>
@@ -723,87 +762,120 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                   </div>
                 </CollapsibleSection>
 
-                <CollapsibleSection title="2. Catálogo / Evento" icon={Database}>
-                  <div className={styles.formGroup}>
-                    <label className={styles.label}>Catálogo</label>
-                    {showNewCatalogInput ? (
-                      <div className={styles.formRow}>
-                        <input
-                          className={styles.inputBase}
-                          placeholder="Nome do novo catálogo..."
-                          value={newCatalogName}
-                          onChange={e => setNewCatalogName(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') handleCreateCatalog();
-                            if (e.key === 'Escape') setShowNewCatalogInput(false);
-                          }}
-                          autoFocus
-                        />
-                        <button className={styles.plusBtn} onClick={handleCreateCatalog} title="Confirmar">
-                          <Check size={14} />
-                        </button>
-                        <button className={styles.plusBtn} onClick={() => setShowNewCatalogInput(false)} title="Cancelar">
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className={styles.formRow}>
-                        <select className={styles.inputBase} value={catalogName} onChange={e => setCatalogName(e.target.value)}>
-                          {catalogs.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                        <button className={styles.plusBtn} onClick={() => setShowNewCatalogInput(true)} title="Novo catálogo">
-                          <Plus size={14} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <div className={styles.formGroup}>
-                    <label className={styles.label}>Referência <span style={{color: '#5a6577', fontWeight: 400}}>(opcional)</span></label>
-                    <div className={styles.formRow}>
-                      <input
-                        className={styles.inputBase}
-                        placeholder="Nenhuma pasta selecionada"
-                        value={refPath}
-                        readOnly
-                        title={refPath || ''}
-                      />
-                      <button className={styles.alterBtn} onClick={handlePickRef}>Alterar</button>
-                    </div>
-                    {refPathInfo ? (
-                      <div className={styles.refStats}>
-                        <Folder size={10} />
-                        <span>{refPathInfo.photos.toLocaleString('pt-BR')} imagens para reconhecimento facial</span>
-                      </div>
-                    ) : refPath ? (
-                      <div className={styles.refStats} style={{ color: '#5a6577' }}>
-                        <Folder size={10} />
-                        <span>Calculando...</span>
-                      </div>
-                    ) : null}
+                {/* ── SECTION 2: CATÁLOGO ── */}
+                <div className={styles.refEventSection}>
+                  <div className={styles.sectionHeader}>
+                    <Database size={14} className={styles.manageBtnIcon} />
+                    <span className={styles.sectionTitle}>2. Catálogo</span>
                   </div>
 
-                  <div className={styles.formGroup}>
-                    <label className={styles.label}>Eventos <span style={{color: '#5a6577', fontWeight: 400}}>(pastas para escanear)</span></label>
-                    <button className={styles.alterBtn} onClick={handleAddEventFolder} style={{ marginBottom: eventFolders.length > 0 ? 8 : 0, width: '100%' }}>
-                      <Plus size={12} /> Adicionar pasta
+                  <label className={styles.fieldLabel}>Nome do Catálogo</label>
+                  <div className={styles.inputActionRow}>
+                    <input
+                      className={styles.darkInput}
+                      placeholder="Digite o nome do novo catálogo"
+                      value={catalogName}
+                      onChange={e => setCatalogName(e.target.value)}
+                    />
+                    <button className={styles.actionBtn} onClick={() => setShowNewCatalogInput(true)} title="Ver catálogos existentes">
+                      <Database size={12} /> Selecionar
                     </button>
-                    {eventFolders.length > 0 && (
-                      <div className={styles.eventFolderList}>
-                        {eventFolders.map((folderPath, idx) => (
-                          <EventFolderItem
-                            key={folderPath}
-                            path={folderPath}
-                            statuses={eventFolderStatuses[folderPath] || {}}
-                            onStatusChange={(subPath, status) => handleEventFolderStatus(folderPath, subPath, status)}
-                            onRemove={() => handleRemoveEventFolder(idx)}
-                          />
-                        ))}
-                      </div>
-                    )}
                   </div>
-                </CollapsibleSection>
+                  <p className={styles.fieldDescription}>
+                    Digite o nome para o novo catálogo ou selecione um existente.
+                  </p>
+                </div>
 
-                <CollapsibleSection title="3. IA e OCR" icon={Sparkles}>
+                {/* ── SECTION 3: REFERÊNCIA ── */}
+                <div className={styles.refEventSection}>
+                  <div className={styles.sectionHeader}>
+                    <Folder size={14} className={styles.manageBtnIcon} />
+                    <span className={styles.sectionTitle}>3. Pasta de referência</span>
+                  </div>
+                  
+                  <label className={styles.fieldLabel}>Pasta de referência / Evento</label>
+                  <div className={styles.inputActionRow}>
+                    <input 
+                      className={styles.darkInput} 
+                      placeholder="Nenhuma pasta selecionada"
+                      value={refPath}
+                      readOnly
+                    />
+                    <button className={styles.actionBtn} onClick={handlePickRef}>
+                      <Folder size={12} /> Alterar
+                    </button>
+                  </div>
+                  <p className={styles.fieldDescription}>
+                    Usada para referência de rostos, comparação ou pastas auxiliares.
+                  </p>
+                  {refPathInfo && (
+                    <div className={styles.refStats}>
+                      <ImageIcon size={10} />
+                      <span>{refPathInfo.photos.toLocaleString('pt-BR')} imagens detectadas</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── SECTION 4: EVENTOS ── */}
+                <div className={styles.refEventSection}>
+                  <div className={styles.sectionHeader}>
+                    <Calendar size={14} className={styles.manageBtnIcon} />
+                    <span className={styles.sectionTitle}>4. Eventos</span>
+                  </div>
+
+                  <label className={styles.fieldLabel}>Pasta de eventos</label>
+                  <div className={styles.inputActionRow}>
+                    <input 
+                      className={styles.darkInput} 
+                      placeholder="Nenhuma pasta selecionada"
+                      value={eventFolders.length > 0 ? eventFolders[eventFolders.length - 1] : ''}
+                      readOnly
+                    />
+                    <button className={styles.actionBtn} onClick={handleAddEventFolder}>
+                      <Folder size={12} /> Alterar
+                    </button>
+                  </div>
+                  <p className={styles.fieldDescription}>
+                    Pasta principal do evento. Selecione para gerenciar as subpastas incluídas.
+                  </p>
+
+                  <button className={styles.manageBtn} onClick={() => {/* navigate or toggle manage view */}}>
+                    <div className={styles.manageBtnContent}>
+                      <FolderSearch size={14} className={styles.manageBtnIcon} />
+                      <span>Gerenciar eventos e subpastas</span>
+                    </div>
+                    <ChevronRightIcon size={12} className={styles.manageBtnChevron} />
+                  </button>
+
+                  
+                  {eventPhotosCountStatus === 'loading' && (
+                    <div className={styles.refStats}>
+                      <LoaderCircle size={10} className={styles.spin} />
+                      <span>Contando imagens...</span>
+                    </div>
+                  )}
+                  {eventPhotosCountStatus === 'error' && (
+                    <div className={styles.refStats} style={{ color: '#ef4444' }}>
+                      <AlertTriangle size={10} />
+                      <span>Não foi possível contar imagens</span>
+                    </div>
+                  )}
+                  {eventPhotosCountStatus === 'done' && eventPhotosCount > 0 && (
+                    <div className={styles.refStats}>
+                      <ImageIcon size={10} />
+                      <span>{eventPhotosCount.toLocaleString('pt-BR')} imagens detectadas</span>
+                    </div>
+                  )}
+                  {eventPhotosCountStatus === 'none' && (
+                    <div className={styles.refStats} style={{ color: '#5a6577' }}>
+                      <span>Nenhuma pasta selecionada</span>
+                    </div>
+                  )}
+
+                </div>
+
+                <CollapsibleSection title="5. IA e OCR" icon={Sparkles}>
+
                   <div className={styles.formGroup}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
                       <label className={styles.label}>Modelo</label>
@@ -827,7 +899,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                   </div>
                 </CollapsibleSection>
 
-                <CollapsibleSection title="4. Qualidade" icon={SlidersHorizontal}>
+                <CollapsibleSection title="6. Qualidade" icon={SlidersHorizontal}>
                   <div className={styles.formGroup}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <label className={styles.label}>Mínima</label>
