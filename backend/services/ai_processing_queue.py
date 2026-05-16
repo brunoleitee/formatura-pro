@@ -39,12 +39,35 @@ class AIProcessingQueue:
         self._thread.start()
         print("[AIQueue] worker iniciado")
 
+    def _cancel_requested(self) -> bool:
+        try:
+            from backend_state import scanner_cancel
+            return scanner_cancel.get("cancel_requested", False)
+        except Exception:
+            return False
+
     def _worker(self) -> None:
         while self.running:
+            if self._cancel_requested():
+                print("[AIQueue] Cancelamento detectado — esvaziando fila e parando")
+                self.running = False
+                while not self.queue.empty():
+                    try:
+                        self.queue.get_nowait()
+                        self.queue.task_done()
+                    except Exception:
+                        break
+                break
+
             try:
                 job = self.queue.get(timeout=1)
             except Exception:
                 continue
+
+            if self._cancel_requested():
+                print("[AIQueue] Cancelamento antes de processar job — parando")
+                self.running = False
+                break
 
             try:
                 self._process_job(job)
@@ -52,6 +75,16 @@ class AIProcessingQueue:
                 print(f"[AIQueue] erro processando photo_id={job.photo_id}: {e}")
             finally:
                 self.queue.task_done()
+
+    def stop(self) -> None:
+        self.running = False
+        while not self.queue.empty():
+            try:
+                self.queue.get_nowait()
+                self.queue.task_done()
+            except Exception:
+                break
+        print("[AIQueue] worker parado")
 
     def _process_job(self, job: AIJob) -> None:
         print(f"[AIQueue] processando photo_id={job.photo_id} catalog={job.catalog}")

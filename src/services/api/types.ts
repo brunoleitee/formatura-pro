@@ -88,8 +88,23 @@ export interface SystemMetrics {
   tempC: number | null;
 }
 
+export interface LiveScannerStatus {
+  running: boolean;
+  stopped: boolean;
+  processedPhotos: number;
+}
+
+export interface ScanCurrentPhoto {
+  path: string;
+  name: string;
+  ocr_text: string;
+  faces: { bbox: number[]; confidence: number }[];
+  timestamp: number;
+}
+
 export interface ScanStatus {
   is_scanning: boolean;
+  stopped?: boolean;
   progress: number;
   status_text: string;
   total_processadas: number;
@@ -102,8 +117,11 @@ export interface ScanStatus {
   provider?: string;
   gpu_error?: string;
   skipped_background_faces?: number;
-  current_photo?: string | null;
+  current_photo?: ScanCurrentPhoto | null;
   current_photo_index?: number;
+  duplicate_count?: number;
+  duplicate_percent?: number;
+  started_at?: number | null;
   recent_faces?: ScanRecentFace[];
   scan_summary: ScanSummary | null;
 }
@@ -423,4 +441,24 @@ export interface FolderTreeResponse {
   has_children: boolean;
   children: FolderTreeItem[];
   camera?: string | null;
+}
+
+export interface ScannerFolderNode {
+  name: string;
+  path: string;
+  imageCount: number;
+  subfolderCount: number;
+  children: ScannerFolderNode[];
+  hasChildren: boolean;
+  isLoading?: boolean;
+}
+
+export interface ScannerFolderTreeResponse {
+  name: string;
+  path: string;
+  imageCount: number;
+  subfolderCount: number;
+  children: ScannerFolderNode[];
+  hasChildren: boolean;
+  error?: string;
 }

@@ -1515,6 +1515,13 @@ def process_hybrid_ocr(img: np.ndarray, local_path: str) -> Dict[str, Any]:
 
 
 def process_ocr(local_path: str, face_bbox: Optional[Tuple[int, int, int, int]] = None) -> Dict[str, Any]:
+    try:
+        from backend_state import scanner_cancel
+        if scanner_cancel.get("cancel_requested", False):
+            print("[preview-ocr] Cancelamento detectado — abortando OCR")
+            return {"ocr_text": "", "ocr_confidence": 0.0, "ocr_confidence_pct": 0, "ocr_score": 0.0, "ocr_type": "cancelled", "ocr_label": "OCR cancelado", "ocr_raw": "", "regions_found": 0, "candidates": 0, "error": "OCR cancelado pelo usuario", "ocr_available": True, "fields": {"nome": None, "curso": None, "instituicao": None, "data": None, "tipo": None, "numero": None}}
+    except Exception:
+        pass
     print(f"[preview-ocr] engine=Tesseract")
     print(f"[preview-ocr] image_path={local_path}")
     if not is_tesseract_available():

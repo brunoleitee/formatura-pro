@@ -397,11 +397,15 @@ scan_state = {
     "total_existing_files": 0,
     "total_inserted_files": 0,
     "total_ignored_files": 0,
+    "duplicate_count": 0,
+    "duplicate_percent": 0.0,
     "ignored_reasons": {},
     "scan_summary": None,
     "current_photo": None,
     "current_photo_index": 0,
     "recent_faces": [],
+    "started_at": None,
+    "processing_history": [], # Para cálculo de ETA real
 }
 
 export_state = {
@@ -1565,6 +1569,18 @@ def explorer_tree(path: str = "", max_depth: int = 2):
     return mm.explorer_tree(path, max_depth)
 
 
+@app.get("/api/scanner/folder-tree")
+def get_scanner_folder_tree(path: str = "", depth: int = 2):
+    """
+    Retorna a árvore de pastas otimizada para o Gerenciador de Pastas do Scanner.
+    Suporta lazy load através do parâmetro 'depth'.
+    """
+    try:
+        return mm.scanner_folder_tree(path, depth)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/explorer/photos")
 def explorer_photos(path: str = "", recursive: bool = False, limit: int = 0, offset: int = 0, include_raw: bool = True, include_video: bool = True):
     try:
@@ -1993,6 +2009,20 @@ def clear_scan_summary():
 @app.post("/api/scan/stop")
 def stop_scan():
     return scm.stop_scan()
+
+@app.post("/api/scanner/stop")
+def scanner_stop():
+    scm.stop_scan()
+    return {"success": True}
+
+@app.get("/api/scanner/live-status")
+def scanner_live_status():
+    s = scm.get_scan_status()
+    return {
+        "running": bool(s.get("is_scanning", False)),
+        "stopped": bool(s.get("stopped", False)),
+        "processedPhotos": int(s.get("total_processadas", 0)),
+    }
 
 @app.post("/api/scan/quality_fill")
 def start_quality_audit(req: dict):

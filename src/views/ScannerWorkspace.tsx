@@ -109,6 +109,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [blurFilter, setBlurFilter] = useState('Médio');
 
   const [eventFolders, setEventFolders] = useState<string[]>([]);
+  const [selectedEventFolders, setSelectedEventFolders] = useState<string[]>([]);
   const [eventFolderStatuses, setEventFolderStatuses] = useState<Record<string, Record<string, 'include' | 'ignore' | 'monitor'>>>({});
   const [eventPhotosCount, setEventPhotosCount] = useState(0);
   const [eventPhotosCountStatus, setEventPhotosCountStatus] = useState<'none' | 'loading' | 'done' | 'error'>('none');
@@ -417,32 +418,46 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
         
         if (st.is_scanning) {
           setIsScanning(true);
-          if (st.current_photo && !processedPhotos.includes(st.current_photo)) {
-            setProcessedPhotos(prev => [st.current_photo!, ...prev].slice(0, 100));
-            setViewMode('single');
-            setPreviewZoom(0);
-            setDragPos({ x: 0, y: 0 });
+          
+          if (st.current_photo?.path) {
+            const photoPath = st.current_photo.path;
+            
+            // Atualizar processedPhotos (carrossel recente)
+            if (!processedPhotos.includes(photoPath)) {
+              setProcessedPhotos(prev => [photoPath, ...prev].slice(0, 100));
+            }
+
+            // Forçar visualização live se estiver em grid ou modo específico
+            // mas sem resetar zoom se o usuário estiver navegando manualmente
+            if (activePhotoIndex === 0 || !selectedPhotoPath) {
+              setActivePhotoIndex(0);
+            }
+
+            // Atualizar faces em tempo real
+            if (st.current_photo.faces) {
+              setLiveFaceBoxes(st.current_photo.faces);
+            }
+
+            // Atualizar OCR em tempo real
+            if (st.current_photo.ocr_text) {
+              setSelectedPhotoOcr({
+                path: photoPath,
+                status: 'done',
+                fileName: st.current_photo.name || photoPath.split(/[\\/]/).pop() || '',
+                raw_text: st.current_photo.ocr_text,
+                fields: { numero: st.current_photo.ocr_text },
+                confidence: 0.95
+              });
+            }
           }
 
-          if (st.current_photo) {
-            const idx = activePhotos.indexOf(st.current_photo);
-            if (idx >= 0) setActivePhotoIndex(idx);
-          }
-
-          if (st.recent_faces?.length) {
-            setLiveFaceBoxes(st.recent_faces.map((f: any) => ({
-              bbox: f.box || [0, 0, 0, 0],
-              confidence: f.confidence || 0,
-            })));
-          }
-
-          if (Math.random() > 0.8) {
+          if (Math.random() > 0.8 && st.current_photo?.name) {
             setTimeline(prev => [
               ...prev.slice(-49),
               { 
                 id: Date.now().toString(), 
                 kind: 'system', 
-                text: `Processando: ${st.current_photo?.split('\\').pop() || 'foto'}...`, 
+                text: `Processando: ${st.current_photo?.name || 'foto'}...`, 
                 timestamp: Date.now() 
               }
             ]);
@@ -451,10 +466,15 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
         if (!st.is_scanning && isScanning) {
           setIsScanning(false);
-          setIsCompleted(true);
           setPolling(false);
           if (pollRef.current) clearInterval(pollRef.current);
-          setTimeline(prev => [...prev, { id: `end-${Date.now()}`, kind: 'summary', text: 'Escaneamento finalizado.', timestamp: Date.now() }]);
+          if (st.stopped) {
+            setIsCompleted(false);
+            setTimeline(prev => [...prev, { id: `stopped-${Date.now()}`, kind: 'warning', text: 'Escaneamento interrompido.', timestamp: Date.now() }]);
+          } else {
+            setIsCompleted(true);
+            setTimeline(prev => [...prev, { id: `end-${Date.now()}`, kind: 'summary', text: 'Escaneamento finalizado.', timestamp: Date.now() }]);
+          }
         }
       } catch { /* ignore */ }
     };
@@ -544,6 +564,22 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     fetchInfo();
   }, [eventFolders, recursiveEnabled, rawEnabled]);
 
+  // Sincronizar selectedEventFolders quando a pasta de evento mudar ou o catálogo mudar
+  useEffect(() => {
+    if (eventFolders.length > 0 && catalogName) {
+      const path = eventFolders[eventFolders.length - 1];
+      const key = `scanner:eventFolders:${catalogName}:${path}`;
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        try {
+          setSelectedEventFolders(JSON.parse(saved));
+        } catch (e) {
+          console.error('Erro ao ler pastas selecionadas do cache', e);
+        }
+      }
+    }
+  }, [eventFolders, catalogName]);
+
 
 
   const handleScan = async () => {
@@ -558,13 +594,18 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     setTimeline([{ id: `start-${Date.now()}`, kind: 'system', text: `Scanner PRO v2.1 iniciado em ${new Date().toLocaleTimeString()}`, timestamp: Date.now() }]);
     
     try {
-      await api.scanFolder(oriPath, refPath || '', name, {
+      const payload = {
         ai_model: aiModel,
         ocr_hybrid_enabled: ocrEnabled,
         face_detection_enabled: faceRecEnabled,
         min_quality: quality,
         blur_treatment: blurFilter,
-      });
+        selected_folders: selectedEventFolders,
+      };
+
+      console.log("[Scanner Start Payload]", payload);
+
+      await api.scanFolder(oriPath, refPath || '', name, payload);
       await setCatalog(name);
       await refreshCatalogs();
       startPolling();
@@ -577,11 +618,17 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
   const handleStopScan = async () => {
     try {
+      await api.scannerStop();
+    } catch { /* fallback para endpoint legado */ }
+    try {
       await api.stopScan();
-      setIsScanning(false);
-      setStarting(false);
-      setTimeline(prev => [...prev, { id: `stop-${Date.now()}`, kind: 'warning', text: 'Interrompido pelo usuário.', timestamp: Date.now() }]);
-    } catch (err) { /* ignore */ }
+    } catch { /* ignore */ }
+    setIsScanning(false);
+    setStarting(false);
+    setPolling(false);
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (metricsPollRef.current) clearInterval(metricsPollRef.current);
+    setTimeline(prev => [...prev, { id: `stop-${Date.now()}`, kind: 'warning', text: 'Scanner interrompido.', timestamp: Date.now() }]);
   };
 
   const handleCreateCatalog = async () => {
@@ -696,11 +743,20 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           </div>
           <div className={styles.summaryStat}>
             <span className={styles.statLabel}>Duplicadas</span>
-            <span className={`${styles.statValue} ${styles.warning}`}>312 <span className={styles.statSub}>2.4%</span></span>
+            <span className={`${styles.statValue} ${styles.warning}`}>
+              {scanStatus?.duplicate_count ?? '--'} 
+              <span className={styles.statSub}>
+                {scanStatus?.duplicate_percent ? `/ ${scanStatus.duplicate_percent}%` : ''}
+              </span>
+            </span>
           </div>
           <div className={styles.summaryStat}>
             <span className={styles.statLabel}>Tempo estimado</span>
-            <span className={styles.statValue}>{etaStr} <span className={styles.statSub}>restante</span></span>
+            <span className={styles.statValue}>
+              {scanStatus?.eta_seconds === -1 ? 'Calculando...' : 
+               scanStatus?.eta_seconds ? etaStr : '--'}
+              {scanStatus?.eta_seconds ? <span className={styles.statSub}>restante</span> : null}
+            </span>
           </div>
         </div>
 
@@ -730,36 +786,37 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                 
                 <CollapsibleSection title="1. Origem" icon={Folder}>
                   <div className={styles.formGroup}>
-                    <div className={styles.sectionHeaderRow}>
-                      <label className={styles.label}>Pasta de origem</label>
-                      <button className={styles.toolBtn} onClick={handlePickOri} title="Alterar pasta de origem">
-                        <FolderOpen size={12} />
+                    <label className={styles.fieldLabel}>Pasta de origem</label>
+                    <div className={styles.inputActionRow}>
+                      <input 
+                        className={styles.darkInput} 
+                        placeholder="Nenhuma pasta selecionada"
+                        value={oriPath}
+                        readOnly
+                      />
+                      <button className={styles.actionBtn} onClick={handlePickOri}>
+                        <FolderOpen size={12} /> Alterar
                       </button>
                     </div>
-                    <div className={styles.pathDisplay}>
-                      <Folder size={12} className={styles.pathIcon} />
-                      <span className={oriPath ? styles.pathText : styles.pathEmpty}>
-                        {oriPath || 'Nenhuma pasta selecionada'}
-                      </span>
-                    </div>
                   </div>
-                  <div className={styles.formGroup}>
-                    <label className={styles.label}>Estrutura Detectada</label>
+                  
+                  <div className={styles.formGroup} style={{ marginTop: 8 }}>
+                    <label className={styles.fieldLabel}>Estrutura Detectada</label>
                     <FolderTree 
                       rootPath={oriPath} 
                       onSelectFolder={setSelectedFolder} 
                       selectedPath={selectedFolder}
                     />
                   </div>
-                  <div className={styles.checkboxGroup} onClick={() => setRawEnabled(!rawEnabled)}>
+                  <div className={styles.checkboxGroup} style={{ marginTop: 10 }} onClick={() => setRawEnabled(!rawEnabled)}>
                     <div className={`${styles.checkbox} ${rawEnabled ? styles.checked : ''}`}>
-                      {rawEnabled && <CheckCircle2 size={10} color="white" />}
+                      {rawEnabled && <Check size={10} color="white" />}
                     </div>
                     <span className={styles.checkboxLabel}>Incluir arquivos RAW</span>
                   </div>
                   <div className={styles.checkboxGroup} onClick={() => setRecursiveEnabled(!recursiveEnabled)}>
                     <div className={`${styles.checkbox} ${recursiveEnabled ? styles.checked : ''}`}>
-                      {recursiveEnabled && <CheckCircle2 size={10} color="white" />}
+                      {recursiveEnabled && <Check size={10} color="white" />}
                     </div>
                     <span className={styles.checkboxLabel}>Incluir subpastas (Recursivo)</span>
                   </div>
@@ -859,7 +916,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                       catalogName={catalogName || 'default'}
                       onClose={() => setShowEventManager(false)}
                       onApply={(selectedPaths) => {
-                        console.log('Pastas selecionadas para o scanner:', selectedPaths);
+                        setSelectedEventFolders(selectedPaths);
+                        setShowEventManager(false);
                       }}
                     />
                   )}
@@ -904,13 +962,13 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                   </div>
                   <div className={styles.checkboxGroup} onClick={() => setOcrEnabled(!ocrEnabled)}>
                     <div className={`${styles.checkbox} ${ocrEnabled ? styles.checked : ''}`}>
-                      {ocrEnabled && <CheckCircle2 size={10} color="white" />}
+                      {ocrEnabled && <Check size={10} color="white" />}
                     </div>
                     <span className={styles.checkboxLabel}>OCR Híbrido Ativo</span>
                   </div>
                   <div className={styles.checkboxGroup} onClick={() => setFaceRecEnabled(!faceRecEnabled)}>
                     <div className={`${styles.checkbox} ${faceRecEnabled ? styles.checked : ''}`}>
-                      {faceRecEnabled && <CheckCircle2 size={10} color="white" />}
+                      {faceRecEnabled && <Check size={10} color="white" />}
                     </div>
                     <span className={styles.checkboxLabel}>Detecção de Rostos</span>
                   </div>

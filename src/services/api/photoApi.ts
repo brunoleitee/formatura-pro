@@ -1,5 +1,5 @@
 import { API_BASE, fetchJSON, post } from './core';
-import type { ExplorerPhotosResponse, FolderTreeResponse, Photo, PhotoContextResponse, PreviewFacesResponse, QualityAuditStatus, ScanStatus, SystemMetrics } from './types';
+import type { ExplorerPhotosResponse, FolderTreeResponse, LiveScannerStatus, Photo, PhotoContextResponse, PreviewFacesResponse, QualityAuditStatus, ScanStatus, SystemMetrics, ScannerFolderTreeResponse } from './types';
 
 export const photoApi = {
   getPhotos: (path = '', catalog = '') =>
@@ -20,6 +20,9 @@ export const photoApi = {
   // Folder Tree
   exploreTree: (path: string, max_depth = 2) =>
     fetchJSON<FolderTreeResponse>(`${API_BASE}/explorer/tree?path=${encodeURIComponent(path)}&max_depth=${max_depth}`),
+
+  getScannerFolderTree: (path: string, depth = 2) =>
+    fetchJSON<ScannerFolderTreeResponse>(`${API_BASE}/scanner/folder-tree?path=${encodeURIComponent(path)}&depth=${depth}`),
 
   // Folder Photos
   explorePhotos: (path: string, options?: { recursive?: boolean; limit?: number; offset?: number; include_raw?: boolean; include_video?: boolean }) =>
@@ -56,6 +59,8 @@ export const photoApi = {
   getSystemMetrics: () => fetchJSON<SystemMetrics>(`${API_BASE}/system/metrics`),
   getScanStatus: () => fetchJSON<ScanStatus>(`${API_BASE}/scan/status`),
   stopScan: () => post(`${API_BASE}/scan/stop`, {}),
+  scannerStop: () => post<{ success: boolean }>(`${API_BASE}/scanner/stop`, {}),
+  getLiveScannerStatus: () => fetchJSON<LiveScannerStatus>(`${API_BASE}/scanner/live-status`),
   clearScanSummary: () => post(`${API_BASE}/scan/clear_summary`, {}),
 
   // Quality Audit

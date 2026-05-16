@@ -565,6 +565,23 @@ def _quality_state():
     return _cfg["quality_audit_state"]
 
 
+def _cancel_requested():
+    try:
+        from backend_state import scanner_cancel
+        return scanner_cancel.get("cancel_requested", False)
+    except Exception:
+        return False
+
+
+def _reset_cancel():
+    try:
+        from backend_state import scanner_cancel
+        scanner_cancel["cancel_requested"] = False
+        scanner_cancel["running"] = False
+    except Exception:
+        pass
+
+
 def run_scanner_worker(req):
     scan_state = _scan_state()
     if scan_state is None:
@@ -629,6 +646,15 @@ def run_scanner_worker(req):
         scan_state["status_text"] = "Carregando Referências..."
         load_references(req.ref_path)
 
+        process_ocr_fn = None
+        if req.ocr_hybrid_enabled:
+            try:
+                from services.ocr_pipeline import process_ocr as p_ocr
+                process_ocr_fn = p_ocr
+                log_info("[SCAN] OCR Híbrido Ativado e carregado.")
+            except Exception as e:
+                log_info(f"[SCAN] Falha ao carregar OCR: {e}")
+
         scan_roots = [req.ori_path]
         for extra in (req.extra_paths or []):
             if extra and os.path.isdir(extra):
@@ -676,8 +702,12 @@ def run_scanner_worker(req):
             last_face_update_time = 0
 
             try:
+                scan_state["started_at"] = time.time()
                 for i in range(0, total, batch_size):
-                    if not scan_state["is_scanning"]:
+                    if not scan_state["is_scanning"] or _cancel_requested():
+                        if _cancel_requested():
+                            log_info("[Scanner] Cancelamento detectado no laco principal — interrompendo")
+                            scan_state["status_text"] = "Scanner interrompido"
                         break
                     chunk_paths = fotos[i:i + batch_size]
                     scan_state["status_text"] = f"Decodificando Lote {i} a {min(total, i + batch_size)}..."
@@ -685,11 +715,24 @@ def run_scanner_worker(req):
                     scan_state["status_text"] = f"Inferencia IA Lote {i} a {min(total, i + batch_size)}..."
 
                     for p, img in zip(chunk_paths, chunk_imgs):
+                        if _cancel_requested():
+                            log_info("[Scanner] Cancelamento durante lote — saindo do loop de fotos")
+                            scan_state["status_text"] = "Scanner interrompido"
+                            break
+
                         processed_photo_paths.add(p)
                         if img is None:
                             ignored_reasons["read_error"] += 1
                             continue
                         photo_hash = file_sha1(p)
+                        faces = []
+                        valid_faces = []
+                        t0_face = time.time()
+                        if _cancel_requested():
+                            log_info("[Scanner] Cancelamento antes da inferencia facial")
+                            scan_state["status_text"] = "Scanner interrompido"
+                            break
+
                         try:
                             with quiet_external_output():
                                 faces = _cfg["app_face"].get(img) or []
@@ -698,7 +741,6 @@ def run_scanner_worker(req):
                             ignored_reasons["ai_error"] += 1
                             continue
 
-                        valid_faces = []
                         for face in faces:
                             if not hasattr(face, "embedding") or face.embedding is None:
                                 continue
@@ -709,9 +751,25 @@ def run_scanner_worker(req):
                             valid_faces.append((face, x1, y1, x2, y2, area))
 
                         # Calcular blur uma vez por foto
+                        t0_photo = time.time()
+                        
+                        # 1. Decode/Read
+                        t0_decode = time.time()
+                        if img is None:
+                            img = imread_unicode(p)
+                        t_decode = (time.time() - t0_decode) * 1000
+
+                        # 2. Blur
+                        t0_blur = time.time()
                         blur_info = _cfg["get_blur_info"](p, img) if _cfg.get("get_blur_info") else {}
                         b_score = blur_info.get("blur_score")
                         b_status = blur_info.get("blur_status")
+                        t_blur = (time.time() - t0_blur) * 1000
+
+                        ocr_text = ""
+                        primary_face = None
+                        t_face = 0
+                        t_ocr = 0
 
                         if not valid_faces:
                             # Inserir entrada dummy para rastrear a foto mesmo sem faces
@@ -777,6 +835,8 @@ def run_scanner_worker(req):
                                     nome = find_or_create_cluster(emb)
                                     scan_state["total_clusters"] = len(_cfg["cluster_names"])
                                 
+                                t_face = (time.time() - t0_face) * 1000
+
                                 cur.execute(
                                     """
                                     INSERT OR IGNORE INTO ocorrencias 
@@ -800,6 +860,9 @@ def run_scanner_worker(req):
                                     (nome, "n/a", detected_class),
                                 )
                                 
+                                if primary_face is None:
+                                    primary_face = (x1, y1, x2, y2)
+
                                 current_time = time.time()
                                 if current_time - last_face_update_time > 0.5:
                                     new_face = {"name": nome, "path": p, "box": [x1, y1, x2, y2]}
@@ -807,58 +870,131 @@ def run_scanner_worker(req):
                                     scan_state["recent_faces"] = scan_state["recent_faces"][:50]
                                     last_face_update_time = current_time
 
+                        # Rodar OCR se habilitado
+                        if process_ocr_fn:
+                            if _cancel_requested():
+                                log_info("[Scanner] Cancelamento antes do OCR")
+                                scan_state["status_text"] = "Scanner interrompido"
+                                break
+                            try:
+                                t0_ocr_run = time.time()
+                                ocr_res = process_ocr_fn(p, primary_face)
+                                t_ocr = (time.time() - t0_ocr_run) * 1000
+                                ocr_text = ocr_res.get("ocr_text", "") if ocr_res else ""
+                                if ocr_text:
+                                    log_debug(f"[SCAN-OCR] Detectado: {ocr_text}")
+                            except Exception as ocr_err:
+                                log_debug(f"[SCAN-OCR] Erro: {ocr_err}")
+
+                        # Log Benchmark
+                        total_ms = (time.time() - t0_photo) * 1000
+                        log_info(
+                            f"[BENCHMARK] {os.path.basename(p)}: "
+                            f"total={total_ms:.0f}ms | "
+                            f"decode={t_decode:.0f}ms | "
+                            f"blur={t_blur:.0f}ms | "
+                            f"face={t_face:.0f}ms | "
+                            f"ocr={t_ocr:.0f}ms"
+                        )
+
+                        # Atualizar current_photo com dados reais para o carrossel live
+                        scan_state["current_photo"] = {
+                            "path": p,
+                            "name": os.path.basename(p),
+                            "ocr_text": ocr_text,
+                            "faces": [{"bbox": [f[1], f[2], f[3], f[4]], "confidence": 0.95} for f in valid_faces],
+                            "timestamp": time.time()
+                        }
+
+                        # Calcular tempo deste arquivo para o histórico de ETA
+                        photo_duration = time.time() - t0_photo
+                        history = scan_state.get("processing_history", [])
+                        history.append(photo_duration)
+                        if len(history) > 20: history.pop(0)
+                        scan_state["processing_history"] = history
+
+                    if _cancel_requested():
+                        log_info("[Scanner] Cancelamento no fim do lote — interrompendo")
+                        scan_state["status_text"] = "Scanner interrompido"
+                        break
+
                     scan_state["total_processadas"] = len(processed_photo_paths)
                     scan_state["total_existing_files"] = len(processed_photo_paths.intersection(initial_existing_photo_paths))
                     scan_state["total_inserted_files"] = len(inserted_photo_paths)
+                    
+                    # Duplicadas reais (por hash ou path ignorado no início)
+                    dup_count = scan_inputs.get("ignored_duplicates", 0)
+                    scan_state["duplicate_count"] = dup_count
+                    if total > 0:
+                        scan_state["duplicate_percent"] = round((dup_count / total) * 100, 1)
+
                     scan_state["total_ignored_files"] = sum(ignored_reasons.values())
                     scan_state["ignored_reasons"] = dict(ignored_reasons)
                     scan_state["progress"] = scan_state["total_processadas"] / total
-                    elapsed = time.time() - start_time
-                    if scan_state["total_processadas"] > 0:
-                        scan_state["eta_seconds"] = int((elapsed / scan_state["total_processadas"]) * (total - scan_state["total_processadas"]))
+                    
+                    # Cálculo de ETA Real baseado na média móvel das últimas 20 fotos
+                    history = scan_state.get("processing_history", [])
+                    if len(history) >= 5:
+                        avg_speed = sum(history) / len(history)
+                        scan_state["eta_seconds"] = int(avg_speed * (total - scan_state["total_processadas"]))
+                    else:
+                        scan_state["eta_seconds"] = -1 # Indica "Calculando..."
+                    
                     conn.commit()
                     gc.collect()
 
-                _cfg["save_embedding_disk_cache"]()
-                gc.collect()
-                catalog_root = req.ori_path
-                try:
-                    if req.ref_path and os.path.isdir(req.ref_path):
-                        catalog_root = os.path.commonpath([os.path.abspath(req.ori_path), os.path.abspath(req.ref_path)])
-                except Exception:
+                if _cancel_requested():
+                    log_info("[Scanner] Cancelamento antes de salvar checkpoint — interrompendo")
+                    scan_state["status_text"] = "Scanner interrompido"
+                else:
+                    _cfg["save_embedding_disk_cache"]()
+                    gc.collect()
                     catalog_root = req.ori_path
-                cur.execute(
-                    """
-                    INSERT OR REPLACE INTO alunos (aluno_id, face_cache_path, class_name)
-                    VALUES (?, ?, ?)
-                    """,
-                    ("system_catalog", catalog_root, "Sem turma"),
-                )
-                conn.commit()
+                    try:
+                        if req.ref_path and os.path.isdir(req.ref_path):
+                            catalog_root = os.path.commonpath([os.path.abspath(req.ori_path), os.path.abspath(req.ref_path)])
+                    except Exception:
+                        catalog_root = req.ori_path
+                    cur.execute(
+                        """
+                        INSERT OR REPLACE INTO alunos (aluno_id, face_cache_path, class_name)
+                        VALUES (?, ?, ?)
+                        """,
+                        ("system_catalog", catalog_root, "Sem turma"),
+                    )
+                    conn.commit()
             finally:
-                pass
+                try:
+                    chunk_imgs.clear()
+                    del chunk_imgs
+                except NameError:
+                    pass
+                gc.collect()
 
-        scan_state["status_text"] = "Processamento concluído!"
-        final_elapsed = time.time() - start_time
-        mins = int(final_elapsed // 60)
-        secs = int(final_elapsed % 60)
-        scan_state["scan_summary"] = {
-            "time_str": f"{mins}m {secs}s",
-            "total_photos": scan_state["total_processadas"],
-            "total_faces": total_faces_found,
-            "found_total": scan_state["total_found_files"],
-            "valid_total": scan_state["total_valid_files"],
-            "inserted_total": scan_state["total_inserted_files"],
-            "existing_total": scan_state["total_existing_files"],
-            "ignored_total": scan_state["total_ignored_files"],
-            "ignored_reasons": dict(scan_state["ignored_reasons"]),
-        }
-        log_info(
-            f"[SCAN] Resumo final: encontradas={scan_state['total_found_files']} "
-            f"validas={scan_state['total_valid_files']} processadas={scan_state['total_processadas']} "
-            f"novas={scan_state['total_inserted_files']} existentes={scan_state['total_existing_files']} "
-            f"ignoradas={scan_state['total_ignored_files']} motivos={scan_state['ignored_reasons']}"
-        )
+        if _cancel_requested():
+            log_info("[Scanner] Cancelamento — pulando resumo final")
+        else:
+            scan_state["status_text"] = "Processamento concluído!"
+            final_elapsed = time.time() - start_time
+            mins = int(final_elapsed // 60)
+            secs = int(final_elapsed % 60)
+            scan_state["scan_summary"] = {
+                "time_str": f"{mins}m {secs}s",
+                "total_photos": scan_state["total_processadas"],
+                "total_faces": total_faces_found,
+                "found_total": scan_state["total_found_files"],
+                "valid_total": scan_state["total_valid_files"],
+                "inserted_total": scan_state["total_inserted_files"],
+                "existing_total": scan_state["total_existing_files"],
+                "ignored_total": scan_state["total_ignored_files"],
+                "ignored_reasons": dict(scan_state["ignored_reasons"]),
+            }
+            log_info(
+                f"[SCAN] Resumo final: encontradas={scan_state['total_found_files']} "
+                f"validas={scan_state['total_valid_files']} processadas={scan_state['total_processadas']} "
+                f"novas={scan_state['total_inserted_files']} existentes={scan_state['total_existing_files']} "
+                f"ignoradas={scan_state['total_ignored_files']} motivos={scan_state['ignored_reasons']}"
+            )
     except Exception as e:
         import traceback
         err_msg = traceback.format_exc()
@@ -870,7 +1006,14 @@ def run_scanner_worker(req):
         except Exception:
             pass
     finally:
+        was_cancelled = _cancel_requested()
         scan_state["is_scanning"] = False
+        if was_cancelled:
+            scan_state["stopped"] = True
+            scan_state["status_text"] = "Scanner interrompido"
+            log_info("[Scanner] Scanner stopped successfully")
+        _reset_cancel()
+        gc.collect()
         log_info("[SCAN] Worker finalizado")
 
 
@@ -903,7 +1046,11 @@ def run_quality_audit_worker(catalog_name):
                 quality_state["is_auditing"] = False
                 return
             for i, p in enumerate(paths):
-                if not quality_state["is_auditing"]:
+                if not quality_state["is_auditing"] or _cancel_requested():
+                    if _cancel_requested():
+                        log_info = _cfg.get("log_info")
+                        if log_info:
+                            log_info("[Scanner] Cancelamento na auditoria de qualidade")
                     break
                 quality_state["status_text"] = f"Auditando: {os.path.basename(p)}"
                 quality_state["message"] = quality_state["status_text"]

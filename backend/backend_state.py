@@ -4,6 +4,7 @@ class AppState:
 
 scan_state = {
     "is_scanning": False,
+    "stopped": False,
     "progress": 0.0,
     "status_text": "Pronto",
     "total_processadas": 0,
@@ -72,3 +73,8 @@ cluster_counts = {}
 
 _EMBEDDING_DISK_CACHE = {}
 _EMBEDDING_DISK_CACHE_LOADED = False
+
+scanner_cancel = {
+    "running": False,
+    "cancel_requested": False,
+}

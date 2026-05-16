@@ -1,3 +1,4 @@
+import gc
 import os
 import threading
 import urllib.parse
@@ -331,6 +332,7 @@ def start_scan(req: ScanRequest):
         if not req.ori_path or not os.path.isdir(req.ori_path):
             raise HTTPException(status_code=400, detail="Selecione uma pasta válida de fotos brutas.")
         scan_state["is_scanning"] = True
+        scan_state["stopped"] = False
         scan_state["status_text"] = "Iniciando scanner..."
         scan_state["progress"] = 0.0
         scan_state["total_processadas"] = 0
@@ -344,6 +346,9 @@ def start_scan(req: ScanRequest):
         scan_state["total_inserted_files"] = 0
         scan_state["total_ignored_files"] = 0
         scan_state["ignored_reasons"] = {}
+        from backend_state import scanner_cancel as _sc
+        _sc["running"] = True
+        _sc["cancel_requested"] = False
         log_info(f"[SCAN] Iniciando scanner: project={req.project_name}, ref={req.ref_path}, ori={req.ori_path}")
         threading.Thread(target=_safe_scanner_worker, args=(se, req, log_info, scan_state), daemon=True).start()
         return {"message": "Scanner Batch iniciado."}
@@ -368,7 +373,29 @@ def clear_scan_summary():
 def stop_scan():
     scan_state = _get("scan_state")
     scan_state["is_scanning"] = False
-    return {"message": "Sinal abort enviado."}
+    scan_state["stopped"] = True
+    scan_state["status_text"] = "Scanner interrompido"
+    from backend_state import scanner_cancel as _sc
+    _sc["cancel_requested"] = True
+    _sc["running"] = False
+    log_info = _get("log_info")
+    if log_info:
+        log_info("[Scanner] Stop requested — cancelamento real ativado")
+    gc.collect()
+    from services.ai_processing_queue import ai_processing_queue
+    try:
+        ai_processing_queue.running = False
+        while not ai_processing_queue.queue.empty():
+            try:
+                ai_processing_queue.queue.get_nowait()
+                ai_processing_queue.queue.task_done()
+            except Exception:
+                break
+        if log_info:
+            log_info("[Scanner] AI queue emptied and stopped")
+    except Exception:
+        pass
+    return {"message": "Cancelamento real ativado. Scanner sera interrompido em breve."}
 
 
 def start_quality_audit(req: dict):
