@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import { 
   FolderOpen, Scan, X, Plus, Cpu, ScanFace, Layers3, Sparkles, 
   Maximize2, LayoutGrid, Search, Info, AlertTriangle, Blocks, Wand2, 
-  CheckCircle2, Circle, Database, Terminal, Zap, Gauge, Activity, 
+  Check, CheckCircle2, Circle, Database, Terminal, Zap, Gauge, Activity, 
   Play, Pause, Folder, LoaderCircle, ChevronDown, List, SlidersHorizontal,
   HardDrive, Monitor, MousePointer2, Users, Eye, ChevronRight as ChevronRightIcon, ChevronLeft, FolderSearch,
   Image as ImageIcon
@@ -70,6 +70,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [catalogName, setCatalogName] = useState('');
   const [newCatalogName, setNewCatalogName] = useState('');
   const [newCatalogMode, setNewCatalogMode] = useState(false);
+  const [showNewCatalogInput, setShowNewCatalogInput] = useState(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
@@ -417,7 +418,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const handleScan = async () => {
     if (!oriPath) { setError('Selecione a pasta de origem.'); return; }
     const name = newCatalogMode ? newCatalogName.trim() : catalogName;
-    if (!name) { setError('Informe o catálogo/evento.'); return; }
+    if (!name) { setError('Selecione ou crie um catálogo.'); return; }
     
     setError('');
     setStarting(true);
@@ -444,6 +445,20 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
       setStarting(false);
       setTimeline(prev => [...prev, { id: `stop-${Date.now()}`, kind: 'warning', text: 'Interrompido pelo usuário.', timestamp: Date.now() }]);
     } catch (err) { /* ignore */ }
+  };
+
+  const handleCreateCatalog = async () => {
+    const name = newCatalogName.trim();
+    if (!name) return;
+    try {
+      await api.setCatalog(name);
+      await refreshCatalogs();
+      setCatalogName(name);
+      setNewCatalogName('');
+      setShowNewCatalogInput(false);
+    } catch {
+      setError('Erro ao criar catálogo.');
+    }
   };
 
   const progressPct = scanStatus ? Math.min(100, Math.max(0, (scanStatus.total_processadas / (scanStatus.total_files || 1)) * 100)) : 0;
@@ -591,18 +606,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                       selectedPath={selectedFolder}
                     />
                   </div>
-                  <div className={styles.formGroup}>
-                    <label className={styles.label}>Ordenação</label>
-                    <select 
-                      className={styles.inputBase} 
-                      value={sortBy} 
-                      onChange={e => setSortBy(e.target.value as any)}
-                    >
-                      <option value="name">Nome (Alfabética/Numérica)</option>
-                      <option value="date">Data de Modificação</option>
-                      <option value="size">Tamanho do Arquivo</option>
-                    </select>
-                  </div>
                   <div className={styles.checkboxGroup} onClick={() => setRawEnabled(!rawEnabled)}>
                     <div className={`${styles.checkbox} ${rawEnabled ? styles.checked : ''}`}>
                       {rawEnabled && <CheckCircle2 size={10} color="white" />}
@@ -620,19 +623,46 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                 <CollapsibleSection title="2. Catálogo / Evento" icon={Database}>
                   <div className={styles.formGroup}>
                     <label className={styles.label}>Catálogo</label>
-                    <div className={styles.formRow}>
-                      <select className={styles.inputBase} value={catalogName} onChange={e => setCatalogName(e.target.value)}>
-                        {catalogs.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                      <button className={styles.plusBtn}><Plus size={14} /></button>
-                    </div>
+                    {showNewCatalogInput ? (
+                      <div className={styles.formRow}>
+                        <input
+                          className={styles.inputBase}
+                          placeholder="Nome do novo catálogo..."
+                          value={newCatalogName}
+                          onChange={e => setNewCatalogName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') handleCreateCatalog();
+                            if (e.key === 'Escape') setShowNewCatalogInput(false);
+                          }}
+                          autoFocus
+                        />
+                        <button className={styles.plusBtn} onClick={handleCreateCatalog} title="Confirmar">
+                          <Check size={14} />
+                        </button>
+                        <button className={styles.plusBtn} onClick={() => setShowNewCatalogInput(false)} title="Cancelar">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className={styles.formRow}>
+                        <select className={styles.inputBase} value={catalogName} onChange={e => setCatalogName(e.target.value)}>
+                          {catalogs.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                        <button className={styles.plusBtn} onClick={() => setShowNewCatalogInput(true)} title="Novo catálogo">
+                          <Plus size={14} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div className={styles.formGroup}>
-                    <label className={styles.label}>Evento vinculado</label>
+                    <label className={styles.label}>Pasta de referência / Evento <span style={{color: '#5a6577', fontWeight: 400}}>(opcional)</span></label>
                     <div className={styles.formRow}>
-                      <select className={styles.inputBase}>
-                        <option>Colação - Engenharia 2024</option>
-                      </select>
+                      <input
+                        className={styles.inputBase}
+                        placeholder="Ex: Colação - Engenharia 2024"
+                        value={refPath}
+                        onChange={e => setRefPath(e.target.value)}
+                      />
                     </div>
                   </div>
                 </CollapsibleSection>
@@ -818,6 +848,18 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                             RAW
                           </button>
                         </div>
+                      </div>
+                      <div className={styles.filterGroup}>
+                        <label className={styles.filterLabel}>Ordenação</label>
+                        <select 
+                          className={styles.inputBase}
+                          value={sortBy}
+                          onChange={e => setSortBy(e.target.value as any)}
+                        >
+                          <option value="name">Nome (Alfabética/Numérica)</option>
+                          <option value="date">Data de Modificação</option>
+                          <option value="size">Tamanho do Arquivo</option>
+                        </select>
                       </div>
                     </div>
                     <div className={styles.filterPanelFooter}>
@@ -1220,6 +1262,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   );
 });
 
+const RAW_EXTENSIONS = ['cr2', 'cr3', 'nef', 'arw', 'orf', 'rw2', 'dng', 'raf'];
+
 const PhotoCard = memo(({ 
   path, 
   ext,
@@ -1233,29 +1277,40 @@ const PhotoCard = memo(({
   onClick: (path: string) => void,
   onDoubleClick: (path: string) => void
 }) => {
+  const fileExt = (ext || path.split('.').pop() || '').toLowerCase().replace('.', '');
+  const isRawFile = RAW_EXTENSIONS.includes(fileExt);
+  const [imgError, setImgError] = useState(false);
+
   return (
     <div 
       className={`${styles.photoCard} ${isActive ? styles.photoCardActive : ''}`}
       onClick={() => onClick(path)}
       onDoubleClick={() => onDoubleClick(path)}
     >
-      <img 
-        src={api.thumbUrl(path, 300)} 
-        alt="Preview" 
-        className={styles.cardThumb} 
-        loading="lazy"
-        onError={(e) => {
-          (e.target as HTMLImageElement).src = 'https://placehold.co/300x400/111/444?text=Erro+no+Preview';
-        }}
-      />
+      {imgError && isRawFile ? (
+        <div className={styles.rawPlaceholder}>
+          <ImageIcon size={24} className={styles.rawIcon} />
+          <span className={styles.rawLabel}>RAW</span>
+          <span className={styles.rawSub}>sem prévia</span>
+        </div>
+      ) : (
+        <img 
+          src={api.thumbUrl(path, 300)} 
+          alt="Preview" 
+          className={styles.cardThumb} 
+          loading="lazy"
+          onError={() => setImgError(true)}
+        />
+      )}
       <div className={styles.cardOverlays}>
         <div className={styles.overlayTop}>
           <div className={styles.statsBadge}>
             <div className={styles.statIcon}><ScanFace size={10} /> IA</div>
           </div>
+          {isRawFile && <div className={`${styles.badge} ${styles.badgeAmber}`} style={{ fontSize: 7, marginLeft: 4 }}>RAW</div>}
         </div>
         <div className={styles.overlayBottom}>
-          <div className={styles.extBadge}>{ext?.toUpperCase().replace('.', '') || 'JPG'}</div>
+          <div className={styles.extBadge}>{fileExt.toUpperCase() || 'JPG'}</div>
         </div>
       </div>
     </div>

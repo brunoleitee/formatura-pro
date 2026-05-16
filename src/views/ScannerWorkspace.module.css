@@ -820,6 +820,32 @@
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
+.rawPlaceholder {
+  width: 100%;
+  height: 100%;
+  background: #0d0e12;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #5a6577;
+}
+
+.rawIcon { opacity: 0.3; }
+
+.rawLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: #fbbf24;
+  letter-spacing: 0.08em;
+}
+
+.rawSub {
+  font-size: 9px;
+  color: #4a5568;
+}
+
 /* ── START BUTTON ── */
 .startBtn {
   display: flex;
