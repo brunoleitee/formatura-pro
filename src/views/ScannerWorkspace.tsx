@@ -11,6 +11,7 @@ import { api, type ScanStatus, type ScanRecentFace, type ExplorerPhoto } from '.
 import FolderTree from '../components/scan/FolderTree';
 import { useApp } from '../context/AppContext';
 import styles from './ScannerWorkspace.module.css';
+import ScannerEventFolderManager from '../components/scan/manager/ScannerEventFolderManager';
 
 interface TimelineEntry {
   id: string;
@@ -134,6 +135,9 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [showFilters, setShowFilters] = useState(false);
   const [filterSearch, setFilterSearch] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'jpg' | 'raw'>('all');
+
+  const [showEventManager, setShowEventManager] = useState(false);
+  const [eventManagerData, setEventManagerData] = useState<{ included: string[]; ignored: string[]; monitored: string[] } | null>(null);
 
   // Filtered Photos logic
   const filteredFolderPhotos = useMemo(() => {
@@ -839,13 +843,28 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     Pasta principal do evento. Selecione para gerenciar as subpastas incluídas.
                   </p>
 
-                  <button className={styles.manageBtn} onClick={() => {/* navigate or toggle manage view */}}>
+                  <button 
+                    className={styles.manageBtn} 
+                    onClick={() => setShowEventManager(!showEventManager)}
+                    style={{ display: eventFolders.length > 0 ? 'flex' : 'none' }}
+                  >
                     <div className={styles.manageBtnContent}>
                       <FolderSearch size={14} className={styles.manageBtnIcon} />
                       <span>Gerenciar eventos e subpastas</span>
                     </div>
-                    <ChevronRightIcon size={12} className={styles.manageBtnChevron} />
+                    <ChevronRightIcon size={12} className={`${styles.manageBtnChevron} ${showEventManager ? styles.chevronOpen : ''}`} />
                   </button>
+
+                  {showEventManager && eventFolders.length > 0 && (
+                    <ScannerEventFolderManager 
+                      eventPath={eventFolders[eventFolders.length - 1]}
+                      catalogName={catalogName || 'default'}
+                      onClose={() => setShowEventManager(false)}
+                      onApply={(data) => {
+                        setEventManagerData(data);
+                      }}
+                    />
+                  )}
 
                   
                   {eventPhotosCountStatus === 'loading' && (
