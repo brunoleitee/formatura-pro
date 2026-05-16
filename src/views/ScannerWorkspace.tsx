@@ -337,6 +337,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     setEventFolders(prev => prev.filter((_, i) => i !== idx));
   };
 
+  const pollingWasScanningRef = useRef(false);
+
   const startPolling = useCallback(() => {
     setPolling(true);
     const poll = async () => {
@@ -346,14 +348,15 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
         
         if (st.is_scanning) {
           setIsScanning(true);
+          pollingWasScanningRef.current = true;
           
           if (st.current_photo?.path) {
             const photoPath = st.current_photo.path;
             
             // Atualizar processedPhotos (carrossel recente)
-            if (!processedPhotos.includes(photoPath)) {
-              setProcessedPhotos(prev => [photoPath, ...prev].slice(0, 100));
-            }
+            setProcessedPhotos(prev =>
+              prev.includes(photoPath) ? prev : [photoPath, ...prev].slice(0, 100)
+            );
 
             // Forçar visualização live se estiver em grid ou modo específico
             // mas sem resetar zoom se o usuário estiver navegando manualmente
@@ -380,7 +383,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           }
         }
 
-        if (!st.is_scanning && isScanning) {
+        if (!st.is_scanning && pollingWasScanningRef.current) {
+          pollingWasScanningRef.current = false;
           setIsScanning(false);
           setPolling(false);
           if (pollRef.current) clearInterval(pollRef.current);
@@ -405,7 +409,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     };
     pollMetrics();
     metricsPollRef.current = setInterval(pollMetrics, 2000);
-  }, [isScanning, processedPhotos]);
+  }, [processedPhotos]);
 
   // Carregar fotos da pasta selecionada
   useEffect(() => {
