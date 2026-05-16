@@ -617,18 +617,26 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   };
 
   const handleStopScan = async () => {
-    try {
-      await api.scannerStop();
-    } catch { /* fallback para endpoint legado */ }
-    try {
-      await api.stopScan();
-    } catch { /* ignore */ }
+    // 1. Parar polling IMEDIATAMENTE antes de qualquer chamada
     setIsScanning(false);
     setStarting(false);
     setPolling(false);
-    if (pollRef.current) clearInterval(pollRef.current);
-    if (metricsPollRef.current) clearInterval(metricsPollRef.current);
-    setTimeline(prev => [...prev, { id: `stop-${Date.now()}`, kind: 'warning', text: 'Scanner interrompido.', timestamp: Date.now() }]);
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (metricsPollRef.current) { clearInterval(metricsPollRef.current); metricsPollRef.current = null; }
+    setTimeline(prev => [...prev, {
+      id: `stop-${Date.now()}`,
+      kind: 'warning',
+      text: 'Scanner interrompido com segurança.',
+      timestamp: Date.now()
+    }]);
+
+    // 2. Chamar backend para cancelamento real (não bloquear UI)
+    try {
+      await api.scannerStop();
+    } catch { /* fallback */ }
+    try {
+      await api.stopScan();
+    } catch { /* ignore */ }
   };
 
   const handleCreateCatalog = async () => {

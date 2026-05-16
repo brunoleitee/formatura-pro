@@ -78,7 +78,9 @@ scanner_cancel = {
     "running": False,
     "cancel_requested": False,
     "stopped": False,
+    "KILL_NOW": False,
     "current_task": None,
     "executor": None,
     "queue": None,
+    "worker_thread": None,
 }

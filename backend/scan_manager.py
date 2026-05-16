@@ -379,13 +379,17 @@ def stop_scan():
     scan_state["current_photo"] = None
     scan_state["recent_faces"] = []
     scan_state.pop("processing_history", None)
+    scan_state["progress"] = 0.0
+
+    log_info = _get("log_info")
+    if log_info:
+        log_info("[Scanner] STOP REQUESTED — cancelamento real ativado")
+
     from backend_state import scanner_cancel as _sc
     _sc["cancel_requested"] = True
     _sc["running"] = False
     _sc["stopped"] = True
-    log_info = _get("log_info")
-    if log_info:
-        log_info("[Scanner] Stop requested — cancelamento real ativado")
+
     from services.ai_processing_queue import ai_processing_queue
     try:
         ai_processing_queue.running = False
@@ -399,11 +403,28 @@ def stop_scan():
             log_info("[Scanner] AI queue emptied and stopped")
     except Exception:
         pass
+
     import gc
     for _ in range(3):
         gc.collect()
+
     if log_info:
-        log_info("[Scanner] Memory cleanup done")
+        log_info("[Scanner] CLEANUP DONE")
+
+    # WATCHDOG: se o worker nao parar em 10s, força os._exit()
+    def _watchdog_kill():
+        import time
+        time.sleep(10)
+        s = _get("scan_state")
+        if s is not None and s.get("is_scanning", False):
+            if log_info:
+                log_info("[Scanner] WATCHDOG — worker nao parou, forçando os._exit(1)")
+            _sc["KILL_NOW"] = True
+            import os
+            os._exit(1)
+
+    threading.Thread(target=_watchdog_kill, daemon=True).start()
+
     return {"message": "Cancelamento real ativado. Scanner sera interrompido em breve."}
 
 

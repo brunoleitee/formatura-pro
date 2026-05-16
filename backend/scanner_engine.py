@@ -565,20 +565,27 @@ def _quality_state():
     return _cfg["quality_audit_state"]
 
 
+_KILL_NOW = False
+
+
 def _cancel_requested():
     try:
-        from backend_state import scanner_cancel
-        return scanner_cancel.get("cancel_requested", False)
+        from backend_state import scanner_cancel as _sc
+        if _sc.get("KILL_NOW", False):
+            import os
+            os._exit(1)
+        return _sc.get("cancel_requested", False)
     except Exception:
         return False
 
 
 def _reset_cancel():
     try:
-        from backend_state import scanner_cancel
-        scanner_cancel["cancel_requested"] = False
-        scanner_cancel["running"] = False
-        scanner_cancel["stopped"] = False
+        from backend_state import scanner_cancel as _sc
+        _sc["cancel_requested"] = False
+        _sc["running"] = False
+        _sc["stopped"] = False
+        _sc["KILL_NOW"] = False
     except Exception:
         pass
 
@@ -591,6 +598,12 @@ def _memory_cleanup(scan_state=None):
         scan_state.pop("processing_history", None)
     for _ in range(3):
         gc.collect()
+
+
+def _load_single_image(path):
+    if _cancel_requested():
+        return None
+    return imread_unicode(path)
 
 
 def run_scanner_worker(req):
@@ -707,7 +720,8 @@ def run_scanner_worker(req):
             inserted_photo_paths = set()
             processed_photo_paths = set()
             log_info(f"[SCAN] Fotos ja existentes no catalogo antes do scan: {len(existing_photo_paths)}")
-            batch_size = 24 if get_face_engine_device() == "GPU" else 12
+            # MODO SEGURO: batch_size=1 para permitir cancelamento rapido
+            batch_size = 1
             import time
             start_time = time.time()
             total_faces_found = 0
@@ -716,42 +730,55 @@ def run_scanner_worker(req):
             try:
                 scan_state["started_at"] = time.time()
                 for i in range(0, total, batch_size):
-                    if not scan_state["is_scanning"] or _cancel_requested():
-                        if _cancel_requested():
-                            log_info("[Scanner] Cancelamento detectado no laco principal — interrompendo")
-                            scan_state["status_text"] = "Scanner interrompido"
+                    if _cancel_requested():
+                        log_info("[Scanner] CANCEL BEFORE BATCH — interrompendo")
+                        scan_state["status_text"] = "Scanner interrompido"
                         break
-                    chunk_paths = fotos[i:i + batch_size]
-                    scan_state["status_text"] = f"Decodificando Lote {i} a {min(total, i + batch_size)}..."
-                    chunk_imgs = [imread_unicode(path) for path in chunk_paths]
-                    scan_state["status_text"] = f"Inferencia IA Lote {i} a {min(total, i + batch_size)}..."
 
-                    for p, img in zip(chunk_paths, chunk_imgs):
+                    p = fotos[i]
+                    scan_state["status_text"] = f"Processando {i+1}/{total}: {os.path.basename(p)}"
+
+                    # Carregar UMA foto por vez — nunca um lote inteiro
+                    if _cancel_requested():
+                        log_info("[Scanner] CANCEL BEFORE IMAGE LOAD")
+                        scan_state["status_text"] = "Scanner interrompido"
+                        break
+                    img = _load_single_image(p)
+                    if img is None:
                         if _cancel_requested():
-                            log_info("[Scanner] Cancelamento durante lote — saindo do loop de fotos")
-                            scan_state["status_text"] = "Scanner interrompido"
                             break
+                        ignored_reasons["read_error"] += 1
+                        continue
 
-                        processed_photo_paths.add(p)
-                        if img is None:
-                            ignored_reasons["read_error"] += 1
-                            continue
-                        photo_hash = file_sha1(p)
-                        faces = []
-                        valid_faces = []
-                        t0_face = time.time()
-                        if _cancel_requested():
-                            log_info("[Scanner] Cancel before face detection")
-                            scan_state["status_text"] = "Scanner interrompido"
-                            break
+                    processed_photo_paths.add(p)
+                    photo_hash = file_sha1(p)
+                    faces = []
+                    valid_faces = []
+                    t0_face = time.time()
 
-                        try:
-                            with quiet_external_output():
-                                faces = _cfg["app_face"].get(img) or []
-                        except Exception as e:
-                            log_debug(f"Falha de AI em {p}: {e}")
-                            ignored_reasons["ai_error"] += 1
-                            continue
+                    if _cancel_requested():
+                        log_info("[Scanner] CANCEL BEFORE FACE")
+                        try: del img
+                        except: pass
+                        scan_state["status_text"] = "Scanner interrompido"
+                        break
+
+                    try:
+                        with quiet_external_output():
+                            faces = _cfg["app_face"].get(img) or []
+                    except Exception as e:
+                        log_debug(f"Falha de AI em {p}: {e}")
+                        ignored_reasons["ai_error"] += 1
+                        try: del img
+                        except: pass
+                        continue
+
+                    if _cancel_requested():
+                        log_info("[Scanner] CANCEL AFTER FACE — pulando OCR e DB")
+                        try: del img; del faces
+                        except: pass
+                        scan_state["status_text"] = "Scanner interrompido"
+                        break
 
                         for face in faces:
                             if not hasattr(face, "embedding") or face.embedding is None:
