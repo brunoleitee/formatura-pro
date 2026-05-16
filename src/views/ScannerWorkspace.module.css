@@ -1478,45 +1478,125 @@
   stroke-linejoin: round;
 }
 
-/* ── SUB-TABS: Scanner / Eventos & Referências ── */
-.scannerSubTabs {
+/* ── EVENT FOLDER ITEMS ── */
+.eventFolderList {
   display: flex;
-  gap: 0;
-  padding: 0 20px;
-  background: #0e0f14;
-  border-bottom: 1px solid #1a1c23;
-  flex-shrink: 0;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.scannerSubTab {
-  padding: 8px 18px;
-  font-size: 12px;
+.eventFolderCard {
+  background: #0d0e12;
+  border: 1px solid #1a1c23;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.eventFolderHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #111216;
+  border-bottom: 1px solid #1a1c23;
+}
+
+.eventFolderIcon { color: #60a5fa; flex-shrink: 0; }
+
+.eventFolderName {
+  font-size: 11px;
   font-weight: 600;
-  color: #5a6577;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
-  font-family: inherit;
+  color: #e2e8f0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.scannerSubTab:hover {
-  color: #94a3b8;
+.eventFolderCount {
+  font-size: 9px;
+  color: #5a6577;
+  flex-shrink: 0;
 }
 
-.scannerSubTabActive {
-  color: #60a5fa;
-  border-bottom-color: #60a5fa;
-}
-
-.eventsTabContainer {
-  flex: 1;
-  overflow: hidden;
+.eventFolderRemove {
+  background: transparent;
+  border: none;
+  color: #5a6577;
+  cursor: pointer;
+  padding: 2px;
   display: flex;
-  flex-direction: column;
+  border-radius: 3px;
+  transition: all 0.15s;
 }
+
+.eventFolderRemove:hover { background: rgba(239,68,68,0.15); color: #f87171; }
+
+.eventFolderSubList {
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.eventFolderSubList::-webkit-scrollbar { width: 3px; }
+.eventFolderSubList::-webkit-scrollbar-thumb { background: #2d2f36; border-radius: 10px; }
+
+.eventFolderSubRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  transition: background 0.1s;
+}
+
+.eventFolderSubRow:hover { background: rgba(59,130,246,0.04); }
+
+.eventFolderSubName {
+  flex: 1;
+  font-size: 10px;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eventFolderSubActions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.eventSubBtn {
+  background: transparent;
+  border: 1px solid transparent;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  color: #3d4352;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.eventSubBtn:hover { color: #5a6577; border-color: #2d2f36; }
+
+.eventSubBtnInclude { background: rgba(16,185,129,0.12) !important; color: #34d399 !important; border-color: rgba(16,185,129,0.3) !important; }
+.eventSubBtnIgnore { background: rgba(239,68,68,0.12) !important; color: #f87171 !important; border-color: rgba(239,68,68,0.3) !important; }
+.eventSubBtnMonitor { background: rgba(245,158,11,0.12) !important; color: #fbbf24 !important; border-color: rgba(245,158,11,0.3) !important; }
+
+.eventFolderFooter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-top: 1px solid #1a1c23;
+  font-size: 9px;
+  color: #5a6577;
+}
+
+.eventFolderFooterIcon { opacity: 0.5; }
 
 /* ── SINGLE PREVIEW ENHANCEMENTS ── */
 .previewContent {

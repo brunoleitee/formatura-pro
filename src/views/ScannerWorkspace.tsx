@@ -10,7 +10,6 @@ import {
 import { api, type ScanStatus, type ScanRecentFace, type ExplorerPhoto } from '../services/api';
 import FolderTree from '../components/scan/FolderTree';
 import { useApp } from '../context/AppContext';
-import EventsReferencesView from './EventsReferencesView';
 import styles from './ScannerWorkspace.module.css';
 
 interface TimelineEntry {
@@ -108,6 +107,9 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [faceRecEnabled, setFaceRecEnabled] = useState(true);
   const [blurFilter, setBlurFilter] = useState('Médio');
 
+  const [eventFolders, setEventFolders] = useState<string[]>([]);
+  const [eventFolderStatuses, setEventFolderStatuses] = useState<Record<string, Record<string, 'include' | 'ignore' | 'monitor'>>>({});
+
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const metricsPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const filmstripRef = useRef<HTMLDivElement | null>(null);
@@ -115,7 +117,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [systemMetrics, setSystemMetrics] = useState<{ gpuLoad: number | null; cpuLoad: number | null; ramUsedGb: number | null; tempC: number | null } | null>(null);
   const [liveFaceBoxes, setLiveFaceBoxes] = useState<{ bbox: number[]; confidence: number }[]>([]);
   const [naturalDims, setNaturalDims] = useState({ w: 0, h: 0 });
-  const [scannerTab, setScannerTab] = useState<'scanner' | 'events'>('scanner');
   const [processedPhotos, setProcessedPhotos] = useState<string[]>([]);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
 
@@ -363,9 +364,43 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           subfolders: subfolderCount,
         });
       } catch {
-        setRefPathInfo(null);
+        setError('Erro ao carregar estatísticas da pasta de referência.');
       }
     }
+  };
+
+  const handleAddEventFolder = async () => {
+    const res = await api.selectFolder().catch(() => null);
+    if (res?.path && !eventFolders.includes(res.path)) {
+      setEventFolders(prev => [...prev, res.path]);
+      try {
+        const tree = await api.exploreTree(res.path, 3);
+        const allSub: string[] = [];
+        const flatten = (nodes: any[], parent = '') => {
+          nodes.forEach((n: any) => {
+            const full = parent ? `${parent}/${n.name}` : n.name;
+            allSub.push(full);
+            if (n.children) flatten(n.children, full);
+          });
+        };
+        if (tree.tree) flatten(Array.isArray(tree.tree) ? tree.tree : [tree.tree]);
+        const statuses: Record<string, 'include' | 'ignore' | 'monitor'> = {};
+        allSub.forEach(p => { statuses[p] = 'include'; });
+        setEventFolderStatuses(prev => ({ ...prev, [res.path]: statuses }));
+      } catch { /* tree best-effort */ }
+    }
+  };
+
+  const handleEventFolderStatus = (folderPath: string, subPath: string, status: 'include' | 'ignore' | 'monitor') => {
+    setEventFolderStatuses(prev => {
+      const folder = { ...(prev[folderPath] || {}) };
+      folder[subPath] = status;
+      return { ...prev, [folderPath]: folder };
+    });
+  };
+
+  const handleRemoveEventFolder = (idx: number) => {
+    setEventFolders(prev => prev.filter((_, i) => i !== idx));
   };
 
   const startPolling = useCallback(() => {
@@ -646,24 +681,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
         </div>
       </div>
 
-      {/* ── SUB-TABS: Scanner / Eventos & Referências ── */}
-      <div className={styles.scannerSubTabs}>
-        <button 
-          className={`${styles.scannerSubTab} ${scannerTab === 'scanner' ? styles.scannerSubTabActive : ''}`}
-          onClick={() => setScannerTab('scanner')}
-        >
-          Scanner
-        </button>
-        <button 
-          className={`${styles.scannerSubTab} ${scannerTab === 'events' ? styles.scannerSubTabActive : ''}`}
-          onClick={() => setScannerTab('events')}
-        >
-          Eventos & Referências
-        </button>
-      </div>
-
-      {scannerTab === 'scanner' ? (
-        <>
       <div className={styles.mainLayout}>
         {/* ── LEFT PANEL: CONFIG ── */}
         <div className={`${styles.leftPanel} ${sidebarCollapsed ? styles.leftPanelCollapsed : ''}`}>
@@ -741,7 +758,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     )}
                   </div>
                   <div className={styles.formGroup}>
-                    <label className={styles.label}>Pasta de referência / Evento <span style={{color: '#5a6577', fontWeight: 400}}>(opcional)</span></label>
+                    <label className={styles.label}>Referência <span style={{color: '#5a6577', fontWeight: 400}}>(opcional)</span></label>
                     <div className={styles.formRow}>
                       <input
                         className={styles.inputBase}
@@ -755,7 +772,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     {refPathInfo ? (
                       <div className={styles.refStats}>
                         <Folder size={10} />
-                        <span>{refPathInfo.photos.toLocaleString('pt-BR')} imagens encontradas em {refPathInfo.subfolders} {refPathInfo.subfolders === 1 ? 'subpasta' : 'subpastas'}</span>
+                        <span>{refPathInfo.photos.toLocaleString('pt-BR')} imagens para reconhecimento facial</span>
                       </div>
                     ) : refPath ? (
                       <div className={styles.refStats} style={{ color: '#5a6577' }}>
@@ -763,6 +780,26 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                         <span>Calculando...</span>
                       </div>
                     ) : null}
+                  </div>
+
+                  <div className={styles.formGroup}>
+                    <label className={styles.label}>Eventos <span style={{color: '#5a6577', fontWeight: 400}}>(pastas para escanear)</span></label>
+                    <button className={styles.alterBtn} onClick={handleAddEventFolder} style={{ marginBottom: eventFolders.length > 0 ? 8 : 0, width: '100%' }}>
+                      <Plus size={12} /> Adicionar pasta
+                    </button>
+                    {eventFolders.length > 0 && (
+                      <div className={styles.eventFolderList}>
+                        {eventFolders.map((folderPath, idx) => (
+                          <EventFolderItem
+                            key={folderPath}
+                            path={folderPath}
+                            statuses={eventFolderStatuses[folderPath] || {}}
+                            onStatusChange={(subPath, status) => handleEventFolderStatus(folderPath, subPath, status)}
+                            onRemove={() => handleRemoveEventFolder(idx)}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </CollapsibleSection>
 
@@ -1389,12 +1426,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           </div>
         </div>
       </div>
-        </>
-      ) : (
-        <div className={styles.eventsTabContainer}>
-          <EventsReferencesView />
-        </div>
-      )}
 
       {/* ── BOTTOM STATUS BAR ── */}
       <div className={styles.statusBar}>
@@ -1405,6 +1436,62 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
         <div className={styles.statusItem}>Catálogo: <span className={styles.statusValue}>{currentCatalog || 'Nenhum'}</span></div>
         <div className={styles.statusItem}>Versão Engine: <span className={styles.statusValue}>v2.1.4-hybrid</span></div>
         <div className={styles.statusItem} style={{ marginLeft: 'auto' }}><Activity size={10} /> System Healthy</div>
+      </div>
+    </div>
+  );
+});
+
+const HIDDEN_DIRS = new Set(['.cache', '.temp', '__pycache__', 'thumbs', 'thumbnails']);
+
+const EventFolderItem = memo(({
+  path: folderPath,
+  statuses,
+  onStatusChange,
+  onRemove,
+}: {
+  path: string;
+  statuses: Record<string, 'include' | 'ignore' | 'monitor'>;
+  onStatusChange: (subPath: string, status: 'include' | 'ignore' | 'monitor') => void;
+  onRemove: () => void;
+}) => {
+  const folderName = folderPath.split(/[\\/]/).filter(Boolean).pop() || folderPath;
+  const entries = Object.entries(statuses).filter(([k]) => !HIDDEN_DIRS.has(k.toLowerCase().split('/').pop() || ''));
+  const included = entries.filter(([, v]) => v === 'include').length;
+  const ignored = entries.filter(([, v]) => v === 'ignore').length;
+
+  return (
+    <div className={styles.eventFolderCard}>
+      <div className={styles.eventFolderHeader}>
+        <Folder size={12} className={styles.eventFolderIcon} />
+        <span className={styles.eventFolderName}>{folderName}</span>
+        <span className={styles.eventFolderCount}>{entries.length} subpastas</span>
+        <button className={styles.eventFolderRemove} onClick={onRemove} title="Remover pasta">
+          <X size={10} />
+        </button>
+      </div>
+      <div className={styles.eventFolderSubList}>
+        {entries.map(([subPath, status]) => (
+          <div key={subPath} className={styles.eventFolderSubRow}>
+            <span className={styles.eventFolderSubName}>{subPath}</span>
+            <div className={styles.eventFolderSubActions}>
+              {(['include', 'ignore', 'monitor'] as const).map(s => (
+                <button
+                  key={s}
+                  className={`${styles.eventSubBtn} ${status === s ? styles[`eventSubBtn${s.charAt(0).toUpperCase() + s.slice(1)}`] : ''}`}
+                  onClick={() => onStatusChange(subPath, s)}
+                  title={s === 'include' ? 'Incluir' : s === 'ignore' ? 'Ignorar' : 'Monitorar'}
+                >
+                  {s === 'include' ? <Check size={10} /> : s === 'ignore' ? <X size={10} /> : <Eye size={10} />}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className={styles.eventFolderFooter}>
+        <Check size={10} className={styles.eventFolderFooterIcon} />
+        <span>{included} incluídas</span>
+        {ignored > 0 && <><X size={10} className={styles.eventFolderFooterIcon} /><span>{ignored} ignoradas</span></>}
       </div>
     </div>
   );
