@@ -1,5 +1,5 @@
 import { API_BASE, fetchJSON, post } from './core';
-import type { ExplorerPhotosResponse, FolderTreeResponse, Photo, PhotoContextResponse, QualityAuditStatus, ScanStatus } from './types';
+import type { ExplorerPhotosResponse, FolderTreeResponse, Photo, PhotoContextResponse, PreviewFacesResponse, QualityAuditStatus, ScanStatus } from './types';
 
 export const photoApi = {
   getPhotos: (path = '', catalog = '') =>
@@ -74,6 +74,12 @@ export const photoApi = {
   getPhotoInfo: (path: string) =>
     fetchJSON<{ faces: Array<{ box: number[]; name: string }>; discarded: boolean }>(
       `${API_BASE}/photo-info?path=${encodeURIComponent(path)}`
+    ),
+
+  // Preview faces (on-the-fly detection, no DB save)
+  previewFaces: (path: string) =>
+    fetchJSON<PreviewFacesResponse>(
+      `${API_BASE}/scanner/preview-faces?path=${encodeURIComponent(path)}`
     ),
 
   // Face identification

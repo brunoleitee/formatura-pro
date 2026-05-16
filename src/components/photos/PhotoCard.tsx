@@ -192,7 +192,8 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
   const [ratingTick, setRatingTick] = useState(0);
   useEffect(() => ratingCache.subscribe(() => setRatingTick((t) => t + 1)), []);
   const aiResult = aiCacheStore.get(photo.path);
-  const showAiBadge = aiTick >= 0 && aiResult?.status === "completed" && (aiResult.face_detected || aiResult.ocr_text);
+  const aiOcrFinal = aiResult?.final_student || aiResult?.suggested_id || aiResult?.ocr_text;
+  const showAiBadge = aiTick >= 0 && aiResult?.status === "completed" && (aiResult.face_detected || !!aiOcrFinal);
   const isAiProcessing = aiResult?.status === "processing" || aiResult?.status === "pending";
   const photoMeta = ratingCache.get(photo.path);
   const showRating = photoMeta.rating > 0;
@@ -502,10 +503,10 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
           <div className={`${styles.aiBadge} ${styles.aiProcessing}`}>IA...</div>
         )}
         {showAiBadge && (
-          <div className={`${styles.aiBadge} ${styles.aiReady}`} title={aiResult?.ocr_text ? `OCR: ${aiResult.ocr_text}` : aiResult?.face_detected ? 'Rosto detectado' : ''}>
+          <div className={`${styles.aiBadge} ${styles.aiReady}`} title={aiOcrFinal ? `OCR: ${aiOcrFinal}` : aiResult?.face_detected ? 'Rosto detectado' : ''}>
             {aiResult?.face_detected ? <ScanFace size={10} /> : null}
-            {aiResult?.ocr_text ? <FileText size={10} /> : null}
-            {aiResult?.face_detected && aiResult?.ocr_text ? null : !aiResult?.face_detected && !aiResult?.ocr_text ? <Brain size={10} /> : null}
+            {aiOcrFinal ? <FileText size={10} /> : null}
+            {aiResult?.face_detected && aiOcrFinal ? null : !aiResult?.face_detected && !aiOcrFinal ? <Brain size={10} /> : null}
           </div>
         )}
         {showFavorite && (

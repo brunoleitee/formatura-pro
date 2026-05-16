@@ -1241,7 +1241,8 @@ export function PhotoViewerModal({
                     const itemKey = getViewerPhotoKey(item);
                     const aiResult = aiCacheStore.get(item.path);
                     const aiStatus = aiResult?.status;
-                    const showAiBadge = aiStatus === "completed" && (aiResult?.face_detected || aiResult?.ocr_text);
+                    const aiOcrFinal = aiResult?.final_student || aiResult?.suggested_id || aiResult?.ocr_text;
+                    const showAiBadge = aiStatus === "completed" && (aiResult?.face_detected || !!aiOcrFinal);
                     return (
                       <button
                         key={itemKey}

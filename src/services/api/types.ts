@@ -90,6 +90,21 @@ export interface ScanStatus {
   scan_summary: ScanSummary | null;
 }
 
+export interface PreviewFace {
+  bbox: number[];
+  confidence: number;
+  area: number;
+  is_primary: boolean;
+  crop_url: string;
+}
+
+export interface PreviewFacesResponse {
+  ok: boolean;
+  path?: string;
+  error?: string;
+  faces: PreviewFace[];
+}
+
 export interface QualityAuditStatus {
   status: string;
   running: boolean;

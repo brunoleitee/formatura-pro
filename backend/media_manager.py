@@ -1346,6 +1346,27 @@ def _get_camera_model(file_path):
         return None
 
 
+_IGNORED_DIRS = frozenset({
+    ".preview_ocr_debug", "__pycache__", ".git", "node_modules", "dist", "target", ".venv"
+})
+
+_IGNORED_FILE_PATTERNS = (
+    "_crop_", "_processed", "debug_",
+)
+
+
+def _is_ignored_dir(name: str) -> bool:
+    return name.startswith(".") or name in _IGNORED_DIRS
+
+
+def _is_ignored_file(name: str) -> bool:
+    lower = name.lower()
+    for pat in _IGNORED_FILE_PATTERNS:
+        if pat in lower:
+            return True
+    return False
+
+
 def _scan_tree(path, depth=0, max_depth=2):
     """Recursively scan folder structure up to max_depth.
     Returns (children, direct_files, direct_counts, has_children).
@@ -1363,6 +1384,8 @@ def _scan_tree(path, depth=0, max_depth=2):
     first_image = None
 
     for e in entries:
+        if _is_ignored_dir(e.name):
+            continue
         try:
             if e.is_dir():
                 reached_limit = max_depth is not None and (depth + 1) >= max_depth
@@ -1422,6 +1445,8 @@ def _scan_tree(path, depth=0, max_depth=2):
                     has_children = True
 
             elif e.is_file():
+                if _is_ignored_file(e.name):
+                    continue
                 ext = os.path.splitext(e.name)[1].lower()
                 if ext in RAW_EXTENSIONS:
                     direct_counts["RAW"] += 1
@@ -1506,8 +1531,12 @@ def explorer_photos(path: str, recursive: bool = False, limit: int = 0, offset: 
     try:
         if recursive:
             for root, _dirs, files in os.walk(dec):
+                if _is_ignored_dir(os.path.basename(root)):
+                    continue
                 for fname in files:
                     if fname.startswith(".") or fname.startswith("~"):
+                        continue
+                    if _is_ignored_file(fname):
                         continue
                     ext = os.path.splitext(fname)[1].lower()
                     if ext in SUPPORTED:
@@ -1516,6 +1545,10 @@ def explorer_photos(path: str, recursive: bool = False, limit: int = 0, offset: 
         else:
             for e in os.scandir(dec):
                 if e.name.startswith(".") or e.name.startswith("~"):
+                    continue
+                if _is_ignored_dir(e.name):
+                    continue
+                if _is_ignored_file(e.name):
                     continue
                 if e.is_file():
                     ext = os.path.splitext(e.name)[1].lower()

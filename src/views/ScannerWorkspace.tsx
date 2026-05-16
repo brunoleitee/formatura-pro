@@ -237,11 +237,11 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     const fileName = selectedPhotoPath.split(/[\\/]/).pop() || '';
     const controller = new AbortController();
 
-    // ── HELPER: Buscar faces ──
+    // ── HELPER: Buscar faces (preview em tempo real) ──
     const fetchFaces = () => {
-      api.getPhotoInfo(selectedPhotoPath).then(info => {
+      api.previewFaces(selectedPhotoPath).then(result => {
         if (controller.signal.aborted) return;
-        if (!info || !info.faces?.length) {
+        if (!result.ok || !result.faces?.length) {
           setSelectedPhotoFaces(prev =>
             prev.status === 'processing' ? { status: 'waiting', faces: [] } : prev
           );
@@ -249,12 +249,12 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
         }
         setSelectedPhotoFaces({
           status: 'done',
-          faces: info.faces.map((f, i) => ({
+          faces: result.faces.map((f, i) => ({
             id: `face-${i}-${Date.now()}`,
-            thumbnail: api.faceThumbUrl(selectedPhotoPath, f.box[0], f.box[1], f.box[2], f.box[3], 80),
-            suggestedName: f.name || 'Desconhecido',
-            confidence: 85.0,
-            badge: f.name && f.name !== 'Desconhecido' ? 'similar' as const : 'sem_match' as const,
+            thumbnail: api.faceThumbUrl(selectedPhotoPath, f.bbox[0], f.bbox[1], f.bbox[2], f.bbox[3], 80),
+            suggestedName: 'Desconhecido',
+            confidence: f.confidence * 100,
+            badge: 'sem_match' as const,
           })),
         });
       }).catch(() => {
