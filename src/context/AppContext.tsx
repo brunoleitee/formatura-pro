@@ -10,7 +10,7 @@ export type ViewName =
   | 'export'
   | 'settings'
   | 'cloud-sync'
-  | 'events-references';
+  ;
 
 interface AppContextValue {
   currentCatalog: string;

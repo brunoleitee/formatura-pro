@@ -1443,6 +1443,79 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+}
+
+/* ── FACE OVERLAYS ── */
+.faceOverlaySvg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.faceBox {
+  fill: none;
+  stroke: rgba(59, 130, 246, 0.85);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 4px rgba(59, 130, 246, 0.4));
+}
+
+.faceLabel {
+  fill: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.7);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── SUB-TABS: Scanner / Eventos & Referências ── */
+.scannerSubTabs {
+  display: flex;
+  gap: 0;
+  padding: 0 20px;
+  background: #0e0f14;
+  border-bottom: 1px solid #1a1c23;
+  flex-shrink: 0;
+}
+
+.scannerSubTab {
+  padding: 8px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #5a6577;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.scannerSubTab:hover {
+  color: #94a3b8;
+}
+
+.scannerSubTabActive {
+  color: #60a5fa;
+  border-bottom-color: #60a5fa;
+}
+
+.eventsTabContainer {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── SINGLE PREVIEW ENHANCEMENTS ── */

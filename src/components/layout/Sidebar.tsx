@@ -73,7 +73,6 @@ export function Sidebar({
 
 const toolItems: { view: ViewName; icon: React.ReactNode; label: string }[] = [
     { view: 'export',   icon: <Download size={17} />,  label: 'Exportador' },
-    { view: 'events-references', icon: <FolderTree size={17} />,  label: 'Eventos & Referências' },
     { view: 'cloud-sync', icon: <Cloud size={17} />,  label: 'Sincronização na Nuvem' },
     { view: 'settings', icon: <Settings size={17} />,  label: 'Configurações' },
   ];

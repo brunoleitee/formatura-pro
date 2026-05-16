@@ -1,5 +1,5 @@
 import { API_BASE, fetchJSON, post } from './core';
-import type { ExplorerPhotosResponse, FolderTreeResponse, Photo, PhotoContextResponse, PreviewFacesResponse, QualityAuditStatus, ScanStatus } from './types';
+import type { ExplorerPhotosResponse, FolderTreeResponse, Photo, PhotoContextResponse, PreviewFacesResponse, QualityAuditStatus, ScanStatus, SystemMetrics } from './types';
 
 export const photoApi = {
   getPhotos: (path = '', catalog = '') =>
@@ -53,6 +53,7 @@ export const photoApi = {
       ...(options?.blur_treatment ? { blur_treatment: options.blur_treatment } : {}),
       ...(options?.selected_folders ? { selected_folders: options.selected_folders } : {}),
     }),
+  getSystemMetrics: () => fetchJSON<SystemMetrics>(`${API_BASE}/system/metrics`),
   getScanStatus: () => fetchJSON<ScanStatus>(`${API_BASE}/scan/status`),
   stopScan: () => post(`${API_BASE}/scan/stop`, {}),
   clearScanSummary: () => post(`${API_BASE}/scan/clear_summary`, {}),

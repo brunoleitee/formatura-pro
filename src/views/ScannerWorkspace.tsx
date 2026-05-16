@@ -10,6 +10,7 @@ import {
 import { api, type ScanStatus, type ScanRecentFace, type ExplorerPhoto } from '../services/api';
 import FolderTree from '../components/scan/FolderTree';
 import { useApp } from '../context/AppContext';
+import EventsReferencesView from './EventsReferencesView';
 import styles from './ScannerWorkspace.module.css';
 
 interface TimelineEntry {
@@ -108,7 +109,13 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [blurFilter, setBlurFilter] = useState('Médio');
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const metricsPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const filmstripRef = useRef<HTMLDivElement | null>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [systemMetrics, setSystemMetrics] = useState<{ gpuLoad: number | null; cpuLoad: number | null; ramUsedGb: number | null; tempC: number | null } | null>(null);
+  const [liveFaceBoxes, setLiveFaceBoxes] = useState<{ bbox: number[]; confidence: number }[]>([]);
+  const [naturalDims, setNaturalDims] = useState({ w: 0, h: 0 });
+  const [scannerTab, setScannerTab] = useState<'scanner' | 'events'>('scanner');
   const [processedPhotos, setProcessedPhotos] = useState<string[]>([]);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
 
@@ -372,6 +379,21 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           setIsScanning(true);
           if (st.current_photo && !processedPhotos.includes(st.current_photo)) {
             setProcessedPhotos(prev => [st.current_photo!, ...prev].slice(0, 100));
+            setViewMode('single');
+            setPreviewZoom(0);
+            setDragPos({ x: 0, y: 0 });
+          }
+
+          if (st.current_photo) {
+            const idx = activePhotos.indexOf(st.current_photo);
+            if (idx >= 0) setActivePhotoIndex(idx);
+          }
+
+          if (st.recent_faces?.length) {
+            setLiveFaceBoxes(st.recent_faces.map((f: any) => ({
+              bbox: f.box || [0, 0, 0, 0],
+              confidence: f.confidence || 0,
+            })));
           }
 
           if (Math.random() > 0.8) {
@@ -398,6 +420,15 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     };
     poll();
     pollRef.current = setInterval(poll, 1000);
+
+    const pollMetrics = async () => {
+      try {
+        const m = await api.getSystemMetrics();
+        setSystemMetrics(m);
+      } catch { /* ignore */ }
+    };
+    pollMetrics();
+    metricsPollRef.current = setInterval(pollMetrics, 2000);
   }, [isScanning, processedPhotos]);
 
   // Carregar fotos da pasta selecionada
@@ -440,7 +471,10 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
   useEffect(() => {
     if (currentCatalog) setCatalogName(currentCatalog);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    return () => { 
+      if (pollRef.current) clearInterval(pollRef.current); 
+      if (metricsPollRef.current) clearInterval(metricsPollRef.current); 
+    };
   }, [currentCatalog]);
 
   const handleScan = async () => {
@@ -612,6 +646,24 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
         </div>
       </div>
 
+      {/* ── SUB-TABS: Scanner / Eventos & Referências ── */}
+      <div className={styles.scannerSubTabs}>
+        <button 
+          className={`${styles.scannerSubTab} ${scannerTab === 'scanner' ? styles.scannerSubTabActive : ''}`}
+          onClick={() => setScannerTab('scanner')}
+        >
+          Scanner
+        </button>
+        <button 
+          className={`${styles.scannerSubTab} ${scannerTab === 'events' ? styles.scannerSubTabActive : ''}`}
+          onClick={() => setScannerTab('events')}
+        >
+          Eventos & Referências
+        </button>
+      </div>
+
+      {scannerTab === 'scanner' ? (
+        <>
       <div className={styles.mainLayout}>
         {/* ── LEFT PANEL: CONFIG ── */}
         <div className={`${styles.leftPanel} ${sidebarCollapsed ? styles.leftPanelCollapsed : ''}`}>
@@ -962,13 +1014,47 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     }}
                   >
                     <img 
+                      ref={imgRef}
                       key={activePhotos[activePhotoIndex]}
                       src={navPreviewUrl} 
                       className={`${styles.previewImage} ${previewLoaded ? styles.previewImageLoaded : styles.previewImageLoading}`} 
                       alt={navFileName}
-                      onLoad={() => setPreviewLoaded(true)}
+                      onLoad={(e) => {
+                        setPreviewLoaded(true);
+                        const img = e.currentTarget;
+                        setNaturalDims({ w: img.naturalWidth, h: img.naturalHeight });
+                      }}
                       draggable={false}
+                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
                     />
+                    {naturalDims.w > 0 && liveFaceBoxes.length > 0 && (
+                      <svg
+                        className={styles.faceOverlaySvg}
+                        viewBox={`0 0 ${naturalDims.w} ${naturalDims.h}`}
+                        preserveAspectRatio="xMidYMid meet"
+                      >
+                        {liveFaceBoxes.slice(0, 50).map((f, i) => {
+                          const [x1, y1, x2, y2] = f.bbox;
+                          return (
+                            <g key={i}>
+                              <rect
+                                x={x1} y={y1}
+                                width={x2 - x1} height={y2 - y1}
+                                className={styles.faceBox}
+                              />
+                              {f.confidence > 0 && (
+                                <text
+                                  x={x1 + 4} y={y1 + 14}
+                                  className={styles.faceLabel}
+                                >
+                                  {`${Math.round(f.confidence * 100)}%`}
+                                </text>
+                              )}
+                            </g>
+                          );
+                        })}
+                      </svg>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1283,26 +1369,32 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
             <div className={styles.metricItem}>
               <Monitor size={12} className={styles.metricIcon} />
               <span className={styles.metricLabel}>GPU Load</span>
-              <span className={styles.metricValue}>47%</span>
+              <span className={styles.metricValue}>{systemMetrics?.gpuLoad != null ? `${systemMetrics.gpuLoad}%` : '--'}</span>
             </div>
             <div className={styles.metricItem}>
               <Cpu size={12} className={styles.metricIcon} />
               <span className={styles.metricLabel}>CPU Load</span>
-              <span className={styles.metricValue}>32%</span>
+              <span className={styles.metricValue}>{systemMetrics?.cpuLoad != null ? `${systemMetrics.cpuLoad}%` : '--'}</span>
             </div>
             <div className={styles.metricItem}>
               <HardDrive size={12} className={styles.metricIcon} />
               <span className={styles.metricLabel}>RAM</span>
-              <span className={styles.metricValue}>6.2GB</span>
+              <span className={styles.metricValue}>{systemMetrics?.ramUsedGb != null ? `${systemMetrics.ramUsedGb.toFixed(1)}GB` : '--'}</span>
             </div>
             <div className={styles.metricItem}>
               <Zap size={12} className={styles.metricIcon} />
               <span className={styles.metricLabel}>Temp</span>
-              <span className={styles.metricValue}>54°C</span>
+              <span className={styles.metricValue}>{systemMetrics?.tempC != null ? `${systemMetrics.tempC}°C` : '--'}</span>
             </div>
           </div>
         </div>
       </div>
+        </>
+      ) : (
+        <div className={styles.eventsTabContainer}>
+          <EventsReferencesView />
+        </div>
+      )}
 
       {/* ── BOTTOM STATUS BAR ── */}
       <div className={styles.statusBar}>

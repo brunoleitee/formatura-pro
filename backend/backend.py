@@ -1708,6 +1708,45 @@ def get_export_history():
 def gpu_diagnostics():
     return sm.gpu_diagnostics()
 
+@app.get("/api/system/metrics")
+def system_metrics():
+    result = {
+        "gpuLoad": None,
+        "cpuLoad": None,
+        "ramUsedGb": None,
+        "tempC": None,
+    }
+    try:
+        if psutil:
+            result["cpuLoad"] = round(psutil.cpu_percent(interval=0.1), 1)
+            mem = psutil.virtual_memory()
+            result["ramUsedGb"] = round(mem.used / (1024 ** 3), 1)
+            try:
+                temps = psutil.sensors_temperatures()
+                for key in ("coretemp", "cpu_thermal", "k10temp"):
+                    if key in temps and temps[key]:
+                        result["tempC"] = round(temps[key][0].current, 0)
+                        break
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    try:
+        nvidia_out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=3
+        )
+        if nvidia_out.returncode == 0:
+            parts = nvidia_out.stdout.strip().split(", ")
+            if len(parts) == 2:
+                result["gpuLoad"] = round(float(parts[0]), 0)
+                result["tempC"] = round(float(parts[1]), 0)
+    except Exception:
+        pass
+
+    return result
+
 @app.get("/api/system/status")
 def system_status():
     return sm.system_status()

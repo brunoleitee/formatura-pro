@@ -81,6 +81,13 @@ export interface ScanSummary {
   [key: string]: unknown;
 }
 
+export interface SystemMetrics {
+  gpuLoad: number | null;
+  cpuLoad: number | null;
+  ramUsedGb: number | null;
+  tempC: number | null;
+}
+
 export interface ScanStatus {
   is_scanning: boolean;
   progress: number;
