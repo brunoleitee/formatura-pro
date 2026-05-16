@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { FolderTree, Folder, Check, X, Save, Scan, ChevronRight, ChevronDown, Image, RefreshCw, AlertCircle } from 'lucide-react';
+import { FolderTree, Folder, Check, X, Save, Scan, ChevronRight, ChevronDown, Image, RefreshCw, AlertCircle, Eye, Trash2 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
 import styles from './EventsReferencesView.module.css';
+
+const HIDDEN_FOLDERS = new Set(['.cache', '.temp', '__pycache__', 'thumbs', 'thumbnails', '.thumbnails', '.Trash', 'RECYCLER', '$RECYCLE.BIN']);
 
 interface FolderNode {
   name: string;
@@ -44,6 +46,9 @@ const FolderRow = ({
           <span>{node.name}</span>
           {node.photoCount > 0 && <span className={styles.treeCount}>{node.photoCount} fotos</span>}
         </button>
+        <span className={`${styles.treeStatusBadge} ${node.status === 'include' ? styles.treeStatusInclude : node.status === 'ignore' ? styles.treeStatusIgnore : styles.treeStatusMonitor}`} title={node.status === 'include' ? 'Incluir' : node.status === 'ignore' ? 'Ignorar' : 'Monitorar'}>
+          {node.status === 'include' ? <Check size={10} /> : node.status === 'ignore' ? <X size={10} /> : <Eye size={10} />}
+        </span>
         <div className={styles.treeActions}>
           <button
             className={`${styles.statusBtn} ${node.status === 'include' ? styles.statusInclude : ''}`}
@@ -86,6 +91,7 @@ const FolderRow = ({
 export default function EventsReferencesView() {
   const { currentCatalog, navigate } = useApp();
   const [rootPath, setRootPath] = useState('');
+  const [refPath, setRefPath] = useState('');
   const [treeData, setTreeData] = useState<FolderNode[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -141,6 +147,7 @@ export default function EventsReferencesView() {
       const settings = await api.getCatalogSettings(currentCatalog);
       const basePath = settings?.root_path || '';
       setRootPath(basePath);
+      setRefPath(settings?.scan_paths?.[0] || '');
 
       if (!basePath) {
         setLoading(false);
@@ -152,9 +159,13 @@ export default function EventsReferencesView() {
 
       const flatten = (nodes: { name: string; path: string; children?: any[] }[], parentPath = '') => {
         nodes.forEach(n => {
+          if (HIDDEN_FOLDERS.has(n.name.toLowerCase())) return;
           const fullPath = parentPath ? `${parentPath}/${n.name}` : n.name;
           allFolders.push({ path: fullPath, name: n.name });
-          if (n.children) flatten(n.children, fullPath);
+          if (n.children) {
+            const filtered = n.children.filter(c => !HIDDEN_FOLDERS.has(c.name.toLowerCase()));
+            flatten(filtered, fullPath);
+          }
         });
       };
       if (tree.tree) flatten(Array.isArray(tree.tree) ? tree.tree : [tree.tree]);
@@ -227,6 +238,10 @@ export default function EventsReferencesView() {
     navigate('scanner');
   };
 
+  const includedFolders = allNodes.filter(n => n.status === 'include' || n.status === 'monitor').map(n => n.path);
+  const ignoredFolders = allNodes.filter(n => n.status === 'ignore').map(n => n.path);
+  const monitoredFolders = allNodes.filter(n => n.status === 'monitor').map(n => n.path);
+
   const handleSelectRoot = async () => {
     const res = await api.selectFolder().catch(() => null);
     if (res?.path) {
@@ -241,6 +256,31 @@ export default function EventsReferencesView() {
         setError('Erro ao salvar pasta base.');
       }
     }
+  };
+
+  const handleSelectRef = async () => {
+    const res = await api.selectFolder().catch(() => null);
+    if (res?.path) {
+      setRefPath(res.path);
+      try {
+        const settings = await api.getCatalogSettings(currentCatalog);
+        await api.saveCatalogSettings(currentCatalog, {
+          root_path: settings?.root_path || rootPath,
+          scan_paths: [res.path],
+          selected_folders: settings?.selected_folders || {},
+        });
+      } catch {
+        setError('Erro ao salvar pasta de referência.');
+      }
+    }
+  };
+
+  const handleSyncFolder = async () => {
+    await handleSave();
+  };
+
+  const handleRemoveStatus = (path: string) => {
+    updateStatus(path, 'include');
   };
 
   if (!currentCatalog) {
@@ -267,19 +307,23 @@ export default function EventsReferencesView() {
       <div className={styles.mainLayout}>
         <div className={styles.leftPanel}>
           <div className={styles.panelHeader}>
-            <span className={styles.panelTitle}>Pastas</span>
-            <button className={styles.toolBtn} onClick={handleSelectRoot} title="Selecionar pasta base">
+            <span className={styles.panelTitle}>Eventos</span>
+            <button className={styles.toolBtn} onClick={handleSelectRoot} title="Selecionar pasta base do evento">
               <Folder size={12} />
             </button>
-            <button className={styles.toolBtn} onClick={loadFolderStructure} title="Recarregar">
+            <button className={styles.toolBtn} onClick={loadFolderStructure} title="Recarregar estrutura">
               <RefreshCw size={12} />
             </button>
           </div>
 
-          {rootPath && (
+          {rootPath ? (
             <div className={styles.rootPath}>
               <Folder size={12} />
               <span>{rootPath}</span>
+            </div>
+          ) : (
+            <div className={styles.rootPathEmpty}>
+              <span>Nenhuma pasta base selecionada</span>
             </div>
           )}
 
@@ -304,19 +348,53 @@ export default function EventsReferencesView() {
               ))
             )}
           </div>
+
+          {/* ── REFERÊNCIAS ── */}
+          <div className={styles.refSection}>
+            <div className={styles.refHeader}>
+              <span className={styles.panelTitle}>Referências</span>
+              <button className={styles.toolBtn} onClick={handleSelectRef} title="Selecionar pasta de referência">
+                <Folder size={12} />
+              </button>
+            </div>
+            <div className={styles.refBody}>
+              {refPath ? (
+                <div className={styles.refPath}>
+                  <Folder size={12} className={styles.refPathIcon} />
+                  <span className={styles.refPathText}>{refPath}</span>
+                </div>
+              ) : (
+                <span className={styles.refEmpty}>Nenhuma pasta de referência</span>
+              )}
+              <p className={styles.refHint}>
+                Fotos base para reconhecimento facial e OCR auxiliar
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className={styles.rightPanel}>
           {selectedNode ? (
             <div className={styles.detailPanel}>
-              <h3 className={styles.detailTitle}>{selectedNode.name}</h3>
+              <h3 className={styles.detailTitle}>
+                <Folder size={14} className={styles.detailTitleIcon} />
+                {selectedNode.name}
+              </h3>
               <div className={styles.detailInfo}>
                 <div className={styles.detailRow}>
-                  <span className={styles.detailLabel}>Caminho:</span>
+                  <span className={styles.detailLabel}>Caminho</span>
                   <span className={styles.detailValue}>{selectedNode.path}</span>
                 </div>
                 <div className={styles.detailRow}>
-                  <span className={styles.detailLabel}>Status:</span>
+                  <span className={styles.detailLabel}>Fotos</span>
+                  <span className={styles.detailValue}>{selectedNode.photoCount}</span>
+                </div>
+                <div className={styles.detailRow}>
+                  <span className={styles.detailLabel}>Subpastas</span>
+                  <span className={styles.detailValue}>{selectedNode.children.length}</span>
+                </div>
+                <div className={styles.detailRow}>
+                  <span className={styles.detailLabel}>Status</span>
                   <span className={`${styles.detailStatus} ${
                     selectedNode.status === 'include' ? styles.statusIncludeText :
                     selectedNode.status === 'ignore' ? styles.statusIgnoreText :
@@ -326,14 +404,44 @@ export default function EventsReferencesView() {
                      selectedNode.status === 'ignore' ? 'Ignorar' : 'Monitorar'}
                   </span>
                 </div>
-                <div className={styles.detailRow}>
-                  <span className={styles.detailLabel}>Fotos:</span>
-                  <span className={styles.detailValue}>{selectedNode.photoCount}</span>
+              </div>
+
+              <div className={styles.detailToggleGroup}>
+                <span className={styles.detailToggleLabel}>Ação para esta pasta:</span>
+                <div className={styles.detailToggleRow}>
+                  <button
+                    className={`${styles.detailToggleBtn} ${selectedNode.status === 'include' ? styles.detailToggleActive : ''}`}
+                    onClick={() => updateStatus(selectedNode.path, 'include')}
+                  >
+                    <Check size={12} />
+                    Incluir
+                  </button>
+                  <button
+                    className={`${styles.detailToggleBtn} ${selectedNode.status === 'ignore' ? styles.detailToggleActive : ''} ${styles.detailToggleIgnore}`}
+                    onClick={() => updateStatus(selectedNode.path, 'ignore')}
+                  >
+                    <X size={12} />
+                    Ignorar
+                  </button>
+                  <button
+                    className={`${styles.detailToggleBtn} ${selectedNode.status === 'monitor' ? styles.detailToggleActive : ''} ${styles.detailToggleMonitor}`}
+                    onClick={() => updateStatus(selectedNode.path, 'monitor')}
+                  >
+                    <Eye size={12} />
+                    Monitorar
+                  </button>
                 </div>
-                <div className={styles.detailRow}>
-                  <span className={styles.detailLabel}>Subpastas:</span>
-                  <span className={styles.detailValue}>{selectedNode.children.length}</span>
-                </div>
+              </div>
+
+              <div className={styles.detailActions}>
+                <button className={styles.syncBtn} onClick={handleSyncFolder}>
+                  <RefreshCw size={12} />
+                  Sincronizar
+                </button>
+                <button className={styles.removeBtn} onClick={() => handleRemoveStatus(selectedNode.path)}>
+                  <Trash2 size={12} />
+                  Remover
+                </button>
               </div>
             </div>
           ) : (
@@ -377,6 +485,9 @@ export default function EventsReferencesView() {
             <button className={styles.applyBtn} onClick={handleApplyToScanner}>
               <Scan size={14} />
               Aplicar ao Scanner
+              {includedFolders.length > 0 && (
+                <span className={styles.applyCount}>{includedFolders.length} pastas</span>
+              )}
             </button>
           </div>
 

@@ -98,6 +98,89 @@
   word-break: break-all;
 }
 
+.rootPathEmpty {
+  padding: 8px 16px;
+  font-size: 10px;
+  color: #3d4352;
+  font-style: italic;
+  background: #0d0e12;
+  border-bottom: 1px solid #1a1c23;
+}
+
+/* ── STATUS BADGE ON TREE ROW ── */
+.treeStatusBadge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+.treeStatusInclude {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+.treeStatusIgnore {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.treeStatusMonitor {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+/* ── REFERÊNCIAS SECTION ── */
+.refSection {
+  border-top: 1px solid #1a1c23;
+  flex-shrink: 0;
+}
+
+.refHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #1a1c23;
+}
+
+.refBody {
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.refPath {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: #94a3b8;
+  word-break: break-all;
+}
+
+.refPathIcon { color: #60a5fa; flex-shrink: 0; }
+
+.refPathText { flex: 1; }
+
+.refEmpty {
+  font-size: 10px;
+  color: #3d4352;
+  font-style: italic;
+}
+
+.refHint {
+  font-size: 9px;
+  color: #3d4352;
+  margin: 0;
+  line-height: 1.4;
+}
+
 .treeContainer {
   flex: 1;
   overflow-y: auto;
@@ -166,6 +249,7 @@
   opacity: 0;
   transition: opacity 0.15s;
   flex-shrink: 0;
+  margin-left: 4px;
 }
 
 .treeRow:hover .treeActions { opacity: 1; }
@@ -255,6 +339,88 @@
 
 .detailEmptyIcon { opacity: 0.3; }
 
+.detailTitleIcon { color: #60a5fa; margin-right: 6px; vertical-align: middle; }
+
+.detailToggleGroup {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #1a1c23;
+}
+
+.detailToggleLabel {
+  font-size: 9px;
+  color: #5a6577;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.detailToggleRow {
+  display: flex;
+  gap: 6px;
+}
+
+.detailToggleBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: transparent;
+  border: 1px solid #2d2f36;
+  color: #5a6577;
+  font-family: inherit;
+}
+
+.detailToggleBtn:hover { background: #1a1c23; color: #94a3b8; }
+
+.detailToggleActive { background: rgba(59, 130, 246, 0.12) !important; border-color: #3b82f6 !important; color: #60a5fa !important; }
+.detailToggleIgnore.detailToggleActive { background: rgba(239, 68, 68, 0.12) !important; border-color: #ef4444 !important; color: #f87171 !important; }
+.detailToggleMonitor.detailToggleActive { background: rgba(245, 158, 11, 0.12) !important; border-color: #f59e0b !important; color: #fbbf24 !important; }
+
+.detailActions {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.syncBtn, .removeBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid #2d2f36;
+  font-family: inherit;
+}
+
+.syncBtn {
+  background: #1a1c23;
+  color: #94a3b8;
+}
+
+.syncBtn:hover { background: #2d2f36; color: #e2e8f0; }
+
+.removeBtn {
+  background: transparent;
+  color: #5a6577;
+}
+
+.removeBtn:hover { background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: #f87171; }
+
 .summaryPanel {
   background: #111216;
   border: 1px solid #1a1c23;
@@ -328,6 +494,13 @@
 }
 
 .applyBtn:hover { background: #2563eb; }
+
+.applyCount {
+  font-size: 9px;
+  font-weight: 400;
+  opacity: 0.7;
+  margin-left: 2px;
+}
 
 .error {
   padding: 8px 12px;
