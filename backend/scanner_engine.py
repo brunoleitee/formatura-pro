@@ -610,6 +610,18 @@ def _load_single_image(path):
     return imread_unicode(path)
 
 
+def _log_memory(label=""):
+    log_info = _cfg.get("log_info", lambda msg: None)
+    try:
+        import psutil
+        import os as _os
+        proc = psutil.Process(_os.getpid())
+        rss = proc.memory_info().rss / (1024 * 1024)
+        log_info(f"[MEM] {label} — RSS={rss:.0f}MB")
+    except Exception:
+        pass
+
+
 def run_scanner_worker(req):
     scan_state = _scan_state()
     if scan_state is None:
@@ -667,6 +679,7 @@ def run_scanner_worker(req):
 
     try:
         ensure_face_engine()
+        _log_memory("after loading face model")
         face_engine_device = get_face_engine_device()
         face_engine_gpu_error = get_face_engine_gpu_error()
         scan_state["device"] = get_face_engine_label() or face_engine_device or "CPU"
@@ -681,8 +694,11 @@ def run_scanner_worker(req):
                 from services.ocr_pipeline import process_ocr as p_ocr
                 process_ocr_fn = p_ocr
                 log_info("[SCAN] OCR Híbrido Ativado e carregado.")
+                _log_memory("after loading OCR model")
             except Exception as e:
                 log_info(f"[SCAN] Falha ao carregar OCR: {e}")
+        else:
+            log_info("[Scanner] OCR disabled, skipping model load")
 
         scan_roots = [req.ori_path]
         for extra in (req.extra_paths or []):
@@ -1002,6 +1018,8 @@ def run_scanner_worker(req):
                     
                     conn.commit()
                     gc.collect()
+
+                _log_memory("after scan loop")
 
                 if _cancel_requested():
                     log_info("[Scanner] Cancelamento antes de salvar checkpoint — interrompendo")

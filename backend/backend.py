@@ -2028,6 +2028,10 @@ def scanner_live_status():
 def scanner_cleanup():
     return scm.force_cleanup()
 
+@app.post("/api/scanner/unload-models")
+def scanner_unload_models():
+    return scm.unload_models()
+
 @app.post("/api/scan/quality_fill")
 def start_quality_audit(req: dict):
     return scm.start_quality_audit(req)
@@ -3865,6 +3869,14 @@ if __name__ == "__main__":
         sys.exit(0)
     else:
         print(f"Iniciando servidor em http://127.0.0.1:{PORT} [v{APP_VERSION}]")
+        try:
+            import psutil
+            import os as _os
+            _proc = psutil.Process(_os.getpid())
+            _rss = _proc.memory_info().rss / (1024 * 1024)
+            log_info(f"[MEM] app start — RSS={_rss:.0f}MB")
+        except Exception:
+            pass
         if VERBOSE_LOGGING:
             print("MODO DEBUG ATIVO - Logs detalhados ativos")
             print("   Use: set FORM_PRO_VERBOSE=0 para desativar")

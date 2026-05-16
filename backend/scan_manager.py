@@ -10,6 +10,16 @@ from pydantic import BaseModel
 
 _cfg = {}
 
+def _log_memory(label=""):
+    log_info = _cfg.get("log_info", lambda msg: None)
+    try:
+        import psutil
+        proc = psutil.Process(os.getpid())
+        rss = proc.memory_info().rss / (1024 * 1024)
+        log_info(f"[MEM] {label} — RSS={rss:.0f}MB")
+    except Exception:
+        pass
+
 
 def configure(**kwargs):
     _cfg.update(kwargs)
@@ -332,6 +342,7 @@ def start_scan(req: ScanRequest):
             raise HTTPException(400, f"Nome de catálogo inválido: {e}")
         if not req.ori_path or not os.path.isdir(req.ori_path):
             raise HTTPException(status_code=400, detail="Selecione uma pasta válida de fotos brutas.")
+        _log_memory("before scanner start")
         scan_state["is_scanning"] = True
         scan_state["stopped"] = False
         scan_state["status_text"] = "Iniciando scanner..."
@@ -376,7 +387,7 @@ def _memory_cleanup_global(log_info=None):
         log_info = _get("log_info", lambda msg: None)
     log_info("[Scanner] cleanup start")
 
-    # 1. scan_state accumulators
+    # 1. scan_state accumulators - never store PIL/numpy/cv2/base64/bytes
     ss = _get("scan_state")
     if ss is not None:
         ss["current_photo"] = None
@@ -398,6 +409,10 @@ def _memory_cleanup_global(log_info=None):
         ss["skipped_background_faces"] = 0
         ss["scan_summary"] = None
         ss["progress"] = 0.0
+        ss["ocrResults"] = []
+        ss["faces"] = []
+        ss["scanQueue"] = []
+        ss["processedItems"] = []
 
     # 2. AI queue
     try:
@@ -442,10 +457,31 @@ def _memory_cleanup_global(log_info=None):
     except Exception:
         pass
 
-    # 5. Forced GC
+    # 5. Clear quality analysis memory caches
+    try:
+        from quality_analysis import clear_memory_caches
+        clear_memory_caches()
+        if log_info:
+            log_info("[Scanner] blur cache cleared")
+    except Exception:
+        pass
+
+    # 6. Torch/CUDA cleanup
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            if log_info:
+                log_info("[Scanner] torch CUDA cache emptied")
+    except Exception:
+        pass
+
+    # 7. Forced GC
     import gc
     for _ in range(3):
         gc.collect()
+    _log_memory("after cleanup/gc")
     if log_info:
         log_info("[Scanner] gc collected")
         log_info("[Scanner] cleanup done")
@@ -479,6 +515,7 @@ def stop_scan():
         pass
 
     _memory_cleanup_global(log_info)
+    _log_memory("after stop")
 
     # WATCHDOG: se o worker nao parar em 10s, força os._exit()
     def _watchdog_kill():
@@ -501,6 +538,83 @@ def force_cleanup():
     log_info = _get("log_info", lambda msg: None)
     _memory_cleanup_global(log_info)
     return {"success": True, "message": "Cleanup forcado concluido."}
+
+
+def unload_models():
+    log_info = _get("log_info", lambda msg: None)
+    log_info("[Scanner] Unload models requested")
+
+    _memory_cleanup_global(log_info)
+
+    # Unload InsightFace face model
+    try:
+        se = _get("scanner_engine")
+        if se is not None:
+            app_face = se._cfg.get("app_face")
+            if app_face is not None:
+                try:
+                    del app_face
+                except Exception:
+                    pass
+                se._cfg["app_face"] = None
+                se._cfg["face_engine_device"] = ""
+                se._cfg["face_engine_provider"] = ""
+                se._cfg["face_engine_label"] = ""
+                se._cfg["face_engine_gpu_error"] = ""
+                log_info("[Scanner] Face model unloaded")
+    except Exception as e:
+        log_info(f"[Scanner] Error unloading face model: {e}")
+
+    # Unload EasyOCR reader
+    try:
+        import services.ocr_pipeline as ocr
+        if hasattr(ocr, '_EASYOCR_READER'):
+            reader = ocr._EASYOCR_READER
+            if reader is not None and reader is not False:
+                try:
+                    del reader
+                except Exception:
+                    pass
+                ocr._EASYOCR_READER = None
+                log_info("[Scanner] EasyOCR reader unloaded")
+    except Exception as e:
+        log_info(f"[Scanner] Error unloading EasyOCR: {e}")
+
+    # Clear app_face in backend_state if present
+    try:
+        import backend_state
+        if hasattr(backend_state, 'app_face'):
+            backend_state.app_face = None
+    except Exception:
+        pass
+
+    # Clear ONNX sessions if accessible
+    try:
+        import onnxruntime as ort
+        try:
+            ort.get_default_session().end_profiling()
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # Torch CUDA cleanup
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            log_info("[Scanner] torch CUDA cache emptied")
+    except Exception:
+        pass
+
+    import gc
+    gc.collect()
+    gc.collect()
+    gc.collect()
+    _log_memory("after unload models")
+
+    return {"success": True, "message": "Modelos descarregados e memoria limpa."}
 
 
 def start_quality_audit(req: dict):
