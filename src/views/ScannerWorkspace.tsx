@@ -67,6 +67,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const { catalogs, setCatalog, refreshCatalogs, currentCatalog } = useApp();
   const [oriPath, setOriPath] = useState('');
   const [refPath, setRefPath] = useState('');
+  const [refPathInfo, setRefPathInfo] = useState<{ photos: number; subfolders: number } | null>(null);
   const [catalogName, setCatalogName] = useState('');
   const [newCatalogName, setNewCatalogName] = useState('');
   const [newCatalogMode, setNewCatalogMode] = useState(false);
@@ -333,6 +334,31 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const handlePickOri = async () => {
     const res = await api.selectFolder().catch(() => null);
     if (res?.path) setOriPath(res.path);
+  };
+
+  const handlePickRef = async () => {
+    const res = await api.selectFolder().catch(() => null);
+    if (res?.path) {
+      setRefPath(res.path);
+      try {
+        const [photos, tree] = await Promise.all([
+          api.explorePhotos(res.path, { recursive: true, limit: 0, include_raw: true }),
+          api.exploreTree(res.path, 2),
+        ]);
+        const subfolderCount = tree.tree
+          ? (Array.isArray(tree.tree) ? tree.tree : [tree.tree]).reduce((acc: number, n: any) => {
+              const count = (n.children?.length || 0);
+              return acc + count;
+            }, 0)
+          : 0;
+        setRefPathInfo({
+          photos: photos.total || 0,
+          subfolders: subfolderCount,
+        });
+      } catch {
+        setRefPathInfo(null);
+      }
+    }
   };
 
   const startPolling = useCallback(() => {
@@ -667,11 +693,24 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     <div className={styles.formRow}>
                       <input
                         className={styles.inputBase}
-                        placeholder="Ex: Colação - Engenharia 2024"
+                        placeholder="Nenhuma pasta selecionada"
                         value={refPath}
-                        onChange={e => setRefPath(e.target.value)}
+                        readOnly
+                        title={refPath || ''}
                       />
+                      <button className={styles.alterBtn} onClick={handlePickRef}>Alterar</button>
                     </div>
+                    {refPathInfo ? (
+                      <div className={styles.refStats}>
+                        <Folder size={10} />
+                        <span>{refPathInfo.photos.toLocaleString('pt-BR')} imagens encontradas em {refPathInfo.subfolders} {refPathInfo.subfolders === 1 ? 'subpasta' : 'subpastas'}</span>
+                      </div>
+                    ) : refPath ? (
+                      <div className={styles.refStats} style={{ color: '#5a6577' }}>
+                        <Folder size={10} />
+                        <span>Calculando...</span>
+                      </div>
+                    ) : null}
                   </div>
                 </CollapsibleSection>
 
