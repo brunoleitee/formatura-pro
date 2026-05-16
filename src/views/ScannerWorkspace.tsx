@@ -637,6 +637,9 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     try {
       await api.stopScan();
     } catch { /* ignore */ }
+    try {
+      await api.scannerCleanup();
+    } catch { /* ignore */ }
   };
 
   const handleCreateCatalog = async () => {

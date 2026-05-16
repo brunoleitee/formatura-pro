@@ -596,6 +596,10 @@ def _memory_cleanup(scan_state=None):
         scan_state["current_photo"] = None
         scan_state["recent_faces"] = []
         scan_state.pop("processing_history", None)
+        scan_state["progress"] = 0.0
+    _cfg["cluster_centers"] = []
+    _cfg["cluster_names"] = []
+    _cfg["cluster_counts"] = {}
     for _ in range(3):
         gc.collect()
 
@@ -906,7 +910,7 @@ def run_scanner_worker(req):
                                 if current_time - last_face_update_time > 0.5:
                                     new_face = {"name": nome, "path": p, "box": [x1, y1, x2, y2]}
                                     scan_state["recent_faces"].insert(0, new_face)
-                                    scan_state["recent_faces"] = scan_state["recent_faces"][:50]
+                                    scan_state["recent_faces"] = scan_state["recent_faces"][:20]
                                     last_face_update_time = current_time
 
                         # Rodar OCR se habilitado

@@ -371,15 +371,91 @@ def clear_scan_summary():
     return {"status": "ok"}
 
 
+def _memory_cleanup_global(log_info=None):
+    if log_info is None:
+        log_info = _get("log_info", lambda msg: None)
+    log_info("[Scanner] cleanup start")
+
+    # 1. scan_state accumulators
+    ss = _get("scan_state")
+    if ss is not None:
+        ss["current_photo"] = None
+        ss["recent_faces"] = []
+        ss.pop("processing_history", None)
+        ss["total_processadas"] = 0
+        ss["total_files"] = 0
+        ss["total_found_files"] = 0
+        ss["total_valid_files"] = 0
+        ss["total_inserted_files"] = 0
+        ss["total_existing_files"] = 0
+        ss["total_ignored_files"] = 0
+        ss["ignored_reasons"] = {}
+        ss["duplicate_count"] = 0
+        ss["duplicate_percent"] = 0
+        ss["eta_seconds"] = 0
+        ss["total_matches"] = 0
+        ss["total_clusters"] = 0
+        ss["skipped_background_faces"] = 0
+        ss["scan_summary"] = None
+        ss["progress"] = 0.0
+
+    # 2. AI queue
+    try:
+        from services.ai_processing_queue import ai_processing_queue
+        ai_processing_queue.running = False
+        with ai_processing_queue.queue.mutex:
+            ai_processing_queue.queue.queue.clear()
+            ai_processing_queue.queue.all_tasks_done.notify_all()
+            ai_processing_queue.queue.unfinished_tasks = 0
+        if log_info:
+            log_info("[Scanner] queues cleared")
+    except Exception:
+        pass
+
+    # 3. Embedding cache — bigger than anything else
+    try:
+        import backend_state
+        backend_state._EMBEDDING_DISK_CACHE.clear()
+        backend_state._EMBEDDING_DISK_CACHE_LOADED = False
+        backend_state.cluster_centers.clear()
+        backend_state.cluster_names.clear()
+        backend_state.cluster_counts.clear()
+        backend_state.ref_ids.clear()
+        if hasattr(backend_state, 'ref_classes'):
+            backend_state.ref_classes.clear()
+        backend_state.faiss_index = None
+        if log_info:
+            log_info("[Scanner] embedding cache cleared")
+    except Exception:
+        pass
+
+    # 4. Clear scanner_engine._cfg references
+    try:
+        se = _get("scanner_engine")
+        if se is not None:
+            se._cfg["cluster_centers"] = []
+            se._cfg["cluster_names"] = []
+            se._cfg["cluster_counts"] = {}
+            se._cfg["ref_ids"] = []
+            se._cfg["ref_classes"] = {}
+            se._cfg["faiss_index"] = None
+    except Exception:
+        pass
+
+    # 5. Forced GC
+    import gc
+    for _ in range(3):
+        gc.collect()
+    if log_info:
+        log_info("[Scanner] gc collected")
+        log_info("[Scanner] cleanup done")
+
+
 def stop_scan():
     scan_state = _get("scan_state")
     scan_state["is_scanning"] = False
     scan_state["stopped"] = True
     scan_state["status_text"] = "Scanner interrompido"
-    scan_state["current_photo"] = None
-    scan_state["recent_faces"] = []
-    scan_state.pop("processing_history", None)
-    scan_state["progress"] = 0.0
 
     log_info = _get("log_info")
     if log_info:
@@ -393,23 +469,16 @@ def stop_scan():
     from services.ai_processing_queue import ai_processing_queue
     try:
         ai_processing_queue.running = False
-        while not ai_processing_queue.queue.empty():
-            try:
-                ai_processing_queue.queue.get_nowait()
-                ai_processing_queue.queue.task_done()
-            except Exception:
-                break
+        with ai_processing_queue.queue.mutex:
+            ai_processing_queue.queue.queue.clear()
+            ai_processing_queue.queue.all_tasks_done.notify_all()
+            ai_processing_queue.queue.unfinished_tasks = 0
         if log_info:
             log_info("[Scanner] AI queue emptied and stopped")
     except Exception:
         pass
 
-    import gc
-    for _ in range(3):
-        gc.collect()
-
-    if log_info:
-        log_info("[Scanner] CLEANUP DONE")
+    _memory_cleanup_global(log_info)
 
     # WATCHDOG: se o worker nao parar em 10s, força os._exit()
     def _watchdog_kill():
@@ -426,6 +495,12 @@ def stop_scan():
     threading.Thread(target=_watchdog_kill, daemon=True).start()
 
     return {"message": "Cancelamento real ativado. Scanner sera interrompido em breve."}
+
+
+def force_cleanup():
+    log_info = _get("log_info", lambda msg: None)
+    _memory_cleanup_global(log_info)
+    return {"success": True, "message": "Cleanup forcado concluido."}
 
 
 def start_quality_audit(req: dict):

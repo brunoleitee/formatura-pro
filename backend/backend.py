@@ -2024,6 +2024,10 @@ def scanner_live_status():
         "processedPhotos": int(s.get("total_processadas", 0)),
     }
 
+@app.post("/api/scanner/cleanup")
+def scanner_cleanup():
+    return scm.force_cleanup()
+
 @app.post("/api/scan/quality_fill")
 def start_quality_audit(req: dict):
     return scm.start_quality_audit(req)

@@ -61,6 +61,7 @@ export const photoApi = {
   stopScan: () => post(`${API_BASE}/scan/stop`, {}),
   scannerStop: () => post<{ success: boolean }>(`${API_BASE}/scanner/stop`, {}),
   getLiveScannerStatus: () => fetchJSON<LiveScannerStatus>(`${API_BASE}/scanner/live-status`),
+  scannerCleanup: () => post<{ success: boolean }>(`${API_BASE}/scanner/cleanup`, {}),
   clearScanSummary: () => post(`${API_BASE}/scan/clear_summary`, {}),
 
   // Quality Audit
