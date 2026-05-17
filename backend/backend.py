@@ -1093,7 +1093,7 @@ def delete_catalog(req: SetCatalogReq):
 @app.get("/api/catalogs/settings")
 def get_catalog_settings(catalog: str = ""):
     try:
-        with cm.get_db(catalog) as conn:
+        with get_db(catalog) as conn:
             cur = conn.cursor()
             cur.execute("SELECT scan_paths, root_path, selected_folders FROM catalog_settings WHERE catalog_name = ?", (catalog,))
             row = cur.fetchone()
@@ -1145,7 +1145,7 @@ class CatalogSettingsReq(BaseModel):
 @app.post("/api/catalogs/settings")
 def save_catalog_settings(req: CatalogSettingsReq):
     try:
-        with cm.get_db(req.catalog) as conn:
+        with get_db(req.catalog) as conn:
             cur = conn.cursor()
             scan_paths_str = "|".join(req.scan_paths) if req.scan_paths else ""
             selected_folders_str = json.dumps(req.selected_folders) if req.selected_folders else ""
