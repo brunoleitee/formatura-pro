@@ -193,11 +193,10 @@ export default function CatalogView() {
     // Também buscar pastas de referência do catálogo
     if (currentCatalog) {
       catalogApi.listFolders(currentCatalog).then(folders => {
-        const refNames = folders
-          .filter(f => f.folderType === 'reference')
+        const allNames = folders
           .map(f => f.path.split(/[\\/]/).filter(Boolean).pop() || '')
           .filter(Boolean);
-        setCatalogSubfolders([...new Set([...subfolders, ...refNames])]);
+        setCatalogSubfolders([...new Set([...subfolders, ...allNames])]);
       }).catch(() => {
         setCatalogSubfolders(subfolders);
       });
