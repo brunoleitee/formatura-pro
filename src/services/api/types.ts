@@ -7,6 +7,7 @@ export interface CatalogFolder {
   photoCount: number;
   lastScanAt: number | null;
   status: string;
+  folderType: string;
   createdAt: number;
 }
 export interface CatalogFolderStats {

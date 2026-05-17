@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { RefreshCw, ShieldCheck } from 'lucide-react';
-import { api, type Photo, type QualityAuditStatus } from '../services/api';
+import { api, catalogApi, type Photo, type QualityAuditStatus } from '../services/api';
 import { useApp } from '../context/AppContext';
 import { useCatalogPhotos } from '../hooks/useCatalogPhotos';
 import { usePhotoFilters } from '../hooks/usePhotoFilters';
@@ -190,8 +190,21 @@ export default function CatalogView() {
   // Publica subfolders no contexto para a Sidebar mostrar a árvore
   useEffect(() => {
     const subfolders = extractSubfolders(photos);
-    setCatalogSubfolders(subfolders);
-  }, [photos, setCatalogSubfolders]);
+    // Também buscar pastas de referência do catálogo
+    if (currentCatalog) {
+      catalogApi.listFolders(currentCatalog).then(folders => {
+        const refNames = folders
+          .filter(f => f.folderType === 'reference')
+          .map(f => f.path.split(/[\\/]/).filter(Boolean).pop() || '')
+          .filter(Boolean);
+        setCatalogSubfolders([...new Set([...subfolders, ...refNames])]);
+      }).catch(() => {
+        setCatalogSubfolders(subfolders);
+      });
+    } else {
+      setCatalogSubfolders(subfolders);
+    }
+  }, [photos, setCatalogSubfolders, currentCatalog]);
 
   useEffect(() => {
     if (loading) {

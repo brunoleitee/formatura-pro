@@ -358,6 +358,32 @@ def start_scan(req: ScanRequest):
         _sc["running"] = True
         _sc["cancel_requested"] = False
         log_info(f"[SCAN] Iniciando scanner: project={req.project_name}, ref={req.ref_path}, ori={req.event_path}")
+
+        # Salvar event_path e ref_path como pastas vinculadas ao catálogo
+        try:
+            get_db = _get("get_db")
+            if get_db and req.project_name:
+                with get_db(req.project_name) as conn:
+                    cur = conn.cursor()
+                    for path, ftype in [(req.event_path, "event"), (req.ref_path, "reference")]:
+                        if path and path.strip():
+                            cur.execute("SELECT id, folder_type FROM catalog_folders WHERE catalog_name = ? AND path = ?",
+                                        (req.project_name, path))
+                            existing = cur.fetchone()
+                            if existing:
+                                if existing["folder_type"] != ftype:
+                                    cur.execute("UPDATE catalog_folders SET folder_type = ? WHERE id = ?",
+                                                (ftype, existing["id"]))
+                            else:
+                                cur.execute("""
+                                    INSERT INTO catalog_folders (catalog_name, path, include_subfolders, photo_count, folder_type)
+                                    VALUES (?, ?, 1, 0, ?)
+                                """, (req.project_name, path, ftype))
+                    conn.commit()
+                    print(f"[CatalogFolders] saved event={req.event_path} reference={req.ref_path}", flush=True)
+        except Exception as e:
+            print(f"[CatalogFolders] error saving scan paths: {e}", flush=True)
+
         threading.Thread(target=_safe_scanner_worker, args=(se, req, log_info, scan_state), daemon=True).start()
         return {"message": "Scanner Batch iniciado."}
     except HTTPException:

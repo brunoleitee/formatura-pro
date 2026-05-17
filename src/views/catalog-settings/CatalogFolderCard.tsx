@@ -39,6 +39,11 @@ export function CatalogFolderCard({ folder, onRemove, onScan, onEdit }: Props) {
         <span className={styles.folderCardScanValue}>{lastScan}</span>
       </div>
       <div className={styles.folderCardStatusWrap}>
+        {folder.folderType === 'reference' && (
+          <span className={`${styles.folderCardStatus} ${styles.folderCardStatusRef}`}>
+            Referência
+          </span>
+        )}
         <span className={`${styles.folderCardStatus} ${styles.folderCardStatusActive}`}>
           {folder.status === 'active' ? '• Ativa' : folder.status}
         </span>

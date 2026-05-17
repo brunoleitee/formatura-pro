@@ -1014,10 +1014,16 @@ class DbConnection:
                 photo_count INTEGER DEFAULT 0,
                 last_scan_at REAL,
                 status TEXT DEFAULT 'active',
+                folder_type TEXT DEFAULT 'event',
                 created_at REAL DEFAULT (strftime('%s','now'))
             )
         """)
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_cat_folder_unique ON catalog_folders(catalog_name, path)")
+        # Migration: add folder_type column if missing
+        try:
+            c.execute("ALTER TABLE catalog_folders ADD COLUMN folder_type TEXT DEFAULT 'event'")
+        except Exception:
+            pass
         self.conn.commit()
         return self
     
@@ -1166,6 +1172,7 @@ class AddCatalogFolderReq(BaseModel):
     path: str
     include_subfolders: bool = True
     scan_immediately: bool = False
+    folder_type: str = "event"
 
 class RemoveCatalogFolderReq(BaseModel):
     catalog: str
@@ -1214,7 +1221,7 @@ def list_catalog_folders(catalog: str = ""):
 
             # ── 2. Tenta catalog_folders primeiro ──
             cur.execute("""
-                SELECT id, catalog_name, path, include_subfolders, photo_count, last_scan_at, status, created_at
+                SELECT id, catalog_name, path, include_subfolders, photo_count, last_scan_at, status, folder_type, created_at
                 FROM catalog_folders
                 WHERE catalog_name = ?
                 ORDER BY id
@@ -1236,6 +1243,7 @@ def list_catalog_folders(catalog: str = ""):
                         "photoCount": r["photo_count"],
                         "lastScanAt": r["last_scan_at"],
                         "status": r["status"],
+                        "folderType": r["folder_type"] or "event",
                         "createdAt": r["created_at"],
                     })
                 conn.commit()
@@ -1273,14 +1281,14 @@ def list_catalog_folders(catalog: str = ""):
             for d in raw_dirs:
                 count = folder_photo_counts.get(d, 0)
                 cur.execute("""
-                    INSERT OR IGNORE INTO catalog_folders (catalog_name, path, include_subfolders, photo_count)
-                    VALUES (?, ?, 1, ?)
+                    INSERT OR IGNORE INTO catalog_folders (catalog_name, path, include_subfolders, photo_count, folder_type)
+                    VALUES (?, ?, 1, ?, 'event')
                 """, (catalog, d, count))
             conn.commit()
 
             # ── 6. Recarregar ──
             cur.execute("""
-                SELECT id, catalog_name, path, include_subfolders, photo_count, last_scan_at, status, created_at
+                SELECT id, catalog_name, path, include_subfolders, photo_count, last_scan_at, status, folder_type, created_at
                 FROM catalog_folders
                 WHERE catalog_name = ?
                 ORDER BY id
@@ -1299,6 +1307,7 @@ def list_catalog_folders(catalog: str = ""):
                     "photoCount": r["photo_count"],
                     "lastScanAt": r["last_scan_at"],
                     "status": r["status"],
+                    "folderType": r["folder_type"] or "event",
                     "createdAt": r["created_at"],
                 })
             conn.commit()
@@ -1335,9 +1344,9 @@ def add_catalog_folder(req: AddCatalogFolderReq):
             if cur.fetchone():
                 return {"success": False, "error": "Esta pasta já está vinculada ao catálogo"}
             cur.execute("""
-                INSERT INTO catalog_folders (catalog_name, path, include_subfolders)
-                VALUES (?, ?, ?)
-            """, (req.catalog, norm, 1 if req.include_subfolders else 0))
+                INSERT INTO catalog_folders (catalog_name, path, include_subfolders, folder_type)
+                VALUES (?, ?, ?, ?)
+            """, (req.catalog, norm, 1 if req.include_subfolders else 0, req.folder_type))
             conn.commit()
             folder_id = cur.lastrowid
         return {"success": True, "folderId": folder_id}
