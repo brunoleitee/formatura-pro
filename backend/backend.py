@@ -2018,15 +2018,30 @@ def scanner_stop():
 @app.get("/api/scanner/live-status")
 def scanner_live_status():
     s = scm.get_scan_status()
+    now = time.time()
     started_at = s.get("started_at")
-    elapsed = (time.time() - started_at) if started_at and s.get("is_scanning") else None
+    is_scanning = bool(s.get("is_scanning", False))
+    processed = int(s.get("total_processadas", 0))
+    total = int(s.get("total_files", 0))
+    elapsed = (now - started_at) if started_at and is_scanning else None
+    eta = None
+    avg_sec = None
+    if elapsed is not None and elapsed > 0 and processed >= 5:
+        speed = processed / elapsed
+        remaining = total - processed
+        if remaining > 0 and speed > 0:
+            eta = round(remaining / speed, 1)
+            avg_sec = round(elapsed / processed, 2)
     return {
-        "running": bool(s.get("is_scanning", False)),
+        "running": is_scanning,
         "stopped": bool(s.get("stopped", False)),
-        "processedPhotos": int(s.get("total_processadas", 0)),
+        "processedPhotos": processed,
+        "totalPhotos": total,
         "started_at": started_at,
         "elapsed_seconds": round(elapsed, 1) if elapsed is not None else None,
-        "is_scanning": bool(s.get("is_scanning", False)),
+        "eta_seconds": eta,
+        "avgSecondsPerPhoto": avg_sec,
+        "is_scanning": is_scanning,
         "status_text": s.get("status_text", ""),
     }
 

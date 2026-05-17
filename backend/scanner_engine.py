@@ -3,7 +3,9 @@ import hashlib
 import io
 import os
 import threading
+import time
 import traceback
+import urllib.parse
 from pathlib import Path
 from collections import Counter
 
@@ -957,9 +959,13 @@ def run_scanner_worker(req):
                     )
 
                     # Atualizar current_photo com dados reais para o carrossel live
+                    img_h, img_w = img.shape[:2] if img is not None else (0, 0)
                     scan_state["current_photo"] = {
                         "path": p,
                         "name": os.path.basename(p),
+                        "preview_url": f"/api/image_thumb?path={urllib.parse.quote(p)}&size=1200",
+                        "natural_width": img_w,
+                        "natural_height": img_h,
                         "faces": [{"bbox": [f[1], f[2], f[3], f[4]], "confidence": 0.95} for f in valid_faces],
                         "timestamp": time.time()
                     }

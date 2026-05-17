@@ -94,8 +94,11 @@ export interface LiveScannerStatus {
   running: boolean;
   stopped: boolean;
   processedPhotos: number;
+  totalPhotos: number;
   started_at: number | null;
   elapsed_seconds: number | null;
+  eta_seconds: number | null;
+  avgSecondsPerPhoto: number | null;
   is_scanning: boolean;
   status_text: string;
 }
@@ -103,6 +106,9 @@ export interface LiveScannerStatus {
 export interface ScanCurrentPhoto {
   path: string;
   name: string;
+  preview_url?: string;
+  natural_width?: number;
+  natural_height?: number;
   faces: { bbox: number[]; confidence: number }[];
   timestamp: number;
 }

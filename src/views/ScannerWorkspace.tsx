@@ -606,17 +606,19 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   };
 
   const progressPct = scanStatus ? Math.min(100, Math.max(0, (scanStatus.total_processadas / (scanStatus.total_files || 1)) * 100)) : 0;
-  const formatElapsed = (sec: number) => {
+  const formatTime = (sec: number) => {
     const h = Math.floor(sec / 3600);
     const m = Math.floor((sec % 3600) / 60);
     const s = sec % 60;
-    if (h > 0) return `${h}h ${m}m ${s}s`;
-    if (m > 0) return `${m}m ${s}s`;
-    return `${s}s`;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
+  const livePhoto = scanStatus?.current_photo;
   const navPreviewUrl = activePhotos[activePhotoIndex] ? api.thumbUrl(activePhotos[activePhotoIndex], 1200) : '';
+  const previewUrl = (isScanning && livePhoto?.preview_url) ? livePhoto.preview_url : navPreviewUrl;
   const navFileName = activePhotos[activePhotoIndex]?.split(/[\\/]/).pop() || '';
+  const overlayNw = (isScanning && livePhoto?.natural_width) ? livePhoto.natural_width : naturalDims.w;
+  const overlayNh = (isScanning && livePhoto?.natural_height) ? livePhoto.natural_height : naturalDims.h;
 
   const navigatePreview = (dir: number) => {
     const next = activePhotoIndex + dir;
@@ -716,14 +718,33 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
               </span>
             </span>
           </div>
-          <div className={styles.summaryStat}>
-            <span className={styles.statLabel}>{isScanning ? 'Tempo decorrido' : 'Duração'}</span>
-            <span className={styles.statValue}>
-              {isScanning
-                ? formatElapsed(elapsedSeconds)
-                : scanStatus?.scan_summary?.time_str || '--'}
-            </span>
-          </div>
+          {isScanning && (
+            <div className={styles.summaryStat}>
+              <span className={styles.statLabel}>Tempo decorrido</span>
+              <span className={styles.statValue}>{formatTime(elapsedSeconds)}</span>
+            </div>
+          )}
+          {isScanning && (
+            <div className={styles.summaryStat}>
+              <span className={styles.statLabel}>Tempo restante</span>
+              <span className={styles.statValue}>
+                {!scanStatus || scanStatus.total_processadas < 5
+                  ? 'Calculando...'
+                  : scanStatus.total_processadas >= scanStatus.total_files
+                    ? 'Finalizando...'
+                    : `${formatTime(Math.max(0, Math.ceil((scanStatus.eta_seconds || 0))))}`}
+                {scanStatus && scanStatus.total_processadas >= 5 && scanStatus.total_processadas < scanStatus.total_files && (
+                  <span className={styles.statSub}>restante</span>
+                )}
+              </span>
+            </div>
+          )}
+          {!isScanning && (
+            <div className={styles.summaryStat}>
+              <span className={styles.statLabel}>Duração</span>
+              <span className={styles.statValue}>{scanStatus?.scan_summary?.time_str || '--'}</span>
+            </div>
+          )}
         </div>
 
         <div className={styles.summaryActions}>
@@ -1139,24 +1160,26 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     <img 
                       ref={imgRef}
                       key={activePhotos[activePhotoIndex]}
-                      src={navPreviewUrl} 
+                      src={previewUrl}
                       className={`${styles.previewImage} ${previewLoaded ? styles.previewImageLoaded : styles.previewImageLoading}`} 
                       alt={navFileName}
                       onLoad={(e) => {
                         setPreviewLoaded(true);
                         const img = e.currentTarget;
-                        setNaturalDims({ w: img.naturalWidth, h: img.naturalHeight });
+                        if (!overlayNw || !overlayNh) {
+                          setNaturalDims({ w: img.naturalWidth, h: img.naturalHeight });
+                        }
                       }}
                       draggable={false}
                       style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
                     />
-                    {naturalDims.w > 0 && liveFaceBoxes.length > 0 && previewInnerDims.current.w > 0 && (
+                    {overlayNw > 0 && liveFaceBoxes.length > 0 && previewInnerDims.current.w > 0 && (
                       (() => {
                         const { w: cw, h: ch } = previewInnerDims.current;
-                        const nw = naturalDims.w, nh = naturalDims.h;
+                        const nw = overlayNw, nh = overlayNh;
                         const scale = Math.min(cw / nw, ch / nh);
-                        const dw = nw * scale, dh = nh * scale;
-                        const ox = (cw - dw) / 2, oy = (ch - dh) / 2;
+                        const ox = (cw - nw * scale) / 2;
+                        const oy = (ch - nh * scale) / 2;
                         console.log(`[Scanner Preview] currentPhoto faces=${liveFaceBoxes.length}`);
                         return (
                           <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
@@ -1164,15 +1187,15 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                               const [x1, y1, x2, y2] = f.bbox;
                               const dx = ox + x1 * scale;
                               const dy = oy + y1 * scale;
-                              const dw2 = (x2 - x1) * scale;
-                              const dh2 = (y2 - y1) * scale;
-                              console.log(`[Scanner Preview] drawing bbox=[${dx.toFixed(1)}, ${dy.toFixed(1)}, ${(dx+dw2).toFixed(1)}, ${(dy+dh2).toFixed(1)}]`);
+                              const dw = (x2 - x1) * scale;
+                              const dh = (y2 - y1) * scale;
+                              console.log(`[Scanner Preview] drawing bbox=[${dx.toFixed(1)}, ${dy.toFixed(1)}, ${(dx+dw).toFixed(1)}, ${(dy+dh).toFixed(1)}]`);
                               return (
                                 <g key={i}>
-                                  <rect x={dx} y={dy} width={dw2} height={dh2} className={styles.faceBox} />
+                                  <rect x={dx} y={dy} width={dw} height={dh} className={styles.faceBox} />
                                   {f.confidence > 0 && (
-                                    <text x={dx + 4} y={dy + 14} className={styles.faceLabel}>
-                                      {`${Math.round(f.confidence * 100)}%`}
+                                    <text x={dx + 4} y={dy - 6} className={styles.faceLabel}>
+                                      {`Rosto ${Math.round(f.confidence * 100)}%`}
                                     </text>
                                   )}
                                 </g>
