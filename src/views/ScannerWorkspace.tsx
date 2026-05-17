@@ -269,10 +269,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     const res = await api.selectFolder().catch(() => null);
     if (res?.path) setEventPath(res.path);
   };
-  const handlePickRef = async () => {
-    const res = await api.selectFolder().catch(() => null);
-    if (res?.path) setRefPath(res.path);
-  };
 
   const handlePickRef = async () => {
     const res = await api.selectFolder().catch(() => null);
