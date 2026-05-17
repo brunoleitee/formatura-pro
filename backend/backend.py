@@ -1345,7 +1345,7 @@ class ScanFolderReq(BaseModel):
 def scan_catalog_folder(req: ScanFolderReq):
     try:
         scan_req = scm.ScanRequest(
-            ori_path=req.path,
+            event_path=req.path,
             ref_path="",
             project_name=req.catalog,
             extra_paths=[],
@@ -1367,7 +1367,7 @@ def sync_catalog(catalog: str = ""):
             return {"success": False, "error": "Nenhuma pasta vinculada"}
         for f in folders:
             scan_req = scm.ScanRequest(
-                ori_path=f["path"],
+                event_path=f["path"],
                 ref_path="",
                 project_name=catalog,
                 extra_paths=[],

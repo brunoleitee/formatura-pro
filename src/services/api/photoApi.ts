@@ -37,11 +37,11 @@ export const photoApi = {
 
   // Scan
   selectFolder: () => fetchJSON<{ path: string }>(`${API_BASE}/select-folder`),
-  scanFolder: (ori_path: string, ref_path = '', project_name = '', options?: {
+  scanFolder: (event_path: string, ref_path = '', project_name = '', options?: {
     selected_folders?: string[];
   }) =>
     post(`${API_BASE}/scan/start`, {
-      ori_path,
+      event_path,
       ref_path,
       project_name,
       ...(options?.selected_folders ? { selected_folders: options.selected_folders } : {}),

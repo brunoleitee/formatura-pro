@@ -648,7 +648,7 @@ def run_scanner_worker(req):
     scan_state["total_matches"] = 0
     scan_state["total_clusters"] = 0
     scan_state["total_files"] = 0
-    scan_state["last_folder_scanned"] = req.ori_path
+    scan_state["last_folder_scanned"] = req.event_path
     scan_state["skipped_background_faces"] = 0
     scan_state["provider"] = ""
     scan_state["gpu_error"] = ""
@@ -692,7 +692,7 @@ def run_scanner_worker(req):
         scan_state["status_text"] = "Carregando Referências..."
         load_references(req.ref_path)
 
-        scan_roots = [req.ori_path]
+        scan_roots = [req.event_path]
         for extra in (req.extra_paths or []):
             if extra and os.path.isdir(extra):
                 scan_roots.append(extra)
@@ -1040,12 +1040,12 @@ def run_scanner_worker(req):
                 else:
                     _cfg["save_embedding_disk_cache"]()
                     gc.collect()
-                    catalog_root = req.ori_path
+                    catalog_root = req.event_path
                     try:
                         if req.ref_path and os.path.isdir(req.ref_path):
-                            catalog_root = os.path.commonpath([os.path.abspath(req.ori_path), os.path.abspath(req.ref_path)])
+                            catalog_root = os.path.commonpath([os.path.abspath(req.event_path), os.path.abspath(req.ref_path)])
                     except Exception:
-                        catalog_root = req.ori_path
+                        catalog_root = req.event_path
                     cur.execute(
                         """
                         INSERT OR REPLACE INTO alunos (aluno_id, face_cache_path, class_name)

@@ -95,16 +95,16 @@ import re
 from typing import List, Optional
 class ScanRequest(BaseModel):
     ref_path: Optional[str] = Field(default="", max_length=500)
-    ori_path: str = Field(..., min_length=1, max_length=500)
+    event_path: str = Field(..., min_length=1, max_length=500)
     project_name: Optional[str] = Field(default="Scanner", max_length=100)
     extra_paths: List[str] = Field(default_factory=list, max_items=10)
     selected_folders: Optional[List[str]] = Field(default_factory=list)
 
-    @validator('ref_path', 'ori_path', 'project_name', pre=True)
+    @validator('ref_path', 'event_path', 'project_name', pre=True)
     def handle_none(cls, v):
         return v or ""
 
-    @validator('ref_path', 'ori_path', 'project_name')
+    @validator('ref_path', 'event_path', 'project_name')
     def sanitize_strings(cls, v):
         if not isinstance(v, str):
             v = str(v or "")
@@ -166,8 +166,8 @@ def scan_precheck(req: ScanRequest):
         if catalog_exists:
             warnings.append("Já existe um catálogo com esse nome. O scanner pode acrescentar novas ocorrências nele.")
 
-        ori_ok = bool(req.ori_path and os.path.isdir(req.ori_path))
-        checks.append({"label": "Pasta de fotos", "ok": ori_ok, "detail": req.ori_path or "Não selecionada"})
+        ori_ok = bool(req.event_path and os.path.isdir(req.event_path))
+        checks.append({"label": "Pasta de fotos", "ok": ori_ok, "detail": req.event_path or "Não selecionada"})
         if not ori_ok:
             errors.append("Selecione uma pasta válida de fotos do evento.")
 
@@ -200,7 +200,7 @@ def scan_precheck(req: ScanRequest):
 
         scan_roots = []
         seen_scan_roots = set()
-        for root_path in [req.ori_path] + extra_paths:
+        for root_path in [req.event_path] + extra_paths:
             if not root_path:
                 continue
             abs_root = os.path.abspath(root_path)
@@ -335,7 +335,7 @@ def start_scan(req: ScanRequest):
             sanitize_catalog_name(req.project_name)
         except Exception as e:
             raise HTTPException(400, f"Nome de catálogo inválido: {e}")
-        if not req.ori_path or not os.path.isdir(req.ori_path):
+        if not req.event_path or not os.path.isdir(req.event_path):
             raise HTTPException(status_code=400, detail="Selecione uma pasta válida de fotos brutas.")
         _log_memory("before scanner start")
         scan_state["is_scanning"] = True
@@ -357,7 +357,7 @@ def start_scan(req: ScanRequest):
         from backend_state import scanner_cancel as _sc
         _sc["running"] = True
         _sc["cancel_requested"] = False
-        log_info(f"[SCAN] Iniciando scanner: project={req.project_name}, ref={req.ref_path}, ori={req.ori_path}")
+        log_info(f"[SCAN] Iniciando scanner: project={req.project_name}, ref={req.ref_path}, ori={req.event_path}")
         threading.Thread(target=_safe_scanner_worker, args=(se, req, log_info, scan_state), daemon=True).start()
         return {"message": "Scanner Batch iniciado."}
     except HTTPException:

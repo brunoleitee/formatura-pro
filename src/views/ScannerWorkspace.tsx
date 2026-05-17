@@ -8,10 +8,8 @@ import {
   Image as ImageIcon
 } from 'lucide-react';
 import { api, type ScanStatus, type ScanRecentFace, type ExplorerPhoto } from '../services/api';
-import FolderTree from '../components/scan/FolderTree';
 import { useApp } from '../context/AppContext';
 import styles from './ScannerWorkspace.module.css';
-import ScannerEventFolderManager from '../components/scan/manager/ScannerEventFolderManager';
 
 interface TimelineEntry {
   id: string;
@@ -49,7 +47,7 @@ const CollapsibleSection = ({ title, icon: Icon, children, defaultOpen = true }:
 
 const ScannerWorkspace = memo(function ScannerWorkspace() {
   const { catalogs, setCatalog, refreshCatalogs, currentCatalog } = useApp();
-  const [oriPath, setOriPath] = useState('');
+  const [eventPath, setEventPath] = useState('');
   const [refPath, setRefPath] = useState('');
   const [refPathInfo, setRefPathInfo] = useState<{ photos: number; subfolders: number } | null>(null);
   const [catalogName, setCatalogName] = useState('');
@@ -112,8 +110,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [showFilters, setShowFilters] = useState(false);
   const [filterSearch, setFilterSearch] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'jpg' | 'raw'>('all');
-
-  const [showEventManager, setShowEventManager] = useState(false);
 
   // Filtered Photos logic
   const filteredFolderPhotos = useMemo(() => {
@@ -269,9 +265,13 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     };
   }, [selectedPhotoPath]);
 
-  const handlePickOri = async () => {
+  const handlePickEvent = async () => {
     const res = await api.selectFolder().catch(() => null);
-    if (res?.path) setOriPath(res.path);
+    if (res?.path) setEventPath(res.path);
+  };
+  const handlePickRef = async () => {
+    const res = await api.selectFolder().catch(() => null);
+    if (res?.path) setRefPath(res.path);
   };
 
   const handlePickRef = async () => {
@@ -479,8 +479,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
   // Se a pasta de origem principal mudar, resetar seleção
   useEffect(() => {
-    setSelectedFolder(oriPath);
-  }, [oriPath]);
+    setSelectedFolder(eventPath);
+  }, [eventPath]);
 
   useEffect(() => {
     return () => { 
@@ -536,7 +536,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
 
   const handleScan = async () => {
-    if (!oriPath) { setError('Selecione a pasta de origem.'); return; }
+    if (!eventPath) { setError('Selecione a pasta de eventos.'); return; }
     const name = newCatalogMode ? newCatalogName.trim() : catalogName;
     if (!name) { setError('Selecione ou crie um catálogo.'); return; }
     
@@ -547,11 +547,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     setTimeline([{ id: `start-${Date.now()}`, kind: 'system', text: `Scanner PRO v2.1 iniciado em ${new Date().toLocaleTimeString()}`, timestamp: Date.now() }]);
     
     try {
-      const payload = {
-        selected_folders: selectedEventFolders,
-      };
-
-      await api.scanFolder(oriPath, refPath || '', name, payload);
+      await api.scanFolder(eventPath, refPath || '', name);
       await setCatalog(name);
       await refreshCatalogs();
       startPolling();
@@ -648,7 +644,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
         {starting && isScanning ? <LoaderCircle size={18} className={styles.spin} /> : <Zap size={18} fill="currentColor" />}
       </button>
       <div className={styles.sidebarIconDivider} />
-      <button className={styles.sidebarIconBtn} title="Origem"><Folder size={18} /></button>
       <button className={styles.sidebarIconBtn} title="IA"><Cpu size={18} /></button>
     </div>
   );
@@ -783,50 +778,12 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           {sidebarCollapsed ? sidebarCollapsedContent : (
             <>
               <div className={styles.leftPanelScroll}>
-                
-                <CollapsibleSection title="1. Origem" icon={Folder}>
-                  <div className={styles.formGroup}>
-                    <label className={styles.fieldLabel}>Pasta de origem</label>
-                    <div className={styles.inputActionRow}>
-                      <input 
-                        className={styles.darkInput} 
-                        placeholder="Nenhuma pasta selecionada"
-                        value={oriPath}
-                        readOnly
-                      />
-                      <button className={styles.actionBtn} onClick={handlePickOri}>
-                        <FolderOpen size={12} /> Alterar
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className={styles.formGroup} style={{ marginTop: 8 }}>
-                    <label className={styles.fieldLabel}>Estrutura Detectada</label>
-                    <FolderTree 
-                      rootPath={oriPath} 
-                      onSelectFolder={setSelectedFolder} 
-                      selectedPath={selectedFolder}
-                    />
-                  </div>
-                  <div className={styles.checkboxGroup} style={{ marginTop: 10 }} onClick={() => setRawEnabled(!rawEnabled)}>
-                    <div className={`${styles.checkbox} ${rawEnabled ? styles.checked : ''}`}>
-                      {rawEnabled && <Check size={10} color="white" />}
-                    </div>
-                    <span className={styles.checkboxLabel}>Incluir arquivos RAW</span>
-                  </div>
-                  <div className={styles.checkboxGroup} onClick={() => setRecursiveEnabled(!recursiveEnabled)}>
-                    <div className={`${styles.checkbox} ${recursiveEnabled ? styles.checked : ''}`}>
-                      {recursiveEnabled && <Check size={10} color="white" />}
-                    </div>
-                    <span className={styles.checkboxLabel}>Incluir subpastas (Recursivo)</span>
-                  </div>
-                </CollapsibleSection>
 
-                {/* ── SECTION 2: CATÁLOGO ── */}
+                {/* ── SECTION 1: CATÁLOGO ── */}
                 <div className={styles.refEventSection}>
                   <div className={styles.sectionHeader}>
                     <Database size={14} className={styles.manageBtnIcon} />
-                    <span className={styles.sectionTitle}>2. Catálogo</span>
+                    <span className={styles.sectionTitle}>1. Catálogo</span>
                   </div>
 
                   <label className={styles.fieldLabel}>Nome do Catálogo</label>
@@ -850,7 +807,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                 <div className={styles.refEventSection}>
                   <div className={styles.sectionHeader}>
                     <Folder size={14} className={styles.manageBtnIcon} />
-                    <span className={styles.sectionTitle}>3. Pasta de referência</span>
+                    <span className={styles.sectionTitle}>2. Pasta de referência</span>
                   </div>
                   
                   <label className={styles.fieldLabel}>Pasta de referência / Evento</label>
@@ -880,7 +837,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                 <div className={styles.refEventSection}>
                   <div className={styles.sectionHeader}>
                     <Calendar size={14} className={styles.manageBtnIcon} />
-                    <span className={styles.sectionTitle}>4. Eventos</span>
+                    <span className={styles.sectionTitle}>3. Eventos</span>
                   </div>
 
                   <label className={styles.fieldLabel}>Pasta de eventos</label>
@@ -899,30 +856,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     Pasta principal do evento. Selecione para gerenciar as subpastas incluídas.
                   </p>
 
-                  <button 
-                    className={styles.manageBtn} 
-                    onClick={() => setShowEventManager(!showEventManager)}
-                  >
-                    <div className={styles.manageBtnContent}>
-                      <FolderSearch size={14} className={styles.manageBtnIcon} />
-                      <span>Gerenciar eventos e subpastas</span>
-                    </div>
-                    <ChevronRightIcon size={12} className={`${styles.manageBtnChevron} ${showEventManager ? styles.chevronOpen : ''}`} />
-                  </button>
-
-                  {showEventManager && eventFolders.length > 0 && (
-                    <ScannerEventFolderManager 
-                      eventPath={eventFolders[eventFolders.length - 1]}
-                      catalogName={catalogName || 'default'}
-                      onClose={() => setShowEventManager(false)}
-                      onApply={(selectedPaths) => {
-                        setSelectedEventFolders(selectedPaths);
-                        setShowEventManager(false);
-                      }}
-                    />
-                  )}
-
-                  
                   {eventPhotosCountStatus === 'loading' && (
                     <div className={styles.refStats}>
                       <LoaderCircle size={10} className={styles.spin} />
@@ -953,9 +886,9 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
               <div className={styles.leftPanelBottom}>
                 <button 
-                  className={`${styles.startBtn} ${!isScanning && oriPath ? styles.startBtnPulse : ''}`} 
+                  className={`${styles.startBtn} ${!isScanning && eventPath ? styles.startBtnPulse : ''}`} 
                   onClick={handleScan} 
-                  disabled={isScanning || !oriPath}
+                  disabled={isScanning || !eventPath}
                 >
                   {starting && isScanning ? <LoaderCircle size={16} className={styles.spin} /> : <Zap size={16} fill="currentColor" />}
                   {isScanning ? 'PROCESSANDO...' : 'INICIAR SCANNER'}
