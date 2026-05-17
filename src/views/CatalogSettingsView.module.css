@@ -49,36 +49,90 @@
   display: flex;
   flex-direction: column;
   padding: 20px 20px 20px 28px;
-  gap: 14px;
+  gap: 18px;
   overflow-y: auto;
   min-width: 0;
 }
 
-.leftHeader {
+.leftHero {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.pageTitle {
+  margin: 0;
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #f8fafc;
+}
+
+.pageSubtitle {
+  margin: 6px 0 0;
+  color: #7b8698;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .addBtn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 18px;
-  border-radius: 8px;
-  border: 1px solid #1e293b;
-  background: #0f1117;
-  color: #e2e8f0;
-  font-size: 12px;
-  font-weight: 500;
+  padding: 11px 18px;
+  border-radius: 10px;
+  border: 1px solid #1d4ed8;
+  background: linear-gradient(180deg, #2770ff, #1663ea);
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.2);
 }
 
 .addBtn:hover {
-  border-color: #3b82f6;
-  background: rgba(59, 130, 246, 0.08);
-  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 14px 32px rgba(37, 99, 235, 0.28);
+}
+
+.addBtn:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.folderTableCard,
+.addSectionCard {
+  background: #0e0f14;
+  border: 1px solid #1a1c23;
+  border-radius: 12px;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.22);
+}
+
+.folderTableCard {
+  overflow: hidden;
+}
+
+.folderTableHead {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1.6fr) 110px 160px 100px 160px;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid #1a1c23;
+  color: #8a97aa;
+  font-size: 12px;
+}
+
+.folderTableBlank {
+  width: 36px;
+}
+
+.folderTableBody {
+  display: flex;
+  flex-direction: column;
 }
 
 .dropZone {
@@ -86,38 +140,33 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 28px;
-  border: 1px dashed #2a2d35;
-  border-radius: 10px;
-  background: #08090c;
+  gap: 4px;
+  min-height: 100px;
+  padding: 20px;
+  margin: 12px 16px 16px;
+  border: 1px dashed #2d3440;
+  border-radius: 8px;
+  background: #090a0f;
   transition: all 0.2s;
   cursor: pointer;
 }
 
 .dropZone:hover {
   border-color: #3b82f6;
-  background: rgba(59, 130, 246, 0.04);
+  background: rgba(37, 99, 235, 0.05);
 }
 
-.dropIcon { color: #3d4352; }
-.dropText { color: #5a6577; font-size: 12px; }
-
-.folderList {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+.dropIcon { color: #5d6a7e; }
+.dropText { color: #9ca8ba; font-size: 14px; }
+.dropSubText { color: #748194; font-size: 12px; }
 
 .emptyFolders {
   padding: 24px;
   text-align: center;
-  color: #5a6577;
+  color: #7b8698;
   font-size: 12px;
   font-style: italic;
-  background: #08090c;
-  border-radius: 8px;
-  border: 1px solid #1a1c23;
+  background: #090a0f;
 }
 
 .errorMsg {
@@ -131,19 +180,17 @@
 
 /* ── FOLDER CARD ── */
 .folderCard {
-  display: flex;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1.6fr) 110px 160px 100px 160px;
+  gap: 16px;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: 8px;
-  background: #0e0f14;
-  border: 1px solid #1a1c23;
+  padding: 16px 18px;
+  border-bottom: 1px solid #1a1c23;
   transition: all 0.2s;
 }
 
 .folderCard:hover {
-  border-color: #2a2d35;
-  background: #111217;
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .folderCardIcon {
@@ -153,8 +200,8 @@
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  background: rgba(59, 130, 246, 0.1);
-  color: #3b82f6;
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
   flex-shrink: 0;
 }
 
@@ -166,33 +213,62 @@
   gap: 2px;
 }
 
-.folderCardPath {
-  font-size: 12px;
-  font-weight: 500;
-  color: #e2e8f0;
+.folderCardName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f8fafc;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.folderCardMeta {
+.folderCardPath {
+  font-size: 12px;
+  font-weight: 400;
+  color: #7b8698;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folderCardCount,
+.folderCardScan,
+.folderCardStatusWrap {
+  min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 10px;
-  color: #5a6577;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.folderCardCountValue {
+  color: #f8fafc;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.folderCardCountLabel,
+.folderCardScanValue {
+  color: #7b8698;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.folderCardScanValue {
+  white-space: nowrap;
 }
 
 .folderCardStatus {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 1px 8px;
-  border-radius: 10px;
-  font-size: 9px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.08);
+  width: fit-content;
 }
 
 .folderCardStatusActive {
@@ -203,26 +279,27 @@
 .folderCardActions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: flex-end;
+  gap: 8px;
   flex-shrink: 0;
 }
 
 .folderActionBtn {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #5a6577;
+  color: #7b8698;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .folderActionBtn:hover {
-  background: #1a1c23;
+  background: #171a22;
   color: #e2e8f0;
 }
 
@@ -231,9 +308,229 @@
   background: rgba(239, 68, 68, 0.1);
 }
 
+
+.folderCardBody,
+.folderCardCount,
+.folderCardScan,
+.folderCardStatusWrap {
+  min-width: 0;
+}
+
+.folderCardCount,
+.folderCardScan,
+.folderCardStatusWrap {
+  align-items: flex-start;
+}
+
+.folderCardScan {
+  align-items: flex-start;
+}
+
+.folderCardStatusWrap {
+  align-items: flex-start;
+}
+
+.folderCardActions button:disabled {
+  opacity: 0.5;
+}
+
+/* ── ADD SECTION ── */
+.addSectionCard {
+  padding: 18px;
+}
+
+.addSectionHeader {
+  margin-bottom: 14px;
+}
+
+.addSectionTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.addSectionSubtitle {
+  margin: 6px 0 0;
+  color: #7b8698;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.folderPickerRow {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  min-height: 46px;
+}
+
+.folderPickerField {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  border: 1px solid #1f2530;
+  border-right: none;
+  border-radius: 10px 0 0 10px;
+  background: linear-gradient(180deg, rgba(24, 28, 37, 0.85), rgba(16, 18, 25, 0.95));
+  color: #7b8698;
+  min-width: 0;
+}
+
+.folderPickerIcon {
+  color: #3b82f6;
+  flex-shrink: 0;
+}
+
+.folderPickerPlaceholder,
+.folderPickerValue {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+
+.folderPickerPlaceholder {
+  color: #7b8698;
+}
+
+.folderPickerValue {
+  color: #dbe5f2;
+}
+
+.folderPickerBtn {
+  width: 118px;
+  border: 1px solid #1f2530;
+  border-radius: 0 10px 10px 0;
+  background: #1b2030;
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.folderPickerBtn:hover {
+  background: #22283a;
+}
+
+.optionsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.optionCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid #1f2530;
+  background: #0b0d12;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+}
+
+.optionCard:hover {
+  border-color: #2f3746;
+  background: #10131a;
+}
+
+.optionCardActive {
+  border-color: rgba(37, 99, 235, 0.6);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.checkboxBox {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid #384152;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #0b0c10;
+  font-size: 12px;
+  background: #0d1016;
+  margin-top: 1px;
+}
+
+.checkboxBoxChecked {
+  border-color: #3b82f6;
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.optionText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.optionTitle {
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.optionSubtitle {
+  color: #7b8698;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.addSectionFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.cancelBtn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1px solid #1f2530;
+  background: #151922;
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cancelBtn:hover {
+  background: #1a1f2b;
+}
+
+.confirmBtn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1px solid #1d4ed8;
+  background: linear-gradient(180deg, #2770ff, #1663ea);
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.18);
+}
+
+.confirmBtn:hover {
+  box-shadow: 0 14px 32px rgba(37, 99, 235, 0.26);
+}
+
+.confirmBtn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 /* ── RIGHT PANEL ── */
 .rightPanel {
-  width: 320px;
+  width: 360px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;

@@ -1220,10 +1220,14 @@ def list_catalog_folders(catalog: str = ""):
                     d = parent
 
             # 3. Agrupamento inteligente: só pastas raiz (que não são subpasta de outra)
+            # Nota: drives raiz (ex: C:\) já terminam com sep, então não duplicar o sep
             sorted_dirs = sorted(raw_dirs, key=lambda x: len(x))
             root_dirs = []
             for d in sorted_dirs:
-                is_sub = any(other != d and d.startswith(other + os.sep) for other in root_dirs)
+                is_sub = any(
+                    other != d and d.startswith(other if other.endswith(os.sep) else other + os.sep)
+                    for other in root_dirs
+                )
                 if not is_sub:
                     root_dirs.append(d)
 
