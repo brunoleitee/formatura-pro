@@ -1733,15 +1733,18 @@ def system_metrics():
         "gpuPercent": None,
         "temperatureC": None,
     }
-    try:
-        if psutil:
-            result["cpuPercent"] = round(psutil.cpu_percent(interval=0.1), 1)
+
+    # CPU
+    if psutil:
+        try:
+            result["cpuPercent"] = round(psutil.cpu_percent(interval=0.2), 1)
             mem = psutil.virtual_memory()
             result["ramUsedGb"] = round(mem.used / (1024 ** 3), 1)
             result["ramPercent"] = round(mem.percent, 1)
-    except Exception:
-        pass
+        except Exception:
+            print("[Metrics] psutil error", flush=True)
 
+    # GPU
     try:
         nvidia_out = subprocess.run(
             ["nvidia-smi", "--query-gpu=utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
@@ -1753,7 +1756,7 @@ def system_metrics():
                 result["gpuPercent"] = round(float(parts[0]), 0)
                 result["temperatureC"] = round(float(parts[1]), 0)
     except Exception:
-        pass
+        print("[Metrics] nvidia-smi error", flush=True)
 
     return result
 

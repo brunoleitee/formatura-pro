@@ -413,6 +413,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     const pollMetrics = async () => {
       try {
         const m = await api.getSystemMetrics();
+        console.log("[Metrics API]", m);
         setSystemMetrics(m);
       } catch (err) {
         setTimeline(prev => [...prev.slice(-49), {
