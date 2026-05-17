@@ -100,6 +100,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [systemMetrics, setSystemMetrics] = useState<{ cpuPercent: number | null; ramUsedGb: number | null; ramPercent: number | null; gpuPercent: number | null; temperatureC: number | null; cpuTemperatureC: number | null } | null>(null);
   const [processedPhotos, setProcessedPhotos] = useState<string[]>([]);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+  const [floatingViewerOpen, setFloatingViewerOpen] = useState(false);
 
   // Selected photo details for bottom panels (Faces)
   const [selectedPhotoFaces, setSelectedPhotoFaces] = useState<{
@@ -431,6 +432,18 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     };
   }, []);
 
+  // Floating viewer keyboard navigation
+  useEffect(() => {
+    if (!floatingViewerOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFloatingViewerOpen(false);
+      if (e.key === 'ArrowLeft') navigatePreview(-1);
+      if (e.key === 'ArrowRight') navigatePreview(1);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [floatingViewerOpen, activePhotoIndex, activePhotos.length]);
+
   // Carregar fotos da pasta selecionada
   useEffect(() => {
     if (selectedFolder && !isScanning) {
@@ -599,6 +612,9 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const livePhoto = scanStatus?.current_photo;
   const navPreviewUrl = activePhotos[activePhotoIndex] ? api.thumbUrl(activePhotos[activePhotoIndex], 1200) : '';
   const previewUrl = (isScanning && livePhoto?.preview_url) ? livePhoto.preview_url : navPreviewUrl;
+  const floatingImgUrl = activePhotos[activePhotoIndex]
+    ? (isScanning && livePhoto?.preview_url ? livePhoto.preview_url : api.previewUrl(activePhotos[activePhotoIndex], 1920))
+    : '';
   const navFileName = activePhotos[activePhotoIndex]?.split(/[\\/]/).pop() || '';
 
   const navigatePreview = (dir: number) => {
@@ -992,7 +1008,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                 />
                 <span className={styles.zoomValue}>{viewMode === 'single' ? `${Math.round(previewZoom)}%` : `${thumbSize}px`}</span>
                 {viewMode === 'single' && (
-                  <button className={styles.toggleBtn} onClick={() => { setPreviewZoom(0); setDragPos({x:0, y:0}); }} title="Fit Screen" style={{ marginLeft: 8 }}>
+                  <button className={styles.toggleBtn} onClick={() => setFloatingViewerOpen(true)} title="Tela cheia" style={{ marginLeft: 8 }}>
                     <Maximize2 size={12} />
                   </button>
                 )}
@@ -1445,6 +1461,27 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           </div>
         </div>
       </div>
+
+      {floatingViewerOpen && activePhotos[activePhotoIndex] && (
+        <div className={styles.floatingViewer} onClick={() => setFloatingViewerOpen(false)}>
+          <button className={styles.floatingClose} onClick={() => setFloatingViewerOpen(false)} title="Fechar">
+            <X size={20} />
+          </button>
+          <button className={`${styles.floatingNav} ${styles.floatingNavPrev}`} onClick={(e) => { e.stopPropagation(); navigatePreview(-1); }} title="Anterior">
+            <ChevronLeft size={28} />
+          </button>
+          <button className={`${styles.floatingNav} ${styles.floatingNavNext}`} onClick={(e) => { e.stopPropagation(); navigatePreview(1); }} title="Próxima">
+            <ChevronRightIcon size={28} />
+          </button>
+          <img
+            className={styles.floatingImage}
+            src={floatingImgUrl}
+            alt={navFileName}
+            onClick={(e) => e.stopPropagation()}
+            draggable={false}
+          />
+        </div>
+      )}
 
       {/* ── BOTTOM STATUS BAR ── */}
       <div className={styles.statusBar}>

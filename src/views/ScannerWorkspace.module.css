@@ -1373,6 +1373,78 @@
 .metricLabel { color: #5a6577; flex: 1; }
 .metricValue { color: #e2e8f0; font-weight: 700; }
 
+/* ── FLOATING IMAGE VIEWER ── */
+.floatingViewer {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.floatingImage {
+  max-width: 94vw;
+  max-height: 94vh;
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.floatingClose {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: #c0c4cc;
+  cursor: pointer;
+  transition: all 0.2s;
+  z-index: 10;
+}
+
+.floatingClose:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+.floatingNav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: #a0a4ac;
+  cursor: pointer;
+  transition: all 0.2s;
+  z-index: 10;
+}
+
+.floatingNav:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.floatingNavPrev { left: 16px; }
+.floatingNavNext { right: 16px; }
+
 /* ── BOTTOM STATUS BAR ── */
 .statusBar {
   height: 28px;
