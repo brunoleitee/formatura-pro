@@ -1198,37 +1198,55 @@ def list_catalog_folders(catalog: str = ""):
                     "createdAt": r["created_at"],
                 } for r in rows]
 
-            # 2. Fallback: extrair diretórios únicos das ocorrências
-            cur.execute("SELECT DISTINCT foto_path FROM ocorrencias")
-            photo_rows = cur.fetchall()
-            seen = set()
-            folders = []
-            for pr in photo_rows:
-                d = os.path.dirname(pr["foto_path"])
-                if d and d not in seen:
-                    seen.add(d)
-                    folders.append(d)
-            folders.sort()
+            # 2. Fallback: extrair diretórios das ocorrências e face_embeddings
+            all_paths = set()
+            for table in ("ocorrencias", "face_embeddings"):
+                try:
+                    cur.execute(f"SELECT DISTINCT foto_path FROM {table}")
+                    for r in cur.fetchall():
+                        if r["foto_path"]:
+                            all_paths.add(os.path.normpath(r["foto_path"]))
+                except Exception:
+                    pass
 
-            # 3. Fallback: scan_paths da catalog_settings
-            cur.execute("SELECT scan_paths FROM catalog_settings WHERE catalog_name = ?", (catalog,))
-            row = cur.fetchone()
-            if row and row[0]:
-                for p in row[0].split("|"):
-                    p = p.strip()
-                    if p and p not in seen:
-                        seen.add(p)
-                        folders.append(p)
+            raw_dirs = set()
+            for fp in all_paths:
+                d = os.path.dirname(fp)
+                while d and d not in raw_dirs:
+                    raw_dirs.add(d)
+                    parent = os.path.dirname(d)
+                    if parent == d:
+                        break
+                    d = parent
 
-            # Migrar fallback para catalog_folders
-            for f in folders:
+            # 3. Agrupamento inteligente: só pastas raiz (que não são subpasta de outra)
+            sorted_dirs = sorted(raw_dirs, key=lambda x: len(x))
+            root_dirs = []
+            for d in sorted_dirs:
+                is_sub = any(other != d and d.startswith(other + os.sep) for other in root_dirs)
+                if not is_sub:
+                    root_dirs.append(d)
+
+            # 4. Contar fotos por pasta raiz
+            folder_photo_counts = {}
+            for fp in all_paths:
+                for root in root_dirs:
+                    if fp.startswith(root + os.sep) or fp == root:
+                        folder_photo_counts[root] = folder_photo_counts.get(root, 0) + 1
+                        break
+
+            print(f"[CatalogFolders] fallback dirs={len(raw_dirs)} roots={len(root_dirs)} photos={len(all_paths)}", flush=True)
+
+            # 5. Migrar para catalog_folders
+            for d in root_dirs:
+                count = folder_photo_counts.get(d, 0)
                 cur.execute("""
                     INSERT OR IGNORE INTO catalog_folders (catalog_name, path, include_subfolders, photo_count)
-                    VALUES (?, ?, 1, 0)
-                """, (catalog, f))
+                    VALUES (?, ?, 1, ?)
+                """, (catalog, d, count))
             conn.commit()
 
-            # Recarregar com IDs reais
+            # 6. Recarregar
             cur.execute("""
                 SELECT id, catalog_name, path, include_subfolders, photo_count, last_scan_at, status, created_at
                 FROM catalog_folders
@@ -1247,11 +1265,13 @@ def list_catalog_folders(catalog: str = ""):
                 "createdAt": r["created_at"],
             } for r in rows]
 
-            print(f"[CatalogFolders] catalog={catalog} table={len(rows)} fallback={len(folders)} total={len(result)}", flush=True)
+            print(f"[CatalogFolders] catalog={catalog} final={len(result)}", flush=True)
             return result
 
     except Exception as e:
         print(f"[CatalogFolders] list error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
         return []
 
 @app.post("/api/catalogs/folders")
