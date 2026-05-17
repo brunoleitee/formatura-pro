@@ -25,6 +25,7 @@ export default function CatalogSettingsView() {
         catalogApi.listFolders(currentCatalog),
         catalogApi.getFolderStats(currentCatalog),
       ]);
+      console.log('[CatalogSettings] folders:', f.length, 'stats:', s);
       setFolders(f);
       setStats(s);
     } catch {

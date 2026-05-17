@@ -1176,6 +1176,8 @@ def list_catalog_folders(catalog: str = ""):
     try:
         with cm.get_db(catalog) as conn:
             cur = conn.cursor()
+
+            # 1. Tenta catalog_folders primeiro
             cur.execute("""
                 SELECT id, catalog_name, path, include_subfolders, photo_count, last_scan_at, status, created_at
                 FROM catalog_folders
@@ -1183,7 +1185,58 @@ def list_catalog_folders(catalog: str = ""):
                 ORDER BY id
             """, (catalog,))
             rows = cur.fetchall()
-            return [{
+
+            if rows:
+                return [{
+                    "id": r["id"],
+                    "catalogName": r["catalog_name"],
+                    "path": r["path"],
+                    "includeSubfolders": bool(r["include_subfolders"]),
+                    "photoCount": r["photo_count"],
+                    "lastScanAt": r["last_scan_at"],
+                    "status": r["status"],
+                    "createdAt": r["created_at"],
+                } for r in rows]
+
+            # 2. Fallback: extrair diretórios únicos das ocorrências
+            cur.execute("SELECT DISTINCT foto_path FROM ocorrencias")
+            photo_rows = cur.fetchall()
+            seen = set()
+            folders = []
+            for pr in photo_rows:
+                d = os.path.dirname(pr["foto_path"])
+                if d and d not in seen:
+                    seen.add(d)
+                    folders.append(d)
+            folders.sort()
+
+            # 3. Fallback: scan_paths da catalog_settings
+            cur.execute("SELECT scan_paths FROM catalog_settings WHERE catalog_name = ?", (catalog,))
+            row = cur.fetchone()
+            if row and row[0]:
+                for p in row[0].split("|"):
+                    p = p.strip()
+                    if p and p not in seen:
+                        seen.add(p)
+                        folders.append(p)
+
+            # Migrar fallback para catalog_folders
+            for f in folders:
+                cur.execute("""
+                    INSERT OR IGNORE INTO catalog_folders (catalog_name, path, include_subfolders, photo_count)
+                    VALUES (?, ?, 1, 0)
+                """, (catalog, f))
+            conn.commit()
+
+            # Recarregar com IDs reais
+            cur.execute("""
+                SELECT id, catalog_name, path, include_subfolders, photo_count, last_scan_at, status, created_at
+                FROM catalog_folders
+                WHERE catalog_name = ?
+                ORDER BY id
+            """, (catalog,))
+            rows = cur.fetchall()
+            result = [{
                 "id": r["id"],
                 "catalogName": r["catalog_name"],
                 "path": r["path"],
@@ -1193,6 +1246,10 @@ def list_catalog_folders(catalog: str = ""):
                 "status": r["status"],
                 "createdAt": r["created_at"],
             } for r in rows]
+
+            print(f"[CatalogFolders] catalog={catalog} table={len(rows)} fallback={len(folders)} total={len(result)}", flush=True)
+            return result
+
     except Exception as e:
         print(f"[CatalogFolders] list error: {e}", flush=True)
         return []
