@@ -1727,21 +1727,23 @@ def gpu_diagnostics():
 @app.get("/api/system/metrics")
 def system_metrics():
     result = {
-        "gpuLoad": None,
-        "cpuLoad": None,
+        "cpuPercent": None,
         "ramUsedGb": None,
-        "tempC": None,
+        "ramPercent": None,
+        "gpuLoad": None,
+        "temperatureC": None,
     }
     try:
         if psutil:
-            result["cpuLoad"] = round(psutil.cpu_percent(interval=0.1), 1)
+            result["cpuPercent"] = round(psutil.cpu_percent(interval=0.1), 1)
             mem = psutil.virtual_memory()
             result["ramUsedGb"] = round(mem.used / (1024 ** 3), 1)
+            result["ramPercent"] = round(mem.percent, 1)
             try:
                 temps = psutil.sensors_temperatures()
                 for key in ("coretemp", "cpu_thermal", "k10temp"):
                     if key in temps and temps[key]:
-                        result["tempC"] = round(temps[key][0].current, 0)
+                        result["temperatureC"] = round(temps[key][0].current, 0)
                         break
             except Exception:
                 pass
@@ -1757,7 +1759,7 @@ def system_metrics():
             parts = nvidia_out.stdout.strip().split(", ")
             if len(parts) == 2:
                 result["gpuLoad"] = round(float(parts[0]), 0)
-                result["tempC"] = round(float(parts[1]), 0)
+                result["temperatureC"] = round(float(parts[1]), 0)
     except Exception:
         pass
 

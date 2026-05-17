@@ -98,7 +98,6 @@ class ScanRequest(BaseModel):
     ori_path: str = Field(..., min_length=1, max_length=500)
     project_name: Optional[str] = Field(default="Scanner", max_length=100)
     extra_paths: List[str] = Field(default_factory=list, max_items=10)
-    face_detection_enabled: Optional[bool] = Field(default=True)
     selected_folders: Optional[List[str]] = Field(default_factory=list)
 
     @validator('ref_path', 'ori_path', 'project_name', pre=True)

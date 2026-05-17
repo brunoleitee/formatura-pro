@@ -38,14 +38,12 @@ export const photoApi = {
   // Scan
   selectFolder: () => fetchJSON<{ path: string }>(`${API_BASE}/select-folder`),
   scanFolder: (ori_path: string, ref_path = '', project_name = '', options?: {
-    face_detection_enabled?: boolean;
     selected_folders?: string[];
   }) =>
     post(`${API_BASE}/scan/start`, {
       ori_path,
       ref_path,
       project_name,
-      ...(options?.face_detection_enabled !== undefined ? { face_detection_enabled: options.face_detection_enabled } : {}),
       ...(options?.selected_folders ? { selected_folders: options.selected_folders } : {}),
     }),
   getSystemMetrics: () => fetchJSON<SystemMetrics>(`${API_BASE}/system/metrics`),

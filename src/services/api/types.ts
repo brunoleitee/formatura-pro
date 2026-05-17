@@ -84,10 +84,11 @@ export interface ScanSummary {
 }
 
 export interface SystemMetrics {
-  gpuLoad: number | null;
-  cpuLoad: number | null;
+  cpuPercent: number | null;
   ramUsedGb: number | null;
-  tempC: number | null;
+  ramPercent: number | null;
+  gpuLoad: number | null;
+  temperatureC: number | null;
 }
 
 export interface LiveScannerStatus {

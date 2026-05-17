@@ -1560,38 +1560,6 @@
   position: relative;
 }
 
-/* ── FACE OVERLAYS ── */
-.faceOverlaySvg {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  overflow: visible;
-}
-
-.faceBox {
-  fill: none;
-  stroke: rgba(34, 197, 94, 0.85);
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.4));
-}
-
-.faceLabel {
-  fill: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  font-family: inherit;
-  paint-order: stroke;
-  stroke: rgba(0, 0, 0, 0.7);
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 /* ── EVENT FOLDER ITEMS ── */
 .eventFolderList {
   display: flex;

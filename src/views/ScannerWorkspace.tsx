@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import { 
-  FolderOpen, Scan, X, Plus, Cpu, ScanFace, Layers3,
-  Maximize2, LayoutGrid, Search, Info, AlertTriangle, Blocks, Wand2,
-  Check, CheckCircle2, Circle, Database, Terminal, Zap, Gauge, Activity, Calendar,
-  Play, Pause, Folder, LoaderCircle, ChevronDown, List, SlidersHorizontal,
-  HardDrive, Monitor, MousePointer2, Users, Eye, ChevronRight as ChevronRightIcon, ChevronLeft, FolderSearch,
+  FolderOpen, X, Cpu, ScanFace,
+  Maximize2, LayoutGrid, Search, AlertTriangle,
+  Check, CheckCircle2, Database, Terminal, Zap, Gauge, Activity, Calendar,
+  Play, Pause, Folder, LoaderCircle, List, SlidersHorizontal,
+  HardDrive, Monitor, Eye, ChevronRight as ChevronRightIcon, ChevronLeft, FolderSearch,
   Image as ImageIcon
 } from 'lucide-react';
 import { api, type ScanStatus, type ScanRecentFace, type ExplorerPhoto } from '../services/api';
@@ -85,7 +85,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [gpuEnabled, setGpuEnabled] = useState(true);
   const [rawEnabled, setRawEnabled] = useState(true);
   const [recursiveEnabled, setRecursiveEnabled] = useState(true);
-  const [faceRecEnabled, setFaceRecEnabled] = useState(true);
 
   const [eventFolders, setEventFolders] = useState<string[]>([]);
   const [selectedEventFolders, setSelectedEventFolders] = useState<string[]>([]);
@@ -95,15 +94,10 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const metricsPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const previewInnerRef = useRef<HTMLDivElement>(null);
   const startedAtRef = useRef<number | null>(null);
-  const [previewInnerDims, setPreviewInnerDims] = useState({ w: 0, h: 0 });
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const filmstripRef = useRef<HTMLDivElement | null>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
-  const [systemMetrics, setSystemMetrics] = useState<{ gpuLoad: number | null; cpuLoad: number | null; ramUsedGb: number | null; tempC: number | null } | null>(null);
-  const [liveFaceBoxes, setLiveFaceBoxes] = useState<{ bbox: number[]; confidence: number }[]>([]);
-  const [naturalDims, setNaturalDims] = useState({ w: 0, h: 0 });
+  const [systemMetrics, setSystemMetrics] = useState<{ cpuPercent: number | null; ramUsedGb: number | null; ramPercent: number | null; gpuLoad: number | null; temperatureC: number | null } | null>(null);
   const [processedPhotos, setProcessedPhotos] = useState<string[]>([]);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
 
@@ -340,19 +334,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
   const pollingWasScanningRef = useRef(false);
 
-  // Track preview container dimensions for bbox overlay
-  useEffect(() => {
-    const el = previewInnerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(entries => {
-      for (const e of entries) {
-        setPreviewInnerDims({ w: Math.round(e.contentRect.width), h: Math.round(e.contentRect.height) });
-      }
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
   // Sync started_at to ref for timer effect
   useEffect(() => {
     if (scanStatus?.started_at) startedAtRef.current = scanStatus.started_at;
@@ -397,11 +378,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
               setActivePhotoIndex(0);
             }
 
-            // Atualizar faces em tempo real
-            console.log("[Overlay] currentPhoto.faces", st.current_photo?.faces);
-            if (st.current_photo.faces) {
-              setLiveFaceBoxes(st.current_photo.faces);
-            }
+            // Atualizar faces em tempo real (dados vao para recent_faces via scan status)
           }
 
           if (Math.random() > 0.8 && st.current_photo?.name) {
@@ -549,11 +526,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     
     try {
       const payload = {
-        face_detection_enabled: faceRecEnabled,
         selected_folders: selectedEventFolders,
       };
-
-      console.log("[Scanner Start Payload]", payload);
 
       await api.scanFolder(oriPath, refPath || '', name, payload);
       await setCatalog(name);
@@ -618,8 +592,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const navPreviewUrl = activePhotos[activePhotoIndex] ? api.thumbUrl(activePhotos[activePhotoIndex], 1200) : '';
   const previewUrl = (isScanning && livePhoto?.preview_url) ? livePhoto.preview_url : navPreviewUrl;
   const navFileName = activePhotos[activePhotoIndex]?.split(/[\\/]/).pop() || '';
-  const overlayNw = (isScanning && livePhoto?.natural_width) ? livePhoto.natural_width : naturalDims.w;
-  const overlayNh = (isScanning && livePhoto?.natural_height) ? livePhoto.natural_height : naturalDims.h;
 
   const navigatePreview = (dir: number) => {
     const next = activePhotoIndex + dir;
@@ -953,26 +925,9 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
                 </div>
 
-                <CollapsibleSection title="Detecção de Rostos" icon={ScanFace}>
-                  <div className={styles.checkboxGroup} onClick={() => setFaceRecEnabled(!faceRecEnabled)}>
-                    <div className={`${styles.checkbox} ${faceRecEnabled ? styles.checked : ''}`}>
-                      {faceRecEnabled && <Check size={10} color="white" />}
-                    </div>
-                    <span className={styles.checkboxLabel}>Detecção de Rostos</span>
-                  </div>
-                  {!faceRecEnabled && (
-                    <p style={{ fontSize: 12, color: 'var(--color-muted)', marginTop: 8, lineHeight: 1.4 }}>
-                      Apenas as fotos serão copiadas para o catálogo sem identificar ou agrupar rostos.
-                    </p>
-                  )}
-                </CollapsibleSection>
               </div>
 
               <div className={styles.leftPanelBottom}>
-                <div className={styles.presetRow}>
-                  <button className={styles.destBtn} style={{ flex: 1 }}><Folder size={12} /> Carregar</button>
-                  <button className={styles.destBtn} style={{ flex: 1 }}><Database size={12} /> Salvar</button>
-                </div>
                 <button 
                   className={`${styles.startBtn} ${!isScanning && oriPath ? styles.startBtnPulse : ''}`} 
                   onClick={handleScan} 
@@ -1166,80 +1121,23 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                   onWheel={handleWheelZoom}
                   style={{ cursor: previewZoom > 0 ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
                 >
-                  <div
-                    ref={previewInnerRef}
-                    className={styles.previewImageInner}
-                    style={{ 
-                      transform: `scale(${1 + (previewZoom / 100) * 2}) translate(${dragPos.x / (1 + (previewZoom/100)*2)}px, ${dragPos.y / (1 + (previewZoom/100)*2)}px)`,
-                      transition: isDragging ? 'none' : 'transform 0.2s ease-out'
-                    }}
-                  >
-                    <img 
-                      ref={imgRef}
-                      key={activePhotos[activePhotoIndex]}
-                      src={previewUrl}
-                      className={`${styles.previewImage} ${previewLoaded ? styles.previewImageLoaded : styles.previewImageLoading}`} 
-                      alt={navFileName}
-                      onLoad={(e) => {
-                        setPreviewLoaded(true);
-                        const img = e.currentTarget;
-                        if (!overlayNw || !overlayNh) {
-                          setNaturalDims({ w: img.naturalWidth, h: img.naturalHeight });
-                        }
+                    <div
+                      className={styles.previewImageInner}
+                      style={{ 
+                        transform: `scale(${1 + (previewZoom / 100) * 2}) translate(${dragPos.x / (1 + (previewZoom/100)*2)}px, ${dragPos.y / (1 + (previewZoom/100)*2)}px)`,
+                        transition: isDragging ? 'none' : 'transform 0.2s ease-out'
                       }}
-                      draggable={false}
-                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
-                    />
-                    {overlayNw > 0 && liveFaceBoxes.length > 0 && previewInnerDims.w > 0 && (
-                      (() => {
-                        const cw = previewInnerDims.w, ch = previewInnerDims.h;
-                        const nw = overlayNw, nh = overlayNh;
-                        const scale = Math.min(cw / nw, ch / nh);
-                        const dispW = nw * scale, dispH = nh * scale;
-                        const offsetX = (cw - dispW) / 2, offsetY = (ch - dispH) / 2;
-                        console.log("[Overlay] currentPhoto.faces", liveFaceBoxes);
-                        console.log("[Overlay] image natural", nw, nh);
-                        console.log("[Overlay] rect", { offsetX, offsetY, scale, containerW: cw, containerH: ch, dispW, dispH });
-                        return (
-                          <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'hidden' }}>
-                            {liveFaceBoxes.slice(0, 50).map((f, i) => {
-                              const [x1, y1, x2, y2] = f.bbox;
-                              const left = offsetX + x1 * scale;
-                              const top = offsetY + y1 * scale;
-                              const w = (x2 - x1) * scale;
-                              const h = (y2 - y1) * scale;
-                              console.log("[Overlay] drawing bbox", { left: left.toFixed(1), top: top.toFixed(1), width: w.toFixed(1), height: h.toFixed(1) });
-                              return (
-                                <div key={i} style={{
-                                  position: 'absolute',
-                                  left, top, width: w, height: h,
-                                  border: '2px solid #22c55e',
-                                  borderRadius: 6,
-                                  pointerEvents: 'none',
-                                  zIndex: 5,
-                                }}>
-                                  {f.confidence > 0 && (
-                                    <span style={{
-                                      position: 'absolute',
-                                      left: 4, top: -18,
-                                      fontSize: 11,
-                                      fontWeight: 700,
-                                      color: '#fff',
-                                      textShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                                      whiteSpace: 'nowrap',
-                                      fontFamily: 'inherit',
-                                    }}>
-                                      {`${(f as any).name || 'Rosto'} ${Math.round(f.confidence * 100)}%`}
-                                    </span>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()
-                    )}
-                  </div>
+                    >
+                      <img 
+                        key={activePhotos[activePhotoIndex]}
+                        src={previewUrl}
+                        className={`${styles.previewImage} ${previewLoaded ? styles.previewImageLoaded : styles.previewImageLoading}`} 
+                        alt={navFileName}
+                        onLoad={() => setPreviewLoaded(true)}
+                        draggable={false}
+                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+                      />
+                    </div>
                 </div>
               </div>
 
@@ -1457,7 +1355,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
             </div>
             <div className={styles.progressInfo}>
               <span className={styles.progressCount}>
-                {new Intl.NumberFormat('pt-BR').format(scanStatus?.total_processadas || 0)} / {new Intl.NumberFormat('pt-BR').format(scanStatus?.total_fotos || 0)}
+                {new Intl.NumberFormat('pt-BR').format(scanStatus?.total_processadas || 0)} / {new Intl.NumberFormat('pt-BR').format(scanStatus?.total_files || 0)}
               </span>
               <span className={styles.progressSpeed}>285 fotos/min</span>
             </div>
@@ -1508,13 +1406,13 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           <div className={styles.systemMetrics}>
             <div className={styles.metricItem}>
               <Monitor size={12} className={styles.metricIcon} />
-              <span className={styles.metricLabel}>GPU Load</span>
+              <span className={styles.metricLabel}>GPU</span>
               <span className={styles.metricValue}>{systemMetrics?.gpuLoad != null ? `${systemMetrics.gpuLoad}%` : '--'}</span>
             </div>
             <div className={styles.metricItem}>
               <Cpu size={12} className={styles.metricIcon} />
-              <span className={styles.metricLabel}>CPU Load</span>
-              <span className={styles.metricValue}>{systemMetrics?.cpuLoad != null ? `${systemMetrics.cpuLoad}%` : '--'}</span>
+              <span className={styles.metricLabel}>CPU</span>
+              <span className={styles.metricValue}>{systemMetrics?.cpuPercent != null ? `${systemMetrics.cpuPercent}%` : '--'}</span>
             </div>
             <div className={styles.metricItem}>
               <HardDrive size={12} className={styles.metricIcon} />
@@ -1522,9 +1420,14 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
               <span className={styles.metricValue}>{systemMetrics?.ramUsedGb != null ? `${systemMetrics.ramUsedGb.toFixed(1)}GB` : '--'}</span>
             </div>
             <div className={styles.metricItem}>
+              <HardDrive size={12} className={styles.metricIcon} />
+              <span className={styles.metricLabel}>RAM%</span>
+              <span className={styles.metricValue}>{systemMetrics?.ramPercent != null ? `${systemMetrics.ramPercent}%` : '--'}</span>
+            </div>
+            <div className={styles.metricItem}>
               <Zap size={12} className={styles.metricIcon} />
               <span className={styles.metricLabel}>Temp</span>
-              <span className={styles.metricValue}>{systemMetrics?.tempC != null ? `${systemMetrics.tempC}°C` : '--'}</span>
+              <span className={styles.metricValue}>{systemMetrics?.temperatureC != null ? `${systemMetrics.temperatureC}°C` : '--'}</span>
             </div>
           </div>
         </div>

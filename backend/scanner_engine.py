@@ -639,7 +639,6 @@ def run_scanner_worker(req):
     face_engine_gpu_error = _cfg["face_engine_gpu_error"]
 
     log_info("[Scanner] Start")
-    log_info(f"[Scanner] faceDetectionEnabled={req.face_detection_enabled}")
     log_info(f"[SCAN] Worker iniciado: project={req.project_name}")
     scan_state["is_scanning"] = True
     scan_state["status_text"] = "Inicializando..."
@@ -777,11 +776,8 @@ def run_scanner_worker(req):
                         break
 
                     try:
-                        if req.face_detection_enabled:
-                            with quiet_external_output():
-                                faces = _cfg["app_face"].get(img) or []
-                        else:
-                            log_info(f"[Scanner] Deteccao de rostos desabilitada para {os.path.basename(p)}")
+                        with quiet_external_output():
+                            faces = _cfg["app_face"].get(img) or []
                     except Exception as e:
                         log_debug(f"Falha de AI em {p}: {e}")
                         ignored_reasons["ai_error"] += 1
@@ -799,8 +795,7 @@ def run_scanner_worker(req):
                     total_faces_in_photo = len(faces)
                     img_h, img_w = img.shape[:2] if img is not None else (0, 0)
                     log_info(
-                        f"[Face] faceDetectionEnabled={req.face_detection_enabled} "
-                        f"faces_encontradas={total_faces_in_photo} "
+                        f"[Face] faces_encontradas={total_faces_in_photo} "
                         f"image_size={img_w}x{img_h} "
                         f"path={os.path.basename(p)}"
                     )
