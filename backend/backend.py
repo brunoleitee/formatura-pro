@@ -1219,7 +1219,33 @@ def list_catalog_folders(catalog: str = ""):
                     cur.execute("DELETE FROM catalog_folders WHERE id = ?", (r["id"],))
             conn.commit()
 
-            # ── 2. Tenta catalog_folders primeiro ──
+            # ── 2. Sempre salvar paths do scan state (event + ref) ──
+            try:
+                scan_state = scm.get_scan_status() if hasattr(scm, 'get_scan_status') else {}
+                for path, ftype in [
+                    (scan_state.get("event_path", ""), "event"),
+                    (scan_state.get("ref_path", ""), "reference"),
+                ]:
+                    if path and path.strip():
+                        cur.execute("SELECT id, folder_type FROM catalog_folders WHERE catalog_name = ? AND path = ?",
+                                    (catalog, path))
+                        existing = cur.fetchone()
+                        if existing:
+                            if existing["folder_type"] != ftype:
+                                cur.execute("UPDATE catalog_folders SET folder_type = ? WHERE id = ?",
+                                            (ftype, existing["id"]))
+                                print(f"[CatalogFolders] updated folder_type={ftype} path={path}", flush=True)
+                        else:
+                            cur.execute("""
+                                INSERT INTO catalog_folders (catalog_name, path, include_subfolders, photo_count, folder_type)
+                                VALUES (?, ?, 1, 0, ?)
+                            """, (catalog, path, ftype))
+                            print(f"[CatalogFolders] save {ftype}Path={path}", flush=True)
+                conn.commit()
+            except Exception as e:
+                print(f"[CatalogFolders] scan-state save error: {e}", flush=True)
+
+            # ── 3. Tenta catalog_folders ──
             cur.execute("""
                 SELECT id, catalog_name, path, include_subfolders, photo_count, last_scan_at, status, folder_type, created_at
                 FROM catalog_folders
@@ -1398,9 +1424,19 @@ class ScanFolderReq(BaseModel):
 @app.post("/api/catalogs/scan-folder")
 def scan_catalog_folder(req: ScanFolderReq):
     try:
+        ref_path = ""
+        try:
+            with get_db(req.catalog) as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT path FROM catalog_folders WHERE catalog_name = ? AND folder_type = 'reference' ORDER BY id LIMIT 1", (req.catalog,))
+                row = cur.fetchone()
+                if row:
+                    ref_path = row["path"]
+        except Exception:
+            pass
         scan_req = scm.ScanRequest(
             event_path=req.path,
-            ref_path="",
+            ref_path=ref_path,
             project_name=req.catalog,
             extra_paths=[],
             selected_folders=[],
@@ -1415,20 +1451,27 @@ def sync_catalog(catalog: str = ""):
     try:
         with get_db(catalog) as conn:
             cur = conn.cursor()
-            cur.execute("SELECT path, include_subfolders FROM catalog_folders WHERE catalog_name = ?", (catalog,))
-            folders = cur.fetchall()
-        if not folders:
+            cur.execute("SELECT path, include_subfolders, folder_type FROM catalog_folders WHERE catalog_name = ?", (catalog,))
+            rows = cur.fetchall()
+        if not rows:
             return {"success": False, "error": "Nenhuma pasta vinculada"}
-        for f in folders:
+        ref_path = ""
+        for r in rows:
+            if r["folder_type"] == "reference":
+                ref_path = r["path"]
+                break
+        for r in rows:
+            if r["folder_type"] == "reference":
+                continue
             scan_req = scm.ScanRequest(
-                event_path=f["path"],
-                ref_path="",
+                event_path=r["path"],
+                ref_path=ref_path,
                 project_name=catalog,
                 extra_paths=[],
                 selected_folders=[],
             )
             scm.start_scan(scan_req)
-        return {"success": True, "folders": len(folders)}
+        return {"success": True, "folders": len(rows)}
     except Exception as e:
         print(f"[CatalogFolders] sync error: {e}", flush=True)
         return {"success": False, "error": str(e)}
