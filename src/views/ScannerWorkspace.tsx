@@ -97,7 +97,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const startedAtRef = useRef<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const filmstripRef = useRef<HTMLDivElement | null>(null);
-  const [systemMetrics, setSystemMetrics] = useState<{ cpuPercent: number | null; ramUsedGb: number | null; ramPercent: number | null; gpuLoad: number | null; temperatureC: number | null } | null>(null);
+  const [systemMetrics, setSystemMetrics] = useState<{ cpuPercent: number | null; ramUsedGb: number | null; ramPercent: number | null; gpuPercent: number | null; temperatureC: number | null } | null>(null);
   const [processedPhotos, setProcessedPhotos] = useState<string[]>([]);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
 
@@ -424,7 +424,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
       }
     };
     pollMetrics();
-    metricsPollRef.current = setInterval(pollMetrics, 3000);
+    metricsPollRef.current = setInterval(pollMetrics, 2000);
     return () => {
       if (metricsPollRef.current) clearInterval(metricsPollRef.current);
     };
@@ -1415,7 +1415,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
             <div className={styles.metricItem}>
               <Monitor size={12} className={styles.metricIcon} />
               <span className={styles.metricLabel}>GPU</span>
-              <span className={styles.metricValue}>{systemMetrics?.gpuLoad != null ? `${systemMetrics.gpuLoad}%` : '--'}</span>
+              <span className={styles.metricValue}>{systemMetrics?.gpuPercent != null ? `${systemMetrics.gpuPercent}%` : '--'}</span>
             </div>
             <div className={styles.metricItem}>
               <Cpu size={12} className={styles.metricIcon} />

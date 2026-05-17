@@ -87,7 +87,7 @@ export interface SystemMetrics {
   cpuPercent: number | null;
   ramUsedGb: number | null;
   ramPercent: number | null;
-  gpuLoad: number | null;
+  gpuPercent: number | null;
   temperatureC: number | null;
 }
 
