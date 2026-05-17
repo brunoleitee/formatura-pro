@@ -109,7 +109,7 @@ export interface ScanCurrentPhoto {
   preview_url?: string;
   natural_width?: number;
   natural_height?: number;
-  faces: { bbox: number[]; confidence: number }[];
+  faces: { bbox: number[]; confidence: number; name?: string }[];
   timestamp: number;
 }
 

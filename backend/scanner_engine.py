@@ -832,10 +832,11 @@ def run_scanner_worker(req):
 
                     t_face = 0
 
+                    photo_faces = []
+
                     if not valid_faces:
                         log_info(f"[Face] Nenhum rosto valido em {os.path.basename(p)} (total_detectado={total_faces_in_photo})")
                         log_info(f"[DB] inserindo foto sem rosto path={p}")
-                        # Inserir entrada dummy para rastrear a foto mesmo sem faces
                         cur.execute(
                             "INSERT OR IGNORE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                             ("Sem Rostos", p, None, None, None, None, photo_hash, b_score, b_status),
@@ -850,7 +851,6 @@ def run_scanner_worker(req):
                     else:
                         largest_face_area = max((face_data[5] for face_data in valid_faces), default=0)
                         
-                        # Calcula score de foreground para todas as faces
                         scored_faces = []
                         for face, x1, y1, x2, y2, area in valid_faces:
                             fg_score, is_fg, f_ratio, c_score, bg_reason = calc_foreground_score(
@@ -862,10 +862,8 @@ def run_scanner_worker(req):
                                 "c_score": c_score, "bg_reason": bg_reason
                             })
                             
-                        # Ordena por score para pegar os 3 melhores
                         scored_faces.sort(key=lambda x: x["fg_score"], reverse=True)
                         
-                        # Limita para no maximo 3 como foreground
                         fg_count = 0
                         for sf in scored_faces:
                             if sf["is_fg"] == 1:
@@ -883,7 +881,6 @@ def run_scanner_worker(req):
                             
                             log_debug(f"[foreground-face] area={f_ratio:.3f} center={c_score:.2f} score={fg_score:.2f} foreground={is_fg} reason={bg_reason}")
 
-                            # Apenas continua se decidimos pular a face baseada no is_background_face original (opcional, vamos manter para não estragar compatibilidade)
                             if is_background_face(x1, y1, x2, y2, largest_face_area, img.shape, len(valid_faces)):
                                 scan_state["skipped_background_faces"] += 1
                                 continue
@@ -902,6 +899,12 @@ def run_scanner_worker(req):
                                 nome = find_or_create_cluster(emb)
                                 scan_state["total_clusters"] = len(_cfg["cluster_names"])
                             
+                            photo_faces.append({
+                                "bbox": [x1, y1, x2, y2],
+                                "confidence": 0.95,
+                                "name": nome,
+                            })
+
                             t_face = (time.time() - t0_face) * 1000
 
                             log_info(f"[DB] inserindo face path={p} aluno={nome}")
@@ -960,7 +963,6 @@ def run_scanner_worker(req):
 
                     # Atualizar current_photo com dados reais para o carrossel live
                     img_h, img_w = img.shape[:2] if img is not None else (0, 0)
-                    photo_faces = [{"bbox": [f[1], f[2], f[3], f[4]], "confidence": 0.95} for f in valid_faces]
                     scan_state["current_photo"] = {
                         "path": p,
                         "name": os.path.basename(p),

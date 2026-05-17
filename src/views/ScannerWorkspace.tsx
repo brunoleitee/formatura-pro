@@ -1192,35 +1192,50 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     />
                     {overlayNw > 0 && liveFaceBoxes.length > 0 && previewInnerDims.w > 0 && (
                       (() => {
-                        const { w: cw, h: ch } = previewInnerDims;
+                        const cw = previewInnerDims.w, ch = previewInnerDims.h;
                         const nw = overlayNw, nh = overlayNh;
                         const scale = Math.min(cw / nw, ch / nh);
-                        const ox = (cw - nw * scale) / 2;
-                        const oy = (ch - nh * scale) / 2;
+                        const dispW = nw * scale, dispH = nh * scale;
+                        const offsetX = (cw - dispW) / 2, offsetY = (ch - dispH) / 2;
+                        console.log("[Overlay] currentPhoto.faces", liveFaceBoxes);
                         console.log("[Overlay] image natural", nw, nh);
-                        console.log("[Overlay] rect", { offsetX: ox, offsetY: oy, scale, containerW: cw, containerH: ch });
-                        console.log(`[Scanner Preview] currentPhoto faces=${liveFaceBoxes.length}`);
+                        console.log("[Overlay] rect", { offsetX, offsetY, scale, containerW: cw, containerH: ch, dispW, dispH });
                         return (
-                          <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+                          <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'hidden' }}>
                             {liveFaceBoxes.slice(0, 50).map((f, i) => {
                               const [x1, y1, x2, y2] = f.bbox;
-                              const dx = ox + x1 * scale;
-                              const dy = oy + y1 * scale;
-                              const dw = (x2 - x1) * scale;
-                              const dh = (y2 - y1) * scale;
-                              console.log(`[Scanner Preview] drawing bbox=[${dx.toFixed(1)}, ${dy.toFixed(1)}, ${(dx+dw).toFixed(1)}, ${(dy+dh).toFixed(1)}]`);
+                              const left = offsetX + x1 * scale;
+                              const top = offsetY + y1 * scale;
+                              const w = (x2 - x1) * scale;
+                              const h = (y2 - y1) * scale;
+                              console.log("[Overlay] drawing bbox", { left: left.toFixed(1), top: top.toFixed(1), width: w.toFixed(1), height: h.toFixed(1) });
                               return (
-                                <g key={i}>
-                                  <rect x={dx} y={dy} width={dw} height={dh} className={styles.faceBox} />
+                                <div key={i} style={{
+                                  position: 'absolute',
+                                  left, top, width: w, height: h,
+                                  border: '2px solid #22c55e',
+                                  borderRadius: 6,
+                                  pointerEvents: 'none',
+                                  zIndex: 5,
+                                }}>
                                   {f.confidence > 0 && (
-                                    <text x={dx + 4} y={dy - 6} className={styles.faceLabel}>
-                                      {`Rosto ${Math.round(f.confidence * 100)}%`}
-                                    </text>
+                                    <span style={{
+                                      position: 'absolute',
+                                      left: 4, top: -18,
+                                      fontSize: 11,
+                                      fontWeight: 700,
+                                      color: '#fff',
+                                      textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                                      whiteSpace: 'nowrap',
+                                      fontFamily: 'inherit',
+                                    }}>
+                                      {`${(f as any).name || 'Rosto'} ${Math.round(f.confidence * 100)}%`}
+                                    </span>
                                   )}
-                                </g>
+                                </div>
                               );
                             })}
-                          </svg>
+                          </div>
                         );
                       })()
                     )}
