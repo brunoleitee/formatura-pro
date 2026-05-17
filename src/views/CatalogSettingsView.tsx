@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { FolderOpen, Plus, Info, CheckCircle2, Eye } from 'lucide-react';
-import { catalogApi } from '../services/api';
+import { api } from '../services/api';
 import { useApp } from '../context/AppContext';
 import type { CatalogSettingsResponse } from '../services/api';
 import { CatalogFolderCard } from './catalog-settings/CatalogFolderCard';
@@ -16,7 +16,7 @@ export default function CatalogSettingsView() {
   useEffect(() => {
     if (!currentCatalog) return;
     setLoading(true);
-    catalogApi.getCatalogSettings(currentCatalog)
+    api.getCatalogSettings(currentCatalog)
       .then(setSettings)
       .catch(() => {})
       .finally(() => setLoading(false));
