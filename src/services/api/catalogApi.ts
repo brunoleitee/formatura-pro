@@ -1,5 +1,5 @@
 import { API_BASE, fetchJSON, post } from './core';
-import type { CatalogsResponse, CatalogSettingsResponse } from './types';
+import type { CatalogsResponse, CatalogSettingsResponse, CatalogFolder, CatalogFolderStats } from './types';
 
 export const catalogApi = {
   getCatalogs: () => fetchJSON<CatalogsResponse>(`${API_BASE}/catalogs`),
@@ -10,4 +10,20 @@ export const catalogApi = {
     fetchJSON<CatalogSettingsResponse>(`${API_BASE}/catalogs/settings?catalog=${encodeURIComponent(catalog)}`),
   saveCatalogSettings: (catalog: string, data: { root_path?: string; scan_paths?: string[]; selected_folders?: Record<string, string> }) =>
     post(`${API_BASE}/catalogs/settings`, { catalog, ...data }),
+
+  // Catalog Folders
+  listFolders: (catalog: string) =>
+    fetchJSON<CatalogFolder[]>(`${API_BASE}/catalogs/folders?catalog=${encodeURIComponent(catalog)}`),
+  addFolder: (catalog: string, path: string, includeSubfolders: boolean, scanImmediately: boolean) =>
+    post<{ success: boolean; folderId?: number; error?: string }>(`${API_BASE}/catalogs/folders`, {
+      catalog, path, include_subfolders: includeSubfolders, scan_immediately: scanImmediately,
+    }),
+  removeFolder: (catalog: string, folderId: number) =>
+    post<{ success: boolean }>(`${API_BASE}/catalogs/folders/remove`, { catalog, folder_id: folderId }),
+  getFolderStats: (catalog: string) =>
+    fetchJSON<CatalogFolderStats>(`${API_BASE}/catalogs/stats?catalog=${encodeURIComponent(catalog)}`),
+  scanFolder: (catalog: string, path: string, includeSubfolders: boolean) =>
+    post(`${API_BASE}/catalogs/scan-folder`, { catalog, path, include_subfolders: includeSubfolders }),
+  syncCatalog: (catalog: string) =>
+    post<{ success: boolean; folders?: number; error?: string }>(`${API_BASE}/catalogs/sync`, { catalog }),
 };

@@ -120,6 +120,15 @@
   border: 1px solid #1a1c23;
 }
 
+.errorMsg {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  font-size: 11px;
+}
+
 /* ── FOLDER CARD ── */
 .folderCard {
   display: flex;

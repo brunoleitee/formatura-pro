@@ -1005,6 +1005,19 @@ class DbConnection:
                 selected_folders TEXT DEFAULT '{}'
             )
         """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS catalog_folders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                catalog_name TEXT NOT NULL,
+                path TEXT NOT NULL,
+                include_subfolders INTEGER DEFAULT 1,
+                photo_count INTEGER DEFAULT 0,
+                last_scan_at REAL,
+                status TEXT DEFAULT 'active',
+                created_at REAL DEFAULT (strftime('%s','now'))
+            )
+        """)
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_cat_folder_unique ON catalog_folders(catalog_name, path)")
         self.conn.commit()
         return self
     
@@ -1144,6 +1157,145 @@ def save_catalog_settings(req: CatalogSettingsReq):
         return {"success": True, "catalog": req.catalog}
     except Exception as e:
         print(f"Erro ao salvar configurações do catálogo: {e}")
+        return {"success": False, "error": str(e)}
+
+# ── Catalog Folders Management ──
+
+class AddCatalogFolderReq(BaseModel):
+    catalog: str
+    path: str
+    include_subfolders: bool = True
+    scan_immediately: bool = False
+
+class RemoveCatalogFolderReq(BaseModel):
+    catalog: str
+    folder_id: int
+
+@app.get("/api/catalogs/folders")
+def list_catalog_folders(catalog: str = ""):
+    try:
+        with cm.get_db(catalog) as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT id, catalog_name, path, include_subfolders, photo_count, last_scan_at, status, created_at
+                FROM catalog_folders
+                WHERE catalog_name = ?
+                ORDER BY id
+            """, (catalog,))
+            rows = cur.fetchall()
+            return [{
+                "id": r["id"],
+                "catalogName": r["catalog_name"],
+                "path": r["path"],
+                "includeSubfolders": bool(r["include_subfolders"]),
+                "photoCount": r["photo_count"],
+                "lastScanAt": r["last_scan_at"],
+                "status": r["status"],
+                "createdAt": r["created_at"],
+            } for r in rows]
+    except Exception as e:
+        print(f"[CatalogFolders] list error: {e}", flush=True)
+        return []
+
+@app.post("/api/catalogs/folders")
+def add_catalog_folder(req: AddCatalogFolderReq):
+    try:
+        norm = os.path.normpath(req.path)
+        if not os.path.isdir(norm):
+            return {"success": False, "error": "Pasta não encontrada"}
+        with cm.get_db(req.catalog) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM catalog_folders WHERE catalog_name = ? AND path = ?", (req.catalog, norm))
+            if cur.fetchone():
+                return {"success": False, "error": "Esta pasta já está vinculada ao catálogo"}
+            cur.execute("""
+                INSERT INTO catalog_folders (catalog_name, path, include_subfolders)
+                VALUES (?, ?, ?)
+            """, (req.catalog, norm, 1 if req.include_subfolders else 0))
+            conn.commit()
+            folder_id = cur.lastrowid
+        return {"success": True, "folderId": folder_id}
+    except Exception as e:
+        print(f"[CatalogFolders] add error: {e}", flush=True)
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/catalogs/folders/remove")
+def remove_catalog_folder(req: RemoveCatalogFolderReq):
+    try:
+        with cm.get_db(req.catalog) as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM catalog_folders WHERE id = ? AND catalog_name = ?", (req.folder_id, req.catalog))
+            conn.commit()
+        return {"success": True}
+    except Exception as e:
+        print(f"[CatalogFolders] remove error: {e}", flush=True)
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/catalogs/stats")
+def catalog_folder_stats(catalog: str = ""):
+    try:
+        with cm.get_db(catalog) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM catalog_folders WHERE catalog_name = ?", (catalog,))
+            active_folders = cur.fetchone()[0]
+            cur.execute("SELECT COALESCE(SUM(photo_count), 0) FROM catalog_folders WHERE catalog_name = ?", (catalog,))
+            total_photos = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM ocorrencias")
+            recognized = cur.fetchone()[0]
+            cur.execute("SELECT MAX(last_scan_at) FROM catalog_folders WHERE catalog_name = ?", (catalog,))
+            last_scan = cur.fetchone()[0]
+        return {
+            "activeFolders": active_folders,
+            "totalPhotos": total_photos,
+            "recognizedPhotos": recognized,
+            "newPhotos": 0,
+            "lastScanAt": last_scan,
+        }
+    except Exception as e:
+        print(f"[CatalogFolders] stats error: {e}", flush=True)
+        return {"activeFolders": 0, "totalPhotos": 0, "recognizedPhotos": 0, "newPhotos": 0, "lastScanAt": None}
+
+class ScanFolderReq(BaseModel):
+    catalog: str
+    path: str
+    include_subfolders: bool = True
+
+@app.post("/api/catalogs/scan-folder")
+def scan_catalog_folder(req: ScanFolderReq):
+    try:
+        scan_req = scm.ScanRequest(
+            ori_path=req.path,
+            ref_path="",
+            project_name=req.catalog,
+            extra_paths=[],
+            selected_folders=[],
+        )
+        return scm.start_scan(scan_req)
+    except Exception as e:
+        print(f"[CatalogFolders] scan-folder error: {e}", flush=True)
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/catalogs/sync")
+def sync_catalog(catalog: str = ""):
+    try:
+        with cm.get_db(catalog) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT path, include_subfolders FROM catalog_folders WHERE catalog_name = ?", (catalog,))
+            folders = cur.fetchall()
+        if not folders:
+            return {"success": False, "error": "Nenhuma pasta vinculada"}
+        for f in folders:
+            scan_req = scm.ScanRequest(
+                ori_path=f["path"],
+                ref_path="",
+                project_name=catalog,
+                extra_paths=[],
+                selected_folders=[],
+            )
+            scm.start_scan(scan_req)
+        return {"success": True, "folders": len(folders)}
+    except Exception as e:
+        print(f"[CatalogFolders] sync error: {e}", flush=True)
         return {"success": False, "error": str(e)}
 
 @app.get("/api/search/global")

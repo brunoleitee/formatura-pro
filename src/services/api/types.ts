@@ -1,4 +1,21 @@
 export interface CatalogMeta { created_at: string; updated_at: string; }
+export interface CatalogFolder {
+  id: number;
+  catalogName: string;
+  path: string;
+  includeSubfolders: boolean;
+  photoCount: number;
+  lastScanAt: number | null;
+  status: string;
+  createdAt: number;
+}
+export interface CatalogFolderStats {
+  activeFolders: number;
+  totalPhotos: number;
+  recognizedPhotos: number;
+  newPhotos: number;
+  lastScanAt: number | null;
+}
 export interface CatalogsResponse {
   current: string;
   catalogs: string[];

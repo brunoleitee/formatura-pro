@@ -7,6 +7,7 @@ import { fetchJSON, post, API_BASE } from './core';
 import type { AppSettings, QualitySettings, Stats, Photo } from './types';
 
 export type { Photo };
+export { catalogApi };
 
 // The combined api object matching the previous shape
 export const api = {
