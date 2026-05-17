@@ -1173,29 +1173,29 @@ class RemoveCatalogFolderReq(BaseModel):
 
 import re
 
-_SYSTEM_DIRS = {
-    "C:", "D:", "E:", "F:", "C:\\", "D:\\", "E:\\", "F:\\",
-    "Users", "Desktop", "Documents", "Downloads", "Pictures", "Music", "Videos",
-    "Windows", "Program Files", "Program Files (x86)", "ProgramData",
-    "AppData", "Local", "Roaming", "LocalLow", "System32", "SysWOW64",
-    "public", "Public", "PerfLogs", "Recovery",
-    "bin", "etc", "usr", "var", "opt", "tmp", "home", "root", "lib", "sbin",
-}
-
 def _is_junk_path(p: str) -> bool:
-    """True if p is a root drive, system dir, or user home dir."""
+    """True only if p is a drive root or a top-level system directory by itself."""
     if not p or len(p) < 2:
         return True
-    norm = p.strip().rstrip("\\/").lower()
-    parts = norm.replace("\\", "/").split("/")
-    for part in parts:
-        if part in _SYSTEM_DIRS or part in (s.lower() for s in _SYSTEM_DIRS):
-            return True
-        # Rejeita nomes muito curtos de diretório de usuário tipo "C:"
-        if part == norm and re.match(r'^[a-z]:$', part):
-            return True
-        if part == norm and re.match(r'^[a-z]:\\?$', part):
-            return True
+    norm = p.strip().rstrip("\\/")
+    # Drive root: C: or C:\
+    if re.match(r'^[a-zA-Z]:\\?$', norm):
+        return True
+    # UNC root or Unix root
+    if norm in ('/', '\\\\'):
+        return True
+    # Single-part names that are system dirs
+    base = os.path.basename(norm).lower()
+    if base in ('users', 'desktop', 'documents', 'downloads', 'windows',
+                'program files', 'program files (x86)', 'programdata',
+                'appdata', 'system32', 'syswow64', 'perflogs',
+                'recovery', '$recycle.bin', 'system volume information',
+                'bin', 'etc', 'usr', 'var', 'opt', 'tmp', 'home', 'root', 'lib', 'sbin',
+                'dev', 'proc', 'run', 'mnt', 'media', 'lost+found',
+                '.git', '.github', 'node_modules', '__pycache__', '.cache'):
+        # Só rejeita se for o path inteiro ou se o pai for raiz do drive
+        parent = os.path.dirname(norm.rstrip("\\/"))
+        return re.match(r'^[a-zA-Z]:\\?$', parent) if parent else True
     return False
 
 @app.get("/api/catalogs/folders")
@@ -1310,6 +1310,18 @@ def list_catalog_folders(catalog: str = ""):
         import traceback
         traceback.print_exc()
         return []
+
+@app.get("/api/catalogs/event-ref-paths")
+def get_catalog_event_ref_paths(catalog: str = ""):
+    """Retorna os paths de evento e referência salvos no estado do scanner."""
+    try:
+        scan_state = scm.get_scan_status() if hasattr(scm, 'get_scan_status') else {}
+        return {
+            "eventPath": scan_state.get("event_path", ""),
+            "referencePath": scan_state.get("ref_path", ""),
+        }
+    except Exception:
+        return {"eventPath": "", "referencePath": ""}
 
 @app.post("/api/catalogs/folders")
 def add_catalog_folder(req: AddCatalogFolderReq):
