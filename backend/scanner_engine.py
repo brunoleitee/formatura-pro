@@ -930,11 +930,20 @@ def run_scanner_worker(req):
                                 (nome, "n/a", detected_class),
                             )
                             
+                            log_info(f"[Scanner] face found bbox=[{x1}, {y1}, {x2}, {y2}] path={os.path.basename(p)}")
+
                             current_time = time.time()
                             if current_time - last_face_update_time > 0.5:
-                                new_face = {"name": nome, "path": p, "box": [x1, y1, x2, y2]}
+                                new_face = {
+                                    "id": total_faces_found,
+                                    "name": nome,
+                                    "path": p,
+                                    "box": [x1, y1, x2, y2],
+                                    "confidence": 0.95,
+                                }
                                 scan_state["recent_faces"].insert(0, new_face)
-                                scan_state["recent_faces"] = scan_state["recent_faces"][:20]
+                                scan_state["recent_faces"] = scan_state["recent_faces"][:50]
+                                log_info(f"[Scanner] recent_faces count={len(scan_state['recent_faces'])}")
                                 last_face_update_time = current_time
 
                     # Log Benchmark

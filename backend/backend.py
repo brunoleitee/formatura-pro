@@ -2018,10 +2018,16 @@ def scanner_stop():
 @app.get("/api/scanner/live-status")
 def scanner_live_status():
     s = scm.get_scan_status()
+    started_at = s.get("started_at")
+    elapsed = (time.time() - started_at) if started_at and s.get("is_scanning") else None
     return {
         "running": bool(s.get("is_scanning", False)),
         "stopped": bool(s.get("stopped", False)),
         "processedPhotos": int(s.get("total_processadas", 0)),
+        "started_at": started_at,
+        "elapsed_seconds": round(elapsed, 1) if elapsed is not None else None,
+        "is_scanning": bool(s.get("is_scanning", False)),
+        "status_text": s.get("status_text", ""),
     }
 
 @app.post("/api/scanner/cleanup")

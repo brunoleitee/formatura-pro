@@ -95,6 +95,10 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const metricsPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const previewInnerRef = useRef<HTMLDivElement>(null);
+  const startedAtRef = useRef<number | null>(null);
+  const previewInnerDims = useRef({ w: 0, h: 0 });
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const filmstripRef = useRef<HTMLDivElement | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const [systemMetrics, setSystemMetrics] = useState<{ gpuLoad: number | null; cpuLoad: number | null; ramUsedGb: number | null; tempC: number | null } | null>(null);
@@ -336,6 +340,38 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
   const pollingWasScanningRef = useRef(false);
 
+  // Track preview container dimensions for bbox overlay
+  useEffect(() => {
+    const el = previewInnerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      for (const e of entries) {
+        previewInnerDims.current = { w: e.contentRect.width, h: e.contentRect.height };
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Sync started_at to ref for timer effect
+  useEffect(() => {
+    if (scanStatus?.started_at) startedAtRef.current = scanStatus.started_at;
+  }, [scanStatus?.started_at]);
+
+  // Elapsed timer: counts up while scanning
+  useEffect(() => {
+    if (!isScanning || !startedAtRef.current) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const tick = () => {
+      if (startedAtRef.current) setElapsedSeconds(Math.floor(Date.now() / 1000 - startedAtRef.current));
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [isScanning]);
+
   const startPolling = useCallback(() => {
     setPolling(true);
     const poll = async () => {
@@ -570,7 +606,14 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   };
 
   const progressPct = scanStatus ? Math.min(100, Math.max(0, (scanStatus.total_processadas / (scanStatus.total_files || 1)) * 100)) : 0;
-  const etaStr = scanStatus?.eta_seconds ? new Date(scanStatus.eta_seconds * 1000).toISOString().substr(11, 8) : '00:00:00';
+  const formatElapsed = (sec: number) => {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  };
 
   const navPreviewUrl = activePhotos[activePhotoIndex] ? api.thumbUrl(activePhotos[activePhotoIndex], 1200) : '';
   const navFileName = activePhotos[activePhotoIndex]?.split(/[\\/]/).pop() || '';
@@ -674,11 +717,11 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
             </span>
           </div>
           <div className={styles.summaryStat}>
-            <span className={styles.statLabel}>Tempo estimado</span>
+            <span className={styles.statLabel}>{isScanning ? 'Tempo decorrido' : 'Duração'}</span>
             <span className={styles.statValue}>
-              {scanStatus?.eta_seconds === -1 ? 'Calculando...' : 
-               scanStatus?.eta_seconds ? etaStr : '--'}
-              {scanStatus?.eta_seconds ? <span className={styles.statSub}>restante</span> : null}
+              {isScanning
+                ? formatElapsed(elapsedSeconds)
+                : scanStatus?.scan_summary?.time_str || '--'}
             </span>
           </div>
         </div>
@@ -1085,7 +1128,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                   onWheel={handleWheelZoom}
                   style={{ cursor: previewZoom > 0 ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
                 >
-                  <div 
+                  <div
+                    ref={previewInnerRef}
                     className={styles.previewImageInner}
                     style={{ 
                       transform: `scale(${1 + (previewZoom / 100) * 2}) translate(${dragPos.x / (1 + (previewZoom/100)*2)}px, ${dragPos.y / (1 + (previewZoom/100)*2)}px)`,
@@ -1106,33 +1150,37 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                       draggable={false}
                       style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
                     />
-                    {naturalDims.w > 0 && liveFaceBoxes.length > 0 && (
-                      <svg
-                        className={styles.faceOverlaySvg}
-                        viewBox={`0 0 ${naturalDims.w} ${naturalDims.h}`}
-                        preserveAspectRatio="xMidYMid meet"
-                      >
-                        {liveFaceBoxes.slice(0, 50).map((f, i) => {
-                          const [x1, y1, x2, y2] = f.bbox;
-                          return (
-                            <g key={i}>
-                              <rect
-                                x={x1} y={y1}
-                                width={x2 - x1} height={y2 - y1}
-                                className={styles.faceBox}
-                              />
-                              {f.confidence > 0 && (
-                                <text
-                                  x={x1 + 4} y={y1 + 14}
-                                  className={styles.faceLabel}
-                                >
-                                  {`${Math.round(f.confidence * 100)}%`}
-                                </text>
-                              )}
-                            </g>
-                          );
-                        })}
-                      </svg>
+                    {naturalDims.w > 0 && liveFaceBoxes.length > 0 && previewInnerDims.current.w > 0 && (
+                      (() => {
+                        const { w: cw, h: ch } = previewInnerDims.current;
+                        const nw = naturalDims.w, nh = naturalDims.h;
+                        const scale = Math.min(cw / nw, ch / nh);
+                        const dw = nw * scale, dh = nh * scale;
+                        const ox = (cw - dw) / 2, oy = (ch - dh) / 2;
+                        console.log(`[Scanner Preview] currentPhoto faces=${liveFaceBoxes.length}`);
+                        return (
+                          <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+                            {liveFaceBoxes.slice(0, 50).map((f, i) => {
+                              const [x1, y1, x2, y2] = f.bbox;
+                              const dx = ox + x1 * scale;
+                              const dy = oy + y1 * scale;
+                              const dw2 = (x2 - x1) * scale;
+                              const dh2 = (y2 - y1) * scale;
+                              console.log(`[Scanner Preview] drawing bbox=[${dx.toFixed(1)}, ${dy.toFixed(1)}, ${(dx+dw2).toFixed(1)}, ${(dy+dh2).toFixed(1)}]`);
+                              return (
+                                <g key={i}>
+                                  <rect x={dx} y={dy} width={dw2} height={dh2} className={styles.faceBox} />
+                                  {f.confidence > 0 && (
+                                    <text x={dx + 4} y={dy + 14} className={styles.faceLabel}>
+                                      {`${Math.round(f.confidence * 100)}%`}
+                                    </text>
+                                  )}
+                                </g>
+                              );
+                            })}
+                          </svg>
+                        );
+                      })()
                     )}
                   </div>
                 </div>
@@ -1275,10 +1323,38 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
               <div className={styles.detailHeader}>
                 <span className={styles.detailTitle}><ScanFace size={11} /> Rostos detectados</span>
                 <span className={styles.detailCount}>
-                  {selectedPhotoFaces.status === 'waiting' ? '-' : `${selectedPhotoFaces.faces.length} rostos`}
+                  {isScanning
+                    ? `${(scanStatus?.recent_faces || []).length} rostos`
+                    : selectedPhotoFaces.status === 'waiting' ? '-' : `${selectedPhotoFaces.faces.length} rostos`}
                 </span>
               </div>
-              {selectedPhotoFaces.status === 'waiting' || selectedPhotoFaces.faces.length === 0 ? (
+              {isScanning ? (
+                scanStatus?.recent_faces && scanStatus.recent_faces.length > 0 ? (
+                  <div className={styles.filmstrip}>
+                    {scanStatus.recent_faces.slice(0, 50).map((face) => (
+                      <div key={face.id} className={styles.faceCard}>
+                        <div className={styles.faceImageWrap}>
+                          <img
+                            src={api.faceThumbUrl(face.path, face.box[0], face.box[1], face.box[2], face.box[3], 80)}
+                            className={styles.faceImage}
+                            alt={face.name}
+                          />
+                        </div>
+                        <div className={styles.faceMeta}>
+                          <span className={styles.faceName}>{face.name}</span>
+                          <span className={styles.faceConfidence}>{(face.confidence * 100).toFixed(0)}%</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className={styles.ocrEmpty}>
+                    {activePhotos.length > 0
+                      ? 'Aguardando detecção facial...'
+                      : 'Nenhum rosto detectado ainda.'}
+                  </div>
+                )
+              ) : selectedPhotoFaces.status === 'waiting' || selectedPhotoFaces.faces.length === 0 ? (
                 <div className={styles.ocrEmpty}>
                   {activePhotos.length > 0
                     ? 'Aguardando detecção facial...'

@@ -69,9 +69,11 @@ export interface PhotoContextResponse {
 }
 
 export interface ScanRecentFace {
+  id: number;
   name: string;
   path: string;
   box: [number, number, number, number];
+  confidence: number;
 }
 
 export interface ScanSummary {
@@ -92,6 +94,10 @@ export interface LiveScannerStatus {
   running: boolean;
   stopped: boolean;
   processedPhotos: number;
+  started_at: number | null;
+  elapsed_seconds: number | null;
+  is_scanning: boolean;
+  status_text: string;
 }
 
 export interface ScanCurrentPhoto {
