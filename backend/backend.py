@@ -1174,7 +1174,7 @@ class RemoveCatalogFolderReq(BaseModel):
 @app.get("/api/catalogs/folders")
 def list_catalog_folders(catalog: str = ""):
     try:
-        with cm.get_db(catalog) as conn:
+        with get_db(catalog) as conn:
             cur = conn.cursor()
 
             # 1. Tenta catalog_folders primeiro
@@ -1280,7 +1280,7 @@ def add_catalog_folder(req: AddCatalogFolderReq):
         norm = os.path.normpath(req.path)
         if not os.path.isdir(norm):
             return {"success": False, "error": "Pasta não encontrada"}
-        with cm.get_db(req.catalog) as conn:
+        with get_db(req.catalog) as conn:
             cur = conn.cursor()
             cur.execute("SELECT id FROM catalog_folders WHERE catalog_name = ? AND path = ?", (req.catalog, norm))
             if cur.fetchone():
@@ -1299,7 +1299,7 @@ def add_catalog_folder(req: AddCatalogFolderReq):
 @app.post("/api/catalogs/folders/remove")
 def remove_catalog_folder(req: RemoveCatalogFolderReq):
     try:
-        with cm.get_db(req.catalog) as conn:
+        with get_db(req.catalog) as conn:
             cur = conn.cursor()
             cur.execute("DELETE FROM catalog_folders WHERE id = ? AND catalog_name = ?", (req.folder_id, req.catalog))
             conn.commit()
@@ -1311,7 +1311,7 @@ def remove_catalog_folder(req: RemoveCatalogFolderReq):
 @app.get("/api/catalogs/stats")
 def catalog_folder_stats(catalog: str = ""):
     try:
-        with cm.get_db(catalog) as conn:
+        with get_db(catalog) as conn:
             cur = conn.cursor()
             cur.execute("SELECT COUNT(*) FROM catalog_folders WHERE catalog_name = ?", (catalog,))
             active_folders = cur.fetchone()[0]
@@ -1355,7 +1355,7 @@ def scan_catalog_folder(req: ScanFolderReq):
 @app.post("/api/catalogs/sync")
 def sync_catalog(catalog: str = ""):
     try:
-        with cm.get_db(catalog) as conn:
+        with get_db(catalog) as conn:
             cur = conn.cursor()
             cur.execute("SELECT path, include_subfolders FROM catalog_folders WHERE catalog_name = ?", (catalog,))
             folders = cur.fetchall()
