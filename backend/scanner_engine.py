@@ -775,8 +775,11 @@ def run_scanner_worker(req):
                         break
 
                     try:
-                        with quiet_external_output():
-                            faces = _cfg["app_face"].get(img) or []
+                        if req.face_detection_enabled:
+                            with quiet_external_output():
+                                faces = _cfg["app_face"].get(img) or []
+                        else:
+                            log_info(f"[Scanner] Deteccao de rostos desabilitada para {os.path.basename(p)}")
                     except Exception as e:
                         log_debug(f"Falha de AI em {p}: {e}")
                         ignored_reasons["ai_error"] += 1
@@ -794,7 +797,7 @@ def run_scanner_worker(req):
                     total_faces_in_photo = len(faces)
                     img_h, img_w = img.shape[:2] if img is not None else (0, 0)
                     log_info(
-                        f"[Face] faceDetectionEnabled=True "
+                        f"[Face] faceDetectionEnabled={req.face_detection_enabled} "
                         f"faces_encontradas={total_faces_in_photo} "
                         f"image_size={img_w}x{img_h} "
                         f"path={os.path.basename(p)}"

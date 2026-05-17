@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import { 
-  FolderOpen, Scan, X, Plus, Cpu, ScanFace, Layers3, Sparkles, 
-  Maximize2, LayoutGrid, Search, Info, AlertTriangle, Blocks, Wand2, 
-  Check, CheckCircle2, Circle, Database, Terminal, Zap, Gauge, Activity, Calendar, 
+  FolderOpen, Scan, X, Plus, Cpu, ScanFace, Layers3,
+  Maximize2, LayoutGrid, Search, Info, AlertTriangle, Blocks, Wand2,
+  Check, CheckCircle2, Circle, Database, Terminal, Zap, Gauge, Activity, Calendar,
   Play, Pause, Folder, LoaderCircle, ChevronDown, List, SlidersHorizontal,
   HardDrive, Monitor, MousePointer2, Users, Eye, ChevronRight as ChevronRightIcon, ChevronLeft, FolderSearch,
   Image as ImageIcon
@@ -82,13 +82,10 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   
   // UI Options
-  const [aiModel, setAiModel] = useState('FormaturaPRO - High Quality');
   const [gpuEnabled, setGpuEnabled] = useState(true);
-  const [quality, setQuality] = useState(70);
   const [rawEnabled, setRawEnabled] = useState(true);
   const [recursiveEnabled, setRecursiveEnabled] = useState(true);
   const [faceRecEnabled, setFaceRecEnabled] = useState(true);
-  const [blurFilter, setBlurFilter] = useState('Médio');
 
   const [eventFolders, setEventFolders] = useState<string[]>([]);
   const [selectedEventFolders, setSelectedEventFolders] = useState<string[]>([]);
@@ -515,10 +512,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     
     try {
       const payload = {
-        ai_model: aiModel,
         face_detection_enabled: faceRecEnabled,
-        min_quality: quality,
-        blur_treatment: blurFilter,
         selected_folders: selectedEventFolders,
       };
 
@@ -878,40 +872,18 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
                 </div>
 
-                <CollapsibleSection title="5. IA" icon={Sparkles}>
-
-                  <div className={styles.formGroup}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                      <label className={styles.label}>Modelo</label>
-                      <span className={`${styles.badge} ${styles.badgeBlue}`}>v2.1 PRO</span>
-                    </div>
-                    <select className={styles.inputBase} value={aiModel} onChange={e => setAiModel(e.target.value)}>
-                      <option>FormaturaPRO - High Quality</option>
-                    </select>
-                  </div>
+                <CollapsibleSection title="Detecção de Rostos" icon={ScanFace}>
                   <div className={styles.checkboxGroup} onClick={() => setFaceRecEnabled(!faceRecEnabled)}>
                     <div className={`${styles.checkbox} ${faceRecEnabled ? styles.checked : ''}`}>
                       {faceRecEnabled && <Check size={10} color="white" />}
                     </div>
                     <span className={styles.checkboxLabel}>Detecção de Rostos</span>
                   </div>
-                </CollapsibleSection>
-
-                <CollapsibleSection title="6. Qualidade" icon={SlidersHorizontal}>
-                  <div className={styles.formGroup}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <label className={styles.label}>Mínima</label>
-                      <span className={styles.sliderValue}>{quality}%</span>
-                    </div>
-                    <input type="range" className={styles.slider} min="50" max="100" value={quality} onChange={e => setQuality(parseInt(e.target.value))} />
-                  </div>
-                  <div className={styles.formGroup}>
-                    <label className={styles.label}>Tratamento de desfoque</label>
-                    <select className={styles.inputBase} value={blurFilter} onChange={e => setBlurFilter(e.target.value)}>
-                      <option>Filtro Médio</option>
-                      <option>Filtro Rigoroso</option>
-                    </select>
-                  </div>
+                  {!faceRecEnabled && (
+                    <p style={{ fontSize: 12, color: 'var(--color-muted)', marginTop: 8, lineHeight: 1.4 }}>
+                      Apenas as fotos serão copiadas para o catálogo sem identificar ou agrupar rostos.
+                    </p>
+                  )}
                 </CollapsibleSection>
               </div>
 

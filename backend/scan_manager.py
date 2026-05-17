@@ -98,13 +98,10 @@ class ScanRequest(BaseModel):
     ori_path: str = Field(..., min_length=1, max_length=500)
     project_name: Optional[str] = Field(default="Scanner", max_length=100)
     extra_paths: List[str] = Field(default_factory=list, max_items=10)
-    ai_model: Optional[str] = Field(default="FormaturaPRO - High Quality", max_length=100)
     face_detection_enabled: Optional[bool] = Field(default=True)
-    min_quality: Optional[int] = Field(default=70, ge=0, le=100)
-    blur_treatment: Optional[str] = Field(default="Médio", max_length=50)
     selected_folders: Optional[List[str]] = Field(default_factory=list)
 
-    @validator('ref_path', 'ori_path', 'project_name', 'ai_model', 'blur_treatment', pre=True)
+    @validator('ref_path', 'ori_path', 'project_name', pre=True)
     def handle_none(cls, v):
         return v or ""
 
