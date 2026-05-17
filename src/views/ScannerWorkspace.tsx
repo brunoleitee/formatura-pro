@@ -297,8 +297,11 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
   const handleAddEventFolder = async () => {
     const res = await api.selectFolder().catch(() => null);
-    if (res?.path && !eventFolders.includes(res.path)) {
-      setEventFolders(prev => [...prev, res.path]);
+    if (res?.path) {
+      setEventPath(res.path);
+      if (!eventFolders.includes(res.path)) {
+        setEventFolders(prev => [...prev, res.path]);
+      }
       try {
         const tree = await api.exploreTree(res.path, 3);
         const allSub: string[] = [];
@@ -841,7 +844,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     <input 
                       className={styles.darkInput} 
                       placeholder="Nenhuma pasta selecionada"
-                      value={eventFolders.length > 0 ? eventFolders[eventFolders.length - 1] : ''}
+                      value={eventPath}
                       readOnly
                     />
                     <button className={styles.actionBtn} onClick={handleAddEventFolder}>
@@ -849,7 +852,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     </button>
                   </div>
                   <p className={styles.fieldDescription}>
-                    Pasta principal do evento. Selecione para gerenciar as subpastas incluídas.
+                    Pasta principal do evento que será escaneada.
                   </p>
 
                   {eventPhotosCountStatus === 'loading' && (
