@@ -1724,20 +1724,43 @@ def get_export_history():
 def gpu_diagnostics():
     return sm.gpu_diagnostics()
 
+def _get_cpu_temperature():
+    if psutil:
+        try:
+            temps = psutil.sensors_temperatures()
+            for key in ("coretemp", "cpu_thermal", "k10temp", "zenpower"):
+                if key in temps and temps[key]:
+                    return round(temps[key][0].current, 0)
+        except Exception:
+            pass
+    if sys.platform == "win32":
+        try:
+            out = subprocess.run(
+                ["wmic", "/namespace:\\\\root\\wmi", "PATH", "MSAcpi_ThermalZoneTemperature", "get", "CurrentTemperature"],
+                capture_output=True, text=True, timeout=3
+            )
+            if out.returncode == 0:
+                for line in out.stdout.strip().splitlines():
+                    line = line.strip()
+                    if line and line.isdigit():
+                        return round((int(line) / 10.0 - 273.15), 0)
+        except Exception:
+            pass
+    return None
+
 @app.get("/api/system/metrics")
 def system_metrics():
     cpu_percent = None
     ram_used_gb = None
-    ram_percent = None
     gpu_percent = None
     temperature_c = None
+    cpu_temperature_c = None
 
     if psutil:
         try:
             cpu_percent = round(psutil.cpu_percent(interval=0.1), 1)
             memory = psutil.virtual_memory()
             ram_used_gb = round(memory.used / (1024 ** 3), 1)
-            ram_percent = round(memory.percent, 1)
         except Exception as e:
             print(f"[Metrics] psutil error: {repr(e)}", flush=True)
 
@@ -1754,14 +1777,16 @@ def system_metrics():
     except Exception as e:
         print(f"[Metrics] nvidia-smi error: {repr(e)}", flush=True)
 
-    print(f"[Metrics] cpu:{cpu_percent} ram:{ram_used_gb} ram%:{ram_percent} gpu:{gpu_percent} temp:{temperature_c}", flush=True)
+    cpu_temperature_c = _get_cpu_temperature()
+
+    print(f"[Metrics] cpu:{cpu_percent} ram:{ram_used_gb} gpu:{gpu_percent} gpuTemp:{temperature_c} cpuTemp:{cpu_temperature_c}", flush=True)
 
     return {
         "cpuPercent": cpu_percent,
         "ramUsedGb": ram_used_gb,
-        "ramPercent": ram_percent,
         "gpuPercent": gpu_percent,
         "temperatureC": temperature_c,
+        "cpuTemperatureC": cpu_temperature_c,
     }
 
 @app.get("/api/system/status")
