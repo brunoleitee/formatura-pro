@@ -1173,10 +1173,30 @@ class RemoveCatalogFolderReq(BaseModel):
 
 import re
 
-ROOT_PATH_RE = re.compile(r'^[a-zA-Z]:\\?$|^/$|^\\\\[^\\]+\\[^\\]+$')
+_SYSTEM_DIRS = {
+    "C:", "D:", "E:", "F:", "C:\\", "D:\\", "E:\\", "F:\\",
+    "Users", "Desktop", "Documents", "Downloads", "Pictures", "Music", "Videos",
+    "Windows", "Program Files", "Program Files (x86)", "ProgramData",
+    "AppData", "Local", "Roaming", "LocalLow", "System32", "SysWOW64",
+    "public", "Public", "PerfLogs", "Recovery",
+    "bin", "etc", "usr", "var", "opt", "tmp", "home", "root", "lib", "sbin",
+}
 
-def _is_root_path(p: str) -> bool:
-    return bool(ROOT_PATH_RE.match(p.strip()))
+def _is_junk_path(p: str) -> bool:
+    """True if p is a root drive, system dir, or user home dir."""
+    if not p or len(p) < 2:
+        return True
+    norm = p.strip().rstrip("\\/").lower()
+    parts = norm.replace("\\", "/").split("/")
+    for part in parts:
+        if part in _SYSTEM_DIRS or part in (s.lower() for s in _SYSTEM_DIRS):
+            return True
+        # Rejeita nomes muito curtos de diretório de usuário tipo "C:"
+        if part == norm and re.match(r'^[a-z]:$', part):
+            return True
+        if part == norm and re.match(r'^[a-z]:\\?$', part):
+            return True
+    return False
 
 @app.get("/api/catalogs/folders")
 def list_catalog_folders(catalog: str = ""):
@@ -1184,11 +1204,11 @@ def list_catalog_folders(catalog: str = ""):
         with get_db(catalog) as conn:
             cur = conn.cursor()
 
-            # ── 1. Cleanup: remove root paths do banco ──
+            # ── 1. Cleanup: remove junk paths do banco ──
             cur.execute("SELECT id, path FROM catalog_folders WHERE catalog_name = ?", (catalog,))
             for r in cur.fetchall():
-                if _is_root_path(r["path"]):
-                    print(f"[CatalogSettings] rejected root path = {r['path']}", flush=True)
+                if _is_junk_path(r["path"]):
+                    print(f"[CatalogSettings] rejected junk path = {r['path']}", flush=True)
                     cur.execute("DELETE FROM catalog_folders WHERE id = ?", (r["id"],))
             conn.commit()
 
@@ -1204,8 +1224,8 @@ def list_catalog_folders(catalog: str = ""):
             if rows:
                 result = []
                 for r in rows:
-                    if _is_root_path(r["path"]):
-                        print(f"[CatalogSettings] rejected root path = {r['path']}", flush=True)
+                    if _is_junk_path(r["path"]):
+                        print(f"[CatalogSettings] rejected junk path = {r['path']}", flush=True)
                         cur.execute("DELETE FROM catalog_folders WHERE id = ?", (r["id"],))
                         continue
                     result.append({
@@ -1222,7 +1242,8 @@ def list_catalog_folders(catalog: str = ""):
                 print(f"[CatalogSettings] final folders={[f['path'] for f in result]}", flush=True)
                 return result
 
-            # ── 3. Fallback: extrair diretórios das ocorrências e face_embeddings ──
+            # ── 3. Fallback: extrair diretórios IMEDIATOS das fotos ──
+            # Sempre usar os.path.dirname(foto_path) — NUNCA subir na árvore
             all_paths = set()
             for table in ("ocorrencias", "face_embeddings"):
                 try:
@@ -1236,39 +1257,20 @@ def list_catalog_folders(catalog: str = ""):
             raw_dirs = set()
             for fp in all_paths:
                 d = os.path.dirname(fp)
-                while d and d not in raw_dirs:
-                    if _is_root_path(d):
-                        print(f"[CatalogSettings] rejected root path = {d}", flush=True)
-                        break
+                if d and d not in raw_dirs and not _is_junk_path(d):
                     raw_dirs.add(d)
-                    parent = os.path.dirname(d)
-                    if parent == d:
-                        break
-                    d = parent
 
-            # ── 4. Agrupamento inteligente ──
-            sorted_dirs = sorted(raw_dirs, key=lambda x: len(x))
-            root_dirs = []
-            for d in sorted_dirs:
-                is_sub = any(
-                    other != d and d.startswith(other if other.endswith(os.sep) else other + os.sep)
-                    for other in root_dirs
-                )
-                if not is_sub:
-                    root_dirs.append(d)
-
-            # ── 5. Contar fotos por pasta raiz ──
+            # ── 4. Contar fotos por pasta ──
             folder_photo_counts = {}
             for fp in all_paths:
-                for root in root_dirs:
-                    if fp.startswith(root + os.sep) or fp == root:
-                        folder_photo_counts[root] = folder_photo_counts.get(root, 0) + 1
-                        break
+                parent = os.path.dirname(fp)
+                if parent in raw_dirs:
+                    folder_photo_counts[parent] = folder_photo_counts.get(parent, 0) + 1
 
-            print(f"[CatalogSettings] fallback dirs={len(raw_dirs)} roots={len(root_dirs)} photos={len(all_paths)}", flush=True)
+            print(f"[CatalogSettings] fallback immediate_dirs={len(raw_dirs)} photos={len(all_paths)}", flush=True)
 
-            # ── 6. Migrar para catalog_folders ──
-            for d in root_dirs:
+            # ── 5. Migrar para catalog_folders ──
+            for d in raw_dirs:
                 count = folder_photo_counts.get(d, 0)
                 cur.execute("""
                     INSERT OR IGNORE INTO catalog_folders (catalog_name, path, include_subfolders, photo_count)
@@ -1276,7 +1278,7 @@ def list_catalog_folders(catalog: str = ""):
                 """, (catalog, d, count))
             conn.commit()
 
-            # ── 7. Recarregar ──
+            # ── 6. Recarregar ──
             cur.execute("""
                 SELECT id, catalog_name, path, include_subfolders, photo_count, last_scan_at, status, created_at
                 FROM catalog_folders
@@ -1285,8 +1287,8 @@ def list_catalog_folders(catalog: str = ""):
             """, (catalog,))
             result = []
             for r in cur.fetchall():
-                if _is_root_path(r["path"]):
-                    print(f"[CatalogSettings] rejected root path = {r['path']}", flush=True)
+                if _is_junk_path(r["path"]):
+                    print(f"[CatalogSettings] rejected junk path = {r['path']}", flush=True)
                     cur.execute("DELETE FROM catalog_folders WHERE id = ?", (r["id"],))
                     continue
                 result.append({
