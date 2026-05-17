@@ -10,6 +10,7 @@ export type ViewName =
   | 'export'
   | 'settings'
   | 'cloud-sync'
+  | 'catalog-settings'
   ;
 
 interface AppContextValue {

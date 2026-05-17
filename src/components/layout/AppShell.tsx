@@ -13,6 +13,7 @@ import PersonDetailView from '../../views/PersonDetailView';
 import ReviewView from '../../views/ReviewView';
 import ExportView from '../../views/ExportView';
 import SettingsView from '../../views/SettingsView';
+import CatalogSettingsView from '../../views/CatalogSettingsView';
 import { Sidebar } from './Sidebar';
 import { logPerf, perfNow } from '../../utils/perf';
 import { lazy, Suspense } from 'react';
@@ -397,6 +398,7 @@ function autoCatalogName(): string {
       case 'settings':      return <SettingsView />;
       case 'cloud-sync':     return <Suspense fallback={<div style={{padding:40,color:'#9ca3af'}}>Carregando...</div>}><CloudSyncView /></Suspense>;
       case 'scanner':        return <ScannerWorkspace />;
+      case 'catalog-settings': return <CatalogSettingsView />;
       default:              return <CatalogView />;
     }
   };

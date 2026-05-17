@@ -240,6 +240,16 @@ const toolItems: { view: ViewName; icon: React.ReactNode; label: string }[] = [
                       )}
                     </div>
                   )}
+
+                  {/* Separador + Configurações do Catálogo */}
+                  <div
+                    className={`${ftStyles.item} ${activeView === 'catalog-settings' ? ftStyles.active : ''}`}
+                    onClick={() => { setCatalogSubfolder(null); navigate('catalog-settings'); }}
+                    style={{ marginTop: 4, borderTop: '1px solid #1a1c23', paddingTop: 6 }}
+                  >
+                    <Settings size={12} className={ftStyles.folderIcon} />
+                    <span className={ftStyles.itemLabel}>Configurações</span>
+                  </div>
                 </div>
               )}
             </div>
