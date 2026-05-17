@@ -1724,6 +1724,28 @@ def get_export_history():
 def gpu_diagnostics():
     return sm.gpu_diagnostics()
 
+def _get_temperature_c():
+    try:
+        if sys.platform == "win32":
+            out = subprocess.run(
+                ["wmic", "/namespace:\\\\root\\wmi", "PATH", "MsAcpi_ThermalZoneTemperature", "get", "CurrentTemperature"],
+                capture_output=True, text=True, timeout=3
+            )
+            if out.returncode == 0:
+                for line in out.stdout.strip().splitlines():
+                    line = line.strip()
+                    if line and line.isdigit():
+                        return round((int(line) / 10.0 - 273.15), 0)
+        else:
+            if psutil:
+                temps = psutil.sensors_temperatures()
+                for key in ("coretemp", "cpu_thermal", "k10temp"):
+                    if key in temps and temps[key]:
+                        return round(temps[key][0].current, 0)
+    except Exception:
+        pass
+    return None
+
 @app.get("/api/system/metrics")
 def system_metrics():
     result = {
@@ -1739,14 +1761,6 @@ def system_metrics():
             mem = psutil.virtual_memory()
             result["ramUsedGb"] = round(mem.used / (1024 ** 3), 1)
             result["ramPercent"] = round(mem.percent, 1)
-            try:
-                temps = psutil.sensors_temperatures()
-                for key in ("coretemp", "cpu_thermal", "k10temp"):
-                    if key in temps and temps[key]:
-                        result["temperatureC"] = round(temps[key][0].current, 0)
-                        break
-            except Exception:
-                pass
     except Exception:
         pass
 
@@ -1762,6 +1776,8 @@ def system_metrics():
                 result["temperatureC"] = round(float(parts[1]), 0)
     except Exception:
         pass
+
+    result["temperatureC"] = result["temperatureC"] or _get_temperature_c()
 
     return result
 

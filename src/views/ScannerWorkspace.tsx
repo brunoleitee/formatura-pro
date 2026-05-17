@@ -367,18 +367,13 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           if (st.current_photo?.path) {
             const photoPath = st.current_photo.path;
             
-            // Atualizar processedPhotos (carrossel recente)
             setProcessedPhotos(prev =>
               prev.includes(photoPath) ? prev : [photoPath, ...prev].slice(0, 100)
             );
 
-            // Forçar visualização live se estiver em grid ou modo específico
-            // mas sem resetar zoom se o usuário estiver navegando manualmente
             if (activePhotoIndex === 0 || !selectedPhotoPath) {
               setActivePhotoIndex(0);
             }
-
-            // Atualizar faces em tempo real (dados vao para recent_faces via scan status)
           }
 
           if (Math.random() > 0.8 && st.current_photo?.name) {
@@ -411,16 +406,29 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     };
     poll();
     pollRef.current = setInterval(poll, 1000);
+  }, [processedPhotos]);
 
+  // Metrics polling: independente do scan, roda sempre que o componente está montado
+  useEffect(() => {
     const pollMetrics = async () => {
       try {
         const m = await api.getSystemMetrics();
         setSystemMetrics(m);
-      } catch { /* ignore */ }
+      } catch (err) {
+        setTimeline(prev => [...prev.slice(-49), {
+          id: `metrics-err-${Date.now()}`,
+          kind: 'error',
+          text: `Erro ao buscar métricas: ${err instanceof Error ? err.message : 'desconhecido'}`,
+          timestamp: Date.now()
+        }]);
+      }
     };
     pollMetrics();
-    metricsPollRef.current = setInterval(pollMetrics, 2000);
-  }, [processedPhotos]);
+    metricsPollRef.current = setInterval(pollMetrics, 3000);
+    return () => {
+      if (metricsPollRef.current) clearInterval(metricsPollRef.current);
+    };
+  }, []);
 
   // Carregar fotos da pasta selecionada
   useEffect(() => {
