@@ -1752,6 +1752,7 @@ def _get_cpu_temperature():
 def system_metrics():
     cpu_percent = None
     ram_used_gb = None
+    ram_percent = None
     gpu_percent = None
     temperature_c = None
     cpu_temperature_c = None
@@ -1761,6 +1762,7 @@ def system_metrics():
             cpu_percent = round(psutil.cpu_percent(interval=0.1), 1)
             memory = psutil.virtual_memory()
             ram_used_gb = round(memory.used / (1024 ** 3), 1)
+            ram_percent = round(memory.percent, 1)
         except Exception as e:
             print(f"[Metrics] psutil error: {repr(e)}", flush=True)
 
@@ -1779,11 +1781,12 @@ def system_metrics():
 
     cpu_temperature_c = _get_cpu_temperature()
 
-    print(f"[Metrics] cpu:{cpu_percent} ram:{ram_used_gb} gpu:{gpu_percent} gpuTemp:{temperature_c} cpuTemp:{cpu_temperature_c}", flush=True)
+    print(f"[Metrics] cpu:{cpu_percent} ram:{ram_used_gb} ram%:{ram_percent} gpu:{gpu_percent} gpuTemp:{temperature_c} cpuTemp:{cpu_temperature_c}", flush=True)
 
     return {
         "cpuPercent": cpu_percent,
         "ramUsedGb": ram_used_gb,
+        "ramPercent": ram_percent,
         "gpuPercent": gpu_percent,
         "temperatureC": temperature_c,
         "cpuTemperatureC": cpu_temperature_c,

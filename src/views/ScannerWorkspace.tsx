@@ -97,7 +97,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const startedAtRef = useRef<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const filmstripRef = useRef<HTMLDivElement | null>(null);
-  const [systemMetrics, setSystemMetrics] = useState<{ cpuPercent: number | null; ramUsedGb: number | null; gpuPercent: number | null; temperatureC: number | null; cpuTemperatureC: number | null } | null>(null);
+  const [systemMetrics, setSystemMetrics] = useState<{ cpuPercent: number | null; ramUsedGb: number | null; ramPercent: number | null; gpuPercent: number | null; temperatureC: number | null; cpuTemperatureC: number | null } | null>(null);
   const [processedPhotos, setProcessedPhotos] = useState<string[]>([]);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
 
@@ -1428,8 +1428,18 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
               <span className={styles.metricValue}>{systemMetrics?.ramUsedGb != null ? `${systemMetrics.ramUsedGb.toFixed(1)}GB` : '--'}</span>
             </div>
             <div className={styles.metricItem}>
+              <HardDrive size={12} className={styles.metricIcon} />
+              <span className={styles.metricLabel}>RAM%</span>
+              <span className={styles.metricValue}>{systemMetrics?.ramPercent != null ? `${systemMetrics.ramPercent}%` : '--'}</span>
+            </div>
+            <div className={styles.metricItem}>
               <Zap size={12} className={styles.metricIcon} />
-              <span className={styles.metricLabel}>CPU Temp</span>
+              <span className={styles.metricLabel}>Temp GPU</span>
+              <span className={styles.metricValue}>{systemMetrics?.temperatureC != null ? `${systemMetrics.temperatureC}°C` : '--'}</span>
+            </div>
+            <div className={styles.metricItem}>
+              <Zap size={12} className={styles.metricIcon} />
+              <span className={styles.metricLabel}>Temp CPU</span>
               <span className={styles.metricValue}>{systemMetrics?.cpuTemperatureC != null ? `${systemMetrics.cpuTemperatureC}°C` : '--'}</span>
             </div>
           </div>

@@ -86,6 +86,7 @@ export interface ScanSummary {
 export interface SystemMetrics {
   cpuPercent: number | null;
   ramUsedGb: number | null;
+  ramPercent: number | null;
   gpuPercent: number | null;
   temperatureC: number | null;
   cpuTemperatureC: number | null;
