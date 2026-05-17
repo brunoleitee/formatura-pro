@@ -1724,41 +1724,80 @@ def get_export_history():
 def gpu_diagnostics():
     return sm.gpu_diagnostics()
 
-@app.get("/api/system/metrics")
-def system_metrics():
-    result = {
-        "cpuPercent": None,
-        "ramUsedGb": None,
-        "ramPercent": None,
-        "gpuPercent": None,
-        "temperatureC": None,
-    }
-
-    # CPU
+def _get_cpu_percent():
     if psutil:
         try:
-            result["cpuPercent"] = round(psutil.cpu_percent(interval=0.2), 1)
-            mem = psutil.virtual_memory()
-            result["ramUsedGb"] = round(mem.used / (1024 ** 3), 1)
-            result["ramPercent"] = round(mem.percent, 1)
+            return round(psutil.cpu_percent(interval=0.2), 1)
         except Exception:
-            print("[Metrics] psutil error", flush=True)
+            pass
+    if sys.platform == "win32":
+        try:
+            out = subprocess.run(
+                ["wmic", "cpu", "get", "loadpercentage"],
+                capture_output=True, text=True, timeout=3
+            )
+            for line in out.stdout.strip().splitlines():
+                line = line.strip()
+                if line and line.isdigit():
+                    return round(float(line), 1)
+        except Exception:
+            pass
+    return None
 
-    # GPU
+def _get_ram():
+    if psutil:
+        try:
+            mem = psutil.virtual_memory()
+            return round(mem.used / (1024 ** 3), 1), round(mem.percent, 1)
+        except Exception:
+            pass
+    if sys.platform == "win32":
+        try:
+            out = subprocess.run(
+                ["wmic", "OS", "get", "TotalVisibleMemorySize,FreePhysicalMemory"],
+                capture_output=True, text=True, timeout=3
+            )
+            lines = [l.strip() for l in out.stdout.strip().splitlines() if l.strip()]
+            if len(lines) >= 2:
+                parts = lines[1].split()
+                if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+                    total_kb = int(parts[0])
+                    free_kb = int(parts[1])
+                    used_kb = total_kb - free_kb
+                    used_gb = round(used_kb / (1024 * 1024), 1)
+                    percent = round(used_kb / total_kb * 100, 1)
+                    return used_gb, percent
+        except Exception:
+            pass
+    return None, None
+
+def _get_gpu():
     try:
-        nvidia_out = subprocess.run(
+        out = subprocess.run(
             ["nvidia-smi", "--query-gpu=utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
             capture_output=True, text=True, timeout=3
         )
-        if nvidia_out.returncode == 0:
-            parts = nvidia_out.stdout.strip().split(", ")
+        if out.returncode == 0:
+            parts = out.stdout.strip().split(", ")
             if len(parts) == 2:
-                result["gpuPercent"] = round(float(parts[0]), 0)
-                result["temperatureC"] = round(float(parts[1]), 0)
+                return round(float(parts[0]), 0), round(float(parts[1]), 0)
     except Exception:
-        print("[Metrics] nvidia-smi error", flush=True)
+        pass
+    return None, None
 
-    return result
+@app.get("/api/system/metrics")
+def system_metrics():
+    cpu = _get_cpu_percent()
+    ram_gb, ram_pct = _get_ram()
+    gpu_pct, temp_c = _get_gpu()
+
+    return {
+        "cpuPercent": cpu,
+        "ramUsedGb": ram_gb,
+        "ramPercent": ram_pct,
+        "gpuPercent": gpu_pct,
+        "temperatureC": temp_c,
+    }
 
 @app.get("/api/system/status")
 def system_status():

@@ -555,7 +555,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     setStarting(false);
     setPolling(false);
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-    if (metricsPollRef.current) { clearInterval(metricsPollRef.current); metricsPollRef.current = null; }
     setTimeline(prev => [...prev, {
       id: `stop-${Date.now()}`,
       kind: 'warning',

@@ -16,3 +16,4 @@ huggingface_hub==0.27.1
 reportlab>=4.0.0
 google-auth-oauthlib>=1.4.0
 google-api-python-client>=2.196.0
+psutil>=6.0.0
