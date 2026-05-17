@@ -1437,7 +1437,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
               <span className={styles.metricLabel}>Temp GPU</span>
               <span className={styles.metricValue}>{systemMetrics?.temperatureC != null ? `${systemMetrics.temperatureC}°C` : '--'}</span>
             </div>
-            <div className={styles.metricItem}>
+            <div className={styles.metricItem} title={systemMetrics?.cpuTemperatureC == null ? 'Temperatura da CPU indisponível neste sistema' : ''}>
               <Zap size={12} className={styles.metricIcon} />
               <span className={styles.metricLabel}>Temp CPU</span>
               <span className={styles.metricValue}>{systemMetrics?.cpuTemperatureC != null ? `${systemMetrics.cpuTemperatureC}°C` : '--'}</span>
