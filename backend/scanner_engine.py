@@ -426,6 +426,7 @@ def ensure_face_engine():
         _cfg["face_engine_provider"] = face_engine_provider
         _cfg["face_engine_label"] = face_engine_label
         _cfg["face_engine_gpu_error"] = face_engine_gpu_error
+        _cfg["log_info"](f"[Face] model loaded device={face_engine_device} provider={face_engine_provider} label={face_engine_label}")
 
 
 def load_references(ref_path):
@@ -636,11 +637,13 @@ def run_scanner_worker(req):
     face_engine_gpu_error = _cfg["face_engine_gpu_error"]
 
     log_info("[Scanner] Start")
+    log_info(f"[Scanner] faceDetectionEnabled={req.face_detection_enabled}")
     log_info(f"[SCAN] Worker iniciado: project={req.project_name}")
     scan_state["is_scanning"] = True
     scan_state["status_text"] = "Inicializando..."
     scan_state["progress"] = 0.0
     scan_state["total_processadas"] = 0
+    scan_state["total_faces"] = 0
     scan_state["total_matches"] = 0
     scan_state["total_clusters"] = 0
     scan_state["total_files"] = 0
@@ -788,170 +791,190 @@ def run_scanner_worker(req):
                         scan_state["status_text"] = "Scanner interrompido"
                         break
 
-                        for face in faces:
-                            if not hasattr(face, "embedding") or face.embedding is None:
-                                continue
-                            x1, y1, x2, y2 = map(int, face.bbox)
-                            area = face_box_area(x1, y1, x2, y2)
-                            if area < _cfg["min_face_area"]:
-                                continue
-                            valid_faces.append((face, x1, y1, x2, y2, area))
+                    total_faces_in_photo = len(faces)
+                    img_h, img_w = img.shape[:2] if img is not None else (0, 0)
+                    log_info(
+                        f"[Face] faceDetectionEnabled=True "
+                        f"faces_encontradas={total_faces_in_photo} "
+                        f"image_size={img_w}x{img_h} "
+                        f"path={os.path.basename(p)}"
+                    )
 
-                        # Calcular blur uma vez por foto
-                        t0_photo = time.time()
+                    for face in faces:
+                        if not hasattr(face, "embedding") or face.embedding is None:
+                            continue
+                        x1, y1, x2, y2 = map(int, face.bbox)
+                        area = face_box_area(x1, y1, x2, y2)
+                        if area < _cfg["min_face_area"]:
+                            continue
+                        valid_faces.append((face, x1, y1, x2, y2, area))
+
+                    # Calcular blur uma vez por foto
+                    t0_photo = time.time()
+                    
+                    # 1. Decode/Read
+                    t0_decode = time.time()
+                    if img is None:
+                        img = imread_unicode(p)
+                    t_decode = (time.time() - t0_decode) * 1000
+
+                    # 2. Blur
+                    t0_blur = time.time()
+                    blur_info = _cfg["get_blur_info"](p, img) if _cfg.get("get_blur_info") else {}
+                    b_score = blur_info.get("blur_score")
+                    b_status = blur_info.get("blur_status")
+                    t_blur = (time.time() - t0_blur) * 1000
+
+                    t_face = 0
+
+                    if not valid_faces:
+                        log_info(f"[Face] Nenhum rosto valido em {os.path.basename(p)} (total_detectado={total_faces_in_photo})")
+                        log_info(f"[DB] inserindo foto sem rosto path={p}")
+                        # Inserir entrada dummy para rastrear a foto mesmo sem faces
+                        cur.execute(
+                            "INSERT OR IGNORE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            ("Sem Rostos", p, None, None, None, None, photo_hash, b_score, b_status),
+                        )
+                        rowcount = cur.rowcount
+                        if p not in existing_photo_paths:
+                            inserted_photo_paths.add(p)
+                            existing_photo_paths.add(p)
+                            log_info(f"[DB] inserida path={p} rowcount={rowcount}")
+                        else:
+                            log_info(f"[DB] ignorada (ja existe) path={p}")
+                    else:
+                        largest_face_area = max((face_data[5] for face_data in valid_faces), default=0)
                         
-                        # 1. Decode/Read
-                        t0_decode = time.time()
-                        if img is None:
-                            img = imread_unicode(p)
-                        t_decode = (time.time() - t0_decode) * 1000
-
-                        # 2. Blur
-                        t0_blur = time.time()
-                        blur_info = _cfg["get_blur_info"](p, img) if _cfg.get("get_blur_info") else {}
-                        b_score = blur_info.get("blur_score")
-                        b_status = blur_info.get("blur_status")
-                        t_blur = (time.time() - t0_blur) * 1000
-
-                        t_face = 0
-
-                        if not valid_faces:
-                            # Inserir entrada dummy para rastrear a foto mesmo sem faces
-                            cur.execute(
-                                "INSERT OR IGNORE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                ("Sem Rostos", p, None, None, None, None, photo_hash, b_score, b_status),
+                        # Calcula score de foreground para todas as faces
+                        scored_faces = []
+                        for face, x1, y1, x2, y2, area in valid_faces:
+                            fg_score, is_fg, f_ratio, c_score, bg_reason = calc_foreground_score(
+                                x1, y1, x2, y2, area, img.shape, face, b_score
                             )
+                            scored_faces.append({
+                                "face": face, "x1": x1, "y1": y1, "x2": x2, "y2": y2, "area": area,
+                                "fg_score": fg_score, "is_fg": is_fg, "f_ratio": f_ratio,
+                                "c_score": c_score, "bg_reason": bg_reason
+                            })
+                            
+                        # Ordena por score para pegar os 3 melhores
+                        scored_faces.sort(key=lambda x: x["fg_score"], reverse=True)
+                        
+                        # Limita para no maximo 3 como foreground
+                        fg_count = 0
+                        for sf in scored_faces:
+                            if sf["is_fg"] == 1:
+                                if fg_count < 3:
+                                    fg_count += 1
+                                else:
+                                    sf["is_fg"] = 0
+                                    sf["bg_reason"] = "Muitas pessoas na foto (4+)"
+                        
+                        log_info(f"[Face] faces_validas={len(valid_faces)} foreground={fg_count} foto={os.path.basename(p)}")
+
+                        for sf in scored_faces:
+                            face, x1, y1, x2, y2, area = sf["face"], sf["x1"], sf["y1"], sf["x2"], sf["y2"], sf["area"]
+                            fg_score, is_fg, f_ratio, c_score, bg_reason = sf["fg_score"], sf["is_fg"], sf["f_ratio"], sf["c_score"], sf["bg_reason"]
+                            
+                            log_debug(f"[foreground-face] area={f_ratio:.3f} center={c_score:.2f} score={fg_score:.2f} foreground={is_fg} reason={bg_reason}")
+
+                            # Apenas continua se decidimos pular a face baseada no is_background_face original (opcional, vamos manter para não estragar compatibilidade)
+                            if is_background_face(x1, y1, x2, y2, largest_face_area, img.shape, len(valid_faces)):
+                                scan_state["skipped_background_faces"] += 1
+                                continue
+                                
+                            total_faces_found += 1
+                            emb = face.embedding.astype("float32")
+                            norm = np.linalg.norm(emb)
+                            if norm == 0:
+                                continue
+                            emb = emb / norm
+                            ref_name, ref_sim = find_best_reference(emb)
+                            if ref_name is not None and ref_sim >= _cfg["ref_match_threshold"]:
+                                nome = ref_name
+                                scan_state["total_matches"] += 1
+                            else:
+                                nome = find_or_create_cluster(emb)
+                                scan_state["total_clusters"] = len(_cfg["cluster_names"])
+                            
+                            t_face = (time.time() - t0_face) * 1000
+
+                            log_info(f"[DB] inserindo face path={p} aluno={nome}")
+                            cur.execute(
+                                """
+                                INSERT OR IGNORE INTO ocorrencias 
+                                (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status, 
+                                 foreground_score, is_foreground, face_area_ratio, center_score, background_penalty_reason) 
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                (nome, p, x1, y1, x2, y2, photo_hash, b_score, b_status,
+                                 fg_score, is_fg, f_ratio, c_score, bg_reason),
+                            )
+                            rowcount = cur.rowcount
                             if p not in existing_photo_paths:
                                 inserted_photo_paths.add(p)
                                 existing_photo_paths.add(p)
-                        else:
-                            largest_face_area = max((face_data[5] for face_data in valid_faces), default=0)
+                                log_info(f"[DB] inserida path={p} aluno={nome} rowcount={rowcount}")
+                            else:
+                                log_info(f"[DB] ignorada (ja existe) path={p} aluno={nome}")
+                            detected_class = get_reference_class_name(nome)
+                            print(f"[db-save] aluno={nome} class_name={detected_class}")
+                            cur.execute(
+                                """
+                                INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path, class_name)
+                                VALUES (?, ?, ?)
+                                """,
+                                (nome, "n/a", detected_class),
+                            )
                             
-                            # Calcula score de foreground para todas as faces
-                            scored_faces = []
-                            for face, x1, y1, x2, y2, area in valid_faces:
-                                fg_score, is_fg, f_ratio, c_score, bg_reason = calc_foreground_score(
-                                    x1, y1, x2, y2, area, img.shape, face, b_score
-                                )
-                                scored_faces.append({
-                                    "face": face, "x1": x1, "y1": y1, "x2": x2, "y2": y2, "area": area,
-                                    "fg_score": fg_score, "is_fg": is_fg, "f_ratio": f_ratio,
-                                    "c_score": c_score, "bg_reason": bg_reason
-                                })
-                                
-                            # Ordena por score para pegar os 3 melhores
-                            scored_faces.sort(key=lambda x: x["fg_score"], reverse=True)
-                            
-                            # Limita para no maximo 3 como foreground
-                            fg_count = 0
-                            for sf in scored_faces:
-                                if sf["is_fg"] == 1:
-                                    if fg_count < 3:
-                                        fg_count += 1
-                                    else:
-                                        sf["is_fg"] = 0
-                                        sf["bg_reason"] = "Muitas pessoas na foto (4+)"
-                            
-                            log_debug(f"[foreground] foto={os.path.basename(p)} faces={len(scored_faces)} principais={fg_count} ignoradas_bg={len(scored_faces)-fg_count}")
+                            current_time = time.time()
+                            if current_time - last_face_update_time > 0.5:
+                                new_face = {"name": nome, "path": p, "box": [x1, y1, x2, y2]}
+                                scan_state["recent_faces"].insert(0, new_face)
+                                scan_state["recent_faces"] = scan_state["recent_faces"][:20]
+                                last_face_update_time = current_time
 
-                            for sf in scored_faces:
-                                face, x1, y1, x2, y2, area = sf["face"], sf["x1"], sf["y1"], sf["x2"], sf["y2"], sf["area"]
-                                fg_score, is_fg, f_ratio, c_score, bg_reason = sf["fg_score"], sf["is_fg"], sf["f_ratio"], sf["c_score"], sf["bg_reason"]
-                                
-                                log_debug(f"[foreground-face] area={f_ratio:.3f} center={c_score:.2f} score={fg_score:.2f} foreground={is_fg} reason={bg_reason}")
+                    # Log Benchmark
+                    total_ms = (time.time() - t0_photo) * 1000
+                    log_info(
+                        f"[BENCHMARK] {os.path.basename(p)}: "
+                        f"total={total_ms:.0f}ms | "
+                        f"decode={t_decode:.0f}ms | "
+                        f"blur={t_blur:.0f}ms | "
+                        f"face={t_face:.0f}ms"
+                    )
 
-                                # Apenas continua se decidimos pular a face baseada no is_background_face original (opcional, vamos manter para não estragar compatibilidade)
-                                if is_background_face(x1, y1, x2, y2, largest_face_area, img.shape, len(valid_faces)):
-                                    scan_state["skipped_background_faces"] += 1
-                                    continue
-                                    
-                                total_faces_found += 1
-                                emb = face.embedding.astype("float32")
-                                norm = np.linalg.norm(emb)
-                                if norm == 0:
-                                    continue
-                                emb = emb / norm
-                                ref_name, ref_sim = find_best_reference(emb)
-                                if ref_name is not None and ref_sim >= _cfg["ref_match_threshold"]:
-                                    nome = ref_name
-                                    scan_state["total_matches"] += 1
-                                else:
-                                    nome = find_or_create_cluster(emb)
-                                    scan_state["total_clusters"] = len(_cfg["cluster_names"])
-                                
-                                t_face = (time.time() - t0_face) * 1000
+                    # Atualizar current_photo com dados reais para o carrossel live
+                    scan_state["current_photo"] = {
+                        "path": p,
+                        "name": os.path.basename(p),
+                        "faces": [{"bbox": [f[1], f[2], f[3], f[4]], "confidence": 0.95} for f in valid_faces],
+                        "timestamp": time.time()
+                    }
 
-                                cur.execute(
-                                    """
-                                    INSERT OR IGNORE INTO ocorrencias 
-                                    (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status, 
-                                     foreground_score, is_foreground, face_area_ratio, center_score, background_penalty_reason) 
-                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                    """,
-                                    (nome, p, x1, y1, x2, y2, photo_hash, b_score, b_status,
-                                     fg_score, is_fg, f_ratio, c_score, bg_reason),
-                                )
-                                if p not in existing_photo_paths:
-                                    inserted_photo_paths.add(p)
-                                    existing_photo_paths.add(p)
-                                detected_class = get_reference_class_name(nome)
-                                print(f"[db-save] aluno={nome} class_name={detected_class}")
-                                cur.execute(
-                                    """
-                                    INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path, class_name)
-                                    VALUES (?, ?, ?)
-                                    """,
-                                    (nome, "n/a", detected_class),
-                                )
-                                
-                                current_time = time.time()
-                                if current_time - last_face_update_time > 0.5:
-                                    new_face = {"name": nome, "path": p, "box": [x1, y1, x2, y2]}
-                                    scan_state["recent_faces"].insert(0, new_face)
-                                    scan_state["recent_faces"] = scan_state["recent_faces"][:20]
-                                    last_face_update_time = current_time
+                    # Calcular tempo deste arquivo para o histórico de ETA
+                    photo_duration = time.time() - t0_photo
+                    history = scan_state.get("processing_history", [])
+                    history.append(photo_duration)
+                    if len(history) > 20: history.pop(0)
+                    scan_state["processing_history"] = history
 
-                        # Log Benchmark
-                        total_ms = (time.time() - t0_photo) * 1000
-                        log_info(
-                            f"[BENCHMARK] {os.path.basename(p)}: "
-                            f"total={total_ms:.0f}ms | "
-                            f"decode={t_decode:.0f}ms | "
-                            f"blur={t_blur:.0f}ms | "
-                            f"face={t_face:.0f}ms"
-                        )
-
-                        # Atualizar current_photo com dados reais para o carrossel live
-                        scan_state["current_photo"] = {
-                            "path": p,
-                            "name": os.path.basename(p),
-                            "faces": [{"bbox": [f[1], f[2], f[3], f[4]], "confidence": 0.95} for f in valid_faces],
-                            "timestamp": time.time()
-                        }
-
-                        # Calcular tempo deste arquivo para o histórico de ETA
-                        photo_duration = time.time() - t0_photo
-                        history = scan_state.get("processing_history", [])
-                        history.append(photo_duration)
-                        if len(history) > 20: history.pop(0)
-                        scan_state["processing_history"] = history
-
-                        # Liberar referencias grandes da foto
+                    # Liberar referencias grandes da foto
+                    try:
+                        del img
+                    except NameError:
+                        pass
+                    for _vn in ('faces', 'valid_faces', 'scored_faces'):
                         try:
-                            del img
-                        except NameError:
+                            _v = locals().get(_vn)
+                            if _v is not None:
+                                del _v
+                        except Exception:
                             pass
-                        for _vn in ('faces', 'valid_faces', 'scored_faces'):
-                            try:
-                                _v = locals().get(_vn)
-                                if _v is not None:
-                                    del _v
-                            except Exception:
-                                pass
 
-                        # Throttling para evitar 100% CPU
-                        import time as _time
-                        _time.sleep(0.005)
+                    # Throttling para evitar 100% CPU
+                    import time as _time
+                    _time.sleep(0.005)
 
                     if _cancel_requested():
                         log_info("[Scanner] Cancelamento no fim do lote — interrompendo")
@@ -959,6 +982,7 @@ def run_scanner_worker(req):
                         break
 
                     scan_state["total_processadas"] = len(processed_photo_paths)
+                    scan_state["total_faces"] = total_faces_found
                     scan_state["total_existing_files"] = len(processed_photo_paths.intersection(initial_existing_photo_paths))
                     scan_state["total_inserted_files"] = len(inserted_photo_paths)
                     
@@ -1017,6 +1041,9 @@ def run_scanner_worker(req):
             log_info("[Scanner] Cancelamento — pulando resumo final")
         else:
             scan_state["status_text"] = "Processamento concluído!"
+            scan_state["progress"] = 1.0
+            scan_state["eta_seconds"] = 0
+            scan_state["total_faces"] = total_faces_found
             final_elapsed = time.time() - start_time
             mins = int(final_elapsed // 60)
             secs = int(final_elapsed % 60)
@@ -1034,7 +1061,8 @@ def run_scanner_worker(req):
             log_info(
                 f"[SCAN] Resumo final: encontradas={scan_state['total_found_files']} "
                 f"validas={scan_state['total_valid_files']} processadas={scan_state['total_processadas']} "
-                f"novas={scan_state['total_inserted_files']} existentes={scan_state['total_existing_files']} "
+                f"faces={total_faces_found} novas={scan_state['total_inserted_files']} "
+                f"existentes={scan_state['total_existing_files']} "
                 f"ignoradas={scan_state['total_ignored_files']} motivos={scan_state['ignored_reasons']}"
             )
     except Exception as e:
@@ -1050,6 +1078,9 @@ def run_scanner_worker(req):
     finally:
         was_cancelled = _cancel_requested()
         scan_state["is_scanning"] = False
+        scan_state["total_faces"] = locals().get("total_faces_found", 0)
+        scan_state["progress"] = 1.0 if not was_cancelled else scan_state.get("progress", 0)
+        scan_state["eta_seconds"] = 0
         if was_cancelled:
             scan_state["stopped"] = True
             scan_state["status_text"] = "Scanner interrompido"

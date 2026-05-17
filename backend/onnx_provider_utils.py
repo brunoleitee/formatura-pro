@@ -58,7 +58,7 @@ def _cuda_provider_loadable() -> bool:
             ctypes.CDLL(str(cuda_dll))
         else:
             loadable = False
-            error = "onnxruntime_providers_cuda.dll nao encontrado"
+            error = "Rodando em CPU (CUDA não disponível)"
     except Exception as exc:
         loadable = False
         error = str(exc)

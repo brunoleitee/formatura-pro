@@ -109,6 +109,7 @@ function ReviewViewContent() {
   const [hasMore, setHasMore] = useState(false);
   const [pageOffset, setPageOffset] = useState(0);
   const [reviewReady, setReviewReady] = useState(true);
+  const [totalFacesInCatalog, setTotalFacesInCatalog] = useState(0);
   const [graduationStatus, setGraduationStatus] = useState<GraduationAnalysisStatus | null>(null);
   const [isStartingGraduationAnalysis, setIsStartingGraduationAnalysis] = useState(false);
   const [viewerPhoto, setViewerPhoto] = useState<Photo | null>(null);
@@ -132,6 +133,7 @@ const wasGraduationRunningRef = useRef(false);
       setHasMore(Boolean(data?.has_more));
       setPageOffset(nextClusters.length);
       setReviewReady(Boolean(data?.review_ready ?? true));
+      setTotalFacesInCatalog(data?.total_faces_in_catalog ?? 0);
       setSelectedId((prev) => {
         if (nextClusters.length === 0) return null;
         if (prev && nextClusters.some((cluster) => cluster.cluster_id === prev)) return prev;
@@ -145,6 +147,7 @@ const wasGraduationRunningRef = useRef(false);
       setHasMore(false);
       setPageOffset(0);
       setReviewReady(false);
+      setTotalFacesInCatalog(0);
     } finally {
       setLoading(false);
     }
@@ -164,6 +167,7 @@ const wasGraduationRunningRef = useRef(false);
       setHasMore(Boolean(data?.has_more));
       setPageOffset((prev) => prev + nextClusters.length);
       setReviewReady(Boolean(data?.review_ready ?? true));
+      if (data?.total_faces_in_catalog !== undefined) setTotalFacesInCatalog(data.total_faces_in_catalog);
     } finally {
       setLoadingMore(false);
     }
@@ -480,6 +484,7 @@ const wasGraduationRunningRef = useRef(false);
             loading={loading}
             loadingMessage="Carregando grupos salvos..."
             reviewReady={reviewReady}
+            totalFacesInCatalog={totalFacesInCatalog}
             onRefresh={load}
           />
         )}
@@ -611,18 +616,29 @@ function WelcomeState({
   count,
   loading,
   reviewReady = true,
+  totalFacesInCatalog = 0,
   loadingMessage = 'Carregando grupos salvos...',
   onRefresh,
 }: {
   count: number;
   loading: boolean;
   reviewReady?: boolean;
+  totalFacesInCatalog?: number;
   loadingMessage?: string;
   onRefresh: () => void;
 }) {
-  const titleLabel = loading ? loadingMessage : count === 0 ? (reviewReady ? 'Tudo identificado!' : 'Ainda preparando a revisão') : 'Revisão IA';
+  const hasNoFaces = totalFacesInCatalog === 0 && count === 0;
+  const titleLabel = loading
+    ? loadingMessage
+    : hasNoFaces
+    ? 'Nenhum rosto encontrado'
+    : count === 0
+    ? (reviewReady ? 'Tudo identificado!' : 'Ainda preparando a revisão')
+    : 'Revisão IA';
   const subtitleLabel = loading
     ? 'A primeira página está sendo carregada a partir dos clusters já salvos no catálogo.'
+    : hasNoFaces
+    ? 'O Scanner processou as fotos, mas nenhum rosto foi detectado nelas.'
     : count === 0
     ? (reviewReady
       ? 'Nenhuma face desconhecida pendente neste evento.'
@@ -655,7 +671,7 @@ function WelcomeState({
         <button
           className={`${styles.welcomeRefresh} ${!loading && count === 0 ? styles.inlineFlexVisible : styles.inlineFlexHidden}`}
           onClick={onRefresh}
-          disabled={loading || count > 0}
+          disabled={loading}
         >
           <RefreshCw size={14} />
           <span>Recarregar</span>

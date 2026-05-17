@@ -8,6 +8,7 @@ scan_state = {
     "progress": 0.0,
     "status_text": "Pronto",
     "total_processadas": 0,
+    "total_faces": 0,
     "total_matches": 0,
     "total_clusters": 0,
     "total_files": 0,

@@ -414,6 +414,7 @@ export const ScanProcessingCenter = memo(function ScanProcessingCenter({
 
       <section className={styles.metricsPanel}>
         <MetricCard icon={Images} label="Processadas" value={formatInteger(scanStatus?.total_processadas)} />
+        <MetricCard icon={ScanFace} label="Rostos" value={formatInteger(scanStatus?.total_faces)} />
         <MetricCard icon={UserCheck} label="Matches" value={formatInteger(scanStatus?.total_matches)} />
         <MetricCard icon={Layers3} label="Clusters" value={formatInteger(scanStatus?.total_clusters)} />
         <MetricCard icon={EyeOff} label="Ignoradas" value={formatInteger(scanStatus?.skipped_background_faces)} />

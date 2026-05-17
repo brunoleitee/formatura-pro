@@ -107,9 +107,12 @@ export interface ScanStatus {
   progress: number;
   status_text: string;
   total_processadas: number;
+  total_faces?: number;
   total_matches: number;
   total_clusters?: number;
   total_files: number;
+  total_inserted_files?: number;
+  total_existing_files?: number;
   last_folder_scanned?: string;
   eta_seconds: number;
   device: string;
@@ -335,6 +338,7 @@ export interface ReviewClustersPageResponse {
   has_more: boolean;
   review_ready: boolean;
   cache_used?: boolean;
+  total_faces_in_catalog?: number;
   cache_duration_ms?: number;
   query_duration_ms?: number;
 }

@@ -347,6 +347,7 @@ def start_scan(req: ScanRequest):
         scan_state["status_text"] = "Iniciando scanner..."
         scan_state["progress"] = 0.0
         scan_state["total_processadas"] = 0
+        scan_state["total_faces"] = 0
         scan_state["total_files"] = 0
         scan_state["eta_seconds"] = 0
         scan_state["gpu_error"] = ""
@@ -393,6 +394,7 @@ def _memory_cleanup_global(log_info=None):
         ss["recent_faces"] = []
         ss.pop("processing_history", None)
         ss["total_processadas"] = 0
+        ss["total_faces"] = 0
         ss["total_files"] = 0
         ss["total_found_files"] = 0
         ss["total_valid_files"] = 0

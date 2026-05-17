@@ -972,31 +972,10 @@ def _sync_review_cluster_cache(cur) -> dict:
 
     cat = _current_catalog()
 
-    # Garantir que todas as faces tenham embedding antes de clusterizar
-    if cat:
-        try:
-            cur.execute("""
-                SELECT rowid, aluno_id, foto_path, x1, y1, x2, y2
-                FROM ocorrencias
-                WHERE x1 IS NOT NULL
-            """)
-            for occ in cur.fetchall():
-                get_cached_occurrence_embedding(cur.connection, occ)
-        except Exception as e:
-            print(f"[SYNC EMBEDDINGS] erro: {e}")
+    logger.info("[Review] sync clusters catalog=%s rows=%s", cat, len(rows))
 
-    # Use embedding-based clustering with suggestions
-    if cat:
-        try:
-            result = get_unknown_clusters(catalog=cat, min_cluster_size=1, limit=200)
-            if result.get("clusters"):
-                return {"unknown_faces": len(rows), "cluster_count": len(result["clusters"])}
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            print(f"[CLUSTER] get_unknown_clusters fallback: {e}")
-
-    # Fallback: legacy aluno_id grouping
+    # Apenas agrupa por aluno_id (Scanner já salvou clusters como 'Pessoa X')
+    # Sem deteccao facial, sem embeddings, sem OCR, sem analise de formatura.
     grouped: dict[str, list[dict]] = {}
     for row in rows:
         aluno_id = str(row["aluno_id"] or "")
@@ -1048,11 +1027,19 @@ def _ensure_review_cluster_cache(cur) -> dict:
     )
     unknown_faces = int((cur.fetchone() or {"cnt": 0})["cnt"] or 0)
 
-    # Check in-memory cache validity
-    last_sync = _cache_last_sync.get(cat)
+    cur.execute("SELECT COUNT(*) AS cnt FROM ocorrencias WHERE x1 IS NOT NULL")
+    total_faces_in_db = int((cur.fetchone() or {"cnt": 0})["cnt"] or 0)
 
     cur.execute("SELECT COUNT(*) AS cnt FROM unknown_face_clusters")
     cached_faces = int((cur.fetchone() or {"cnt": 0})["cnt"] or 0)
+
+    last_sync = _cache_last_sync.get(cat)
+
+    logger.info(
+        "[Review] catalog=%s unknown_faces=%s total_faces_in_db=%s cached_clusters=%s last_sync=%s",
+        cat, unknown_faces, total_faces_in_db, cached_faces,
+        "yes" if last_sync else "no",
+    )
 
     if unknown_faces == 0:
         if cached_faces:
@@ -1061,33 +1048,39 @@ def _ensure_review_cluster_cache(cur) -> dict:
             "review_ready": True,
             "used_cache": cached_faces == 0,
             "unknown_faces": 0,
+            "total_faces_in_catalog": total_faces_in_db,
             "cluster_count": 0,
             "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
         }
         if cached_faces:
             _cache_last_sync.pop(cat, None)
-        print(f"[CACHE MISS] review_clusters_page catalog={cat} (no unknown faces)")
+        logger.info("[Review] catalog=%s no unknown faces (total_faces=%s)", cat, total_faces_in_db)
         return result
 
     if cached_faces != unknown_faces or last_sync is None:
         sync_info = _sync_review_cluster_cache(cur)
         _cache_last_sync[cat] = time.time()
-        print(f"[CACHE MISS] review_clusters_page catalog={cat} (resync: cached={cached_faces} unknown={unknown_faces})")
+        logger.info(
+            "[Review] catalog=%s sync done clusters=%s unknown_faces=%s",
+            cat, sync_info["cluster_count"], sync_info["unknown_faces"],
+        )
         return {
             "review_ready": True,
             "used_cache": False,
             "unknown_faces": sync_info["unknown_faces"],
+            "total_faces_in_catalog": total_faces_in_db,
             "cluster_count": sync_info["cluster_count"],
             "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
         }
 
     cur.execute("SELECT COUNT(DISTINCT cluster_id) AS cnt FROM unknown_face_clusters")
     cluster_count = int((cur.fetchone() or {"cnt": 0})["cnt"] or 0)
-    print(f"[CACHE HIT] review_clusters_page catalog={cat} returned={cluster_count}")
+    logger.info("[Review] catalog=%s cache hit clusters=%s total_faces=%s", cat, cluster_count, total_faces_in_db)
     return {
         "review_ready": True,
         "used_cache": True,
         "unknown_faces": unknown_faces,
+        "total_faces_in_catalog": total_faces_in_db,
         "cluster_count": cluster_count,
         "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
     }
@@ -2645,6 +2638,7 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                 "has_more": False,
                 "review_ready": bool(cache_info["review_ready"]),
                 "cache_used": bool(cache_info["used_cache"]),
+                "total_faces_in_catalog": int(cache_info.get("total_faces_in_catalog", 0)),
                 "cache_duration_ms": cache_info["duration_ms"],
                 "query_duration_ms": 0.0,
             }
@@ -2775,18 +2769,7 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                                 best_name = name
                     
                     if not best_name and not embs:
-                        for item in comp_items_for_cl:
-                            try:
-                                get_cached_occurrence_embedding(cur.connection, {
-                                    "rowid": item["rowid"],
-                                    "foto_path": item["foto_path"],
-                                    "x1": item["box"][0],
-                                    "y1": item["box"][1],
-                                    "x2": item["box"][2],
-                                    "y2": item["box"][3],
-                                })
-                            except Exception:
-                                pass
+                        logger.info("[Review] skipping image-load embedding for student match (run Scanner to populate embeddings)")
                         cur.execute(f"SELECT occurrence_rowid, embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", all_rowids)
                         embs = []
                         for er in cur.fetchall():
@@ -2901,18 +2884,7 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                                 best_name = name
                     
                     if not best_name and not embs:
-                        for item in comp_items_for_cl:
-                            try:
-                                get_cached_occurrence_embedding(pc.connection, {
-                                    "rowid": item["rowid"],
-                                    "foto_path": item["foto_path"],
-                                    "x1": item["box"][0],
-                                    "y1": item["box"][1],
-                                    "x2": item["box"][2],
-                                    "y2": item["box"][3],
-                                })
-                            except Exception:
-                                pass
+                        logger.info("[Review] skipping image-load embedding for student match (run Scanner to populate embeddings)")
                         pc.execute(f"SELECT occurrence_rowid, embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", rowids)
                         for er in pc.fetchall():
                             e = np.frombuffer(er["embedding"], dtype="float32")
@@ -2964,6 +2936,7 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
         "has_more": (offset + len(clusters)) < total,
         "review_ready": bool(cache_info["review_ready"]),
         "cache_used": bool(cache_info["used_cache"]),
+        "total_faces_in_catalog": int(cache_info.get("total_faces_in_catalog", 0)),
         "cache_duration_ms": cache_info["duration_ms"],
         "query_duration_ms": query_duration_ms,
     }
@@ -3099,19 +3072,7 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
                     print(f"[DETAIL FACIAL MATCH] {cluster_id} best={best_n} sim={best_s:.2f}")
 
                 if not best_n and not cl_embs:
-                    for face in cluster.get("faces", []):
-                        try:
-                            box = face.get("box", [0,0,0,0])
-                            get_cached_occurrence_embedding(cur.connection, {
-                                "rowid": face["rowid"],
-                                "foto_path": face["path"],
-                                "x1": box[0],
-                                "y1": box[1],
-                                "x2": box[2],
-                                "y2": box[3],
-                            })
-                        except Exception:
-                            pass
+                    logger.info("[Review] skipping image-load embedding for student match in detail (run Scanner to populate embeddings)")
                     if rowids:
                         cur.execute(f"SELECT embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", rowids)
                         cl_embs = []
