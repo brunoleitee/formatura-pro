@@ -78,7 +78,7 @@ const toolItems: { view: ViewName; icon: React.ReactNode; label: string }[] = [
   ];
 
   const shouldShowCatalogTree =
-    activeView === 'photos' && !!currentCatalog;
+    (activeView === 'photos' || activeView === 'catalog-settings') && !!currentCatalog;
 
   return (
     <div className="sidebar">
@@ -187,7 +187,7 @@ const toolItems: { view: ViewName; icon: React.ReactNode; label: string }[] = [
           {navItems.map(item => (
             <div key={item.view}>
               <div
-                className={`nav-item ${activeView === item.view || (item.view === 'people' && activeView === 'person-detail') ? 'active' : ''}`}
+                className={`nav-item ${activeView === item.view || (item.view === 'people' && activeView === 'person-detail') || (item.view === 'photos' && activeView === 'catalog-settings') ? 'active' : ''}`}
                 onClick={() => navigate(item.view)}
               >
                 {item.icon}
@@ -261,7 +261,7 @@ const toolItems: { view: ViewName; icon: React.ReactNode; label: string }[] = [
 
           {/* Escanear */}
           <div
-            className={`nav-item ${isScanning ? 'sidebar-scanning' : ''}`}
+            className={`nav-item ${activeView === 'scanner' ? 'active' : ''} ${isScanning ? 'sidebar-scanning' : ''}`}
             onClick={() => { if (currentCatalog) onScanClick(); }}
             style={{ opacity: !currentCatalog ? 0.4 : 1, cursor: !currentCatalog ? 'default' : 'pointer' }}
             title={!currentCatalog ? 'Selecione um evento primeiro' : isScanning ? 'Abrir central de processamento' : 'Escanear fotos'}
