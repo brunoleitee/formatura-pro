@@ -354,6 +354,8 @@ def start_scan(req: ScanRequest):
         scan_state["total_inserted_files"] = 0
         scan_state["total_ignored_files"] = 0
         scan_state["ignored_reasons"] = {}
+        scan_state["event_path"] = req.event_path or ""
+        scan_state["ref_path"] = req.ref_path or ""
         from backend_state import scanner_cancel as _sc
         _sc["running"] = True
         _sc["cancel_requested"] = False
