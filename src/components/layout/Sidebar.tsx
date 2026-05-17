@@ -198,7 +198,7 @@ const toolItems: { view: ViewName; icon: React.ReactNode; label: string }[] = [
               {item.view === 'photos' && shouldShowCatalogTree && (
                 <div className={ftStyles.tree}>
                   {/* Linha raiz */}
-                  <div className={`${ftStyles.rootRow} ${catalogSubfolder === null ? ftStyles.active : ''}`}>
+                  <div className={`${ftStyles.rootRow} ${catalogSubfolder === null && activeView === 'photos' ? ftStyles.active : ''}`}>
                     <button
                       className={ftStyles.chevron}
                       onClick={() => setFolderTreeExpanded(v => !v)}
