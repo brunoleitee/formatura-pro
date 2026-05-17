@@ -1171,13 +1171,28 @@ class RemoveCatalogFolderReq(BaseModel):
     catalog: str
     folder_id: int
 
+import re
+
+ROOT_PATH_RE = re.compile(r'^[a-zA-Z]:\\?$|^/$|^\\\\[^\\]+\\[^\\]+$')
+
+def _is_root_path(p: str) -> bool:
+    return bool(ROOT_PATH_RE.match(p.strip()))
+
 @app.get("/api/catalogs/folders")
 def list_catalog_folders(catalog: str = ""):
     try:
         with get_db(catalog) as conn:
             cur = conn.cursor()
 
-            # 1. Tenta catalog_folders primeiro
+            # ── 1. Cleanup: remove root paths do banco ──
+            cur.execute("SELECT id, path FROM catalog_folders WHERE catalog_name = ?", (catalog,))
+            for r in cur.fetchall():
+                if _is_root_path(r["path"]):
+                    print(f"[CatalogSettings] rejected root path = {r['path']}", flush=True)
+                    cur.execute("DELETE FROM catalog_folders WHERE id = ?", (r["id"],))
+            conn.commit()
+
+            # ── 2. Tenta catalog_folders primeiro ──
             cur.execute("""
                 SELECT id, catalog_name, path, include_subfolders, photo_count, last_scan_at, status, created_at
                 FROM catalog_folders
@@ -1187,18 +1202,27 @@ def list_catalog_folders(catalog: str = ""):
             rows = cur.fetchall()
 
             if rows:
-                return [{
-                    "id": r["id"],
-                    "catalogName": r["catalog_name"],
-                    "path": r["path"],
-                    "includeSubfolders": bool(r["include_subfolders"]),
-                    "photoCount": r["photo_count"],
-                    "lastScanAt": r["last_scan_at"],
-                    "status": r["status"],
-                    "createdAt": r["created_at"],
-                } for r in rows]
+                result = []
+                for r in rows:
+                    if _is_root_path(r["path"]):
+                        print(f"[CatalogSettings] rejected root path = {r['path']}", flush=True)
+                        cur.execute("DELETE FROM catalog_folders WHERE id = ?", (r["id"],))
+                        continue
+                    result.append({
+                        "id": r["id"],
+                        "catalogName": r["catalog_name"],
+                        "path": r["path"],
+                        "includeSubfolders": bool(r["include_subfolders"]),
+                        "photoCount": r["photo_count"],
+                        "lastScanAt": r["last_scan_at"],
+                        "status": r["status"],
+                        "createdAt": r["created_at"],
+                    })
+                conn.commit()
+                print(f"[CatalogSettings] final folders={[f['path'] for f in result]}", flush=True)
+                return result
 
-            # 2. Fallback: extrair diretórios das ocorrências e face_embeddings
+            # ── 3. Fallback: extrair diretórios das ocorrências e face_embeddings ──
             all_paths = set()
             for table in ("ocorrencias", "face_embeddings"):
                 try:
@@ -1213,14 +1237,16 @@ def list_catalog_folders(catalog: str = ""):
             for fp in all_paths:
                 d = os.path.dirname(fp)
                 while d and d not in raw_dirs:
+                    if _is_root_path(d):
+                        print(f"[CatalogSettings] rejected root path = {d}", flush=True)
+                        break
                     raw_dirs.add(d)
                     parent = os.path.dirname(d)
                     if parent == d:
                         break
                     d = parent
 
-            # 3. Agrupamento inteligente: só pastas raiz (que não são subpasta de outra)
-            # Nota: drives raiz (ex: C:\) já terminam com sep, então não duplicar o sep
+            # ── 4. Agrupamento inteligente ──
             sorted_dirs = sorted(raw_dirs, key=lambda x: len(x))
             root_dirs = []
             for d in sorted_dirs:
@@ -1231,7 +1257,7 @@ def list_catalog_folders(catalog: str = ""):
                 if not is_sub:
                     root_dirs.append(d)
 
-            # 4. Contar fotos por pasta raiz
+            # ── 5. Contar fotos por pasta raiz ──
             folder_photo_counts = {}
             for fp in all_paths:
                 for root in root_dirs:
@@ -1239,9 +1265,9 @@ def list_catalog_folders(catalog: str = ""):
                         folder_photo_counts[root] = folder_photo_counts.get(root, 0) + 1
                         break
 
-            print(f"[CatalogFolders] fallback dirs={len(raw_dirs)} roots={len(root_dirs)} photos={len(all_paths)}", flush=True)
+            print(f"[CatalogSettings] fallback dirs={len(raw_dirs)} roots={len(root_dirs)} photos={len(all_paths)}", flush=True)
 
-            # 5. Migrar para catalog_folders
+            # ── 6. Migrar para catalog_folders ──
             for d in root_dirs:
                 count = folder_photo_counts.get(d, 0)
                 cur.execute("""
@@ -1250,26 +1276,31 @@ def list_catalog_folders(catalog: str = ""):
                 """, (catalog, d, count))
             conn.commit()
 
-            # 6. Recarregar
+            # ── 7. Recarregar ──
             cur.execute("""
                 SELECT id, catalog_name, path, include_subfolders, photo_count, last_scan_at, status, created_at
                 FROM catalog_folders
                 WHERE catalog_name = ?
                 ORDER BY id
             """, (catalog,))
-            rows = cur.fetchall()
-            result = [{
-                "id": r["id"],
-                "catalogName": r["catalog_name"],
-                "path": r["path"],
-                "includeSubfolders": bool(r["include_subfolders"]),
-                "photoCount": r["photo_count"],
-                "lastScanAt": r["last_scan_at"],
-                "status": r["status"],
-                "createdAt": r["created_at"],
-            } for r in rows]
-
-            print(f"[CatalogFolders] catalog={catalog} final={len(result)}", flush=True)
+            result = []
+            for r in cur.fetchall():
+                if _is_root_path(r["path"]):
+                    print(f"[CatalogSettings] rejected root path = {r['path']}", flush=True)
+                    cur.execute("DELETE FROM catalog_folders WHERE id = ?", (r["id"],))
+                    continue
+                result.append({
+                    "id": r["id"],
+                    "catalogName": r["catalog_name"],
+                    "path": r["path"],
+                    "includeSubfolders": bool(r["include_subfolders"]),
+                    "photoCount": r["photo_count"],
+                    "lastScanAt": r["last_scan_at"],
+                    "status": r["status"],
+                    "createdAt": r["created_at"],
+                })
+            conn.commit()
+            print(f"[CatalogSettings] final folders={[f['path'] for f in result]}", flush=True)
             return result
 
     except Exception as e:
