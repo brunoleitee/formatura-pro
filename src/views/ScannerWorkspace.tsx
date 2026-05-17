@@ -97,7 +97,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const metricsPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const previewInnerRef = useRef<HTMLDivElement>(null);
   const startedAtRef = useRef<number | null>(null);
-  const previewInnerDims = useRef({ w: 0, h: 0 });
+  const [previewInnerDims, setPreviewInnerDims] = useState({ w: 0, h: 0 });
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const filmstripRef = useRef<HTMLDivElement | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -346,7 +346,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     if (!el) return;
     const ro = new ResizeObserver(entries => {
       for (const e of entries) {
-        previewInnerDims.current = { w: e.contentRect.width, h: e.contentRect.height };
+        setPreviewInnerDims({ w: Math.round(e.contentRect.width), h: Math.round(e.contentRect.height) });
       }
     });
     ro.observe(el);
@@ -398,6 +398,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
             }
 
             // Atualizar faces em tempo real
+            console.log("[Overlay] currentPhoto.faces", st.current_photo?.faces);
             if (st.current_photo.faces) {
               setLiveFaceBoxes(st.current_photo.faces);
             }
@@ -724,21 +725,37 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
               <span className={styles.statValue}>{formatTime(elapsedSeconds)}</span>
             </div>
           )}
-          {isScanning && (
-            <div className={styles.summaryStat}>
-              <span className={styles.statLabel}>Tempo restante</span>
-              <span className={styles.statValue}>
-                {!scanStatus || scanStatus.total_processadas < 5
-                  ? 'Calculando...'
-                  : scanStatus.total_processadas >= scanStatus.total_files
-                    ? 'Finalizando...'
-                    : `${formatTime(Math.max(0, Math.ceil((scanStatus.eta_seconds || 0))))}`}
-                {scanStatus && scanStatus.total_processadas >= 5 && scanStatus.total_processadas < scanStatus.total_files && (
-                  <span className={styles.statSub}>restante</span>
-                )}
-              </span>
-            </div>
-          )}
+          {isScanning && (() => {
+            const processed = scanStatus?.total_processadas || 0;
+            const total = scanStatus?.total_files || 0;
+            const etaRaw = scanStatus?.eta_seconds;
+            let etaSec: number | null = null;
+            if (etaRaw != null && etaRaw > 0) {
+              etaSec = etaRaw;
+            } else if (processed >= 5 && processed < total && scanStatus?.started_at) {
+              const elapsed = Date.now() / 1000 - scanStatus.started_at;
+              const speed = processed / elapsed;
+              const remaining = total - processed;
+              if (remaining > 0 && speed > 0) etaSec = remaining / speed;
+            }
+            return (
+              <div className={styles.summaryStat}>
+                <span className={styles.statLabel}>Tempo restante</span>
+                <span className={styles.statValue}>
+                  {processed < 5
+                    ? 'Calculando...'
+                    : processed >= total
+                      ? 'Finalizando...'
+                      : etaSec != null && etaSec > 0
+                        ? formatTime(Math.ceil(etaSec))
+                        : 'Calculando...'}
+                  {etaSec != null && etaSec > 0 && processed < total && (
+                    <span className={styles.statSub}>restante</span>
+                  )}
+                </span>
+              </div>
+            );
+          })()}
           {!isScanning && (
             <div className={styles.summaryStat}>
               <span className={styles.statLabel}>Duração</span>
@@ -1173,13 +1190,15 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                       draggable={false}
                       style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
                     />
-                    {overlayNw > 0 && liveFaceBoxes.length > 0 && previewInnerDims.current.w > 0 && (
+                    {overlayNw > 0 && liveFaceBoxes.length > 0 && previewInnerDims.w > 0 && (
                       (() => {
-                        const { w: cw, h: ch } = previewInnerDims.current;
+                        const { w: cw, h: ch } = previewInnerDims;
                         const nw = overlayNw, nh = overlayNh;
                         const scale = Math.min(cw / nw, ch / nh);
                         const ox = (cw - nw * scale) / 2;
                         const oy = (ch - nh * scale) / 2;
+                        console.log("[Overlay] image natural", nw, nh);
+                        console.log("[Overlay] rect", { offsetX: ox, offsetY: oy, scale, containerW: cw, containerH: ch });
                         console.log(`[Scanner Preview] currentPhoto faces=${liveFaceBoxes.length}`);
                         return (
                           <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>

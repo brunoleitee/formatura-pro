@@ -960,15 +960,19 @@ def run_scanner_worker(req):
 
                     # Atualizar current_photo com dados reais para o carrossel live
                     img_h, img_w = img.shape[:2] if img is not None else (0, 0)
+                    photo_faces = [{"bbox": [f[1], f[2], f[3], f[4]], "confidence": 0.95} for f in valid_faces]
                     scan_state["current_photo"] = {
                         "path": p,
                         "name": os.path.basename(p),
                         "preview_url": f"/api/image_thumb?path={urllib.parse.quote(p)}&size=1200",
                         "natural_width": img_w,
                         "natural_height": img_h,
-                        "faces": [{"bbox": [f[1], f[2], f[3], f[4]], "confidence": 0.95} for f in valid_faces],
+                        "faces": photo_faces,
                         "timestamp": time.time()
                     }
+                    print(f"[Scanner] current_photo faces: {len(photo_faces)}")
+                    for _f in photo_faces:
+                        print(f"[Scanner] bbox: {_f['bbox']}")
 
                     # Calcular tempo deste arquivo para o histórico de ETA
                     photo_duration = time.time() - t0_photo
@@ -1014,13 +1018,19 @@ def run_scanner_worker(req):
                     scan_state["ignored_reasons"] = dict(ignored_reasons)
                     scan_state["progress"] = scan_state["total_processadas"] / total
                     
-                    # Cálculo de ETA Real baseado na média móvel das últimas 20 fotos
-                    history = scan_state.get("processing_history", [])
-                    if len(history) >= 5:
-                        avg_speed = sum(history) / len(history)
-                        scan_state["eta_seconds"] = int(avg_speed * (total - scan_state["total_processadas"]))
+                    # Cálculo de ETA baseado no tempo total decorrido
+                    started = scan_state.get("started_at")
+                    processed = scan_state["total_processadas"]
+                    if started and processed >= 5:
+                        elapsed_total = time.time() - started
+                        speed = processed / elapsed_total
+                        remaining = total - processed
+                        if remaining > 0 and speed > 0:
+                            scan_state["eta_seconds"] = int(remaining / speed)
+                        else:
+                            scan_state["eta_seconds"] = 0
                     else:
-                        scan_state["eta_seconds"] = -1 # Indica "Calculando..."
+                        scan_state["eta_seconds"] = -1
                     
                     conn.commit()
                     gc.collect()
