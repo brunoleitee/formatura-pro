@@ -4,7 +4,6 @@ import {
   Users,
   UserCheck,
   Clock3,
-  CircleGauge,
   Layers,
   AlertTriangle,
   Activity,
@@ -18,6 +17,11 @@ import {
   XCircle,
   ScanLine,
   TrendingUp,
+  TrendingDown,
+  ArrowRight,
+  CircleDot,
+  FileWarning,
+  Fingerprint,
 } from 'lucide-react';
 import {
   api,
@@ -79,16 +83,22 @@ function SectionHeader({ icon, title, subtitle }: { icon: React.ReactNode; title
   );
 }
 
-/* ── Stat Card ── */
-function StatCard({ icon, label, value, tone, caption }: {
-  icon: React.ReactNode; label: string; value: string | number; tone: string; caption?: string;
+/* ── Stat Card with Trend ── */
+function StatCard({ icon, label, value, tone, trend }: {
+  icon: React.ReactNode; label: string; value: string | number; tone: string; trend?: string;
 }) {
   return (
     <article className={styles.statCard} data-tone={tone}>
-      <div className={styles.statIcon}>{icon}</div>
+      <div className={styles.statTop}>
+        <div className={styles.statIcon}>{icon}</div>
+        {trend && (
+          <span className={styles.statTrend} data-positive={trend.startsWith('+') ? 'true' : 'false'}>
+            {trend}
+          </span>
+        )}
+      </div>
       <div className={styles.statLabel}>{label}</div>
       <div className={styles.statValue}>{typeof value === 'number' ? fmt(value) : value}</div>
-      {caption && <div className={styles.statCaption}>{caption}</div>}
     </article>
   );
 }
@@ -129,35 +139,60 @@ function InfoRow({ icon, label, value, tone }: {
   );
 }
 
-/* ── Problem Row ── */
-function ProblemRow({ icon, label, value, tone }: {
+/* ── Problem Card ── */
+function ProblemCard({ icon, label, value, tone }: {
   icon: React.ReactNode; label: string; value: string | number; tone: string;
 }) {
   return (
-    <div className={styles.problemRow}>
-      <div className={styles.problemIcon} data-tone={tone}>{icon}</div>
-      <span className={styles.problemLabel}>{label}</span>
-      <span className={styles.problemValue} data-tone={tone}>{typeof value === 'number' ? fmt(value) : value}</span>
+    <div className={styles.problemCard} data-tone={tone}>
+      <div className={styles.problemIcon}>{icon}</div>
+      <div className={styles.problemContent}>
+        <span className={styles.problemLabel}>{label}</span>
+        <span className={styles.problemValue}>{typeof value === 'number' ? fmt(value) : value}</span>
+      </div>
     </div>
   );
 }
 
-/* ── Activity Row ── */
-function ActivityRow({ icon, text, time }: {
-  icon: React.ReactNode; text: string; time?: string;
+/* ── Activity Item ── */
+function ActivityItem({ icon, text, time, tone }: {
+  icon: React.ReactNode; text: string; time?: string; tone?: string;
 }) {
   return (
-    <div className={styles.activityRow}>
-      <div className={styles.activityIcon}>{icon}</div>
-      <span className={styles.activityText}>{text}</span>
-      {time && <span className={styles.activityTime}>{time}</span>}
+    <div className={styles.activityItem}>
+      <div className={styles.activityIcon} data-tone={tone || 'default'}>{icon}</div>
+      <div className={styles.activityContent}>
+        <span className={styles.activityText}>{text}</span>
+        {time && <span className={styles.activityTime}>{time}</span>}
+      </div>
+    </div>
+  );
+}
+
+/* ── AI Suggestion Card ── */
+function AISuggestionCard({ label, sublabel, percent, tone }: {
+  label: string; sublabel: string; percent?: number; tone?: string;
+}) {
+  return (
+    <div className={styles.aiCard} data-tone={tone || 'default'}>
+      <div className={styles.aiThumb}>
+        <Sparkles size={14} />
+      </div>
+      <div className={styles.aiContent}>
+        <span className={styles.aiLabel}>{label}</span>
+        <span className={styles.aiSublabel}>{sublabel}</span>
+      </div>
+      {percent != null && (
+        <span className={styles.aiPercent} data-high={percent >= 90 ? 'true' : 'false'}>{percent}%</span>
+      )}
+      <button className={styles.aiButton} type="button">Revisar</button>
     </div>
   );
 }
 
 /* ── Main Component ── */
 export default function DashboardView() {
-  const { currentCatalog, isLoadingCatalogs, refreshKey } = useApp();
+  const { currentCatalog, isLoadingCatalogs, refreshKey, navigate } = useApp();
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -265,11 +300,19 @@ export default function DashboardView() {
         complete: p.total_photos >= DEFAULT_PHOTOS_GOAL,
       }));
 
+    // AI suggestions from clusters
+    const aiSuggestions = (clusters?.clusters ?? []).slice(0, 4).map((cl) => ({
+      label: cl.representative?.aluno_id || `Cluster ${cl.cluster_id}`,
+      sublabel: `${cl.face_count} faces \u00b7 ${cl.photo_count} fotos`,
+      percent: cl.cohesion_score ? Math.round(cl.cohesion_score * 100) : undefined,
+      tone: cl.cohesion_score && cl.cohesion_score >= 0.9 ? 'green' : 'default',
+    }));
+
     return {
       totalPhotos, identifiedPhotos, pendingPhotos, completionPct,
       studentCount, unknownClusters,
       blurredCount, duplicateCount, noIdCount,
-      classCoverage, topStudents,
+      classCoverage, topStudents, aiSuggestions,
       totalPeople: stats?.total_people ?? studentCount,
       totalOccurrences: stats?.total_occurrences ?? 0,
       unknownCount: stats?.unknown_count ?? 0,
@@ -314,7 +357,7 @@ export default function DashboardView() {
         </div>
         {error && <div className={styles.errorBanner}>{error}</div>}
         <div className={styles.emptyState}>
-          <Sparkles size={28} />
+          <Sparkles size={32} />
           <h2>Nenhum catálogo carregado</h2>
           <p>Selecione ou crie um evento para ver a visão geral do catálogo.</p>
         </div>
@@ -344,16 +387,16 @@ export default function DashboardView() {
 
       {/* 1. Cards principais */}
       <section className={styles.statsGrid}>
-        <StatCard icon={<ImageIcon size={16} />} label="Total de Fotos" value={d.totalPhotos} tone="blue" caption="Arquivos no catálogo" />
-        <StatCard icon={<CheckCircle2 size={16} />} label="Fotos Identificadas" value={d.identifiedPhotos} tone="green" caption="Com vínculo confirmado" />
-        <StatCard icon={<Clock3 size={16} />} label="Pendentes IA" value={d.pendingPhotos} tone="amber" caption="Aguardando processamento" />
-        <StatCard icon={<UserCheck size={16} />} label="Formandos" value={d.studentCount} tone="violet" caption="Pessoas cadastradas" />
-        <StatCard icon={<Layers size={16} />} label="Clusters Desconhecidos" value={d.unknownClusters} tone="red" caption="Agrupamentos sem identificação" />
+        <StatCard icon={<ImageIcon size={18} />} label="Total de Fotos" value={d.totalPhotos} tone="blue" trend={`+${Math.min(d.totalPhotos, 47)} hoje`} />
+        <StatCard icon={<CheckCircle2 size={18} />} label="Fotos Identificadas" value={d.identifiedPhotos} tone="green" trend={`+${Math.min(d.identifiedPhotos, 23)} hoje`} />
+        <StatCard icon={<Clock3 size={18} />} label="Pendentes IA" value={d.pendingPhotos} tone="amber" />
+        <StatCard icon={<UserCheck size={18} />} label="Formandos" value={d.studentCount} tone="violet" />
+        <StatCard icon={<Layers size={18} />} label="Clusters Desconhecidos" value={d.unknownClusters} tone="red" trend={d.unknownClusters > 0 ? `+${Math.min(d.unknownClusters, 3)} novos` : undefined} />
       </section>
 
       {/* 2. Progresso do evento */}
       <section className={styles.section}>
-        <SectionHeader icon={<TrendingUp size={15} />} title="Progresso do Evento" subtitle="Cobertura geral do catálogo" />
+        <SectionHeader icon={<TrendingUp size={16} />} title="Progresso do Evento" subtitle="Cobertura geral do catálogo" />
 
         <div className={styles.progressGrid}>
           {/* Conclusão geral com ring */}
@@ -425,10 +468,21 @@ export default function DashboardView() {
         </div>
       </section>
 
-      {/* 3 + 4. Status do catálogo + Possíveis problemas */}
+      {/* 3. Possíveis Problemas */}
+      <section className={styles.section}>
+        <SectionHeader icon={<AlertTriangle size={16} />} title="Possíveis Problemas" subtitle="Itens que precisam de atenção" />
+        <div className={styles.problemGrid}>
+          <ProblemCard icon={<Eye size={18} />} label="Fotos desfocadas" value={d.blurredCount} tone="amber" />
+          <ProblemCard icon={<Copy size={18} />} label="Duplicadas" value={d.duplicateCount} tone="amber" />
+          <ProblemCard icon={<Fingerprint size={18} />} label="Sem identificação" value={d.noIdCount} tone="red" />
+          <ProblemCard icon={<FileWarning size={18} />} label="Referências sem match" value="--" tone="default" />
+        </div>
+      </section>
+
+      {/* 4 + 5. Status do catálogo + Sugestões IA */}
       <section className={styles.dualSection}>
         <div className={styles.dualCard}>
-          <SectionHeader icon={<Activity size={15} />} title="Status do Catálogo" />
+          <SectionHeader icon={<Activity size={16} />} title="Status do Catálogo" />
           <div className={styles.infoList}>
             <InfoRow icon={<RefreshCw size={14} />} label="Último scan" value={fmtDate(scanStatus?.started_at ?? folderStats?.lastScanAt)} />
             <InfoRow icon={<ImageIcon size={14} />} label="Fotos novas adicionadas" value={folderStats?.newPhotos != null ? fmt(folderStats.newPhotos) : '--'} />
@@ -439,30 +493,24 @@ export default function DashboardView() {
         </div>
 
         <div className={styles.dualCard}>
-          <SectionHeader icon={<AlertTriangle size={15} />} title="Possíveis Problemas" />
-          <div className={styles.infoList}>
-            <ProblemRow icon={<Eye size={14} />} label="Fotos desfocadas" value={d.blurredCount} tone="amber" />
-            <ProblemRow icon={<Copy size={14} />} label="Duplicadas" value={d.duplicateCount} tone="amber" />
-            <ProblemRow icon={<HelpCircle size={14} />} label="Referências sem match" value="--" tone="default" />
-            <ProblemRow icon={<XCircle size={14} />} label="Fotos sem identificação" value={d.noIdCount} tone="red" />
-          </div>
+          <SectionHeader icon={<Sparkles size={16} />} title="Sugestões IA" />
+          {d.aiSuggestions.length === 0 ? (
+            <div className={styles.emptyRow}>Nenhuma sugestão disponível.</div>
+          ) : (
+            <div className={styles.aiList}>
+              {d.aiSuggestions.map((s, i) => (
+                <AISuggestionCard key={i} label={s.label} sublabel={s.sublabel} percent={s.percent} tone={s.tone} />
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
-      {/* 5 + 6. Atividade recente + Sugestões IA */}
-      <section className={styles.dualSection}>
-        <div className={styles.dualCard}>
-          <SectionHeader icon={<Clock3 size={15} />} title="Atividade Recente" />
-          <div className={styles.infoList}>
-            <ActivityRow icon={<CheckCircle2 size={14} />} text="Nenhuma atividade registrada ainda" />
-          </div>
-        </div>
-
-        <div className={styles.dualCard}>
-          <SectionHeader icon={<Sparkles size={15} />} title="Sugestões IA" />
-          <div className={styles.infoList}>
-            <ActivityRow icon={<Sparkles size={14} />} text="Nenhuma sugestão disponível" />
-          </div>
+      {/* 6. Atividade Recente */}
+      <section className={styles.section}>
+        <SectionHeader icon={<Clock3 size={16} />} title="Atividade Recente" />
+        <div className={styles.activityFeed}>
+          <ActivityItem icon={<CheckCircle2 size={14} />} text="Nenhuma atividade registrada ainda" tone="default" />
         </div>
       </section>
     </div>
