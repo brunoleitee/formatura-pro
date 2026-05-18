@@ -2282,18 +2282,25 @@ def gpu_diagnostics():
 _metrics_snapshot: dict = {
     "cpuPercent": None, "ramUsedGb": None, "ramPercent": None,
     "gpuPercent": None, "temperatureC": None, "cpuTemperatureC": None,
+    "gpuProvider": None, "metricsWarning": None,
 }
 _metrics_lock = threading.Lock()
 _metrics_interval = 2.0
 _metrics_worker_running = False
+_metrics_gpu_failures = 0
+_metrics_gpu_skip_until = 0.0
+_metrics_logger = logging.getLogger(__name__)
 
 
 def _metrics_collect_snapshot():
+    global _metrics_gpu_failures, _metrics_gpu_skip_until
     t0 = time.perf_counter()
     cpu_ms = gpu_ms = temp_ms = 0.0
     cpu_val = ram_used = ram_pct = None
     gpu_val = gpu_temp = None
     cpu_temp = None
+    gpu_provider = None
+    warning = None
 
     _t = time.perf_counter()
     if psutil:
@@ -2307,18 +2314,29 @@ def _metrics_collect_snapshot():
     cpu_ms = (time.perf_counter() - _t) * 1000
 
     _t = time.perf_counter()
-    try:
-        nv = subprocess.run(
-            ["nvidia-smi", "--query-gpu=utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=2
-        )
-        if nv.returncode == 0:
-            parts = nv.stdout.strip().split(", ")
-            if len(parts) == 2:
-                gpu_val = round(float(parts[0]), 0)
-                gpu_temp = round(float(parts[1]), 0)
-    except Exception:
-        pass
+    now = time.time()
+    if now >= _metrics_gpu_skip_until:
+        try:
+            nv = subprocess.run(
+                ["nvidia-smi", "--query-gpu=utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=2
+            )
+            if nv.returncode == 0:
+                parts = nv.stdout.strip().split(", ")
+                if len(parts) == 2:
+                    gpu_val = round(float(parts[0]), 0)
+                    gpu_temp = round(float(parts[1]), 0)
+                    gpu_provider = "nvidia-smi"
+                _metrics_gpu_failures = 0
+            else:
+                raise RuntimeError(f"nvidia-smi retornou codigo {nv.returncode}: {nv.stderr.strip()}")
+        except Exception as e:
+            _metrics_gpu_failures += 1
+            _metrics_gpu_skip_until = now + min(60.0, 2.0 ** _metrics_gpu_failures)
+            _metrics_logger.warning("[metrics-worker] gpu_failed tentativa=%d error=%s", _metrics_gpu_failures, e)
+            warning = "gpu_unavailable"
+    else:
+        gpu_ms = (time.perf_counter() - _t) * 1000
     gpu_ms = (time.perf_counter() - _t) * 1000
 
     _t = time.perf_counter()
@@ -2349,15 +2367,18 @@ def _metrics_collect_snapshot():
 
     snap = {
         "cpuPercent": cpu_val, "ramUsedGb": ram_used, "ramPercent": ram_pct,
-        "gpuPercent": gpu_val, "temperatureC": gpu_temp, "cpuTemperatureC": cpu_temp,
+        "gpuPercent": gpu_val if gpu_val is not None else 0,
+        "temperatureC": gpu_temp, "cpuTemperatureC": cpu_temp,
+        "gpuProvider": gpu_provider or "unavailable",
+        "metricsWarning": warning,
     }
     with _metrics_lock:
         _metrics_snapshot.update(snap)
 
     total_ms = (time.perf_counter() - t0) * 1000
-    logging.getLogger(__name__).info(
-        "[metrics] cpu=%.0fms gpu=%.0fms temp=%.0fms total=%.0fms",
-        cpu_ms, gpu_ms, temp_ms, total_ms,
+    _metrics_logger.info(
+        "[metrics] cpu=%.0fms gpu=%.0fms temp=%.0fms total=%.0fms gpu_provider=%s",
+        cpu_ms, gpu_ms, temp_ms, total_ms, gpu_provider or "unavailable",
     )
 
 
@@ -2367,8 +2388,8 @@ def _metrics_worker_loop():
     while _metrics_worker_running:
         try:
             _metrics_collect_snapshot()
-        except Exception:
-            pass
+        except Exception as exc:
+            _metrics_logger.error("[metrics-worker] loop_exception error=%s", exc, exc_info=True)
         time.sleep(_metrics_interval)
 
 
@@ -2396,6 +2417,7 @@ def system_metrics():
         return {
             "cpuPercent": 0, "ramUsedGb": 0, "ramPercent": 0,
             "gpuPercent": 0, "temperatureC": None, "cpuTemperatureC": None,
+            "gpuProvider": "unavailable", "metricsWarning": "snapshot_error",
             "status": "warming_up",
         }
 

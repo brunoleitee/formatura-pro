@@ -422,6 +422,11 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           setSystemMetrics(m);
           return;
         }
+        if (m?.metricsWarning === 'gpu_unavailable') {
+          metricsErrorCountRef.current = 0;
+          setSystemMetrics(m);
+          return;
+        }
         metricsErrorCountRef.current = 0;
         setSystemMetrics(m);
       } catch (err) {
