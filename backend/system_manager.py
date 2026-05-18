@@ -1,6 +1,8 @@
 import os
 import shutil
 import time
+import logging
+import threading
 
 from fastapi import HTTPException
 from pydantic import BaseModel
@@ -9,6 +11,11 @@ from onnx_provider_utils import get_onnx_providers
 from services.ocr_engine import get_tesseract_status
 
 _cfg = {}
+_stats_cache: dict[str, tuple[dict, float]] = {}
+_stats_cache_lock = threading.Lock()
+_stats_cache_ttl = 3.5
+
+logger = logging.getLogger(__name__)
 
 
 def configure(**kwargs):
@@ -22,6 +29,24 @@ def _get(name, default=None):
 def _value(name, default=None):
     value = _get(name, default)
     return value() if callable(value) else value
+
+
+def _invalidate_stats_cache():
+    with _stats_cache_lock:
+        _stats_cache.clear()
+
+
+def _get_cached_stats(key):
+    with _stats_cache_lock:
+        entry = _stats_cache.get(key)
+        if entry and (time.time() - entry[1]) < _stats_cache_ttl:
+            return entry[0]
+    return None
+
+
+def _set_cached_stats(key, data):
+    with _stats_cache_lock:
+        _stats_cache[key] = (data, time.time())
 
 
 def gpu_diagnostics():
@@ -272,28 +297,46 @@ def get_stats(catalog: str = ""):
     cat = catalog or _get("get_current_catalog")()
     if not cat:
         raise HTTPException(400, "Nenhum catalogo selecionado")
+
+    cached = _get_cached_stats(f"stats:{cat}")
+    if cached is not None:
+        return cached
+
     try:
         with get_db(cat) as conn:
             cur = conn.cursor()
 
+            _t0 = time.perf_counter()
             cur.execute("SELECT COUNT(*) as cnt FROM ocorrencias")
             total_occurrences = cur.fetchone()["cnt"]
+            logger.info("[sql-perf] endpoint=/api/stats query=count_ocorrencias rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
 
+            _t0 = time.perf_counter()
             cur.execute("SELECT COUNT(DISTINCT foto_path) as cnt FROM ocorrencias")
             photos_with_faces = cur.fetchone()["cnt"]
+            logger.info("[sql-perf] endpoint=/api/stats query=count_distinct_foto_path rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
 
+            _t0 = time.perf_counter()
             cur.execute("SELECT COUNT(*) as cnt FROM alunos WHERE aluno_id != 'system_catalog'")
             total_people = cur.fetchone()["cnt"]
+            logger.info("[sql-perf] endpoint=/api/stats query=count_alunos rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
 
+            _t0 = time.perf_counter()
             cur.execute("SELECT COUNT(DISTINCT aluno_id) as cnt FROM ocorrencias WHERE aluno_id NOT LIKE 'Pessoa %' AND aluno_id != 'system_catalog'")
             named_people = cur.fetchone()["cnt"]
+            logger.info("[sql-perf] endpoint=/api/stats query=count_named_alunos rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
 
+            _t0 = time.perf_counter()
             cur.execute("SELECT COUNT(*) as cnt FROM ocorrencias WHERE aluno_id LIKE 'Pessoa %'")
             unnamed_people = cur.fetchone()["cnt"]
+            logger.info("[sql-perf] endpoint=/api/stats query=count_unnamed rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
 
+            _t0 = time.perf_counter()
             cur.execute("SELECT COUNT(*) as cnt FROM discarded_photos")
             discarded_count = cur.fetchone()["cnt"]
+            logger.info("[sql-perf] endpoint=/api/stats query=count_discarded rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
 
+            _t0 = time.perf_counter()
             cur.execute("""
                 SELECT aluno_id, COUNT(*) as cnt
                 FROM ocorrencias
@@ -301,13 +344,16 @@ def get_stats(catalog: str = ""):
                 ORDER BY cnt DESC
             """)
             photos_per_person = cur.fetchall()
+            logger.info("[sql-perf] endpoint=/api/stats query=photos_per_person rows=%d ms=%.0f", len(photos_per_person), (time.perf_counter() - _t0) * 1000)
 
             avg_photos = 0
             if photos_per_person and total_people > 0:
                 avg_photos = sum(r["cnt"] for r in photos_per_person) / total_people
 
+            _t0 = time.perf_counter()
             cur.execute("SELECT face_cache_path FROM alunos WHERE aluno_id = ?", ("system_catalog",))
             res = cur.fetchone()
+            logger.info("[sql-perf] endpoint=/api/stats query=system_catalog rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
             reference_root = res[0] if res and res[0] and os.path.isdir(res[0]) else ""
             class_map = {}
             if reference_root:
@@ -363,7 +409,7 @@ def get_stats(catalog: str = ""):
                 return (c["class_name"], c["class_name"])
             classes_list.sort(key=sort_key)
 
-            return {
+            result = {
                 "total_occurrences": total_occurrences,
                 "photos_with_faces": photos_with_faces,
                 "total_people": total_people,
@@ -374,5 +420,8 @@ def get_stats(catalog: str = ""):
                 "top_people": [{"id": r["aluno_id"], "count": r["cnt"]} for r in photos_per_person[:10]],
                 "classes": classes_list,
             }
+
+            _set_cached_stats(f"stats:{cat}", result)
+            return result
     except Exception as e:
         raise HTTPException(500, str(e))

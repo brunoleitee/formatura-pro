@@ -1,6 +1,7 @@
 ﻿import os
 import time
 import threading
+import logging
 
 from fastapi import HTTPException
 
@@ -11,6 +12,8 @@ _CACHE_TTL_SECONDS = 300
 
 _img_dim_cache = {}
 _img_dim_lock = threading.Lock()
+
+_sql_logger = logging.getLogger(__name__)
 
 
 def get_image_dimensions(p):
@@ -108,6 +111,7 @@ def get_people(unknown: bool = False):
         with get_db() as conn:
             cur = conn.cursor()
             if unknown:
+                _t = time.perf_counter()
                 cur.execute("""
                     SELECT aluno_id, COUNT(*) as total FROM ocorrencias
                     WHERE lower(aluno_id) IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__')
@@ -115,6 +119,7 @@ def get_people(unknown: bool = False):
                     GROUP BY aluno_id ORDER BY total DESC, aluno_id ASC
                 """)
                 rows = cur.fetchall()
+                _sql_logger.info("[sql-perf] endpoint=/api/people query=unknown_people rows=%d ms=%.0f", len(rows), (time.perf_counter() - _t) * 1000)
                 results = [{
                     "id": row["aluno_id"],
                     "name": row["aluno_id"],
@@ -125,7 +130,7 @@ def get_people(unknown: bool = False):
                     "avatar_path": None,
                 } for row in rows]
             else:
-                # 1. Buscar estatÃ­sticas e metadados principais
+                _t = time.perf_counter()
                 cur.execute("""
                     WITH stats AS (
                         SELECT 
@@ -169,9 +174,9 @@ def get_people(unknown: bool = False):
                     ORDER BY s.aluno_id ASC
                 """)
                 rows = cur.fetchall()
+                _sql_logger.info("[sql-perf] endpoint=/api/people query=people_stats rows=%d ms=%.0f", len(rows), (time.perf_counter() - _t) * 1000)
                 
-                # 2. Buscar todas as sample photos de uma vez (as primeiras 4 de cada aluno)
-                # Usamos Window Function para eficiÃªncia
+                _t = time.perf_counter()
                 cur.execute("""
                     WITH ranked AS (
                         SELECT 
@@ -185,6 +190,7 @@ def get_people(unknown: bool = False):
                     SELECT * FROM ranked WHERE rn <= 4
                 """)
                 samples_data = cur.fetchall()
+                _sql_logger.info("[sql-perf] endpoint=/api/people query=sample_photos rows=%d ms=%.0f", len(samples_data), (time.perf_counter() - _t) * 1000)
                 samples_by_aluno = {}
                 for s in samples_data:
                     aid = s["aluno_id"]

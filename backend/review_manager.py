@@ -2823,6 +2823,7 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
         _ensure_ignored_review_clusters_table(cur)
         ignored_filter_sql, ignored_filter_params = _ignored_review_cluster_filter(cat)
 
+        _t0 = time.perf_counter()
         cur.execute(
             f"""
             SELECT COUNT(DISTINCT u.cluster_id) AS cnt
@@ -2832,6 +2833,7 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
             ignored_filter_params,
         )
         total = int((cur.fetchone() or {"cnt": 0})["cnt"] or 0)
+        logger.info("[sql-perf] endpoint=/api/review/clusters query=count_clusters rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
         if total == 0:
             conn.commit()
             duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
@@ -2882,11 +2884,13 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
         )
         summary_rows = cur.fetchall()
         query_duration_ms = round((time.perf_counter() - query_started_at) * 1000, 2)
+        logger.info("[sql-perf] endpoint=/api/review/clusters query=cluster_summary rows=%d ms=%.0f", len(summary_rows), query_duration_ms)
         cluster_ids = [str(row["cluster_id"]) for row in summary_rows]
 
         grouped_items: dict[str, list[dict]] = {cluster_id: [] for cluster_id in cluster_ids}
         if cluster_ids:
             placeholders = ",".join(["?"] * len(cluster_ids))
+            _t2 = time.perf_counter()
             cur.execute(
                 f"""
                 SELECT u.cluster_id,
@@ -2904,11 +2908,13 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                  JOIN ocorrencias o ON o.rowid = u.face_id
                  WHERE u.cluster_id IN ({placeholders})
                    AND {ignored_filter_sql}
-                ORDER BY u.id ASC
+                 ORDER BY u.id ASC
                 """,
                 cluster_ids + ignored_filter_params,
             )
-            for row in cur.fetchall():
+            detail_rows = cur.fetchall()
+            logger.info("[sql-perf] endpoint=/api/review/clusters query=cluster_details rows=%d ms=%.0f", len(detail_rows), (time.perf_counter() - _t2) * 1000)
+            for row in detail_rows:
                 grouped_items[str(row["cluster_id"])].append(_row_to_review_item(row))
 
         clusters = []

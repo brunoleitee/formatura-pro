@@ -1024,6 +1024,13 @@ class DbConnection:
             )
         """)
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_cat_folder_unique ON catalog_folders(catalog_name, path)")
+        # Indexes for query performance on stats/people/review endpoints
+        c.execute("CREATE INDEX IF NOT EXISTS idx_discarded_foto ON discarded_photos(foto_path)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_photo_meta_foto ON photo_meta(foto_path)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ocor_x1 ON ocorrencias(x1)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ocor_aluno_foto ON ocorrencias(aluno_id, foto_path)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ocor_foto_aluno ON ocorrencias(foto_path, aluno_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_alunos_id_class ON alunos(aluno_id, class_name)")
         # Migration: add folder_type column if missing
         try:
             c.execute("ALTER TABLE catalog_folders ADD COLUMN folder_type TEXT DEFAULT 'event'")
@@ -1095,6 +1102,7 @@ RenameCatalogReq = cm.RenameCatalogReq
 
 @app.post("/api/catalogs/rename")
 def rename_catalog(req: RenameCatalogReq):
+    _invalidate_stats_caches()
     return cm.rename_catalog(req)
 
 @app.post("/api/catalogs/delete")
@@ -1540,29 +1548,64 @@ def toggle_catalog_folder(req: ToggleFolderReq):
         print(f"[CatalogFolders] toggle error: {e}", flush=True)
         return {"success": False, "error": str(e)}
 
+_catalog_stats_cache: dict[str, tuple[dict, float]] = {}
+_CATALOG_STATS_TTL = 3.5
+
+
+def _invalidate_stats_caches():
+    _catalog_stats_cache.clear()
+    try:
+        sm._invalidate_stats_cache()
+    except Exception:
+        pass
+
 @app.get("/api/catalogs/stats")
 def catalog_folder_stats(catalog: str = ""):
+    _stats_logger = logging.getLogger(__name__)
+    cache_key = f"catalogs/stats:{catalog}"
+    cached = _catalog_stats_cache.get(cache_key)
+    if cached and (time.time() - cached[1]) < _CATALOG_STATS_TTL:
+        return cached[0]
     try:
         with get_db(catalog) as conn:
             cur = conn.cursor()
+            _t = time.perf_counter()
             cur.execute("SELECT COUNT(*) FROM catalog_folders WHERE catalog_name = ?", (catalog,))
             active_folders = cur.fetchone()[0]
+            _stats_logger.info("[sql-perf] endpoint=/api/catalogs/stats query=count_folders rows=1 ms=%.0f", (time.perf_counter() - _t) * 1000)
+
+            _t = time.perf_counter()
             cur.execute("SELECT COALESCE(SUM(photo_count), 0) FROM catalog_folders WHERE catalog_name = ?", (catalog,))
             total_photos = cur.fetchone()[0]
+            _stats_logger.info("[sql-perf] endpoint=/api/catalogs/stats query=sum_photo_count rows=1 ms=%.0f", (time.perf_counter() - _t) * 1000)
+
+            _t = time.perf_counter()
             cur.execute("SELECT COUNT(DISTINCT foto_path) FROM ocorrencias")
             recognized = cur.fetchone()[0]
-            # Fotos novas = total no catálogo - fotos já processadas (com pelo menos 1 ocorrência)
+            _stats_logger.info("[sql-perf] endpoint=/api/catalogs/stats query=count_distinct_foto_path rows=1 ms=%.0f", (time.perf_counter() - _t) * 1000)
             new_photos = max(0, total_photos - recognized)
+
+            _t = time.perf_counter()
             cur.execute("SELECT MAX(last_scan_at) FROM catalog_folders WHERE catalog_name = ?", (catalog,))
             last_scan = cur.fetchone()[0]
-            # Status de reconhecimento facial
+            _stats_logger.info("[sql-perf] endpoint=/api/catalogs/stats query=max_last_scan rows=1 ms=%.0f", (time.perf_counter() - _t) * 1000)
+
+            _t = time.perf_counter()
             cur.execute("SELECT COUNT(*) FROM ocorrencias WHERE x1 IS NOT NULL")
             total_faces = cur.fetchone()[0]
+            _stats_logger.info("[sql-perf] endpoint=/api/catalogs/stats query=count_faces rows=1 ms=%.0f", (time.perf_counter() - _t) * 1000)
+
+            _t = time.perf_counter()
             cur.execute("SELECT COUNT(DISTINCT foto_path) FROM ocorrencias WHERE x1 IS NOT NULL")
             photos_with_faces = cur.fetchone()[0]
+            _stats_logger.info("[sql-perf] endpoint=/api/catalogs/stats query=count_photos_with_faces rows=1 ms=%.0f", (time.perf_counter() - _t) * 1000)
+
+            _t = time.perf_counter()
             cur.execute("SELECT COUNT(DISTINCT aluno_id) FROM ocorrencias WHERE aluno_id IS NOT NULL AND aluno_id != '' AND aluno_id != 'desconhecido'")
             known_persons = cur.fetchone()[0]
-        return {
+            _stats_logger.info("[sql-perf] endpoint=/api/catalogs/stats query=count_known_persons rows=1 ms=%.0f", (time.perf_counter() - _t) * 1000)
+
+        result = {
             "activeFolders": active_folders,
             "totalPhotos": total_photos,
             "recognizedPhotos": recognized,
@@ -1572,6 +1615,8 @@ def catalog_folder_stats(catalog: str = ""):
             "photosWithFaces": photos_with_faces,
             "knownPersons": known_persons,
         }
+        _catalog_stats_cache[cache_key] = (result, time.time())
+        return result
     except Exception as e:
         print(f"[CatalogFolders] stats error: {e}", flush=True)
         return {"activeFolders": 0, "totalPhotos": 0, "recognizedPhotos": 0, "newPhotos": 0, "lastScanAt": None, "totalFaces": 0, "photosWithFaces": 0, "knownPersons": 0}
@@ -1964,11 +2009,13 @@ class BulkRemoveIdentificationReq(BaseModel):
 
 @app.post("/api/review/bulk-discard")
 def bulk_discard_photos(req: BulkDiscardPhotoReq):
+    _invalidate_stats_caches()
     return rm.bulk_discard_photos(req)
 
 
 @app.post("/api/review/bulk-restore")
 def bulk_restore_photos(req: BulkRestorePhotoReq):
+    _invalidate_stats_caches()
     return rm.bulk_restore_photos(req)
 
 
@@ -2135,6 +2182,7 @@ RenameReq = rm.RenameReq
 
 @app.post("/api/rename-person")
 def rename_person(req: RenameReq):
+    _invalidate_stats_caches()
     result = rm.rename_person(req)
     pdm.invalidate_people_cache()
     return result
@@ -2191,6 +2239,7 @@ def event_problems_report(catalog: str = ""):
 
 @app.post("/api/discard-photo")
 def discard_photo(req: DiscardPhotoReq):
+    _invalidate_stats_caches()
     return am.discard_photo(req)
 
 @app.post("/api/clear-db")
@@ -2525,6 +2574,7 @@ def clear_checkpoints(req: dict):
 
 @app.post("/api/scan/start")
 def start_scan(req: scm.ScanRequest):
+    _invalidate_stats_caches()
     return scm.start_scan(req)
 
 @app.get("/api/scan/status")
@@ -2533,6 +2583,7 @@ def get_scan_status():
 
 @app.post("/api/scan/clear_summary")
 def clear_scan_summary():
+    _invalidate_stats_caches()
     return scm.clear_scan_summary()
 
 @app.post("/api/scan/stop")
