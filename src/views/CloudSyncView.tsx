@@ -124,9 +124,8 @@ export default function CloudSyncView() {
 
   useEffect(() => {
     return () => {
-      if (pollingRef.current !== null) {
-        clearTimeout(pollingRef.current);
-      }
+      if (pollingRef.current !== null) clearTimeout(pollingRef.current);
+      if (aiPollRef.current !== null) clearTimeout(aiPollRef.current);
     };
   }, []);
 

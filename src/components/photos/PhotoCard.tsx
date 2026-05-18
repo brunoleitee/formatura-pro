@@ -188,9 +188,9 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
   const firstName = knownNames.length > 0 ? knownNames.join(', ') : 'Não mapeada';
 
   const [aiTick, setAiTick] = useState(0);
-  useEffect(() => aiCacheStore.subscribe(() => setAiTick((t) => t + 1)), []);
+  useEffect(() => aiCacheStore.subscribeToPath(photo.path, () => setAiTick((t) => t + 1)), [photo.path]);
   const [ratingTick, setRatingTick] = useState(0);
-  useEffect(() => ratingCache.subscribe(() => setRatingTick((t) => t + 1)), []);
+  useEffect(() => ratingCache.subscribeToPath(photo.path, () => setRatingTick((t) => t + 1)), [photo.path]);
   const aiResult = aiCacheStore.get(photo.path);
   const aiOcrFinal = aiResult?.final_student || aiResult?.suggested_id || aiResult?.ocr_text;
   const showAiBadge = aiTick >= 0 && aiResult?.status === "completed" && (aiResult.face_detected || !!aiOcrFinal);

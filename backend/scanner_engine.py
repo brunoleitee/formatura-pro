@@ -62,7 +62,8 @@ _cfg = {
     "current_catalog": "",
     "save_embedding_disk_cache": lambda: None,
     "load_embedding_disk_cache": lambda: None,
-    "get_memory_info": lambda: {},
+    "get_cached_embedding": lambda *a: None,
+    "set_cached_embedding": lambda *a: None,
 }
 
 
@@ -814,8 +815,6 @@ def run_scanner_worker(req):
                     
                     # 1. Decode/Read
                     t0_decode = time.time()
-                    if img is None:
-                        img = imread_unicode(p)
                     t_decode = (time.time() - t0_decode) * 1000
 
                     # 2. Blur
@@ -929,7 +928,29 @@ def run_scanner_worker(req):
                                 """,
                                 (nome, "n/a", detected_class),
                             )
-                            
+
+                            # Salvar embedding na tabela face_embeddings para permitir
+                            # re-match e re-cluster sem precisar re-escanear
+                            try:
+                                occ_row = cur.execute(
+                                    "SELECT rowid FROM ocorrencias WHERE foto_path = ? AND x1 = ? AND y1 = ? AND x2 = ? AND y2 = ? LIMIT 1",
+                                    (p, x1, y1, x2, y2)
+                                ).fetchone()
+                                if occ_row:
+                                    try:
+                                        mtime_ns = int(os.path.getmtime(p) * 1e9)
+                                        fsize    = os.path.getsize(p)
+                                    except OSError:
+                                        mtime_ns, fsize = 0, 0
+                                    cur.execute("""
+                                        INSERT OR REPLACE INTO face_embeddings
+                                        (occurrence_rowid, foto_path, x1, y1, x2, y2, embedding, mtime_ns, size)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    """, (occ_row[0], p, x1, y1, x2, y2,
+                                          emb.tobytes(), mtime_ns, fsize))
+                            except Exception as _emb_err:
+                                log_info(f"[Scanner] erro ao salvar embedding: {_emb_err}")
+
                             log_info(f"[Scanner] face found bbox=[{x1}, {y1}, {x2}, {y2}] path={os.path.basename(p)}")
 
                             current_time = time.time()
@@ -1059,11 +1080,6 @@ def run_scanner_worker(req):
                     )
                     conn.commit()
             finally:
-                try:
-                    chunk_imgs.clear()
-                    del chunk_imgs
-                except NameError:
-                    pass
                 gc.collect()
 
         if _cancel_requested():
@@ -1136,7 +1152,7 @@ def run_quality_audit_worker(catalog_name):
         quality_state["processed"] = 0
         with get_db(catalog_name) as conn:
             cur = conn.cursor()
-            cur.execute("SELECT DISTINCT foto_path FROM ocorrencias WHERE blur_status IS NULL OR blur_status = 'sharp' AND blur_score IS NULL")
+            cur.execute("SELECT DISTINCT foto_path FROM ocorrencias WHERE (blur_status IS NULL OR blur_status = 'sharp') AND blur_score IS NULL")
             rows = cur.fetchall()
             paths = [r["foto_path"] for r in rows if os.path.exists(r["foto_path"])]
             quality_state["total"] = len(paths)

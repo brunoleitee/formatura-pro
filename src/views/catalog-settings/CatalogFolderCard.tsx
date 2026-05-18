@@ -30,7 +30,12 @@ export function CatalogFolderCard({ folder, onRemove, onScan, onToggle }: Props)
         <img src={folderIcon} alt="" aria-hidden="true" className={styles.folderCardIconImage} />
       </div>
       <div className={styles.folderCardBody}>
-        <span className={styles.folderCardName} title={folderName}>{folderName}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <span className={styles.folderCardName} title={folderName}>{folderName}</span>
+          {folder.includeSubfolders && (
+            <span className={styles.subfoldersTag}>subpastas</span>
+          )}
+        </div>
         <span className={styles.folderCardPath} title={folder.path}>{folder.path}</span>
       </div>
       <div className={styles.folderCardCount}>

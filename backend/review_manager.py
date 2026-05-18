@@ -21,9 +21,10 @@ from fastapi import HTTPException, Query
 from pydantic import BaseModel
 from typing import List, Optional
 
-# Cache para face_cache_path
+# Cache para face_cache_path (com limite de tamanho)
 face_cache_path_cache = {}
 cache_lock = threading.Lock()
+_CACHE_MAX_SIZE = 2000
 
 def get_face_cache_path_cached(catalog_name, aluno_id):
     """Obtém face_cache_path com cache para evitar queries repetidas."""
@@ -43,6 +44,8 @@ def get_face_cache_path_cached(catalog_name, aluno_id):
         path = row["face_cache_path"] if row else None
     
     with cache_lock:
+        if len(face_cache_path_cache) >= _CACHE_MAX_SIZE:
+            face_cache_path_cache.clear()
         face_cache_path_cache[cache_key] = path
     return path
 from PIL import Image

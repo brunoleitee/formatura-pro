@@ -1,34 +1,34 @@
 import { Component, type ErrorInfo, type ReactNode, useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
-import { Download, FolderOpen, RefreshCw, Check, Users } from 'lucide-react';
+import { Download, FolderOpen, RefreshCw, Check, Users, X as XIcon, ChevronRight, Camera, HardDrive } from 'lucide-react';
 import { api, type Person, type ExportStatus, type ExportSummary } from '../services/api';
 import { useApp } from '../context/AppContext';
 import ExportFinishModal from '../components/ExportFinishModal';
 import { getAvatarThumbUrl } from '../utils/imageUrls';
+import s from './ExportView.module.css';
 
 type ExportMode = 'copy' | 'move';
 type ConflictStrategy = 'copy' | 'skip' | 'overwrite';
+type SortBy = 'az' | 'za' | 'count';
+
+const STEPS = [
+  { title: 'Seleção', sub: 'Escolha os formandos' },
+  { title: 'Destino', sub: 'Onde exportar' },
+  { title: 'Organização', sub: 'Como organizar' },
+  { title: 'Exportação', sub: 'Configurações finais' },
+];
 
 const ExportAvatar = memo(function ExportAvatar({ person, index }: { person: Person; index: number }) {
   const [failed, setFailed] = useState(false);
   const avatarPath = person.avatar_path || person.cover_path || '';
 
-  useEffect(() => {
-    setFailed(false);
-  }, [avatarPath]);
+  useEffect(() => { setFailed(false); }, [avatarPath]);
 
   const initials = person.name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join('');
-
+    .trim().split(/\s+/).filter(Boolean).slice(0, 2)
+    .map(p => p.charAt(0).toUpperCase()).join('');
   const label = initials || String(index + 1).padStart(2, '0');
 
-  if (!avatarPath || failed) {
-    return <>{label}</>;
-  }
+  if (!avatarPath || failed) return <>{label}</>;
 
   return (
     <img
@@ -37,52 +37,30 @@ const ExportAvatar = memo(function ExportAvatar({ person, index }: { person: Per
       loading="eager"
       decoding="async"
       onError={() => setFailed(true)}
-      style={{
-        width: '100%',
-        height: '100%',
-        objectFit: 'cover',
-        display: 'block',
-      }}
+      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
     />
   );
 });
 
 class ExportViewBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   state = { hasError: false };
-
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-
-  componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('[ExportViewBoundary] render crash:', error, info);
-  }
-
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: ErrorInfo) { console.error('[ExportViewBoundary]', error, info); }
   render() {
     if (this.state.hasError) {
       return (
         <div className="view-container">
-          <div className="view-header">
-            <div>
-              <h1>Exportar Fotos</h1>
-              <div className="view-subtitle">A aba de exportação encontrou um erro e foi recarregada em modo seguro.</div>
-            </div>
-          </div>
+          <div className="view-header"><div><h1>Exportar Fotos</h1></div></div>
           <div className="error-msg">Reabra a aba Exportar ou atualize a tela para tentar novamente.</div>
         </div>
       );
     }
-
     return this.props.children;
   }
 }
 
 export default function ExportView() {
-  return (
-    <ExportViewBoundary>
-      <ExportViewContent />
-    </ExportViewBoundary>
-  );
+  return <ExportViewBoundary><ExportViewContent /></ExportViewBoundary>;
 }
 
 function ExportViewContent() {
@@ -104,6 +82,8 @@ function ExportViewContent() {
   const pollingFailuresRef = useRef(0);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
+  const [step, setStep] = useState(1);
+  const [sortBy, setSortBy] = useState<SortBy>('az');
 
   const loadPeople = useCallback(async () => {
     if (!currentCatalog) return;
@@ -128,14 +108,13 @@ function ExportViewContent() {
     setOrganizeByClass(false);
     pollingFailuresRef.current = 0;
     setError('');
+    setStep(1);
   }, [currentCatalog]);
 
   useEffect(() => {
     if (!polling) return;
-
     let cancelled = false;
     let interval: ReturnType<typeof setInterval> | null = null;
-
     const poll = async () => {
       if (cancelled) return;
       try {
@@ -143,9 +122,7 @@ function ExportViewContent() {
         if (cancelled) return;
         setStatus(st);
         pollingFailuresRef.current = 0;
-        if (!st.is_exporting && !st.running) {
-          setPolling(false);
-        }
+        if (!st.is_exporting && !st.running) setPolling(false);
       } catch {
         if (cancelled) return;
         pollingFailuresRef.current += 1;
@@ -155,29 +132,20 @@ function ExportViewContent() {
         }
       }
     };
-
     poll();
     interval = setInterval(poll, 800);
-
-    return () => {
-      cancelled = true;
-      if (interval) clearInterval(interval);
-    };
+    return () => { cancelled = true; if (interval) clearInterval(interval); };
   }, [polling]);
 
   useEffect(() => {
     if (!status || status.is_exporting) return;
-
     const summary = status.export_summary as ExportSummary | null;
     if (!summary) return;
-
     const exportId = status.export_id || summary.export_id;
     if (!exportId || typeof window === 'undefined') return;
-
     const storageKey = 'formaturapro:last-export-modal';
     const seenExportId = window.sessionStorage.getItem(storageKey);
     if (seenExportId === exportId) return;
-
     window.sessionStorage.setItem(storageKey, exportId);
     setFinishModalData({
       exportDir: status.export_dir || summary.export_dir || summary.dest_path || '',
@@ -196,23 +164,48 @@ function ExportViewContent() {
   const toggleSelect = (id: string) => {
     setSelected(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
 
   const getPersonId = (person: Person) => person.id || person.name || 'Sem_Nome';
   const getPersonLabel = (person: Person) => person.name || person.id || 'Sem nome';
+
   const classOptions = useMemo(() => {
-    const values = new Set(
-      people.map((person) => (person.class_name || 'Sem turma').trim() || 'Sem turma')
-    );
+    const values = new Set(people.map(p => (p.class_name || 'Sem turma').trim() || 'Sem turma'));
     return ['all', ...Array.from(values).sort((a, b) => a.localeCompare(b))];
   }, [people]);
 
+  const filtered = people.filter(p =>
+    (!search || p.name.toLowerCase().includes(search.toLowerCase())) &&
+    (selectedClass === 'all' || (p.class_name || 'Sem turma').trim() === selectedClass)
+  );
+
+  const sortedFiltered = [...filtered].sort((a, b) => {
+    if (sortBy === 'az') return a.name.localeCompare(b.name);
+    if (sortBy === 'za') return b.name.localeCompare(a.name);
+    return (b.total_photos || 0) - (a.total_photos || 0);
+  });
+
   const selectAll = () => setSelected(new Set(filtered.map(getPersonId)));
   const clearAll = () => setSelected(new Set());
+
+  const selectedPeople = useMemo(
+    () => people.filter(p => selected.has(getPersonId(p))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [people, selected]
+  );
+  const totalSelectedPhotos = useMemo(
+    () => selectedPeople.reduce((sum, p) => sum + (p.total_photos || 0), 0),
+    [selectedPeople]
+  );
+
+  const formatSize = (photos: number): string => {
+    const bytes = photos * 17 * 1024 * 1024;
+    if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+    return `${Math.round(bytes / 1024 ** 2)} MB`;
+  };
 
   const handleExport = async () => {
     if (!destPath) { setError('Selecione a pasta de destino.'); return; }
@@ -229,308 +222,312 @@ function ExportViewContent() {
     } catch { setError('Erro ao iniciar exportação.'); }
   };
 
-  const filtered = people.filter(p =>
-    (!search || p.name.toLowerCase().includes(search.toLowerCase())) &&
-    (selectedClass === 'all' || (p.class_name || 'Sem turma').trim() === selectedClass)
-  );
-
   const isExporting = status?.is_exporting ?? false;
-  const selectionSummary = `${selected.size} de ${people.length} selecionado${selected.size !== 1 ? 's' : ''}`;
-  const exportButtonLabel = isExporting ? 'Exportando...' : `Exportar${selected.size > 0 ? ` (${selected.size})` : ''}`;
-  const exportSuccessLabel = 'Exportação concluída com sucesso!';
-
-  const finishExportDir = finishModalData?.exportDir ?? '';
-  const finishPdfPath = finishModalData?.pdfPath ?? '';
 
   const handleOpenFinishPath = useCallback(async (path: string) => {
     await api.openSystemPath(path);
   }, []);
 
-  const getRowStyle = (isSelected: boolean) => ({
-    width: '100%',
-    minHeight: 56,
-    borderRadius: 12,
-    border: isSelected ? '1px solid rgba(96, 165, 250, 0.9)' : '1px solid rgba(255,255,255,0.04)',
-    background: isSelected
-      ? 'linear-gradient(180deg, rgba(37,99,235,0.22), rgba(37,99,235,0.10))'
-      : 'transparent',
-    boxShadow: isSelected
-      ? '0 0 0 1px rgba(59,130,246,0.22) inset, 0 12px 28px rgba(37,99,235,0.16)'
-      : 'none',
-    padding: '10px 12px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    textAlign: 'left' as const,
-    cursor: 'pointer',
-    transition: 'border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease',
-    outline: 'none',
-  });
-
-  const getAvatarStyle = (isSelected: boolean) => ({
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    background: isSelected
-      ? 'linear-gradient(180deg, rgba(96,165,250,0.26), rgba(59,130,246,0.16))'
-      : 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))',
-    border: isSelected ? '1px solid rgba(96,165,250,0.36)' : '1px solid rgba(255,255,255,0.06)',
-    color: isSelected ? '#dbeafe' : 'rgba(255,255,255,0.88)',
-    fontSize: '0.78rem',
-    fontWeight: 700,
-    letterSpacing: '0.02em',
-  });
-
-  const getCheckStyle = (isSelected: boolean) => ({
-    width: 18,
-    height: 18,
-    borderRadius: 6,
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    border: isSelected ? '1px solid rgba(96,165,250,0.52)' : '1px solid rgba(255,255,255,0.06)',
-    background: isSelected ? 'rgba(59,130,246,0.18)' : 'rgba(255,255,255,0.02)',
-    color: isSelected ? '#bfdbfe' : '#64748b',
-    boxShadow: isSelected ? '0 0 14px rgba(59,130,246,0.18)' : 'none',
-    transition: 'border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease',
-  });
-
   return (
     <div className="view-container">
-      <div className="view-header">
-        <div>
-          <h1>Exportar Fotos</h1>
-          <div className="view-subtitle">
-            <span>Organize as fotos por formando em pastas</span>
-          </div>
-        </div>
+
+      {/* ── Step bar ── */}
+      <div className={s.stepBar}>
+        {STEPS.map((st, i) => {
+          const num = i + 1;
+          const isDone = step > num;
+          const isActive = step === num;
+          return (
+            <div key={num} className={s.stepGroup}>
+              <div
+                className={`${s.stepItem} ${isActive ? s.stepActive : ''} ${isDone ? s.stepDone : ''}`}
+                onClick={() => { if (isDone) setStep(num); }}
+                role={isDone ? 'button' : undefined}
+                tabIndex={isDone ? 0 : undefined}
+                onKeyDown={isDone ? (e) => { if (e.key === 'Enter') setStep(num); } : undefined}
+              >
+                <div className={s.stepCircle}>{isDone ? <Check size={12} /> : num}</div>
+                <div className={s.stepText}>
+                  <span className={s.stepName}>{st.title}</span>
+                  <span className={s.stepSub}>{st.sub}</span>
+                </div>
+              </div>
+              {i < 3 && <div className={`${s.stepConnector} ${isDone ? s.connectorDone : ''}`} />}
+            </div>
+          );
+        })}
       </div>
 
-      {error && <div className="error-msg"><span>{error}</span></div>}
+      {error && <div className="error-msg" style={{ margin: '0 28px 8px' }}><span>{error}</span></div>}
 
-      {!!status?.export_summary && !isExporting && (
-        <div className="export-summary">
-          <Check size={20} color="var(--success-color)" />
-          <span>{exportSuccessLabel}</span>
-          <button className="icon-btn" onClick={async () => {
-            await api.clearExportSummary();
-            setStatus(null);
-          }}>✕</button>
-        </div>
-      )}
+      {/* ── Step 1: Seleção ── */}
+      {step === 1 && (
+        <div className={s.splitLayout}>
+          <div className={s.leftCol}>
 
-      {isExporting && status && (
-        <div className="export-progress-bar-wrap">
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-            <span style={{ fontSize: '0.85rem' }}>{String(status.status_text || '')}</span>
-            <span style={{ fontSize: '0.85rem' }}>{Math.round(status.progress)}%</span>
-          </div>
-          <div className="progress-track">
-            <div className="progress-fill" style={{ width: `${status.progress}%` }} />
-          </div>
-        </div>
-      )}
-
-      <div className="export-layout">
-        <div className="export-people-panel">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <input
-              className="search-inline"
-              placeholder="Filtrar formandos..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
-            <button className="btn-secondary" onClick={selectAll} style={{ whiteSpace: 'nowrap' }}>
-              <Users size={14} />
-              <span>Todos</span>
-            </button>
-            <button className="btn-secondary" onClick={clearAll} style={{ whiteSpace: 'nowrap' }}>
-              <span>Limpar</span>
-            </button>
-          </div>
-
-          {loading ? (
-            <div className="empty-state" style={{ padding: 40 }}>
-              <RefreshCw size={24} className="spin" />
+            {/* Selected chips */}
+            <div className={s.selectedBox}>
+              <div className={s.selectedHeader}>
+                <span className={s.selectedTitle}>Selecionados</span>
+                <span className={s.selectedCount}>{selected.size} formandos</span>
+              </div>
+              {selected.size > 0 ? (
+                <div className={s.chipsScroll}>
+                  {selectedPeople.map((p, i) => (
+                    <div key={getPersonId(p)} className={s.chip}>
+                      <div className={s.chipAvatarWrap}>
+                        <div className={s.chipAvatarInner}>
+                          <ExportAvatar person={p} index={i} />
+                        </div>
+                        <button
+                          className={s.chipX}
+                          onClick={() => toggleSelect(getPersonId(p))}
+                          aria-label={`Remover ${p.name}`}
+                        >×</button>
+                      </div>
+                      <span className={s.chipLabel}>{p.name.split(' ')[0].toUpperCase()}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className={s.emptyChips}>Nenhum formando selecionado</div>
+              )}
+              <div className={s.chipBtns}>
+                <button className={s.btnGhost} onClick={selectAll}><Users size={13} /> Selecionar todos</button>
+                <button className={s.btnGhost} onClick={clearAll}><XIcon size={13} /> Limpar seleção</button>
+              </div>
             </div>
-          ) : (
-            <div className="export-person-list" style={{ gap: 8, paddingRight: 4 }}>
-              {filtered.map((p, index) => {
-                const personId = getPersonId(p);
-                const isSelected = selected.has(personId);
-                const photoCountLabel = `${p.total_photos} fotos`;
 
-                return (
-                  <button
-                    type="button"
-                    key={personId}
-                    className={`export-person-row ${isSelected ? 'selected' : ''}`}
-                    onClick={() => toggleSelect(personId)}
-                    aria-pressed={isSelected}
-                    style={getRowStyle(isSelected)}
-                  >
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
-                      <span aria-hidden="true" style={{ ...getAvatarStyle(isSelected), overflow: 'hidden' }}>
-                        <ExportAvatar person={p} index={index} />
-                      </span>
-                      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
-                        <span
-                          className="person-name"
-                          style={{
-                            fontSize: '0.9rem',
-                            fontWeight: 600,
-                            color: 'var(--text-primary)',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          <span>{getPersonLabel(p)}</span>
+            {/* People list */}
+            <div className={s.listBox}>
+              <div className={s.listToolbar}>
+                <input
+                  className={s.searchInput}
+                  placeholder="Buscar formando..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                />
+                <select className={s.sortSelect} value={sortBy} onChange={e => setSortBy(e.target.value as SortBy)}>
+                  <option value="az">Nome (A-Z)</option>
+                  <option value="za">Nome (Z-A)</option>
+                  <option value="count">Mais fotos</option>
+                </select>
+              </div>
+
+              {loading ? (
+                <div className={s.emptyList}><RefreshCw size={22} className="spin" /></div>
+              ) : (
+                <div className={s.peopleList}>
+                  {sortedFiltered.map((p, index) => {
+                    const personId = getPersonId(p);
+                    const isSel = selected.has(personId);
+                    const quality = p.avg_quality != null ? Math.round(p.avg_quality * 100) : null;
+                    return (
+                      <button
+                        type="button"
+                        key={personId}
+                        className={`${s.personRow} ${isSel ? s.selected : ''}`}
+                        onClick={() => toggleSelect(personId)}
+                        aria-pressed={isSel}
+                      >
+                        <span className={s.personCheck}>
+                          <input type="checkbox" checked={isSel} readOnly tabIndex={-1} />
                         </span>
-                        <span
-                          className="person-count"
-                          style={{
-                            fontSize: '0.74rem',
-                            color: isSelected ? 'rgba(191,219,254,0.88)' : 'var(--text-secondary)',
-                            letterSpacing: '0.01em',
-                          }}
-                        >
-                          <span>{photoCountLabel}</span>
+                        <span className={s.personAvatar}>
+                          <ExportAvatar person={p} index={index} />
                         </span>
-                      </span>
-                    </span>
-                    <span aria-hidden="true" style={getCheckStyle(isSelected)}>
-                      <Check size={12} strokeWidth={2.4} />
-                    </span>
-                  </button>
-                );
-              })}
+                        <span className={s.personName}>{getPersonLabel(p)}</span>
+                        <span className={s.personPhotos}>{p.total_photos} fotos</span>
+                        {quality != null && (
+                          <span className={s.ratingBadge}>{quality}%</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right column */}
+          <div className={s.rightCol}>
+            <div className={s.summaryCard}>
+              <div className={s.cardTitle}>Resumo da Exportação</div>
+              <div className={s.summaryRows}>
+                <div className={s.summaryRow}>
+                  <div className={s.summaryIcon}><Users size={14} /></div>
+                  <span className={s.summaryLabel}>Formandos selecionados</span>
+                  <span className={s.summaryValue}>{selected.size}</span>
+                </div>
+                <div className={s.summaryRow}>
+                  <div className={s.summaryIcon}><Camera size={14} /></div>
+                  <span className={s.summaryLabel}>Total de fotos</span>
+                  <span className={s.summaryValue}>{totalSelectedPhotos}</span>
+                </div>
+                <div className={s.summaryRow}>
+                  <div className={s.summaryIcon}><HardDrive size={14} /></div>
+                  <span className={s.summaryLabel}>Tamanho estimado</span>
+                  <span className={s.summaryValue}>{formatSize(totalSelectedPhotos)}</span>
+                </div>
+              </div>
+            </div>
+
+            <button className={s.continueBtn} onClick={() => setStep(2)} disabled={selected.size === 0}>
+              Continuar <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 2: Destino ── */}
+      {step === 2 && (
+        <div className={s.stepPage}>
+          <div className={s.stepCards}>
+            <div className={s.card}>
+              <div className={s.cardLabel}>Origem</div>
+              <div className={s.cardValue}>{currentCatalog || 'Nenhum catálogo selecionado'}</div>
+            </div>
+            <div className={s.card}>
+              <div className={s.cardLabel}>Destino</div>
+              <div className={s.destRow}>
+                <input
+                  className={s.input}
+                  placeholder="C:\Fotos Exportadas\..."
+                  value={destPath}
+                  onChange={e => setDestPath(e.target.value)}
+                />
+                <button className={s.btnOutline} onClick={handleSelectFolder}>
+                  <FolderOpen size={15} /> Alterar
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className={s.stepNav}>
+            <button className={s.btnSecondary} onClick={() => setStep(1)}>← Voltar</button>
+            <button className={s.continueBtn} style={{ width: 'auto' }} onClick={() => setStep(3)} disabled={!destPath}>
+              Continuar <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 3: Organização ── */}
+      {step === 3 && (
+        <div className={s.stepPage}>
+          <div className={s.stepCards}>
+            <div className={s.card}>
+              <div className={s.cardLabel}>Filtrar por turma</div>
+              <select className={s.input} value={selectedClass} onChange={e => setSelectedClass(e.target.value)}>
+                {classOptions.map(opt => (
+                  <option key={opt} value={opt}>{opt === 'all' ? 'Todas as turmas' : opt}</option>
+                ))}
+              </select>
+            </div>
+            <div className={s.card}>
+              <div className={s.cardLabel}>Organização das pastas</div>
+              <label className={s.toggleRow}>
+                <input type="checkbox" checked={organizeByClass} onChange={e => setOrganizeByClass(e.target.checked)} />
+                <span className={s.toggleLabel}>Organizar por turma</span>
+              </label>
+            </div>
+          </div>
+          <div className={s.stepNav}>
+            <button className={s.btnSecondary} onClick={() => setStep(2)}>← Voltar</button>
+            <button className={s.continueBtn} style={{ width: 'auto' }} onClick={() => setStep(4)}>
+              Continuar <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 4: Exportação ── */}
+      {step === 4 && (
+        <div className={s.stepPage}>
+          {!!status?.export_summary && !isExporting && (
+            <div className="export-summary">
+              <Check size={20} color="var(--success-color)" />
+              <span>Exportação concluída com sucesso!</span>
+              <button className="icon-btn" onClick={async () => { await api.clearExportSummary(); setStatus(null); }}>✕</button>
             </div>
           )}
-          <div className="export-selection-count">
-            <span>{selectionSummary}</span>
-          </div>
-        </div>
 
-        <div className="export-config-panel">
-          <h3>Configurações de Exportação</h3>
+          {isExporting && status && (
+            <div className="export-progress-bar-wrap">
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: '0.85rem' }}>{String(status.status_text || '')}</span>
+                <span style={{ fontSize: '0.85rem' }}>{Math.round(status.progress)}%</span>
+              </div>
+              <div className="progress-track">
+                <div className="progress-fill" style={{ width: `${status.progress}%` }} />
+              </div>
+            </div>
+          )}
 
-          <div className="config-section">
-            <label className="config-label">Pasta de destino</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                className="config-input"
-                placeholder="C:\Fotos Exportadas\..."
-                value={destPath}
-                onChange={e => setDestPath(e.target.value)}
-              />
-              <button className="btn-secondary" onClick={handleSelectFolder}>
-                <FolderOpen size={16} />
-              </button>
+          <div className={s.configGrid}>
+            {/* Modo de exportação */}
+            <div className={s.card}>
+              <div className={s.cardLabel}>Modo de exportação</div>
+              <div className={s.radioGroup}>
+                {([['copy', 'Copiar (mantém originais)'], ['move', 'Mover (remove originais)']] as const).map(([val, label]) => (
+                  <label key={val} className={`${s.radioOpt} ${mode === val ? s.radioActive : ''}`}>
+                    <input type="radio" value={val} checked={mode === val} onChange={() => setMode(val)} />
+                    <span className={s.radioDot} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Conflito de arquivos */}
+            <div className={s.card}>
+              <div className={s.cardLabel}>Conflito de arquivos</div>
+              <div className={s.radioGroup}>
+                {([
+                  ['copy', 'Renomear automaticamente'],
+                  ['skip', 'Ignorar duplicatas'],
+                  ['overwrite', 'Substituir'],
+                ] as const).map(([val, label]) => (
+                  <label key={val} className={`${s.radioOpt} ${conflict === val ? s.radioActive : ''}`}>
+                    <input type="radio" value={val} checked={conflict === val} onChange={() => setConflict(val)} />
+                    <span className={s.radioDot} />
+                    {label}
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
 
-          <div className="config-section">
-            <label className="config-label">Turma</label>
-            <select
-              className="config-input"
-              value={selectedClass}
-              onChange={e => setSelectedClass(e.target.value)}
+          {/* Extras */}
+          <div className={s.card}>
+            <div className={s.cardLabel}>Extras</div>
+            <label className={s.toggleRow}>
+              <input type="checkbox" checked={includeDescarte} onChange={e => setIncludeDescarte(e.target.checked)} />
+              <span className={s.toggleLabel}>Incluir pasta Descarte (fotos não identificadas)</span>
+            </label>
+            <label className={s.toggleRow}>
+              <input type="checkbox" checked={includeQuality} onChange={e => setIncludeQuality(e.target.checked)} />
+              <span className={s.toggleLabel}>Incluir relatório de qualidade</span>
+            </label>
+          </div>
+
+          <div className={s.stepNav}>
+            <button className={s.btnSecondary} onClick={() => setStep(3)} disabled={isExporting}>← Voltar</button>
+            <button
+              className={s.btnExport}
+              onClick={handleExport}
+              disabled={isExporting || selected.size === 0 || !destPath}
             >
-              {classOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option === 'all' ? 'Todas as turmas' : option}
-                </option>
-              ))}
-            </select>
+              {isExporting ? <RefreshCw size={15} className="spin" /> : <Download size={15} />}
+              <span>{isExporting ? 'Exportando...' : `Exportar (${selected.size})`}</span>
+            </button>
           </div>
-
-          <div className="config-section">
-            <label className="config-label">Modo de exportação</label>
-            <div className="radio-group">
-              {([['copy', 'Copiar (mantém originais)'], ['move', 'Mover (remove originais)']] as const).map(([val, label]) => (
-                <label key={val} className={`radio-opt ${mode === val ? 'active' : ''}`}>
-                  <input type="radio" value={val} checked={mode === val} onChange={() => setMode(val)} />
-                  {label}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="config-section">
-            <label className="config-label">Conflito de arquivos</label>
-            <div className="radio-group">
-              {([
-                ['copy', 'Renomear automaticamente'],
-                ['skip', 'Ignorar duplicatas'],
-                ['overwrite', 'Substituir'],
-              ] as const).map(([val, label]) => (
-                <label key={val} className={`radio-opt ${conflict === val ? 'active' : ''}`}>
-                  <input type="radio" value={val} checked={conflict === val} onChange={() => setConflict(val)} />
-                  {label}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="config-section">
-            <label className="config-toggle">
-              <input
-                type="checkbox"
-                checked={includeDescarte}
-                onChange={e => setIncludeDescarte(e.target.checked)}
-              />
-              Incluir pasta Descarte (fotos não identificadas)
-            </label>
-          </div>
-
-          <div className="config-section">
-            <label className="config-toggle">
-              <input
-                type="checkbox"
-                checked={includeQuality}
-                onChange={e => setIncludeQuality(e.target.checked)}
-              />
-              Incluir relatório de qualidade
-            </label>
-          </div>
-
-          <div className="config-section">
-            <label className="config-toggle">
-              <input
-                type="checkbox"
-                checked={organizeByClass}
-                onChange={e => setOrganizeByClass(e.target.checked)}
-              />
-              Organizar por turma
-            </label>
-          </div>
-
-          <button
-            className="btn-primary"
-            style={{ width: '100%', justifyContent: 'center', marginTop: 16 }}
-            onClick={handleExport}
-            disabled={isExporting || selected.size === 0 || !destPath}
-          >
-            <span style={{ display: 'flex', alignItems: 'center' }}>
-              <RefreshCw size={16} className="spin" style={{ display: isExporting ? 'block' : 'none' }} />
-              <Download size={16} style={{ display: isExporting ? 'none' : 'block' }} />
-            </span>
-            <span>{exportButtonLabel}</span>
-          </button>
         </div>
-      </div>
+      )}
 
       <ExportFinishModal
         open={finishModalOpen}
-        exportDir={finishExportDir}
-        pdfPath={finishPdfPath}
+        exportDir={finishModalData?.exportDir ?? ''}
+        pdfPath={finishModalData?.pdfPath ?? ''}
         onClose={() => setFinishModalOpen(false)}
         onOpenPath={handleOpenFinishPath}
       />

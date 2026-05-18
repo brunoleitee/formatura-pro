@@ -783,61 +783,6 @@ def get_image_thumb(path: str, size: int = 300, quality: int = 80):
         if log_info:
             log_info(f"THUMB ERROR: path={os.path.basename(decoded_path)} mode={mode} error={error_detail} time={elapsed:.0f}ms")
         return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-        if _run_thumb_engine("image", decoded_path, cache_path, size):
-            mode = "rust"
-            _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "rust")
-            return FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-        
-        # Fallback Pillow com semáforo - limite estrito
-        semaphore = _get_pillow_semaphore()
-        acquired = semaphore.acquire(timeout=10)
-        
-        if not acquired:
-            mode = "pillow_rejected"
-            error_detail = "timeout no semáforo - muitas requisições"
-            if log_info:
-                log_info(f"THUMB PILLOW REJECTED: path={os.path.basename(decoded_path)} reason={error_detail}")
-            # Retornar placeholder em vez de erro
-            return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-        
-        try:
-            mode = "pillow"
-            if log_info:
-                log_info(f"THUMB usando PILLOW: path={os.path.basename(decoded_path)}")
-            
-            pil = load_pil_with_orientation(decoded_path)
-            pil = pil.convert("RGB")
-            pil.thumbnail((size, size), Image.Resampling.LANCZOS)
-            
-            buf = io.BytesIO()
-            pil.save(buf, format="JPEG", quality=80)
-            buf.seek(0)
-            try:
-                pil.save(cache_path, format="JPEG", quality=80)
-                _trim_thumb_cache()
-            except Exception as save_err:
-                if log_info:
-                    log_info(f"THUMB erro ao salvar cache: {save_err}")
-            
-            mode = "pillow_success"
-            _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "miss")
-            return StreamingResponse(buf, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-            
-        except MemoryError as me:
-            mode = "memory_error"
-            error_detail = str(me)
-            if log_info:
-                log_info(f"THUMB MEMORY ERROR: path={os.path.basename(decoded_path)} erro={error_detail}")
-            return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-        except Exception as pil_err:
-            mode = "pillow_error"
-            error_detail = str(pil_err)
-            if log_info:
-                log_info(f"THUMB PILLOW ERROR: path={os.path.basename(decoded_path)} erro={error_detail}")
-            return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-        finally:
-            semaphore.release()
-            
     except HTTPException:
         raise
     except Exception as e:

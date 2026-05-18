@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FolderOpen, Plus, Info, CheckCircle2, Eye, Loader, ScanFace, XCircle } from 'lucide-react';
+import { FolderOpen, Plus, Info, CheckCircle2, Loader, XCircle } from 'lucide-react';
 import { api, catalogApi } from '../services/api';
 import { useApp } from '../context/AppContext';
 import type { CatalogFolder, CatalogFolderStats, ScanStatus } from '../services/api';
@@ -8,7 +8,11 @@ import { CatalogQuickActions } from './catalog-settings/CatalogQuickActions';
 import { CatalogStatusCards } from './catalog-settings/CatalogStatusCards';
 import styles from './CatalogSettingsView.module.css';
 
-export default function CatalogSettingsView() {
+interface Props {
+  onRequestConfirm: (options: { title: string; message: string; confirmText: string; cancelText: string }) => Promise<boolean>;
+}
+
+export default function CatalogSettingsView({ onRequestConfirm }: Props) {
   const { currentCatalog } = useApp();
   const [folders, setFolders] = useState<CatalogFolder[]>([]);
   const [stats, setStats] = useState<CatalogFolderStats | null>(null);
@@ -23,6 +27,14 @@ export default function CatalogSettingsView() {
   const [syncStatus, setSyncStatus] = useState('');
   const [syncDone, setSyncDone] = useState(false);
   const syncPollRef = useRef<number | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ message, type });
+    toastTimerRef.current = setTimeout(() => setToast(null), 2500);
+  }, []);
 
   const load = useCallback(async () => {
     if (!currentCatalog) return;
@@ -56,11 +68,7 @@ export default function CatalogSettingsView() {
 
   const handleTopAddFolder = async () => {
     if (!currentCatalog) return;
-    try {
-      await pickFolder();
-    } catch {
-      setErr('Erro ao selecionar pasta');
-    }
+    await handleAddFolder();
   };
 
   // Poll scan status durante sincronização
@@ -111,10 +119,11 @@ export default function CatalogSettingsView() {
     return () => { cancelled = true; };
   }, []);
 
-  // Cleanup polling ao desmontar
+  // Cleanup polling + toast ao desmontar
   useEffect(() => {
     return () => {
       if (syncPollRef.current) clearInterval(syncPollRef.current);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
 
@@ -130,6 +139,7 @@ export default function CatalogSettingsView() {
         setSelectedFolderPath('');
         setIncludeSubfolders(false);
         setScanImmediately(true);
+        showToast('Pasta adicionada com sucesso');
         if (shouldScan) {
           startSyncPolling();
         } else {
@@ -137,6 +147,7 @@ export default function CatalogSettingsView() {
         }
       } else {
         setErr(result.error || 'Erro ao adicionar pasta');
+        showToast(result.error || 'Erro ao adicionar pasta', 'error');
       }
     } catch {
       setErr('Erro ao selecionar pasta');
@@ -147,18 +158,24 @@ export default function CatalogSettingsView() {
 
   const handleRemoveFolder = async (folder: CatalogFolder) => {
     if (!currentCatalog) return;
-    const confirmed = window.confirm(
-      `Remover "${folder.path}" do catálogo?\n\nAs fotos no computador não serão apagadas, mas serão removidas da visualização de fotos.`
-    );
+    const confirmed = await onRequestConfirm({
+      title: 'Remover pasta do catálogo',
+      message: `Deseja remover "${folder.path.split(/[\\/]/).pop()}" do catálogo?\n\nAs fotos no computador não serão apagadas.`,
+      confirmText: 'Remover',
+      cancelText: 'Cancelar',
+    });
     if (!confirmed) return;
     try {
       const result = await catalogApi.removeFolder(currentCatalog, folder.id);
       if (result.success) {
+        showToast('Pasta removida');
         await load();
       } else {
+        showToast('Erro ao remover pasta', 'error');
         setErr('Erro ao remover pasta');
       }
     } catch {
+      showToast('Erro ao remover pasta', 'error');
       setErr('Erro ao remover pasta');
     }
   };
@@ -168,11 +185,15 @@ export default function CatalogSettingsView() {
     try {
       const result = await catalogApi.toggleFolder(currentCatalog, folder.id);
       if (result.success) {
+        const isNowActive = result.status === 'active';
+        showToast(isNowActive ? 'Pasta ativada' : 'Pasta desativada');
         await load();
       } else {
+        showToast('Erro ao alterar status', 'error');
         setErr('Erro ao alterar status da pasta');
       }
     } catch {
+      showToast('Erro ao alterar status', 'error');
       setErr('Erro ao alterar status da pasta');
     }
   };
@@ -181,8 +202,10 @@ export default function CatalogSettingsView() {
     if (!currentCatalog) return;
     try {
       await catalogApi.scanFolder(currentCatalog, folder.path, folder.includeSubfolders);
+      showToast('Scan iniciado');
       startSyncPolling();
     } catch {
+      showToast('Erro ao iniciar scan', 'error');
       setErr('Erro ao iniciar scan');
     }
   };
@@ -219,6 +242,12 @@ export default function CatalogSettingsView() {
 
   return (
     <div className={styles.page}>
+      {toast && (
+        <div className={`${styles.toast} ${toast.type === 'error' ? styles.toastError : styles.toastSuccess}`}>
+          {toast.type === 'success' ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+          {toast.message}
+        </div>
+      )}
       <div className={styles.header}>
         <div className={styles.breadcrumb}>
           <span className={styles.breadcrumbItem}>Catálogo</span>
@@ -400,10 +429,6 @@ export default function CatalogSettingsView() {
               </div>
             )}
 
-            <button className={styles.viewNewBtn}>
-              <Eye size={14} />
-              Ver fotos novas
-            </button>
           </div>
         </div>
       )}

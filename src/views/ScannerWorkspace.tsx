@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 import { 
   FolderOpen, X, Cpu, ScanFace,
   Maximize2, LayoutGrid, Search, AlertTriangle,
@@ -63,17 +64,17 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
-  const [viewMode, setViewMode] = useState<'grid' | 'single' | 'list'>(() => (localStorage.getItem('scanner_view_mode') as any) || 'grid');
-  const [thumbSize, setThumbSize] = useState(() => Number(localStorage.getItem('scanner_thumb_size')) || 200);
+  const [viewMode, setViewMode] = useLocalStorage<'grid' | 'single' | 'list'>('scanner_view_mode', 'grid');
+  const [thumbSize, setThumbSize] = useLocalStorage<number>('scanner_thumb_size', 200);
   const [previewZoom, setPreviewZoom] = useState(0); // 0-100%
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [selectedFolder, setSelectedFolder] = useState(() => localStorage.getItem('scanner_selected_folder') || '');
+  const [selectedFolder, setSelectedFolder] = useLocalStorage('scanner_selected_folder', '');
   const [folderPhotos, setFolderPhotos] = useState<ExplorerPhoto[]>([]);
   const [totalFolderPhotos, setTotalFolderPhotos] = useState(0);
   const [isLoadingPhotos, setIsLoadingPhotos] = useState(false);
   
   // Sorting state
-  const [sortBy, setSortBy] = useState<'name' | 'date' | 'size'>(() => (localStorage.getItem('scanner_sort_by') as any) || 'name');
+  const [sortBy, setSortBy] = useLocalStorage<'name' | 'date' | 'size'>('scanner_sort_by', 'name');
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [completeStats, setCompleteStats] = useState({ photos: 0, faces: 0, time: '' });
   
@@ -95,6 +96,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const metricsPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // true quando o usuário clicou manualmente em uma foto durante o scan — pausa o auto-follow
+  const userNavigatedRef = useRef(false);
   const startedAtRef = useRef<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const filmstripRef = useRef<HTMLDivElement | null>(null);
@@ -113,6 +116,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [showFilters, setShowFilters] = useState(false);
   const [filterSearch, setFilterSearch] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'jpg' | 'raw'>('all');
+  const [logFilter, setLogFilter] = useState<'all' | 'error' | 'warning'>('all');
 
   // Filtered Photos logic
   const filteredFolderPhotos = useMemo(() => {
@@ -149,7 +153,10 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
   const handleCardClick = useCallback((path: string) => {
     const realIdx = activePhotosRef.current.indexOf(path);
-    if (realIdx >= 0) setActivePhotoIndex(realIdx);
+    if (realIdx >= 0) {
+      userNavigatedRef.current = true;
+      setActivePhotoIndex(realIdx);
+    }
   }, []);
 
   const handleCardDoubleClick = useCallback((path: string) => {
@@ -168,22 +175,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     setPreviewZoom(prev => Math.min(Math.max(prev + delta, 0), 300));
   }, [viewMode]);
 
-  // Persistence Effects
-  useEffect(() => {
-    localStorage.setItem('scanner_selected_folder', selectedFolder);
-  }, [selectedFolder]);
-
-  useEffect(() => {
-    localStorage.setItem('scanner_view_mode', viewMode);
-  }, [viewMode]);
-
-  useEffect(() => {
-    localStorage.setItem('scanner_thumb_size', thumbSize.toString());
-  }, [thumbSize]);
-
-  useEffect(() => {
-    localStorage.setItem('scanner_sort_by', sortBy);
-  }, [sortBy]);
   const [previewLoaded, setPreviewLoaded] = useState(false);
 
   // Keyboard Navigation para Single View
@@ -374,7 +365,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
               prev.includes(photoPath) ? prev : [photoPath, ...prev].slice(0, 100)
             );
 
-            if (activePhotoIndex === 0 || !selectedPhotoPath) {
+            if (!userNavigatedRef.current) {
               setActivePhotoIndex(0);
             }
           }
@@ -396,6 +387,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           pollingWasScanningRef.current = false;
           setIsScanning(false);
           setPolling(false);
+          setActivePhotoIndex(0);
+          userNavigatedRef.current = false;
           if (pollRef.current) clearInterval(pollRef.current);
           if (st.stopped) {
             setIsCompleted(false);
@@ -573,6 +566,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     setStarting(true);
     setIsScanning(true);
     setIsCompleted(false);
+    userNavigatedRef.current = false;
     setTimeline([{ id: `start-${Date.now()}`, kind: 'system', text: `Scanner PRO v2.1 iniciado em ${new Date().toLocaleTimeString()}`, timestamp: Date.now() }]);
     
     try {
@@ -1127,7 +1121,13 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                 </div>
               </div>
 
-              <div 
+              <div className={styles.keyHintBar}>
+                <span><kbd className={styles.kbd}>←</kbd><kbd className={styles.kbd}>→</kbd> navegar</span>
+                <span><kbd className={styles.kbd}>scroll</kbd> zoom</span>
+                <span><kbd className={styles.kbd}>Esc</kbd> voltar à grade</span>
+              </div>
+
+              <div
                 className={styles.singleFilmstrip}
                 ref={filmstripRef}
                 onWheel={(e) => {
@@ -1144,6 +1144,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                       key={p} 
                       className={`${styles.singleFilmstripCard} ${i === activePhotoIndex ? styles.singleFilmstripCardActive : ''}`}
                       onClick={() => {
+                        userNavigatedRef.current = true;
                         setPreviewLoaded(false);
                         setActivePhotoIndex(i);
                         setPreviewZoom(0);
@@ -1375,14 +1376,30 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           <div className={styles.logSection}>
             <div className={styles.logHeader}>
               <span className={styles.processTitle}><Terminal size={11} /> Logs</span>
-              <button className={styles.alterBtn} style={{ height: 20, fontSize: 8 }} onClick={() => setTimeline([])}>Limpar</button>
+              <div className={styles.logFilterRow}>
+                {(['all', 'error', 'warning'] as const).map(f => (
+                  <button
+                    key={f}
+                    className={`${styles.logFilterBtn} ${logFilter === f ? styles.logFilterBtnActive : ''}`}
+                    onClick={() => setLogFilter(f)}
+                  >
+                    {f === 'all' ? 'Todos' : f === 'error' ? 'Erros' : 'Avisos'}
+                  </button>
+                ))}
+                <button className={styles.alterBtn} style={{ height: 20, fontSize: 8 }} onClick={() => setTimeline([])}>Limpar</button>
+              </div>
             </div>
             <div className={styles.logBox}>
-              {timeline.length > 0 ? timeline.slice().reverse().map(entry => (
-                <div key={entry.id} className={styles.logEntry}>
-                  <span className={styles.logTime}>{new Date(entry.timestamp).toLocaleTimeString([], { hour12: false })}</span>
-                  <span className={styles.logText} style={{ color: entry.kind === 'error' ? '#f87171' : entry.kind === 'warning' ? '#fbbf24' : '#6b7a8e' }}>{entry.text}</span>
-                </div>
+              {timeline.length > 0 ? timeline.slice().reverse()
+                .filter(e => logFilter === 'all' || e.kind === logFilter)
+                .map(entry => (
+                  <div
+                    key={entry.id}
+                    className={`${styles.logEntry} ${entry.kind === 'error' ? styles.logEntryError : entry.kind === 'warning' ? styles.logEntryWarning : ''}`}
+                  >
+                    <span className={styles.logTime}>{new Date(entry.timestamp).toLocaleTimeString([], { hour12: false })}</span>
+                    <span className={styles.logText}>{entry.text}</span>
+                  </div>
               )) : (
                 <div className={styles.logEmpty}>Nenhum log no momento</div>
               )}

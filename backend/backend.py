@@ -360,7 +360,8 @@ LAST_CATALOG_FILE = os.path.join(DATA_DIR, "last_catalog.txt")
 def _load_last_catalog():
     try:
         if os.path.exists(LAST_CATALOG_FILE):
-            name = open(LAST_CATALOG_FILE, encoding="utf-8").read().strip()
+            with open(LAST_CATALOG_FILE, encoding="utf-8") as f:
+                name = f.read().strip()
             db_path = os.path.join(CATALOG_DIR, f"{name}.db")
             if name and os.path.exists(db_path):
                 return name
@@ -620,6 +621,8 @@ def configure_modules():
         app_state=AppState,
         load_embedding_disk_cache=load_embedding_disk_cache,
         save_embedding_disk_cache=save_embedding_disk_cache,
+        get_cached_embedding=get_cached_embedding,
+        set_cached_embedding=set_cached_embedding,
         det_size=face_det_size,
     )
 
@@ -750,6 +753,8 @@ def _table_exists(conn, table_name):
 
 
 def _table_columns(conn, table_name):
+    if not table_name.isidentifier():
+        raise ValueError(f"Nome de tabela inválido: {table_name}")
     cur = conn.cursor()
     cur.execute(f"PRAGMA table_info({table_name})")
     return [row["name"] for row in cur.fetchall()]
@@ -1277,11 +1282,18 @@ def list_catalog_folders(catalog: str = ""):
                     elif r["folder_type"] != "reference" and os.path.isdir(folder_path):
                         try:
                             exts = IMAGE_EXTENSIONS
-                            actual_count = sum(
-                                1 for f in os.listdir(folder_path)
-                                if os.path.isfile(os.path.join(folder_path, f))
-                                and os.path.splitext(f)[1].lower() in exts
-                            )
+                            if r["include_subfolders"]:
+                                actual_count = sum(
+                                    1 for _root, _, files in os.walk(folder_path)
+                                    for f in files
+                                    if os.path.splitext(f)[1].lower() in exts
+                                )
+                            else:
+                                actual_count = sum(
+                                    1 for f in os.listdir(folder_path)
+                                    if os.path.isfile(os.path.join(folder_path, f))
+                                    and os.path.splitext(f)[1].lower() in exts
+                                )
                         except Exception:
                             pass
                     if actual_count != r["photo_count"]:
@@ -1370,11 +1382,18 @@ def list_catalog_folders(catalog: str = ""):
                 elif r["folder_type"] != "reference" and os.path.isdir(folder_path):
                     try:
                         exts = IMAGE_EXTENSIONS
-                        actual_count = sum(
-                            1 for f in os.listdir(folder_path)
-                            if os.path.isfile(os.path.join(folder_path, f))
-                            and os.path.splitext(f)[1].lower() in exts
-                        )
+                        if r["include_subfolders"]:
+                            actual_count = sum(
+                                1 for _root, _, files in os.walk(folder_path)
+                                for f in files
+                                if os.path.splitext(f)[1].lower() in exts
+                            )
+                        else:
+                            actual_count = sum(
+                                1 for f in os.listdir(folder_path)
+                                if os.path.isfile(os.path.join(folder_path, f))
+                                and os.path.splitext(f)[1].lower() in exts
+                            )
                     except Exception:
                         pass
                 if actual_count != r["photo_count"]:

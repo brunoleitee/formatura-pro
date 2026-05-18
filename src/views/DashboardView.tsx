@@ -351,8 +351,8 @@ export default function DashboardView() {
     const aiSuggestions = (clusters?.clusters ?? []).slice(0, 4).map((cl: ReviewClusterSummary) => {
       const rep = cl.representative;
       let thumbUrl: string | undefined;
-      if (rep?.path && rep.x1 != null && rep.y1 != null && rep.x2 != null && rep.y2 != null) {
-        thumbUrl = api.faceThumbUrl(rep.path, rep.x1, rep.y1, rep.x2, rep.y2, 120, 0.15, 75);
+      if (rep?.path && rep.box) {
+        thumbUrl = api.faceThumbUrl(rep.path, rep.box[0], rep.box[1], rep.box[2], rep.box[3], 120, 0.15, 75);
       }
       return {
         label: cl.student_name || cl.nome_formando || cl.representative?.aluno_id || `Cluster ${cl.cluster_number}`,

@@ -24,14 +24,30 @@ type Listener = () => void;
 class AICacheStore {
   private cache = new Map<string, AIResult>();
   private listeners = new Set<Listener>();
+  private pathListeners = new Map<string, Set<Listener>>();
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
-  private notify(): void {
+  subscribeToPath(path: string, listener: Listener): () => void {
+    if (!this.pathListeners.has(path)) this.pathListeners.set(path, new Set());
+    this.pathListeners.get(path)!.add(listener);
+    return () => {
+      const set = this.pathListeners.get(path);
+      if (!set) return;
+      set.delete(listener);
+      if (set.size === 0) this.pathListeners.delete(path);
+    };
+  }
+
+  private notify(path?: string): void {
     for (const fn of this.listeners) fn();
+    if (path) {
+      const set = this.pathListeners.get(path);
+      if (set) for (const fn of set) fn();
+    }
   }
 
   get(path: string): AIResult | undefined {
@@ -64,7 +80,7 @@ class AICacheStore {
       ...prev,
       ...result,
     });
-    this.notify();
+    this.notify(path);
   }
 
   updateStatus(path: string, status: AIStatus): void {
@@ -72,18 +88,20 @@ class AICacheStore {
     if (prev) {
       prev.status = status;
       prev.updated_at = Date.now();
-      this.notify();
+      this.notify(path);
     }
   }
 
   delete(path: string): void {
     this.cache.delete(path);
-    this.notify();
+    this.notify(path);
   }
 
   clear(): void {
+    const paths = Array.from(this.cache.keys());
     this.cache.clear();
-    this.notify();
+    for (const p of paths) this.notify(p);
+    for (const fn of this.listeners) fn();
   }
 
   entries(): [string, AIResult][] {

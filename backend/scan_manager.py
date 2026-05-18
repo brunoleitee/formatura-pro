@@ -118,12 +118,6 @@ class ScanRequest(BaseModel):
         v = re.sub(r'\.\./|\.\.\\', '', v)
         return v.strip()
 
-    @validator('extra_paths', each_item=True)
-    def sanitize_extra_paths(cls, v):
-        v = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', v)
-        v = re.sub(r'\.\./|\.\.\\', '', v)
-        return v.strip()
-
 
 def scan_precheck(req: ScanRequest):
     try:
@@ -541,17 +535,17 @@ def stop_scan():
     _memory_cleanup_global(log_info)
     _log_memory("after stop")
 
-    # WATCHDOG: se o worker nao parar em 10s, força os._exit()
+    # WATCHDOG: se o worker nao parar em 10s, força sys.exit()
     def _watchdog_kill():
         import time
         time.sleep(10)
         s = _get("scan_state")
         if s is not None and s.get("is_scanning", False):
             if log_info:
-                log_info("[Scanner] WATCHDOG — worker nao parou, forçando os._exit(1)")
+                log_info("[Scanner] WATCHDOG — worker nao parou, forçando sys.exit(1)")
             _sc["KILL_NOW"] = True
-            import os
-            os._exit(1)
+            import sys
+            sys.exit(1)
 
     threading.Thread(target=_watchdog_kill, daemon=True).start()
 

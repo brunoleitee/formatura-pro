@@ -1,5 +1,6 @@
 import { memo, useState, useEffect, useCallback, useMemo } from 'react';
-import { Users, RefreshCw, Edit2, Trash2, Check, X, Star, Award, LayoutGrid, List, Search, ExternalLink, Trash } from 'lucide-react';
+import { useLocalStorage } from '../hooks/useLocalStorage';
+import { Users, RefreshCw, Edit2, Trash2, Check, X, Star, Award, LayoutGrid, List, Search, ExternalLink, Trash, Camera } from 'lucide-react';
 import { api, type Person } from '../services/api';
 import { useApp } from '../context/AppContext';
 import { getAvatarThumbUrl } from '../utils/imageUrls';
@@ -94,13 +95,121 @@ const PeopleCard = memo(function PeopleCard({
   const quality = Math.round((person.avg_quality || 0) * 100);
   const isList = viewMode === 'list';
 
-  return (
-    <div className={isList ? styles.card : styles.cardCompact} onClick={() => !isRenaming && onOpen(person.id)}>
-      <PersonAvatar person={person} />
+  // Hooks do grid (chamados incondicionalmente para respeitar Rules of Hooks)
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const avatarUrl = useMemo(() => {
+    if (person.cover_path && person.cover_box) return faceThumb(person.cover_path, person.cover_box, 200);
+    if (person.avatar_path) return getAvatarThumbUrl(person.avatar_path);
+    return getAvatarThumbUrl(person.cover_path || '');
+  }, [person.avatar_path, person.cover_path, person.cover_box]);
 
-      <div className={styles.infoSection}>
-        {isRenaming ? (
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+  useEffect(() => { setPhotoFailed(false); }, [avatarUrl]);
+
+  // ── Modo lista (inalterado) ──
+  if (isList) {
+    return (
+      <div className={styles.card} onClick={() => !isRenaming && onOpen(person.id)}>
+        <PersonAvatar person={person} />
+
+        <div className={styles.infoSection}>
+          {isRenaming ? (
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+              <input
+                className={styles.searchInline}
+                autoFocus
+                value={renameValue}
+                onChange={e => onRenameValue(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') onConfirmRename(person.id);
+                  if (e.key === 'Escape') onCancelRename();
+                }}
+              />
+              <button className="icon-btn success" onClick={() => onConfirmRename(person.id)}><Check size={14} /></button>
+              <button className="icon-btn" onClick={onCancelRename}><X size={14} /></button>
+            </div>
+          ) : (
+            <>
+              <h3 className={styles.name}>{person.name}</h3>
+              <div className={styles.badgesRow} style={{ justifyContent: 'flex-start' }}>
+                <span className={styles.idBadge}>ID {person.id.substring(0, 6)}</span>
+                <span className={styles.classBadge}>{person.class_name || 'Sem turma'}</span>
+              </div>
+              <div className={styles.statsRow} style={{ justifyContent: 'flex-start', gap: '16px' }}>
+                <div className={styles.statItem}>
+                  <Users size={14} />
+                  <span className={`${styles.statValue} ${styles.photos}`}>{person.total_photos} fotos</span>
+                </div>
+                <div className={styles.statItem}>
+                  <Star size={14} />
+                  <span className={`${styles.statValue} ${styles.favorites}`}>{person.favorites_count || 0} fav</span>
+                </div>
+                <div className={styles.statItem}>
+                  <Trash size={14} />
+                  <span className={`${styles.statValue} ${styles.discarded}`}>{person.discarded_count || 0} descartes</span>
+                </div>
+                <div className={styles.statItem}>
+                  <Award size={14} />
+                  <span className={`${styles.statValue} ${styles.quality}`}>{quality}% qualidade IA</span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <Collage person={person} onPhotoClick={() => onOpen(person.id)} />
+
+        <div className={styles.actionsSection} onClick={e => e.stopPropagation()}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <button className={styles.actionBtn} onClick={() => onOpen(person.id)} title="Abrir">
+              <ExternalLink size={14} /> Abrir
+            </button>
+            <button className={styles.actionBtn} onClick={() => onStartRename(person)} title="Renomear">
+              <Edit2 size={14} /> Renomear
+            </button>
+            <button className={`${styles.actionBtn} ${styles.actionBtnDanger}`} onClick={() => onDelete(person)} title="Excluir">
+              <Trash2 size={14} /> Excluir
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Modo grid (novo layout) ──
+  const qualityColor = quality >= 70 ? '#22c55e' : quality >= 50 ? '#f59e0b' : '#ef4444';
+  const discards = person.discarded_count || 0;
+
+  return (
+    <div className={styles.cardCompact} onClick={() => !isRenaming && onOpen(person.id)}>
+      {/* 1. Área da foto */}
+      <div className={styles.gridPhotoArea}>
+        {(!avatarUrl || photoFailed) ? (
+          <div className={styles.gridPhotoPlaceholder}>
+            {person.name.charAt(0).toUpperCase()}{person.name.split(' ').length > 1 ? person.name.split(' ').pop()!.charAt(0).toUpperCase() : ''}
+          </div>
+        ) : (
+          <img
+            className={styles.gridPhoto}
+            src={avatarUrl}
+            alt={person.name}
+            loading="eager"
+            decoding="async"
+            onError={() => setPhotoFailed(true)}
+          />
+        )}
+        <div className={styles.gridPhotoGradient} />
+
+        {/* Badge de qualidade IA */}
+        {quality > 0 && (
+          <div className={styles.gridQualityBadge}>
+            <span className={styles.gridQualityDot} style={{ background: qualityColor }} />
+            {quality}%
+          </div>
+        )}
+
+        {/* Overlay de renomear */}
+        {isRenaming && (
+          <div className={styles.gridRenameOverlay} onClick={e => e.stopPropagation()}>
             <input
               className={styles.searchInline}
               autoFocus
@@ -110,55 +219,48 @@ const PeopleCard = memo(function PeopleCard({
                 if (e.key === 'Enter') onConfirmRename(person.id);
                 if (e.key === 'Escape') onCancelRename();
               }}
+              style={{ flex: 1 }}
             />
             <button className="icon-btn success" onClick={() => onConfirmRename(person.id)}><Check size={14} /></button>
             <button className="icon-btn" onClick={onCancelRename}><X size={14} /></button>
           </div>
-        ) : (
-          <>
-            <h3 className={styles.name}>{person.name}</h3>
-            <div className={styles.badgesRow} style={{ justifyContent: isList ? 'flex-start' : 'center' }}>
-              <span className={styles.idBadge}>ID {person.id.substring(0, 6)}</span>
-              <span className={styles.classBadge}>{person.class_name || 'Sem turma'}</span>
-            </div>
-            <div className={styles.statsRow} style={{ justifyContent: isList ? 'flex-start' : 'center', flexWrap: isList ? 'nowrap' : 'wrap', gap: isList ? '16px' : '12px' }}>
-              <div className={styles.statItem}>
-                <Users size={14} />
-                <span className={`${styles.statValue} ${styles.photos}`}>{person.total_photos} fotos</span>
-              </div>
-              <div className={styles.statItem}>
-                <Star size={14} />
-                <span className={`${styles.statValue} ${styles.favorites}`}>{person.favorites_count || 0} fav</span>
-              </div>
-              {isList && (
-                <>
-                  <div className={styles.statItem}>
-                    <Trash size={14} />
-                    <span className={`${styles.statValue} ${styles.discarded}`}>{person.discarded_count || 0} descartes</span>
-                  </div>
-                  <div className={styles.statItem}>
-                    <Award size={14} />
-                    <span className={`${styles.statValue} ${styles.quality}`}>{quality}% qualidade IA</span>
-                  </div>
-                </>
-              )}
-            </div>
-          </>
         )}
       </div>
 
-      {isList && <Collage person={person} onPhotoClick={() => onOpen(person.id)} />}
+      {/* 2. Área de info */}
+      <div className={styles.gridInfoSection}>
+        <h3 className={styles.gridName}>{person.name}</h3>
+        <div className={styles.gridId}>{person.id.substring(0, 8)}</div>
+        <div className={styles.gridStatsRow}>
+          <div className={styles.gridStatItem} style={{ color: '#a89af7' }}>
+            <Camera size={13} />
+            {person.total_photos}
+          </div>
+          <div className={styles.gridStatItem}>
+            <Star size={13} />
+            {person.favorites_count || 0}
+          </div>
+          <div className={styles.gridStatItem} style={{ color: discards > 0 ? '#f59e0b' : '#555' }}>
+            <Trash size={13} />
+            {discards}
+          </div>
+        </div>
+      </div>
 
-      <div className={isList ? styles.actionsSection : styles.actionsSectionCompact} onClick={e => e.stopPropagation()} style={!isList ? { marginTop: '20px', width: '100%', borderLeft: 'none', borderTop: '1px solid #2a2e35', paddingTop: '12px' } : {}}>
-        <div style={{ display: 'flex', flexDirection: isList ? 'column' : 'row', gap: '4px', justifyContent: 'center' }}>
-          <button className={styles.actionBtn} onClick={() => onOpen(person.id)} title="Abrir">
-            <ExternalLink size={14} /> {isList && 'Abrir'}
+      {/* 3. Footer */}
+      <div className={styles.gridFooter} onClick={e => e.stopPropagation()}>
+        <span className={`${styles.gridClassTag} ${(!person.class_name || person.class_name === 'Sem turma') ? styles.gridClassTagEmpty : ''}`}>
+          {person.class_name || 'Sem turma'}
+        </span>
+        <div className={styles.gridActions}>
+          <button className={styles.gridActionBtn} onClick={() => onOpen(person.id)} title="Abrir">
+            <ExternalLink size={14} />
           </button>
-          <button className={styles.actionBtn} onClick={() => onStartRename(person)} title="Renomear">
-            <Edit2 size={14} /> {isList && 'Renomear'}
+          <button className={styles.gridActionBtn} onClick={() => onStartRename(person)} title="Renomear">
+            <Edit2 size={14} />
           </button>
-          <button className={`${styles.actionBtn} ${styles.actionBtnDanger}`} onClick={() => onDelete(person)} title="Excluir">
-            <Trash2 size={14} /> {isList && 'Excluir'}
+          <button className={`${styles.gridActionBtn} ${styles.gridActionBtnDanger}`} onClick={() => onDelete(person)} title="Excluir">
+            <Trash2 size={14} />
           </button>
         </div>
       </div>
@@ -177,13 +279,7 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
 
   const [sortBy, setSortBy] = useState<'name' | 'id' | 'photos' | 'quality'>('name');
   const [filterFavorites, setFilterFavorites] = useState(false);
-  const [viewMode, setViewMode] = useState<'cards' | 'list'>(() => {
-    return (localStorage.getItem('identifiedViewMode') as 'cards' | 'list') || 'list';
-  });
-
-  useEffect(() => {
-    localStorage.setItem('identifiedViewMode', viewMode);
-  }, [viewMode]);
+  const [viewMode, setViewMode] = useLocalStorage<'cards' | 'list'>('identifiedViewMode', 'list');
 
   const load = useCallback(async () => {
     if (!currentCatalog) return;

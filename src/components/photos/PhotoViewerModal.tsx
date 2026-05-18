@@ -129,6 +129,10 @@ export function PhotoViewerModal({
   }, []);
 
   useEffect(() => {
+    return () => { if (actionTimerRef.current) clearTimeout(actionTimerRef.current); };
+  }, []);
+
+  useEffect(() => {
     viewerLoadStartRef.current = perfNow();
     viewerLoggedRef.current = false;
     if (viewerMountedRef.current) {

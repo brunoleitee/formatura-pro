@@ -398,7 +398,7 @@ function autoCatalogName(): string {
       case 'settings':      return <SettingsView />;
       case 'cloud-sync':     return <Suspense fallback={<div style={{padding:40,color:'#9ca3af'}}>Carregando...</div>}><CloudSyncView /></Suspense>;
       case 'scanner':        return <ScannerWorkspace />;
-      case 'catalog-settings': return <CatalogSettingsView />;
+      case 'catalog-settings': return <CatalogSettingsView onRequestConfirm={requestConfirm} />;
       default:              return <CatalogView />;
     }
   };
