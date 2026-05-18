@@ -52,6 +52,8 @@ from PIL import Image
 
 _cfg = {}
 logger = logging.getLogger(__name__)
+_match_preview_cache: dict[str, tuple[dict, float]] = {}
+_MATCH_PREVIEW_TTL = 10.0
 UNKNOWN_ALUNO_IDS = (
     "unknown",
     "desconhecido",
@@ -4391,7 +4393,14 @@ def clear_cache():
 
 def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
     import traceback
-    print(f"[Review Compare] reference_id={student_id} cluster_id={cluster_id}")
+    _t0 = time.perf_counter()
+
+    cache_key = f"match_preview:{catalog}:{cluster_id}:{student_id}"
+    global _match_preview_cache
+    cached = _match_preview_cache.get(cache_key)
+    if cached and (time.time() - cached[1]) < _MATCH_PREVIEW_TTL:
+        logger.info("[match-preview] cache=hit cluster=%s student=%s total=%.0fms", cluster_id, student_id, (time.perf_counter() - _t0) * 1000)
+        return cached[0]
 
     try:
         get_db = _get("get_db")
@@ -4401,8 +4410,10 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
 
         with get_db(cat) as conn:
             cur = conn.cursor()
+            _sql_t = time.perf_counter()
+            target_id = str(student_id).strip()
 
-            # 1. Obter embeddings do cluster atual para calcular o centroide (limitado a 100 faces)
+            # 1. Cluster embeddings — single query, limit 100
             cur.execute("""
                 SELECT o.rowid, fe.embedding
                 FROM unknown_face_clusters u
@@ -4421,34 +4432,7 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
                 """, (cluster_id,))
                 cluster_rows = cur.fetchall()
 
-            if not cluster_rows:
-                return {
-                    "reference_missing": True,
-                    "message": f"Nenhuma face/embedding encontrada para o cluster {cluster_id}"
-                }
-
-            cluster_embs = []
-            for r in cluster_rows:
-                if not r["embedding"]: continue
-                emb = np.frombuffer(r["embedding"], dtype="float32")
-                norm = np.linalg.norm(emb)
-                if norm > 0:
-                    cluster_embs.append(emb / norm)
-
-            if not cluster_embs:
-                return {
-                    "reference_missing": True,
-                    "message": f"Não foi possível extrair embeddings válidos do cluster {cluster_id}"
-                }
-
-            cluster_centroid = np.mean(cluster_embs, axis=0)
-            cc_norm = np.linalg.norm(cluster_centroid)
-            if cc_norm > 0:
-                cluster_centroid = cluster_centroid / cc_norm
-
-            # 2. Buscar faces identificadas do aluno (limitado a 50 para performance)
-            target_id = str(student_id).strip()
-
+            # 2. Student faces — single query with fallback, limit 50
             cur.execute("""
                 SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, fe.embedding
                 FROM ocorrencias o
@@ -4459,92 +4443,103 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
             student_faces = cur.fetchall()
 
             if not student_faces:
-                 cur.execute("""
+                cur.execute("""
                     SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, fe.embedding
                     FROM ocorrencias o
                     JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
                     WHERE o.aluno_id = (SELECT aluno_id FROM alunos WHERE nome = ? OR aluno_id = ? LIMIT 1)
                     LIMIT 50
                 """, (target_id, target_id))
-                 student_faces = cur.fetchall()
+                student_faces = cur.fetchall()
 
-            if not student_faces:
-                 return {
-                     "reference_missing": True,
-                     "message": f"Nenhuma face válida encontrada para {target_id}"
-                 }
+            _sql_ms = (time.perf_counter() - _sql_t) * 1000
 
-            best_face = None
-            best_sim = -1.0
+            if not cluster_rows or not student_faces:
+                msg = "Nenhuma face/embedding encontrada"
+                return {"reference_missing": True, "message": msg}
 
-            for f in student_faces:
-                if not f["embedding"]:
-                    print(f"[Review Compare] face rowid={f['rowid']} embedding=MISSING")
-                    continue
+            # 3. Embedding deserialization + centroid
+            _emb_t = time.perf_counter()
+            cluster_embs = []
+            for r in cluster_rows:
+                if not r["embedding"]: continue
+                emb = np.frombuffer(r["embedding"], dtype="float32")
+                n = np.linalg.norm(emb)
+                if n > 0:
+                    cluster_embs.append(emb / n)
+
+            if not cluster_embs:
+                return {"reference_missing": True, "message": "Nenhum embedding valido no cluster"}
+
+            cluster_centroid = np.mean(cluster_embs, axis=0)
+            cn = np.linalg.norm(cluster_centroid)
+            if cn > 0:
+                cluster_centroid = cluster_centroid / cn
+
+            # 4. Vectorized similarity — stack all student embeddings, dot product in one shot
+            st_embs = []
+            st_valid = []
+            for i, f in enumerate(student_faces):
+                if not f["embedding"]: continue
                 emb = np.frombuffer(f["embedding"], dtype="float32")
-                norm = np.linalg.norm(emb)
-                if norm <= 0:
-                    print(f"[Review Compare] face rowid={f['rowid']} embedding_norm=0")
-                    continue
+                n = np.linalg.norm(emb)
+                if n > 0:
+                    st_embs.append(emb / n)
+                    st_valid.append(i)
 
-                sim = float(np.dot(cluster_centroid, emb / norm))
-                if sim > best_sim:
-                    best_sim = sim
-                    best_face = f
+            _emb_ms = (time.perf_counter() - _emb_t) * 1000
 
-            if not best_face:
-                 return {
-                     "reference_missing": True,
-                     "message": f"Não foi possível comparar faces para o aluno {target_id}"
-                 }
+            if not st_embs:
+                return {"reference_missing": True, "message": f"Nenhuma face valida para {target_id}"}
 
-            # ── Verificar similaridade válida ──
+            _sim_t = time.perf_counter()
+            st_matrix = np.stack(st_embs)
+            similarities = st_matrix @ cluster_centroid
+            best_idx_local = int(np.argmax(similarities))
+            best_sim = float(similarities[best_idx_local])
+            best_face = student_faces[st_valid[best_idx_local]]
+            _sim_ms = (time.perf_counter() - _sim_t) * 1000
+
             if np.isnan(best_sim) or np.isinf(best_sim):
-                print(f"[Review] invalid similarity for reference {target_id} sim={best_sim}")
                 best_sim = 0.0
 
-            print(f"[Review Compare] similarity={best_sim:.4f}")
-
-            # 3. Obter referência do aluno
+            # 5. Reference path
             student_id_real = best_face["aluno_id"]
-            student_label = student_id_real
-
             ref_path = ""
             try:
                 ref_path = get_face_cache_path_cached(cat, student_id_real) or ""
-                if ref_path:
-                    ref_path = str(ref_path)
-                print(f"[Review Compare] reference image path={ref_path}")
-            except Exception as ref_err:
-                print(f"[Review Compare] reference image error: {ref_err}")
-
-            # Fallback: buscar referência via _ensure_person_reference
+                if ref_path: ref_path = str(ref_path)
+            except Exception:
+                pass
             if not ref_path or not os.path.exists(ref_path):
                 try:
                     ref_path = _ensure_person_reference(conn, cat, student_id_real) or ""
-                    print(f"[Review Compare] reference fallback path={ref_path}")
                 except Exception:
                     pass
 
-            return {
+            result = {
                 "matched_student_rowid": int(best_face["rowid"]),
                 "matched_student_photo_path": best_face["foto_path"],
                 "matched_student_face_box": [best_face["x1"], best_face["y1"], best_face["x2"], best_face["y2"]],
-                "matched_similarity": round(best_sim, 4) if not (np.isnan(best_sim) or np.isinf(best_sim)) else None,
+                "matched_similarity": round(best_sim, 4),
                 "matched_student_id": student_id_real,
-                "matched_student_name": student_label,
+                "matched_student_name": student_id_real,
                 "matched_student_folder": student_id_real,
-                "matched_student_label": student_label,
+                "matched_student_label": student_id_real,
                 "reference_path": ref_path if ref_path and os.path.exists(ref_path) else None,
             }
+
+            _match_preview_cache[cache_key] = (result, time.time())
+
+        _total_ms = (time.perf_counter() - _t0) * 1000
+        logger.info("[match-preview] cache=miss cluster=%s student=%s sql=%.0fms embedding=%.0fms similarity=%.0fms total=%.0fms",
+                     cluster_id, target_id, _sql_ms, _emb_ms, _sim_ms, _total_ms)
+        return result
+
     except Exception as e:
         traceback.print_exc()
-        print(f"[Review Compare] ERROR: {e}")
-        return {
-            "error": str(e),
-            "reference_missing": True,
-            "message": f"Erro interno ao processar preview: {str(e)}"
-        }
+        logger.error("[match-preview] ERROR cluster=%s student=%s: %s", cluster_id, student_id, e)
+        return {"error": str(e), "reference_missing": True, "message": f"Erro: {str(e)}"}
 
 
 def generate_all_embeddings(catalog: str = ""):
