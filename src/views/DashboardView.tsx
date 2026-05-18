@@ -11,17 +11,16 @@ import {
   RefreshCw,
   Eye,
   Copy,
-  HelpCircle,
   Zap,
   CheckCircle2,
   XCircle,
   ScanLine,
   TrendingUp,
-  TrendingDown,
-  ArrowRight,
-  CircleDot,
   FileWarning,
   Fingerprint,
+  BarChart3,
+  ArrowUpRight,
+  ArrowDownRight,
 } from 'lucide-react';
 import {
   api,
@@ -31,6 +30,7 @@ import {
   type ScanStatus,
   type ReviewClustersPageResponse,
   type CatalogFolderStats,
+  type ReviewClusterSummary,
 } from '../services/api';
 import { useApp } from '../context/AppContext';
 import styles from './DashboardView.module.css';
@@ -87,12 +87,16 @@ function SectionHeader({ icon, title, subtitle }: { icon: React.ReactNode; title
 function StatCard({ icon, label, value, tone, trend }: {
   icon: React.ReactNode; label: string; value: string | number; tone: string; trend?: string;
 }) {
+  const isPositive = trend?.startsWith('+');
+  const isNegative = trend?.startsWith('-');
   return (
     <article className={styles.statCard} data-tone={tone}>
       <div className={styles.statTop}>
         <div className={styles.statIcon}>{icon}</div>
         {trend && (
-          <span className={styles.statTrend} data-positive={trend.startsWith('+') ? 'true' : 'false'}>
+          <span className={styles.statTrend} data-positive={isPositive ? 'true' : isNegative ? 'false' : 'neutral'}>
+            {isPositive && <ArrowUpRight size={10} />}
+            {isNegative && <ArrowDownRight size={10} />}
             {trend}
           </span>
         )}
@@ -169,14 +173,18 @@ function ActivityItem({ icon, text, time, tone }: {
   );
 }
 
-/* ── AI Suggestion Card ── */
-function AISuggestionCard({ label, sublabel, percent, tone }: {
-  label: string; sublabel: string; percent?: number; tone?: string;
+/* ── AI Suggestion Card with Thumb ── */
+function AISuggestionCard({ label, sublabel, percent, tone, thumbUrl, onReview }: {
+  label: string; sublabel: string; percent?: number; tone?: string; thumbUrl?: string; onReview?: () => void;
 }) {
   return (
     <div className={styles.aiCard} data-tone={tone || 'default'}>
       <div className={styles.aiThumb}>
-        <Sparkles size={14} />
+        {thumbUrl ? (
+          <img src={thumbUrl} alt="" className={styles.aiThumbImg} loading="lazy" />
+        ) : (
+          <Sparkles size={14} />
+        )}
       </div>
       <div className={styles.aiContent}>
         <span className={styles.aiLabel}>{label}</span>
@@ -185,9 +193,39 @@ function AISuggestionCard({ label, sublabel, percent, tone }: {
       {percent != null && (
         <span className={styles.aiPercent} data-high={percent >= 90 ? 'true' : 'false'}>{percent}%</span>
       )}
-      <button className={styles.aiButton} type="button">Revisar</button>
+      <button className={styles.aiButton} type="button" onClick={onReview}>Revisar</button>
     </div>
   );
+}
+
+/* ── Mini Bar Chart ── */
+function MiniBarChart({ data, maxVal }: { data: number[]; maxVal: number }) {
+  if (!data.length || maxVal <= 0) return null;
+  return (
+    <div className={styles.miniChart}>
+      {data.map((v, i) => (
+        <div
+          key={i}
+          className={styles.miniBar}
+          style={{ height: `${Math.max((v / maxVal) * 100, 4)}%` }}
+          data-active={v > 0 ? 'true' : 'false'}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ── Skeleton Components ── */
+function SkeletonStatCard() {
+  return <div className={styles.skeletonCard} />;
+}
+
+function SkeletonPanel() {
+  return <div className={styles.skeletonPanel} />;
+}
+
+function SkeletonRow() {
+  return <div className={styles.skeletonRow} />;
 }
 
 /* ── Main Component ── */
@@ -300,19 +338,40 @@ export default function DashboardView() {
         complete: p.total_photos >= DEFAULT_PHOTOS_GOAL,
       }));
 
-    // AI suggestions from clusters
-    const aiSuggestions = (clusters?.clusters ?? []).slice(0, 4).map((cl) => ({
-      label: cl.representative?.aluno_id || `Cluster ${cl.cluster_id}`,
-      sublabel: `${cl.face_count} faces \u00b7 ${cl.photo_count} fotos`,
-      percent: cl.cohesion_score ? Math.round(cl.cohesion_score * 100) : undefined,
-      tone: cl.cohesion_score && cl.cohesion_score >= 0.9 ? 'green' : 'default',
-    }));
+    // AI suggestions from clusters with real thumbs
+    const aiSuggestions = (clusters?.clusters ?? []).slice(0, 4).map((cl: ReviewClusterSummary) => {
+      const rep = cl.representative;
+      let thumbUrl: string | undefined;
+      if (rep?.path && rep.x1 != null && rep.y1 != null && rep.x2 != null && rep.y2 != null) {
+        thumbUrl = api.faceThumbUrl(rep.path, rep.x1, rep.y1, rep.x2, rep.y2, 80, 0.1, 70);
+      }
+      return {
+        label: cl.student_name || cl.nome_formando || cl.representative?.aluno_id || `Cluster ${cl.cluster_number}`,
+        sublabel: `${cl.face_count} faces \u00b7 ${cl.photo_count} fotos`,
+        percent: cl.cohesion_score ? Math.round(cl.cohesion_score * 100) : undefined,
+        tone: cl.cohesion_score && cl.cohesion_score >= 0.9 ? 'green' : 'default',
+        thumbUrl,
+        clusterId: cl.cluster_id,
+      };
+    });
+
+    // Mini chart data (mock: distribute photos across 7 buckets)
+    const chartBuckets = Array.from({ length: 7 }, () => 0);
+    for (const p of photos) {
+      if (p.mtime) {
+        const dayOffset = Math.floor((Date.now() / 1000 - p.mtime) / 86400);
+        const bucket = Math.max(0, Math.min(6, 6 - dayOffset));
+        chartBuckets[bucket]++;
+      }
+    }
+    const chartMax = Math.max(...chartBuckets, 1);
 
     return {
       totalPhotos, identifiedPhotos, pendingPhotos, completionPct,
       studentCount, unknownClusters,
       blurredCount, duplicateCount, noIdCount,
       classCoverage, topStudents, aiSuggestions,
+      chartBuckets, chartMax,
       totalPeople: stats?.total_people ?? studentCount,
       totalOccurrences: stats?.total_occurrences ?? 0,
       unknownCount: stats?.unknown_count ?? 0,
@@ -323,7 +382,7 @@ export default function DashboardView() {
   const hasCatalog = Boolean(currentCatalog);
   const hasData = Boolean(data && data.totalPhotos > 0);
 
-  /* ── Loading state ── */
+  /* ── Loading state with elegant skeletons ── */
   if (isBusy) {
     return (
       <div className={styles.page}>
@@ -335,10 +394,16 @@ export default function DashboardView() {
         </div>
         <div className={styles.loadingGrid}>
           <div className={styles.skeletonRow}>
-            {Array.from({ length: 5 }).map((_, i) => <div key={i} className={styles.skeletonCard} />)}
+            {Array.from({ length: 5 }).map((_, i) => <SkeletonStatCard key={i} />)}
           </div>
-          <div className={styles.skeletonRow}>
-            {Array.from({ length: 3 }).map((_, i) => <div key={i} className={styles.skeletonPanel} />)}
+          <div className={styles.skeletonRow3}>
+            <SkeletonPanel />
+            <SkeletonPanel />
+            <SkeletonPanel />
+          </div>
+          <div className={styles.skeletonRow2}>
+            <SkeletonPanel />
+            <SkeletonPanel />
           </div>
         </div>
       </div>
@@ -404,7 +469,7 @@ export default function DashboardView() {
             <div className={styles.ringLabel}>Conclusão Geral</div>
             <div
               className={styles.ring}
-              style={{ background: `conic-gradient(${ringColor} ${ringAngle}deg, var(--bg-tertiary) 0deg)` }}
+              style={{ background: `conic-gradient(${ringColor} ${ringAngle}deg, rgba(255,255,255,0.04) 0deg)` }}
             >
               <div className={styles.ringInner}>
                 <strong>{d.completionPct}%</strong>
@@ -479,8 +544,22 @@ export default function DashboardView() {
         </div>
       </section>
 
-      {/* 4 + 5. Status do catálogo + Sugestões IA */}
+      {/* 4. Mini gráfico + Status do catálogo */}
       <section className={styles.dualSection}>
+        <div className={styles.dualCard}>
+          <SectionHeader icon={<BarChart3 size={16} />} title="Evolução do Catálogo" />
+          {d.chartBuckets.some(v => v > 0) ? (
+            <>
+              <MiniBarChart data={d.chartBuckets} maxVal={d.chartMax} />
+              <div className={styles.chartLabels}>
+                <span>7d</span><span>6d</span><span>5d</span><span>4d</span><span>3d</span><span>2d</span><span>hoje</span>
+              </div>
+            </>
+          ) : (
+            <div className={styles.emptyRow}>Sem histórico suficiente ainda.</div>
+          )}
+        </div>
+
         <div className={styles.dualCard}>
           <SectionHeader icon={<Activity size={16} />} title="Status do Catálogo" />
           <div className={styles.infoList}>
@@ -491,7 +570,10 @@ export default function DashboardView() {
             <InfoRow icon={<Users size={14} />} label="Pessoas conhecidas" value={folderStats?.knownPersons != null ? fmt(folderStats.knownPersons) : '--'} />
           </div>
         </div>
+      </section>
 
+      {/* 5. Sugestões IA + Atividade Recente */}
+      <section className={styles.dualSection}>
         <div className={styles.dualCard}>
           <SectionHeader icon={<Sparkles size={16} />} title="Sugestões IA" />
           {d.aiSuggestions.length === 0 ? (
@@ -499,18 +581,25 @@ export default function DashboardView() {
           ) : (
             <div className={styles.aiList}>
               {d.aiSuggestions.map((s, i) => (
-                <AISuggestionCard key={i} label={s.label} sublabel={s.sublabel} percent={s.percent} tone={s.tone} />
+                <AISuggestionCard
+                  key={i}
+                  label={s.label}
+                  sublabel={s.sublabel}
+                  percent={s.percent}
+                  tone={s.tone}
+                  thumbUrl={s.thumbUrl}
+                  onReview={() => navigate('review')}
+                />
               ))}
             </div>
           )}
         </div>
-      </section>
 
-      {/* 6. Atividade Recente */}
-      <section className={styles.section}>
-        <SectionHeader icon={<Clock3 size={16} />} title="Atividade Recente" />
-        <div className={styles.activityFeed}>
-          <ActivityItem icon={<CheckCircle2 size={14} />} text="Nenhuma atividade registrada ainda" tone="default" />
+        <div className={styles.dualCard}>
+          <SectionHeader icon={<Clock3 size={16} />} title="Atividade Recente" />
+          <div className={styles.activityFeed}>
+            <ActivityItem icon={<CheckCircle2 size={14} />} text="Nenhuma atividade registrada ainda" tone="default" />
+          </div>
         </div>
       </section>
     </div>

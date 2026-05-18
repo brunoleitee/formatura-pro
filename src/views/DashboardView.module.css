@@ -564,6 +564,14 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.aiThumbImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
 }
 
 .aiCard[data-tone='green'] .aiThumb {
@@ -680,6 +688,40 @@
   flex-shrink: 0;
 }
 
+/* ── Mini Bar Chart ── */
+.miniChart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 80px;
+  padding: 4px 0;
+}
+
+.miniBar {
+  flex: 1;
+  border-radius: 3px 3px 0 0;
+  background: rgba(255, 255, 255, 0.06);
+  min-height: 4px;
+  transition: background var(--transition-fast), height var(--transition-slow);
+}
+
+.miniBar[data-active='true'] {
+  background: linear-gradient(180deg, var(--accent) 0%, rgba(59, 130, 246, 0.4) 100%);
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.15);
+}
+
+.chartLabels {
+  display: flex;
+  gap: 6px;
+  font-size: 9px;
+  color: var(--text-label);
+  text-align: center;
+}
+
+.chartLabels span {
+  flex: 1;
+}
+
 /* ── Loading ── */
 .loadingGrid {
   display: flex;
@@ -690,6 +732,18 @@
 .skeletonRow {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.skeletonRow3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.skeletonRow2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
