@@ -38,7 +38,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [currentCatalog, setCurrentCatalog] = useState('');
   const [catalogs, setCatalogs] = useState<string[]>([]);
   const [isLoadingCatalogs, setIsLoadingCatalogs] = useState(true);
-  const [activeView, setActiveView] = useState<ViewName>('people');
+  const [activeView, setActiveView] = useState<ViewName>('dashboard');
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [catalogSubfolder, setCatalogSubfolder] = useState<string | null>(null);
