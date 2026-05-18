@@ -58,6 +58,51 @@ _cluster_centroid_cache: dict[str, tuple[np.ndarray, float]] = {}
 _CENTROID_CACHE_TTL = 30.0
 _student_embed_cache: dict[str, tuple[list, list, float]] = {}
 _STUDENT_EMBED_CACHE_TTL = 30.0
+
+# Background reference generation pool
+_ref_bg_pool = None
+_ref_bg_lock = threading.Lock()
+_ref_bg_pending: set[str] = set()
+
+
+def _get_ref_bg_pool():
+    global _ref_bg_pool
+    if _ref_bg_pool is None:
+        with _ref_bg_lock:
+            if _ref_bg_pool is None:
+                from concurrent.futures import ThreadPoolExecutor
+                _ref_bg_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ref-bg")
+    return _ref_bg_pool
+
+
+def _enqueue_ref_generation(catalog: str, aluno_id: str):
+    """Enfileira geração de referência em background, evitando duplicatas."""
+    job_key = f"{catalog}:{aluno_id}"
+    with _ref_bg_lock:
+        if job_key in _ref_bg_pending:
+            return
+        _ref_bg_pending.add(job_key)
+
+    def _worker():
+        t0 = time.perf_counter()
+        try:
+            get_db = _get("get_db")
+            if not callable(get_db):
+                return
+            with get_db(catalog) as conn:
+                _ensure_person_reference(conn, catalog, aluno_id)
+            ms = (time.perf_counter() - t0) * 1000
+            logger.info("[ref-bg] done student=%s ms=%.0f", aluno_id, ms)
+        except Exception as e:
+            logger.warning("[ref-bg] error student=%s: %s", aluno_id, e)
+        finally:
+            with _ref_bg_lock:
+                _ref_bg_pending.discard(job_key)
+
+    _get_ref_bg_pool().submit(_worker)
+    logger.info("[ref-bg] queued student=%s", aluno_id)
+
+
 UNKNOWN_ALUNO_IDS = (
     "unknown",
     "desconhecido",
@@ -4430,7 +4475,7 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
 
         # Layer 3: student embeddings cache (TTL 30s)
         embed_entry = _student_embed_cache.get(embed_key)
-        if embed_entry and (time.time() - embed_entry[1]) < _STUDENT_EMBED_CACHE_TTL:
+        if embed_entry and (time.time() - embed_entry[3]) < _STUDENT_EMBED_CACHE_TTL:
             student_faces, st_embs_norm, st_valid = embed_entry[0], embed_entry[1], embed_entry[2]
 
         with get_db(cat) as conn:
@@ -4547,7 +4592,7 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
             if np.isnan(best_sim) or np.isinf(best_sim):
                 best_sim = 0.0
 
-            # ── STEP 4: Reference path ──
+            # ── STEP 4: Reference path (non-blocking) ──
             _ref_t = time.perf_counter()
             student_id_real = best_face["aluno_id"]
             ref_path = ""
@@ -4556,11 +4601,13 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
                 if ref_path: ref_path = str(ref_path)
             except Exception:
                 pass
-            if not ref_path or not os.path.exists(ref_path):
-                try:
-                    ref_path = _ensure_person_reference(conn, cat, student_id_real) or ""
-                except Exception:
-                    pass
+            if ref_path and os.path.exists(ref_path):
+                logger.info("[match-preview] ref_path=hit student=%s", student_id_real)
+            else:
+                # Enfileira geração em background — não bloqueia a response
+                _enqueue_ref_generation(cat, student_id_real)
+                ref_path = ""
+                logger.info("[match-preview] ref_path=skipped_bg student=%s", student_id_real)
             _ref_path_ms = (time.perf_counter() - _ref_t) * 1000
 
             result = {
