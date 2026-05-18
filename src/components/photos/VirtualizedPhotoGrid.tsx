@@ -118,46 +118,6 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
     return () => el.removeEventListener('scroll', handleScroll);
   }, [onLoadMore, hasMore]);
 
-  useEffect(() => {
-    const limited = photos.slice(0, Math.max(12, columns * 2));
-    const paths = limited.map((p) => p.path).filter(Boolean) as string[];
-    if (paths.length === 0) return;
-    let cancelled = false;
-
-    api.getRatings(paths).then((res) => {
-      if (!cancelled) ratingCache.loadBatch(res.items);
-    }).catch(() => {});
-    if (perfEnabled) console.debug(`[AI-GRID] batch status solicitado (${paths.length} fotos)`);
-    aiApi.batchStatus(paths).then((res) => {
-      if (cancelled) return;
-      let found = 0;
-      for (const item of res.items) {
-        if (item.status === "completed") {
-          aiCacheStore.set(item.foto_path, {
-            face_detected: item.face_detected ?? false,
-            faces_count: item.faces_count ?? 0,
-            embedding_ready: item.embedding_ready ?? false,
-            final_student: item.final_student ?? null,
-            status: "completed",
-          });
-          found++;
-        }
-      }
-      if (perfEnabled) console.debug(`[AI-GRID] cache preenchido: ${found}`);
-      const pending = paths.filter((p) => {
-        const c = aiCacheStore.get(p);
-        return !c || c.status !== "completed";
-      });
-      if (pending.length > 0) {
-        if (perfEnabled) console.debug(`[AI-GRID] queue pendente: ${pending.length}`);
-        aiQueueManager.batchInitialize(pending);
-      }
-    }).catch(() => {
-      if (!cancelled) aiQueueManager.batchInitialize(paths);
-    });
-    return () => { cancelled = true; };
-  }, []);
-
   const columns = useMemo(() => {
     const safeWidth = Math.max(0, viewportWidth);
     const widthCap = Math.max(2, Math.floor((safeWidth + GRID_GAP) / (MIN_COL_WIDTH + GRID_GAP)));
@@ -212,6 +172,82 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
       renderedCards,
     });
   }, [perfEnabled, photos.length, columns, cardHeight, virtualRows.length, renderedCards]);
+
+  const visibleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastVisibleKeyRef = useRef<string>("");
+
+  useEffect(() => {
+    if (virtualRows.length === 0 || !columns) return;
+
+    const visibleIdx = new Set<number>();
+    for (const vr of virtualRows) {
+      const start = vr.index * columns;
+      const end = Math.min(start + columns, photos.length);
+      for (let i = start; i < end; i++) visibleIdx.add(i);
+    }
+
+    const expandedIdx = new Set<number>(visibleIdx);
+    for (const idx of visibleIdx) {
+      for (let d = -4; d <= 4; d++) {
+        const n = idx + d;
+        if (n >= 0 && n < photos.length) expandedIdx.add(n);
+      }
+    }
+
+    const visiblePaths: string[] = [];
+    for (const idx of expandedIdx) {
+      const p = photos[idx];
+      if (p?.path) visiblePaths.push(p.path);
+    }
+
+    const key = visiblePaths.join("|");
+    if (key === lastVisibleKeyRef.current) return;
+    lastVisibleKeyRef.current = key;
+
+    if (visibleTimerRef.current) clearTimeout(visibleTimerRef.current);
+    visibleTimerRef.current = setTimeout(() => {
+      const pending = visiblePaths.filter((p) => {
+        if (aiQueueManager.isProcessed(p)) return false;
+        if (aiCacheStore.has(p)) {
+          const c = aiCacheStore.get(p)!;
+          if (c.status === "completed") return false;
+        }
+        return true;
+      });
+
+      if (pending.length === 0) return;
+
+      const first8 = pending.slice(0, 8);
+      aiApi.batchStatus(first8).then((res) => {
+        for (const item of res.items) {
+          if (item.status === "completed") {
+            aiCacheStore.set(item.foto_path, {
+              face_detected: item.face_detected ?? false,
+              faces_count: item.faces_count ?? 0,
+              embedding_ready: item.embedding_ready ?? false,
+              final_student: item.final_student ?? null,
+              status: "completed",
+            });
+          }
+        }
+        const stillPending = first8.filter((p) => {
+          const c = aiCacheStore.get(p);
+          return !c || c.status !== "completed";
+        });
+        if (stillPending.length > 0) {
+          aiQueueManager.batchInitialize(stillPending);
+        }
+        console.debug(`[AI-VISIBLE] queued=${stillPending.length} visible=${visibleIdx.size} total=${photos.length}`);
+      }).catch(() => {
+        aiQueueManager.batchInitialize(first8);
+        console.debug(`[AI-VISIBLE] queued=${first8.length} visible=${visibleIdx.size} total=${photos.length}`);
+      });
+    }, 250);
+
+    return () => {
+      if (visibleTimerRef.current) clearTimeout(visibleTimerRef.current);
+    };
+  }, [virtualRows, columns, photos]);
 
   if (photos.length === 0) {
     return (

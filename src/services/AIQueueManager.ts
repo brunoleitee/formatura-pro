@@ -152,6 +152,10 @@ class AIQueueManager {
     return this.processing.has(path);
   }
 
+  isProcessed(path: string): boolean {
+    return this.processed.has(path);
+  }
+
   isQueued(path: string): boolean {
     return this.queue.some((q) => q.path === path);
   }
