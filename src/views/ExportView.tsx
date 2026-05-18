@@ -3,7 +3,7 @@ import { Download, FolderOpen, RefreshCw, Check, Users, X as XIcon, ChevronRight
 import { api, type Person, type ExportStatus, type ExportSummary } from '../services/api';
 import { useApp } from '../context/AppContext';
 import ExportFinishModal from '../components/ExportFinishModal';
-import { getAvatarThumbUrl } from '../utils/imageUrls';
+import { resolveAvatarUrl } from '../utils/avatarUrl';
 import s from './ExportView.module.css';
 
 type ExportMode = 'copy' | 'move';
@@ -19,20 +19,20 @@ const STEPS = [
 
 const ExportAvatar = memo(function ExportAvatar({ person, index }: { person: Person; index: number }) {
   const [failed, setFailed] = useState(false);
-  const avatarPath = person.avatar_path || person.cover_path || '';
+  const avatarUrl = useMemo(() => resolveAvatarUrl(person, 160), [person.cover_path, person.cover_box, person.avatar_path]);
 
-  useEffect(() => { setFailed(false); }, [avatarPath]);
+  useEffect(() => { setFailed(false); }, [avatarUrl]);
 
   const initials = person.name
     .trim().split(/\s+/).filter(Boolean).slice(0, 2)
     .map(p => p.charAt(0).toUpperCase()).join('');
   const label = initials || String(index + 1).padStart(2, '0');
 
-  if (!avatarPath || failed) return <>{label}</>;
+  if (!avatarUrl || failed) return <>{label}</>;
 
   return (
     <img
-      src={getAvatarThumbUrl(avatarPath) ?? ''}
+      src={avatarUrl}
       alt={person.name}
       loading="eager"
       decoding="async"

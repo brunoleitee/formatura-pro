@@ -3,7 +3,7 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 import { Users, RefreshCw, Edit2, Trash2, Check, X, Star, Award, LayoutGrid, List, Search, ExternalLink, Trash, Camera } from 'lucide-react';
 import { api, type Person } from '../services/api';
 import { useApp } from '../context/AppContext';
-import { getAvatarThumbUrl } from '../utils/imageUrls';
+import { resolveAvatarUrl } from '../utils/avatarUrl';
 import { faceThumb } from '../components/review/FaceCard';
 import styles from './PeopleView.module.css';
 
@@ -14,17 +14,8 @@ interface PeopleViewProps {
 const PersonAvatar = memo(function PersonAvatar({ person }: { person: Person }) {
   const [failed, setFailed] = useState(false);
   const quality = Math.round((person.avg_quality || 0) * 100);
-  
-  const avatarUrl = useMemo(() => {
-    // 1. SEMPRE preferir crop de face gerado na hora se tivermos o box (Garante close-up do rosto)
-    if (person.cover_path && person.cover_box) {
-      return faceThumb(person.cover_path, person.cover_box, 200);
-    }
-    // 2. Fallback para cache de face (avatar_path)
-    if (person.avatar_path) return getAvatarThumbUrl(person.avatar_path);
-    // 3. Fallback final para miniatura da foto inteira
-    return getAvatarThumbUrl(person.cover_path || '');
-  }, [person.avatar_path, person.cover_path, person.cover_box]);
+
+  const avatarUrl = useMemo(() => resolveAvatarUrl(person, 200), [person.cover_path, person.cover_box, person.avatar_path]);
 
   useEffect(() => { setFailed(false); }, [avatarUrl]);
 
@@ -97,11 +88,7 @@ const PeopleCard = memo(function PeopleCard({
 
   // Hooks do grid (chamados incondicionalmente para respeitar Rules of Hooks)
   const [photoFailed, setPhotoFailed] = useState(false);
-  const avatarUrl = useMemo(() => {
-    if (person.cover_path && person.cover_box) return faceThumb(person.cover_path, person.cover_box, 200);
-    if (person.avatar_path) return getAvatarThumbUrl(person.avatar_path);
-    return getAvatarThumbUrl(person.cover_path || '');
-  }, [person.avatar_path, person.cover_path, person.cover_box]);
+  const avatarUrl = useMemo(() => resolveAvatarUrl(person, 200), [person.cover_path, person.cover_box, person.avatar_path]);
 
   useEffect(() => { setPhotoFailed(false); }, [avatarUrl]);
 

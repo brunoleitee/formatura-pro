@@ -149,9 +149,27 @@ def get_people(unknown: bool = False):
                     covers AS (
                         SELECT aluno_id, foto_path, x1, y1, x2, y2
                         FROM (
-                            SELECT 
+                            SELECT
                                 aluno_id, foto_path, x1, y1, x2, y2,
-                                ROW_NUMBER() OVER (PARTITION BY aluno_id ORDER BY (x1 IS NULL), rowid ASC) as rn
+                                CASE
+                                    WHEN is_foreground = 1 AND COALESCE(foreground_score, 0) >= 0.3 THEN 0
+                                    ELSE 1
+                                END AS tier,
+                                ROW_NUMBER() OVER (
+                                    PARTITION BY aluno_id
+                                    ORDER BY
+                                        CASE
+                                            WHEN is_foreground = 1 AND COALESCE(foreground_score, 0) >= 0.3 THEN 0
+                                            ELSE 1
+                                        END ASC,
+                                        (x1 IS NULL) ASC,
+                                        (
+                                            COALESCE(foreground_score, 0) * 0.40 +
+                                            COALESCE(center_score, 0) * 0.20 +
+                                            MIN(COALESCE(blur_score, 0) / 300.0, 1.0) * 0.20 +
+                                            MIN(COALESCE(face_area_ratio, 0) / 0.15, 1.0) * 0.20
+                                        ) DESC
+                                ) as rn
                             FROM ocorrencias
                         ) WHERE rn = 1
                     )

@@ -219,19 +219,21 @@ def _pick_best_reference_candidate(conn, aluno_id: str):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT foto_path, x1, y1, x2, y2, blur_score, blur_status
+        SELECT foto_path, x1, y1, x2, y2, blur_score, blur_status,
+               foreground_score, is_foreground, face_area_ratio, center_score
         FROM ocorrencias
         WHERE aluno_id = ?
           AND foto_path IS NOT NULL
           AND x1 IS NOT NULL
         ORDER BY
-          CASE
-            WHEN blur_status = 'sharp' THEN 0
-            WHEN blur_status = 'attention' THEN 1
-            WHEN blur_status = 'blurry' THEN 2
-            ELSE 3
-          END ASC,
-          COALESCE(blur_score, -1) DESC
+          COALESCE(is_foreground, 0) DESC,
+          (
+              COALESCE(foreground_score, 0) * 0.40 +
+              COALESCE(center_score, 0) * 0.20 +
+              MIN(COALESCE(blur_score, 0) / 300.0, 1.0) * 0.20 +
+              MIN(COALESCE(face_area_ratio, 0) / 0.15, 1.0) * 0.20
+          ) DESC,
+          COALESCE(blur_score, 0) DESC
         """,
         (aluno_id,),
     )
