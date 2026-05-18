@@ -414,18 +414,29 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
   // Metrics polling: independente do scan, roda sempre que o componente está montado
   useEffect(() => {
+    const metricsErrorCountRef = { current: 0 };
     const pollMetrics = async () => {
       try {
         const m = await api.getSystemMetrics();
-        console.log("[Metrics API]", m);
+        metricsErrorCountRef.current = 0;
         setSystemMetrics(m);
       } catch (err) {
-        setTimeline(prev => [...prev.slice(-49), {
-          id: `metrics-err-${Date.now()}`,
-          kind: 'error',
-          text: `Erro ao buscar métricas: ${err instanceof Error ? err.message : 'desconhecido'}`,
-          timestamp: Date.now()
-        }]);
+        metricsErrorCountRef.current++;
+        if (metricsErrorCountRef.current === 1) {
+          setTimeline(prev => [...prev.slice(-49), {
+            id: `metrics-err-${Date.now()}`,
+            kind: 'error',
+            text: `Erro ao buscar métricas: ${err instanceof Error ? err.message : 'desconhecido'}`,
+            timestamp: Date.now()
+          }]);
+        } else if (metricsErrorCountRef.current === 10) {
+          setTimeline(prev => [...prev.slice(-49), {
+            id: `metrics-err-repeated-${Date.now()}`,
+            kind: 'warning',
+            text: `Métricas indisponíveis (${metricsErrorCountRef.current} tentativas)`,
+            timestamp: Date.now()
+          }]);
+        }
       }
     };
     pollMetrics();
@@ -1407,6 +1418,13 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           </div>
 
           <div className={styles.systemMetrics}>
+            <div className={styles.metricItem} style={{ gridColumn: '1 / -1' }}>
+              <ScanFace size={12} className={styles.metricIcon} />
+              <span className={styles.metricLabel}>AI</span>
+              <span className={styles.metricValue} style={{ color: scanStatus?.device === 'GPU' ? '#10b981' : '#f59e0b' }}>
+                {scanStatus?.provider ? (scanStatus.device === 'GPU' ? 'GPU' : 'CPU') : '--'}
+              </span>
+            </div>
             <div className={styles.metricItem}>
               <Monitor size={12} className={styles.metricIcon} />
               <span className={styles.metricLabel}>GPU</span>
