@@ -6,9 +6,13 @@ interface CacheEntry {
   height: number;
 }
 
-const MAX_ENTRIES = 15;
-const MAX_CONCURRENT = 3;
-const log = (msg: string) => console.log(`[IMAGE-CACHE] ${msg}`);
+const MAX_ENTRIES = 200;
+const MAX_CONCURRENT = 5;
+const log = (msg: string) => {
+  if (typeof window !== 'undefined' && window.localStorage?.getItem('formaturapro:perf') === '1') {
+    console.debug(`[IMAGE-CACHE] ${msg}`);
+  }
+};
 
 class ImagePreloadCache {
   private cache = new Map<string, CacheEntry>();

@@ -103,7 +103,7 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
     api.getRatings(paths).then((res) => {
       if (!cancelled) ratingCache.loadBatch(res.items);
     }).catch(() => {});
-    console.log(`[AI-GRID] batch status solicitado (${paths.length} fotos)`);
+    if (perfEnabled) console.debug(`[AI-GRID] batch status solicitado (${paths.length} fotos)`);
     aiApi.batchStatus(paths).then((res) => {
       if (cancelled) return;
       let found = 0;
@@ -119,13 +119,13 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
           found++;
         }
       }
-      console.log(`[AI-GRID] cache preenchido: ${found}`);
+      if (perfEnabled) console.debug(`[AI-GRID] cache preenchido: ${found}`);
       const pending = paths.filter((p) => {
         const c = aiCacheStore.get(p);
         return !c || c.status !== "completed";
       });
       if (pending.length > 0) {
-        console.log(`[AI-GRID] queue pendente: ${pending.length}`);
+        if (perfEnabled) console.debug(`[AI-GRID] queue pendente: ${pending.length}`);
         aiQueueManager.batchInitialize(pending);
       }
     }).catch(() => {
@@ -160,7 +160,7 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
     count: rowCount,
     getScrollElement: () => parentRef.current,
     estimateSize: () => cardHeight + GRID_GAP,
-    overscan: 6,
+    overscan: 3,
   });
 
   const virtualRows = rowVirtualizer.getVirtualItems();
@@ -183,7 +183,7 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
       totalPhotos: photos.length,
       columns,
       cardHeight,
-      overscan: 6,
+      overscan: 3,
       virtualRows: virtualRows.length,
       renderedCards,
     });

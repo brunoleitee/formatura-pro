@@ -28,7 +28,7 @@ _THUMB_POOL_MAX_WORKERS = 4
 # Semáforo para limitar fallbacks Pillow simultâneos
 _PILLOW_SEMAPHORE = None
 _PILLOW_SEMAPHORE_LOCK = threading.Lock()
-_PILLOW_MAX_CONCURRENT = 1
+_PILLOW_MAX_CONCURRENT = 2
 
 # Semáforo global para limitar thumbnails simultâneas
 _THUMB_SEMAPHORE = None
@@ -749,8 +749,13 @@ def get_image_thumb(path: str, size: int = 300, quality: int = 80):
                 
                 mode = "pillow_done"
                 _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "miss", extra=f"wait={wait_ms:.0f}ms saved={saved} q={quality}")
-                result = StreamingResponse(buf, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-                _put_result_in_cache(cache_path, result)
+                # FileResponse é seguro para cache (relê o arquivo a cada request).
+                # StreamingResponse(BytesIO) só pode ser consumido uma vez — não guardar no cache.
+                if saved:
+                    result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+                    _put_result_in_cache(cache_path, result)
+                else:
+                    result = StreamingResponse(buf, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
                 return result
                 
             except MemoryError as me:
@@ -782,14 +787,6 @@ def get_image_thumb(path: str, size: int = 300, quality: int = 80):
         elapsed = (time.perf_counter() - started) * 1000.0
         if log_info:
             log_info(f"THUMB ERROR: path={os.path.basename(decoded_path)} mode={mode} error={error_detail} time={elapsed:.0f}ms")
-        return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-    except HTTPException:
-        raise
-    except Exception as e:
-        mode = "error"
-        error_detail = str(e)
-        if log_info:
-            log_info(f"THUMB ERRO final: path={os.path.basename(decoded_path)} mode={mode} erro={error_detail}")
         return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
 
 
@@ -913,8 +910,11 @@ def get_thumb(path: str, x1: int, y1: int, x2: int, y2: int, size: int = 120, ex
                 
                 mode = "pillow_done"
                 _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "miss", extra=f"wait={wait_ms:.0f}ms saved={saved} q={jpeg_quality}")
-                result = StreamingResponse(buf, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-                _put_result_in_cache(cache_path, result)
+                if saved:
+                    result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+                    _put_result_in_cache(cache_path, result)
+                else:
+                    result = StreamingResponse(buf, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
                 return result
                 
             except MemoryError as me:
@@ -946,15 +946,6 @@ def get_thumb(path: str, x1: int, y1: int, x2: int, y2: int, size: int = 120, ex
         elapsed = (time.perf_counter() - started) * 1000.0
         if log_info:
             log_info(f"FACE ERROR: path={os.path.basename(decoded_path)} mode={mode} error={error_detail} time={elapsed:.0f}ms")
-        return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        mode = "error"
-        error_detail = str(e)
-        if log_info:
-            log_info(f"FACE THUMB ERRO final: path={os.path.basename(decoded_path)} mode={mode} erro={error_detail}")
         return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
 
 
