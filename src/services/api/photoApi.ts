@@ -2,19 +2,22 @@ import { API_BASE, fetchJSON, post } from './core';
 import type { ExplorerPhotosResponse, FolderTreeResponse, LiveScannerStatus, Photo, PhotoContextResponse, PreviewFacesResponse, QualityAuditStatus, ScanStatus, SystemMetrics, ScannerFolderTreeResponse } from './types';
 
 export const photoApi = {
-  getPhotos: (path = '', catalog = '') =>
+  getPhotos: (path = '', catalog = '', signal?: AbortSignal) =>
     fetchJSON<{ items?: Photo[]; photos?: Photo[] } | Photo[]>(
-      `${API_BASE}/explorer/ls?path=${encodeURIComponent(path)}&catalog=${encodeURIComponent(catalog)}`
+      `${API_BASE}/explorer/ls?path=${encodeURIComponent(path)}&catalog=${encodeURIComponent(catalog)}`,
+      { signal }
     ),
-  getAllPhotos: (catalog = '', limit?: number) =>
+  getAllPhotos: (catalog = '', limit?: number, signal?: AbortSignal) =>
     fetchJSON<Photo[]>(
-      `${API_BASE}/photos/all?catalog=${encodeURIComponent(catalog)}${typeof limit === 'number' ? `&limit=${limit}` : ''}`
+      `${API_BASE}/photos/all?catalog=${encodeURIComponent(catalog)}${typeof limit === 'number' ? `&limit=${limit}` : ''}`,
+      { signal }
     ),
-  getPersonPhotos: (aluno_id: string) =>
-    fetchJSON<Photo[]>(`${API_BASE}/photos/${encodeURIComponent(aluno_id)}`),
-  getPhotoContext: (path: string, catalog = '') =>
+  getPersonPhotos: (aluno_id: string, signal?: AbortSignal) =>
+    fetchJSON<Photo[]>(`${API_BASE}/photos/${encodeURIComponent(aluno_id)}`, { signal }),
+  getPhotoContext: (path: string, catalog = '', signal?: AbortSignal) =>
     fetchJSON<PhotoContextResponse>(
-      `${API_BASE}/photos/context?path=${encodeURIComponent(path)}&catalog=${encodeURIComponent(catalog)}`
+      `${API_BASE}/photos/context?path=${encodeURIComponent(path)}&catalog=${encodeURIComponent(catalog)}`,
+      { signal }
     ),
 
   // Folder Tree
@@ -47,7 +50,7 @@ export const photoApi = {
       ...(options?.selected_folders ? { selected_folders: options.selected_folders } : {}),
     }),
   getSystemMetrics: () => fetchJSON<SystemMetrics>(`${API_BASE}/system/metrics`),
-  getScanStatus: () => fetchJSON<ScanStatus>(`${API_BASE}/scan/status`),
+  getScanStatus: (signal?: AbortSignal) => fetchJSON<ScanStatus>(`${API_BASE}/scan/status`, { signal }),
   stopScan: () => post(`${API_BASE}/scan/stop`, {}),
   scannerStop: () => post<{ success: boolean }>(`${API_BASE}/scanner/stop`, {}),
   getLiveScannerStatus: () => fetchJSON<LiveScannerStatus>(`${API_BASE}/scanner/live-status`),

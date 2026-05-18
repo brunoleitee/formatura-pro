@@ -57,9 +57,19 @@ export function Sidebar({
 
   useEffect(() => {
     if (!currentCatalog) { setSidebarStats(null); return; }
-    api.getStats(currentCatalog)
-      .then(s => setSidebarStats({ photos: s.total_photos, people: s.total_people }))
-      .catch(() => {});
+    const controller = new AbortController();
+    api.getStats(currentCatalog, controller.signal)
+      .then(s => {
+        if (!controller.signal.aborted) {
+          setSidebarStats({ photos: s.total_photos, people: s.total_people });
+        }
+      })
+      .catch((e) => {
+        if (e?.name !== 'AbortError') {
+          // ignore
+        }
+      });
+    return () => { controller.abort(); };
   }, [currentCatalog, refreshKey]);
 
   useEffect(() => {

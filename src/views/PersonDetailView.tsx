@@ -80,14 +80,24 @@ export default function PersonDetailView() {
     selectionCountRef.current = selectedPaths.size;
   }, [selectedPaths.size]);
 
+  const loadAbortRef = useRef<AbortController | null>(null);
+
   const load = useCallback(async () => {
+    // Cancelar request anterior se existir
+    if (loadAbortRef.current) {
+      loadAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    loadAbortRef.current = controller;
+
     if (!selectedPersonId || !currentCatalog) return;
     setLoading(true);
     try {
       const [data, people] = await Promise.all([
-        api.getPersonPhotos(selectedPersonId),
-        api.getPeople(false).catch(() => []),
+        api.getPersonPhotos(selectedPersonId, controller.signal),
+        api.getPeople(false, controller.signal).catch(() => []),
       ]);
+      if (controller.signal.aborted) return;
       setPhotos(data);
       const matched = (people as Array<{ id?: string; name?: string; class_name?: string }>).find(
         (person) => person.id === selectedPersonId || person.name === selectedPersonId
@@ -99,14 +109,25 @@ export default function PersonDetailView() {
         name: selectedPersonId,
         class_name: 'Sem turma',
       });
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') {
+        console.error(e);
+      }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   }, [selectedPersonId, currentCatalog]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    return () => {
+      if (loadAbortRef.current) {
+        loadAbortRef.current.abort();
+      }
+    };
+  }, [load]);
 
   const updatePhotoStatusLocal = useCallback((path: string, updates: Partial<Photo>) => {
     setPhotos(prev => prev.map(p => 

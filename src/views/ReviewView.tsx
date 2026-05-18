@@ -122,11 +122,21 @@ const wasGraduationRunningRef = useRef(false);
   const detailRequestRef = useRef(0);
   const clusterCacheRef = useRef<Map<string, { cluster: RichCluster; review_ready: boolean }>>(new Map());
 
+  const loadAbortRef = useRef<AbortController | null>(null);
+
   const load = useCallback(async () => {
+    // Cancelar request anterior se existir
+    if (loadAbortRef.current) {
+      loadAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    loadAbortRef.current = controller;
+
     if (!currentCatalog) return;
     setLoading(true);
     try {
-      const data = await api.getReviewClusters(currentCatalog, REVIEW_PAGE_SIZE, 0);
+      const data = await api.getReviewClusters(currentCatalog, REVIEW_PAGE_SIZE, 0, controller.signal);
+      if (controller.signal.aborted) return;
       const nextClusters = data?.clusters ?? [];
       setClusters(nextClusters);
       setTotalClusters(data?.total ?? nextClusters.length);
@@ -139,17 +149,21 @@ const wasGraduationRunningRef = useRef(false);
         if (prev && nextClusters.some((cluster) => cluster.cluster_id === prev)) return prev;
         return nextClusters[0].cluster_id;
       });
-    } catch {
-      setClusters([]);
-      setSelectedId(null);
-      setSelected(null);
-      setTotalClusters(0);
-      setHasMore(false);
-      setPageOffset(0);
-      setReviewReady(false);
-      setTotalFacesInCatalog(0);
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') {
+        setClusters([]);
+        setSelectedId(null);
+        setSelected(null);
+        setTotalClusters(0);
+        setHasMore(false);
+        setPageOffset(0);
+        setReviewReady(false);
+        setTotalFacesInCatalog(0);
+      }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   }, [currentCatalog]);
 
@@ -225,6 +239,11 @@ const wasGraduationRunningRef = useRef(false);
     detailRequestRef.current += 1;
     load();
     refreshGraduationStatus();
+    return () => {
+      if (loadAbortRef.current) {
+        loadAbortRef.current.abort();
+      }
+    };
   }, [load, refreshGraduationStatus]);
 
   useEffect(() => {

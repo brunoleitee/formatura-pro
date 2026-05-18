@@ -18,15 +18,15 @@ export const api = {
   ...exportApi,
 
   // Settings
-  getSettings: () => fetchJSON<AppSettings>(`${API_BASE}/settings`),
+  getSettings: (signal?: AbortSignal) => fetchJSON<AppSettings>(`${API_BASE}/settings`, { signal }),
   updateSettings: (data: Partial<AppSettings>) => post<AppSettings>(`${API_BASE}/settings`, data),
-  getQualitySettings: () => fetchJSON<QualitySettings>(`${API_BASE}/settings/quality`),
+  getQualitySettings: (signal?: AbortSignal) => fetchJSON<QualitySettings>(`${API_BASE}/settings/quality`, { signal }),
   updateQualitySettings: (data: Partial<QualitySettings>) => post<QualitySettings>(`${API_BASE}/settings/quality`, data),
   clearCache: () => post(`${API_BASE}/cache/clear`, {}),
 
   // Stats & System
-  getStats: (catalog = '') => fetchJSON<Stats>(`${API_BASE}/stats?catalog=${encodeURIComponent(catalog)}`),
-  getSystemStatus: () => fetchJSON(`${API_BASE}/system/status`),
+  getStats: (catalog = '', signal?: AbortSignal) => fetchJSON<Stats>(`${API_BASE}/stats?catalog=${encodeURIComponent(catalog)}`, { signal }),
+  getSystemStatus: (signal?: AbortSignal) => fetchJSON(`${API_BASE}/system/status`, { signal }),
 
   // Interaction
   openFolder: (path: string) => post(`${API_BASE}/open-folder`, { path }),

@@ -85,17 +85,42 @@ function ExportViewContent() {
   const [step, setStep] = useState(1);
   const [sortBy, setSortBy] = useState<SortBy>('az');
 
+  const loadPeopleAbortRef = useRef<AbortController | null>(null);
+
   const loadPeople = useCallback(async () => {
+    // Cancelar request anterior se existir
+    if (loadPeopleAbortRef.current) {
+      loadPeopleAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    loadPeopleAbortRef.current = controller;
+
     if (!currentCatalog) return;
     setLoading(true);
     try {
-      const data = await api.getPeople(false);
-      setPeople(data);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+      const data = await api.getPeople(false, controller.signal);
+      if (!controller.signal.aborted) {
+        setPeople(data);
+      }
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') {
+        console.error(e);
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
+    }
   }, [currentCatalog]);
 
-  useEffect(() => { loadPeople(); }, [loadPeople]);
+  useEffect(() => {
+    loadPeople();
+    return () => {
+      if (loadPeopleAbortRef.current) {
+        loadPeopleAbortRef.current.abort();
+      }
+    };
+  }, [loadPeople]);
 
   useEffect(() => {
     setSelected(new Set());

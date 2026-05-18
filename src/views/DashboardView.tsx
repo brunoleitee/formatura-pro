@@ -251,26 +251,26 @@ export default function DashboardView() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     if (!currentCatalog) {
       setPhotos([]); setPeople([]); setStats(null); setScanStatus(null);
       setClusters(null); setFolderStats(null);
       setError(''); setLoading(false); setLoadedOnce(true);
-      return () => { cancelled = true; };
+      return () => { controller.abort(); };
     }
 
     setLoading(true); setError('');
 
     Promise.all([
-      api.getStats(currentCatalog),
-      api.getAllPhotos(currentCatalog),
-      api.getPeople(false),
-      api.getScanStatus().catch(() => null),
-      api.getReviewClusters(currentCatalog, 50, 0).catch(() => null),
-      api.getFolderStats(currentCatalog).catch(() => null),
+      api.getStats(currentCatalog, controller.signal),
+      api.getAllPhotos(currentCatalog, undefined, controller.signal),
+      api.getPeople(false, controller.signal),
+      api.getScanStatus(controller.signal).catch(() => null),
+      api.getReviewClusters(currentCatalog, 50, 0, controller.signal).catch(() => null),
+      api.getFolderStats(currentCatalog, controller.signal).catch(() => null),
     ])
       .then(([s, ph, pe, sc, cl, fs]) => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         setStats(s as Stats);
         setPhotos(ph as Photo[]);
         setPeople(pe as Person[]);
@@ -279,14 +279,15 @@ export default function DashboardView() {
         setFolderStats(fs as CatalogFolderStats | null);
       })
       .catch((err) => {
+        if (err?.name === 'AbortError') return;
         console.error('[DashboardView] erro:', err);
-        if (!cancelled) setError('Não foi possível carregar a visão geral.');
+        if (!controller.signal.aborted) setError('Não foi possível carregar a visão geral.');
       })
       .finally(() => {
-        if (!cancelled) { setLoading(false); setLoadedOnce(true); }
+        if (!controller.signal.aborted) { setLoading(false); setLoadedOnce(true); }
       });
 
-    return () => { cancelled = true; };
+    return () => { controller.abort(); };
   }, [currentCatalog, refreshKey]);
 
   /* ── Computed data ── */

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Save, RefreshCw, Trash2, Info, Image, Settings2, Cpu, FolderOpen } from 'lucide-react';
 import { api, type QualitySettings, type AppSettings } from '../services/api';
 import { useApp } from '../context/AppContext';
@@ -15,20 +15,41 @@ export default function SettingsView() {
   const [msg, setMsg] = useState('');
   const [clearing, setClearing] = useState(false);
 
+  const loadAbortRef = useRef<AbortController | null>(null);
+
   const load = useCallback(async () => {
+    // Cancelar request anterior se existir
+    if (loadAbortRef.current) {
+      loadAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    loadAbortRef.current = controller;
+
     try {
       const [q, a, s] = await Promise.all([
-        api.getQualitySettings(),
-        api.getSettings(),
-        currentCatalog ? api.getStats(currentCatalog) : null,
+        api.getQualitySettings(controller.signal),
+        api.getSettings(controller.signal),
+        currentCatalog ? api.getStats(currentCatalog, controller.signal) : null,
       ]);
+      if (controller.signal.aborted) return;
       setQuality(q);
       setAppCfg(a);
       if (s) setStats(s as Record<string, unknown>);
-    } catch (e) { console.error(e); }
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') {
+        console.error(e);
+      }
+    }
   }, [currentCatalog]);
 
-  useEffect(() => { Promise.resolve().then(load); }, [load]);
+  useEffect(() => {
+    Promise.resolve().then(load);
+    return () => {
+      if (loadAbortRef.current) {
+        loadAbortRef.current.abort();
+      }
+    };
+  }, [load]);
 
   const saveQuality = async () => {
     if (!quality) return;

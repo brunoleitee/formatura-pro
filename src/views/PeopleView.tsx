@@ -1,4 +1,4 @@
-import { memo, useState, useEffect, useCallback, useMemo } from 'react';
+import { memo, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { Users, RefreshCw, Edit2, Trash2, Check, X, Star, Award, LayoutGrid, List, Search, ExternalLink, Trash, Camera } from 'lucide-react';
 import { api, type Person } from '../services/api';
@@ -281,20 +281,42 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
   const [filterFavorites, setFilterFavorites] = useState(false);
   const [viewMode, setViewMode] = useLocalStorage<'cards' | 'list'>('identifiedViewMode', 'list');
 
+  const abortRef = useRef<AbortController | null>(null);
+
   const load = useCallback(async () => {
+    // Cancelar request anterior se existir
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     if (!currentCatalog) return;
     setLoading(true);
     try {
-      const data = await api.getPeople(false);
-      setPeople(data);
-    } catch (e) {
-      console.error(e);
+      const data = await api.getPeople(false, controller.signal);
+      if (!controller.signal.aborted) {
+        setPeople(data);
+      }
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') {
+        console.error(e);
+      }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   }, [currentCatalog, refreshKey]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    return () => {
+      if (abortRef.current) {
+        abortRef.current.abort();
+      }
+    };
+  }, [load]);
 
   const handleOpenPerson = useCallback((id: string) => {
     navigate('person-detail', id);

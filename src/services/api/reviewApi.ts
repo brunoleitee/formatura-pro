@@ -10,29 +10,34 @@ import type {
 } from './types';
 
 export const reviewApi = {
-  getStudentMatchPreview: (catalog: string, cluster_id: string, student: string) =>
+  getStudentMatchPreview: (catalog: string, cluster_id: string, student: string, signal?: AbortSignal) =>
     fetchJSON<StudentMatchPreviewResponse>(
-      `${API_BASE}/review/student-match-preview?catalog=${encodeURIComponent(catalog)}&cluster_id=${encodeURIComponent(cluster_id)}&student=${encodeURIComponent(student)}`
+      `${API_BASE}/review/student-match-preview?catalog=${encodeURIComponent(catalog)}&cluster_id=${encodeURIComponent(cluster_id)}&student=${encodeURIComponent(student)}`,
+      { signal }
     ),
 
-  getUnknownClusters: (catalog: string, min_score = 0.58, min_cluster_size = 2, limit = 80) =>
+  getUnknownClusters: (catalog: string, min_score = 0.58, min_cluster_size = 2, limit = 80, signal?: AbortSignal) =>
     fetchJSON<UnknownCluster[]>(
-      `${API_BASE}/unknown-clusters?catalog=${encodeURIComponent(catalog)}&min_score=${min_score}&min_cluster_size=${min_cluster_size}&limit=${limit}`
+      `${API_BASE}/unknown-clusters?catalog=${encodeURIComponent(catalog)}&min_score=${min_score}&min_cluster_size=${min_cluster_size}&limit=${limit}`,
+      { signal }
     ),
 
-  getUnknownClustersV2: (catalog: string, min_score = 0.58, min_cluster_size = 2, limit = 100) =>
+  getUnknownClustersV2: (catalog: string, min_score = 0.58, min_cluster_size = 2, limit = 100, signal?: AbortSignal) =>
     fetchJSON<UnknownClustersResponse>(
-      `${API_BASE}/review/unknown-clusters?catalog=${encodeURIComponent(catalog)}&min_score=${min_score}&min_cluster_size=${min_cluster_size}&limit=${limit}`
+      `${API_BASE}/review/unknown-clusters?catalog=${encodeURIComponent(catalog)}&min_score=${min_score}&min_cluster_size=${min_cluster_size}&limit=${limit}`,
+      { signal }
     ),
 
-  getReviewClusters: (catalog: string, limit = 30, offset = 0) =>
+  getReviewClusters: (catalog: string, limit = 30, offset = 0, signal?: AbortSignal) =>
     fetchJSON<ReviewClustersPageResponse>(
-      `${API_BASE}/review/clusters?catalog=${encodeURIComponent(catalog)}&limit=${limit}&offset=${offset}&_t=${Date.now()}`
+      `${API_BASE}/review/clusters?catalog=${encodeURIComponent(catalog)}&limit=${limit}&offset=${offset}&_t=${Date.now()}`,
+      { signal }
     ),
 
-  getReviewClusterDetail: (catalog: string, clusterId: string) =>
+  getReviewClusterDetail: (catalog: string, clusterId: string, signal?: AbortSignal) =>
     fetchJSON<ReviewClusterDetailResponse>(
-      `${API_BASE}/review/clusters/detail?catalog=${encodeURIComponent(catalog)}&cluster_id=${encodeURIComponent(clusterId)}`
+      `${API_BASE}/review/clusters/detail?catalog=${encodeURIComponent(catalog)}&cluster_id=${encodeURIComponent(clusterId)}`,
+      { signal }
     ),
 
   assignCluster: (
