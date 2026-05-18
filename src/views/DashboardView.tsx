@@ -173,17 +173,26 @@ function ActivityItem({ icon, text, time, tone }: {
   );
 }
 
-/* ── AI Suggestion Card with Thumb ── */
+/* ── AI Suggestion Card with Face Thumb ── */
 function AISuggestionCard({ label, sublabel, percent, tone, thumbUrl, onReview }: {
   label: string; sublabel: string; percent?: number; tone?: string; thumbUrl?: string; onReview?: () => void;
 }) {
+  const [imgError, setImgError] = useState(false);
+  const showThumb = thumbUrl && !imgError;
+
   return (
     <div className={styles.aiCard} data-tone={tone || 'default'}>
-      <div className={styles.aiThumb}>
-        {thumbUrl ? (
-          <img src={thumbUrl} alt="" className={styles.aiThumbImg} loading="lazy" />
+      <div className={styles.aiFace} data-has-thumb={showThumb ? 'true' : 'false'}>
+        {showThumb ? (
+          <img
+            src={thumbUrl}
+            alt=""
+            className={styles.aiFaceImg}
+            loading="lazy"
+            onError={() => setImgError(true)}
+          />
         ) : (
-          <Sparkles size={14} />
+          <Sparkles size={16} />
         )}
       </div>
       <div className={styles.aiContent}>
@@ -338,12 +347,12 @@ export default function DashboardView() {
         complete: p.total_photos >= DEFAULT_PHOTOS_GOAL,
       }));
 
-    // AI suggestions from clusters with real thumbs
+    // AI suggestions from clusters with real face thumbs
     const aiSuggestions = (clusters?.clusters ?? []).slice(0, 4).map((cl: ReviewClusterSummary) => {
       const rep = cl.representative;
       let thumbUrl: string | undefined;
       if (rep?.path && rep.x1 != null && rep.y1 != null && rep.x2 != null && rep.y2 != null) {
-        thumbUrl = api.faceThumbUrl(rep.path, rep.x1, rep.y1, rep.x2, rep.y2, 80, 0.1, 70);
+        thumbUrl = api.faceThumbUrl(rep.path, rep.x1, rep.y1, rep.x2, rep.y2, 120, 0.15, 75);
       }
       return {
         label: cl.student_name || cl.nome_formando || cl.representative?.aluno_id || `Cluster ${cl.cluster_number}`,

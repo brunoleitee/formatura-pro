@@ -529,18 +529,19 @@
 .aiCard {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
   background: rgba(139, 92, 246, 0.04);
   border: 1px solid rgba(139, 92, 246, 0.1);
-  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
   cursor: default;
 }
 
 .aiCard:hover {
   background: rgba(139, 92, 246, 0.08);
-  border-color: rgba(139, 92, 246, 0.2);
+  border-color: rgba(139, 92, 246, 0.25);
+  box-shadow: 0 4px 20px rgba(139, 92, 246, 0.1);
   transform: translateY(-1px);
 }
 
@@ -551,32 +552,57 @@
 
 .aiCard[data-tone='green']:hover {
   background: rgba(16, 185, 129, 0.08);
-  border-color: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.25);
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.1);
 }
 
-.aiThumb {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  background: rgba(139, 92, 246, 0.12);
+.aiFace {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(139, 92, 246, 0.1);
   color: #a78bfa;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   overflow: hidden;
+  border: 2px solid rgba(139, 92, 246, 0.2);
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.1);
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
 }
 
-.aiThumbImg {
+.aiFace[data-has-thumb='true'] {
+  border-color: rgba(139, 92, 246, 0.3);
+  box-shadow: 0 0 16px rgba(139, 92, 246, 0.15);
+}
+
+.aiCard:hover .aiFace {
+  border-color: rgba(139, 92, 246, 0.4);
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.2);
+}
+
+.aiFaceImg {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: var(--radius-sm);
 }
 
-.aiCard[data-tone='green'] .aiThumb {
-  background: rgba(16, 185, 129, 0.12);
+.aiCard[data-tone='green'] .aiFace {
+  background: rgba(16, 185, 129, 0.1);
   color: #34d399;
+  border-color: rgba(16, 185, 129, 0.2);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.1);
+}
+
+.aiCard[data-tone='green'] .aiFace[data-has-thumb='true'] {
+  border-color: rgba(16, 185, 129, 0.3);
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.15);
+}
+
+.aiCard[data-tone='green']:hover .aiFace {
+  border-color: rgba(16, 185, 129, 0.4);
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
 }
 
 .aiContent {
@@ -613,21 +639,22 @@
 }
 
 .aiButton {
-  padding: 4px 12px;
+  padding: 5px 14px;
   border-radius: var(--radius-full);
   border: 1px solid rgba(139, 92, 246, 0.25);
-  background: rgba(139, 92, 246, 0.1);
+  background: rgba(139, 92, 246, 0.08);
   color: #a78bfa;
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
   flex-shrink: 0;
 }
 
 .aiButton:hover {
-  background: rgba(139, 92, 246, 0.2);
+  background: rgba(139, 92, 246, 0.18);
   border-color: rgba(139, 92, 246, 0.4);
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.15);
 }
 
 /* ── Activity Feed ── */
