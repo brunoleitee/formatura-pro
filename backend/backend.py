@@ -2287,13 +2287,32 @@ _metrics_snapshot: dict = {
 _metrics_lock = threading.Lock()
 _metrics_interval = 2.0
 _metrics_worker_running = False
-_metrics_gpu_failures = 0
-_metrics_gpu_skip_until = 0.0
+_metrics_gpu_once: tuple | None = None  # (gpu_val, gpu_temp) after first try
 _metrics_logger = logging.getLogger(__name__)
 
 
+def _metrics_collect_gpu_once():
+    global _metrics_gpu_once
+    if _metrics_gpu_once is not None:
+        return _metrics_gpu_once
+    try:
+        nv = subprocess.run(
+            ["nvidia-smi", "--query-gpu=utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=2
+        )
+        if nv.returncode == 0:
+            parts = nv.stdout.strip().split(", ")
+            if len(parts) == 2:
+                result = (round(float(parts[0]), 0), round(float(parts[1]), 0))
+                _metrics_gpu_once = result
+                return result
+    except Exception:
+        pass
+    _metrics_gpu_once = (0, None)
+    return (0, None)
+
+
 def _metrics_collect_snapshot():
-    global _metrics_gpu_failures, _metrics_gpu_skip_until
     t0 = time.perf_counter()
     cpu_ms = gpu_ms = temp_ms = 0.0
     cpu_val = ram_used = ram_pct = None
@@ -2314,29 +2333,11 @@ def _metrics_collect_snapshot():
     cpu_ms = (time.perf_counter() - _t) * 1000
 
     _t = time.perf_counter()
-    now = time.time()
-    if now >= _metrics_gpu_skip_until:
-        try:
-            nv = subprocess.run(
-                ["nvidia-smi", "--query-gpu=utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=2
-            )
-            if nv.returncode == 0:
-                parts = nv.stdout.strip().split(", ")
-                if len(parts) == 2:
-                    gpu_val = round(float(parts[0]), 0)
-                    gpu_temp = round(float(parts[1]), 0)
-                    gpu_provider = "nvidia-smi"
-                _metrics_gpu_failures = 0
-            else:
-                raise RuntimeError(f"nvidia-smi retornou codigo {nv.returncode}: {nv.stderr.strip()}")
-        except Exception as e:
-            _metrics_gpu_failures += 1
-            _metrics_gpu_skip_until = now + min(60.0, 2.0 ** _metrics_gpu_failures)
-            _metrics_logger.warning("[metrics-worker] gpu_failed tentativa=%d error=%s", _metrics_gpu_failures, e)
-            warning = "gpu_unavailable"
-    else:
-        gpu_ms = (time.perf_counter() - _t) * 1000
+    gpu_result = _metrics_collect_gpu_once()
+    gpu_val, gpu_temp = gpu_result
+    gpu_provider = "nvidia-smi" if gpu_val is not None and gpu_val > 0 else "unavailable"
+    if gpu_val is None:
+        warning = "gpu_unavailable"
     gpu_ms = (time.perf_counter() - _t) * 1000
 
     _t = time.perf_counter()
@@ -2349,7 +2350,8 @@ def _metrics_collect_snapshot():
                     break
         except Exception:
             pass
-    if cpu_temp is None and sys.platform == "win32":
+    if cpu_temp is None and sys.platform == "win32" and not getattr(_metrics_collect_snapshot, '_wmic_tried', False):
+        _metrics_collect_snapshot._wmic_tried = True
         try:
             out = subprocess.run(
                 ["wmic", "/namespace:\\\\root\\wmi", "PATH", "MSAcpi_ThermalZoneTemperature", "get", "CurrentTemperature"],
