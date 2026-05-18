@@ -1648,6 +1648,16 @@ def get_people(unknown: bool = False):
 def get_all_photos(limit: int = None):
     return pdm.get_all_photos(limit)
 
+@app.get("/api/photos")
+def get_photos_page(catalog: str = "", limit: int = 100, offset: int = 0):
+    t0 = time.time()
+    result = pdm.get_photos_page(catalog, limit, offset)
+    elapsed_ms = (time.time() - t0) * 1000
+    logging.getLogger(__name__).info(
+        f"[photos-page] catalog={catalog or pdm.current_catalog()} offset={offset} limit={limit} total={result['total']} ms={elapsed_ms:.0f}"
+    )
+    return result
+
 @app.get("/api/photos/context")
 def get_photo_context(path: str = "", catalog: str = ""):
     try:

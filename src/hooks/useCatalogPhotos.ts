@@ -3,47 +3,74 @@ import { api, type Photo } from '../services/api';
 import { useApp } from '../context/AppContext';
 import { timed } from '../utils/perf';
 
+const PAGE_SIZE = 100;
+
 export function useCatalogPhotos() {
   const { currentCatalog, refreshKey } = useApp();
   const [photos, setPhotos] = useState<Photo[]>([]);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const nextOffsetRef = useRef(0);
+  const loadingMoreRef = useRef(false);
 
   const loadPhotos = useCallback(async () => {
-    // Cancelar request anterior se existir
-    if (abortRef.current) {
-      abortRef.current.abort();
-    }
+    if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
     if (!currentCatalog) {
       setPhotos([]);
+      setTotal(0);
+      setHasMore(false);
       return;
     }
+
     setLoading(true);
+    nextOffsetRef.current = 0;
     try {
-      const arr = await timed('catalog photos load', () => api.getAllPhotos(currentCatalog), currentCatalog);
+      const result = await timed('catalog photos load', () =>
+        api.getPhotosPage(currentCatalog, PAGE_SIZE, 0), currentCatalog
+      );
       if (!controller.signal.aborted) {
-        setPhotos(arr);
+        setPhotos(result.photos);
+        setTotal(result.total);
+        setHasMore(result.hasMore);
+        nextOffsetRef.current = PAGE_SIZE;
       }
     } catch (e: any) {
       if (e?.name !== 'AbortError') {
         console.error(e);
       }
     } finally {
-      if (!controller.signal.aborted) {
-        setLoading(false);
-      }
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [currentCatalog, refreshKey]);
+
+  const loadMore = useCallback(async () => {
+    if (!hasMore || loadingMore || loading || !currentCatalog || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    const offset = nextOffsetRef.current;
+    try {
+      const result = await api.getPhotosPage(currentCatalog, PAGE_SIZE, offset);
+      setPhotos(prev => [...prev, ...result.photos]);
+      setHasMore(result.hasMore);
+      nextOffsetRef.current = offset + PAGE_SIZE;
+    } catch (e: any) {
+      console.error(e);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [hasMore, loadingMore, loading, currentCatalog]);
 
   useEffect(() => {
     Promise.resolve().then(loadPhotos);
     return () => {
-      if (abortRef.current) {
-        abortRef.current.abort();
-      }
+      if (abortRef.current) abortRef.current.abort();
     };
   }, [loadPhotos]);
 
@@ -61,5 +88,5 @@ export function useCatalogPhotos() {
     updatePhotoStatus(path, { discarded: false });
   }, [updatePhotoStatus]);
 
-  return { photos, loading, loadPhotos, updatePhotoStatus, discardPhoto, restorePhoto };
+  return { photos, total, hasMore, loading, loadingMore, loadPhotos, loadMore, updatePhotoStatus, discardPhoto, restorePhoto };
 }

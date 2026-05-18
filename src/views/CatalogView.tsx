@@ -35,7 +35,7 @@ function zoomToSize(zoom: number) {
 
 export default function CatalogView() {
   const { currentCatalog, catalogSubfolder, setCatalogSubfolders, setIsLoadingCatalogPhotos } = useApp();
-  const { photos, loading, loadPhotos, discardPhoto, restorePhoto } = useCatalogPhotos();
+  const { photos, loading, loadingMore, hasMore, loadPhotos, loadMore, discardPhoto, restorePhoto } = useCatalogPhotos();
   const [hideDiscarded, setHideDiscarded] = useState(false);
   const [zoom, setZoom] = useState(60);
   const size = zoomToSize(zoom);
@@ -363,6 +363,9 @@ export default function CatalogView() {
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 onFirstThumbLoad={handleFirstThumbLoad}
+                onLoadMore={loadMore}
+                hasMore={hasMore}
+                loadingMore={loadingMore}
                 zoom={size}
                 getSelectionCount={getSelectionCount}
                 resetScrollKey={`${currentCatalog}|${catalogSubfolder ?? ''}|${filter}|${hideDiscarded ? '1' : '0'}`}

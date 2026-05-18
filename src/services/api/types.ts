@@ -443,6 +443,14 @@ export interface ExplorerPhoto {
   is_video: boolean;
 }
 
+export interface PhotosPageResponse {
+  photos: Photo[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
 export interface ExplorerPhotosResponse {
   ok: boolean;
   error: string;

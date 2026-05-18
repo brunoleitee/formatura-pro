@@ -370,6 +370,109 @@ def _collect_ref_photos(cat, discarded):
     return ref_photos
 
 
+def get_photos_page(catalog="", limit=100, offset=0):
+    get_db = _get("get_db")
+    get_blur_label = _get("get_blur_label")
+    load_quality_settings = _get("load_quality_settings")
+    cat = catalog if catalog else current_catalog()
+    if not cat:
+        return {"photos": [], "total": 0, "limit": limit, "offset": offset, "hasMore": False}
+
+    with get_db() as conn:
+        cur = conn.cursor()
+
+        cur.execute("SELECT COUNT(DISTINCT foto_path) FROM ocorrencias")
+        main_total = cur.fetchone()[0]
+
+        cur.execute("SELECT foto_path FROM discarded_photos")
+        discarded = {r["foto_path"] for r in cur.fetchall()}
+
+        cur.execute("SELECT path FROM catalog_folders WHERE catalog_name = ? AND status = 'inactive'", (cat,))
+        inactive_folders = [os.path.normpath(r["path"]).lower() for r in cur.fetchall()]
+
+        base_query = """
+            SELECT foto_path,
+                   MAX(blur_score) as blur_score,
+                   MAX(blur_status) as blur_status,
+                   MAX(closed_eyes) as closed_eyes,
+                   COUNT(CASE WHEN x1 IS NOT NULL THEN 1 END) as face_count
+            FROM ocorrencias
+            GROUP BY foto_path
+            ORDER BY foto_path
+            LIMIT ? OFFSET ?
+        """
+        cur.execute(base_query, (limit, offset))
+        rows = cur.fetchall()
+
+        qs = load_quality_settings()
+        unique_photos = {}
+        for r in rows:
+            p = r["foto_path"]
+            p_norm = os.path.normpath(p).lower()
+            is_inactive = any(p_norm.startswith(inf + os.sep) or p_norm.startswith(inf + "/") for inf in inactive_folders)
+            entry = {
+                "path": p,
+                "name": os.path.basename(p),
+                "type": os.path.splitext(p)[1].lower().lstrip(".") or "img",
+                "size": None, "mtime": None, "ctime": None,
+                "faces": [],
+                "total_faces_in_db": r["face_count"],
+                "discarded": p in discarded,
+                "blur_score": r["blur_score"],
+                "blur_status": r["blur_status"],
+                "blur_label": get_blur_label(r["blur_score"], qs),
+                "closed_eyes": bool(r["closed_eyes"]),
+                "source": "event",
+                "folder_active": not is_inactive,
+            }
+            try:
+                stat = os.stat(p)
+                entry["size"] = stat.st_size
+                entry["mtime"] = stat.st_mtime
+                w, h = get_image_dimensions(p)
+                entry["width"] = w
+                entry["height"] = h
+            except Exception:
+                entry["width"] = None
+                entry["height"] = None
+            unique_photos[p] = entry
+
+        if unique_photos:
+            paths = list(unique_photos.keys())
+            for i in range(0, len(paths), 900):
+                chunk = paths[i:i + 900]
+                placeholders = ",".join(["?"] * len(chunk))
+                cur.execute(
+                    f"SELECT rowid, foto_path, aluno_id, x1, y1, x2, y2 FROM ocorrencias WHERE foto_path IN ({placeholders})",
+                    chunk
+                )
+                for c in cur.fetchall():
+                    fp = c["foto_path"]
+                    if fp in unique_photos:
+                        unique_photos[fp]["faces"].append({
+                            "rowid": c["rowid"],
+                            "aluno_id": c["aluno_id"],
+                            "x1": c["x1"], "y1": c["y1"],
+                            "x2": c["x2"], "y2": c["y2"],
+                        })
+
+    # Add ref photos (only on first page, they are typically few)
+    if offset == 0:
+        ref_photos = _collect_ref_photos(cat, discarded)
+        for p, photo in ref_photos.items():
+            if p not in unique_photos:
+                unique_photos[p] = photo
+
+    total = main_total
+    return {
+        "photos": list(unique_photos.values()),
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "hasMore": (offset + limit) < total,
+    }
+
+
 def get_all_photos(limit: int = None):
     get_db = _get("get_db")
     get_blur_label = _get("get_blur_label")

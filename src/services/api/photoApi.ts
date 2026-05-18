@@ -1,5 +1,5 @@
 import { API_BASE, fetchJSON, post } from './core';
-import type { ExplorerPhotosResponse, FolderTreeResponse, LiveScannerStatus, Photo, PhotoContextResponse, PreviewFacesResponse, QualityAuditStatus, ScanStatus, SystemMetrics, ScannerFolderTreeResponse } from './types';
+import type { ExplorerPhotosResponse, FolderTreeResponse, LiveScannerStatus, Photo, PhotoContextResponse, PhotosPageResponse, PreviewFacesResponse, QualityAuditStatus, ScanStatus, SystemMetrics, ScannerFolderTreeResponse } from './types';
 
 export const photoApi = {
   getPhotos: (path = '', catalog = '', signal?: AbortSignal) =>
@@ -11,6 +11,10 @@ export const photoApi = {
     fetchJSON<Photo[]>(
       `${API_BASE}/photos/all?catalog=${encodeURIComponent(catalog)}${typeof limit === 'number' ? `&limit=${limit}` : ''}`,
       { signal }
+    ),
+  getPhotosPage: (catalog: string, limit = 100, offset = 0) =>
+    fetchJSON<PhotosPageResponse>(
+      `${API_BASE}/photos?catalog=${encodeURIComponent(catalog)}&limit=${limit}&offset=${offset}`
     ),
   getPersonPhotos: (aluno_id: string, signal?: AbortSignal) =>
     fetchJSON<Photo[]>(`${API_BASE}/photos/${encodeURIComponent(aluno_id)}`, { signal }),

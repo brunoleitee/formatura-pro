@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Image as ImageIcon } from 'lucide-react';
+import { Image as ImageIcon, RefreshCw } from 'lucide-react';
 import type { MouseEvent, PointerEvent } from 'react';
 import { api, type Photo } from '../../services/api';
 import { MemoPhotoCard } from './PhotoCard';
@@ -20,6 +20,9 @@ interface VirtualizedPhotoGridProps {
   onDragStart?: (photo: Photo, event: PointerEvent) => void;
   onDragEnd?: (photo: Photo, event: PointerEvent) => void;
   onFirstThumbLoad?: () => void;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
   zoom?: number;
   resetScrollKey?: string;
   scrollRef?: React.RefObject<HTMLDivElement | null>;
@@ -59,6 +62,9 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
   onDragStart,
   onDragEnd,
   onFirstThumbLoad,
+  onLoadMore,
+  hasMore,
+  loadingMore,
   zoom = 180,
   resetScrollKey,
   scrollRef,
@@ -93,6 +99,24 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
     if (!parentRef.current) return;
     parentRef.current.scrollTop = 0;
   }, [resetScrollKey]);
+
+  const isLoadingMoreRef = useRef(false);
+  useEffect(() => {
+    isLoadingMoreRef.current = !!loadingMore;
+  }, [loadingMore]);
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el || !onLoadMore || !hasMore) return;
+    const handleScroll = () => {
+      if (isLoadingMoreRef.current) return;
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      if (scrollHeight - scrollTop - clientHeight < 800) {
+        onLoadMore();
+      }
+    };
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, [onLoadMore, hasMore]);
 
   useEffect(() => {
     const limited = photos.slice(0, 50);
@@ -266,6 +290,12 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
           );
         })}
       </div>
+      {loadingMore && (
+        <div style={{ textAlign: 'center', padding: '20px', color: '#888' }}>
+          <RefreshCw size={20} className="spin" style={{ verticalAlign: 'middle', marginRight: 8 }} />
+          Carregando mais fotos...
+        </div>
+      )}
     </div>
   );
 });
