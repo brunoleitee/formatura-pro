@@ -763,7 +763,7 @@ def run_scanner_worker(req):
                         continue
 
                     processed_photo_paths.add(p)
-                    photo_hash = file_sha1(p)
+                    photo_hash = None  # SHA1 removido — duplicatas já detectadas por path
                     faces = []
                     valid_faces = []
                     t0_face = time.time()
@@ -991,9 +991,7 @@ def run_scanner_worker(req):
                         except Exception:
                             pass
 
-                    # Throttling para evitar 100% CPU
-                    import time as _time
-                    _time.sleep(0.005)
+                    # Throttling removido — face detection já é CPU-intensive
 
                     if _cancel_requested():
                         log_info("[Scanner] Cancelamento no fim do lote — interrompendo")
@@ -1029,8 +1027,14 @@ def run_scanner_worker(req):
                     else:
                         scan_state["eta_seconds"] = -1
                     
-                    conn.commit()
-                    gc.collect()
+                    # Batch commit a cada 50 fotos (ao invés de toda foto)
+                    if (i + 1) % 50 == 0:
+                        conn.commit()
+                        gc.collect()
+
+                # Commit final para garantir que todos os dados restantes sejam persistidos
+                conn.commit()
+                gc.collect()
 
                 _log_memory("after scan loop")
 
