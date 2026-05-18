@@ -95,6 +95,22 @@ export default function CatalogSettingsView() {
     }, 800);
   }, [load]);
 
+  // Ao montar: verificar se scan já está rodando e retomar polling
+  useEffect(() => {
+    let cancelled = false;
+    const checkAndResume = async () => {
+      try {
+        const st: ScanStatus = await api.getScanStatus();
+        if (cancelled) return;
+        if (st.is_scanning) {
+          startSyncPolling();
+        }
+      } catch { /* ignore */ }
+    };
+    checkAndResume();
+    return () => { cancelled = true; };
+  }, []);
+
   // Cleanup polling ao desmontar
   useEffect(() => {
     return () => {

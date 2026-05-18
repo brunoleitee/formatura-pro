@@ -492,10 +492,29 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     setSelectedFolder(eventPath);
   }, [eventPath]);
 
+  // Ao montar: verificar se scan já está rodando e retomar polling
   useEffect(() => {
-    return () => { 
-      if (pollRef.current) clearInterval(pollRef.current); 
-      if (metricsPollRef.current) clearInterval(metricsPollRef.current); 
+    let cancelled = false;
+    const checkAndResume = async () => {
+      try {
+        const st = await api.getScanStatus();
+        if (cancelled) return;
+        if (st.is_scanning) {
+          pollingWasScanningRef.current = true;
+          setIsScanning(true);
+          setScanStatus(st);
+          startPolling();
+        }
+      } catch { /* ignore */ }
+    };
+    checkAndResume();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      if (metricsPollRef.current) clearInterval(metricsPollRef.current);
     };
   }, []);
   
