@@ -2030,6 +2030,11 @@ async def log_graduation_analysis_routes():
     except Exception as e:
         print(f"[AI] warmup InsightFace adiado: {e}", flush=True)
 
+@app.on_event("startup")
+async def start_metrics_worker():
+    _start_metrics_worker()
+    print("[metrics] background worker iniciado", flush=True)
+
 @app.get("/api/culling/analyze/{aluno_id}")
 def analyze_culling(aluno_id: str, catalog: str = ""):
     return mm.analyze_culling(aluno_id, catalog)
@@ -2273,73 +2278,110 @@ def get_export_history():
 def gpu_diagnostics():
     return sm.gpu_diagnostics()
 
-def _get_cpu_temperature():
+# ── Background metrics worker ──────────────────────────────
+_metrics_snapshot: dict = {
+    "cpuPercent": None, "ramUsedGb": None, "ramPercent": None,
+    "gpuPercent": None, "temperatureC": None, "cpuTemperatureC": None,
+}
+_metrics_lock = threading.Lock()
+_metrics_interval = 2.0
+_metrics_worker_running = False
+
+
+def _metrics_collect_snapshot():
+    t0 = time.perf_counter()
+    cpu_ms = gpu_ms = temp_ms = 0.0
+    cpu_val = ram_used = ram_pct = None
+    gpu_val = gpu_temp = None
+    cpu_temp = None
+
+    _t = time.perf_counter()
+    if psutil:
+        try:
+            cpu_val = round(psutil.cpu_percent(interval=0.0), 1)
+            mem = psutil.virtual_memory()
+            ram_used = round(mem.used / (1024 ** 3), 1)
+            ram_pct = round(mem.percent, 1)
+        except Exception:
+            pass
+    cpu_ms = (time.perf_counter() - _t) * 1000
+
+    _t = time.perf_counter()
+    try:
+        nv = subprocess.run(
+            ["nvidia-smi", "--query-gpu=utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=2
+        )
+        if nv.returncode == 0:
+            parts = nv.stdout.strip().split(", ")
+            if len(parts) == 2:
+                gpu_val = round(float(parts[0]), 0)
+                gpu_temp = round(float(parts[1]), 0)
+    except Exception:
+        pass
+    gpu_ms = (time.perf_counter() - _t) * 1000
+
+    _t = time.perf_counter()
     if psutil:
         try:
             temps = psutil.sensors_temperatures()
             for key in ("coretemp", "cpu_thermal", "k10temp", "zenpower"):
                 if key in temps and temps[key]:
-                    return round(temps[key][0].current, 0)
+                    cpu_temp = round(temps[key][0].current, 0)
+                    break
         except Exception:
             pass
-    if sys.platform == "win32":
+    if cpu_temp is None and sys.platform == "win32":
         try:
             out = subprocess.run(
                 ["wmic", "/namespace:\\\\root\\wmi", "PATH", "MSAcpi_ThermalZoneTemperature", "get", "CurrentTemperature"],
-                capture_output=True, text=True, timeout=3
+                capture_output=True, text=True, timeout=2
             )
             if out.returncode == 0:
                 for line in out.stdout.strip().splitlines():
                     line = line.strip()
                     if line and line.isdigit():
-                        return round((int(line) / 10.0 - 273.15), 0)
+                        cpu_temp = round((int(line) / 10.0 - 273.15), 0)
+                        break
         except Exception:
             pass
-    return None
+    temp_ms = (time.perf_counter() - _t) * 1000
+
+    snap = {
+        "cpuPercent": cpu_val, "ramUsedGb": ram_used, "ramPercent": ram_pct,
+        "gpuPercent": gpu_val, "temperatureC": gpu_temp, "cpuTemperatureC": cpu_temp,
+    }
+    with _metrics_lock:
+        _metrics_snapshot.update(snap)
+
+    total_ms = (time.perf_counter() - t0) * 1000
+    logging.getLogger(__name__).info(
+        "[metrics] cpu=%.0fms gpu=%.0fms temp=%.0fms total=%.0fms",
+        cpu_ms, gpu_ms, temp_ms, total_ms,
+    )
+
+
+def _metrics_worker_loop():
+    global _metrics_worker_running
+    _metrics_worker_running = True
+    while _metrics_worker_running:
+        try:
+            _metrics_collect_snapshot()
+        except Exception:
+            pass
+        time.sleep(_metrics_interval)
+
+
+def _start_metrics_worker():
+    t = threading.Thread(target=_metrics_worker_loop, daemon=True)
+    t.start()
+
 
 @app.get("/api/system/metrics")
 def system_metrics():
-    cpu_percent = None
-    ram_used_gb = None
-    ram_percent = None
-    gpu_percent = None
-    temperature_c = None
-    cpu_temperature_c = None
-
-    if psutil:
-        try:
-            cpu_percent = round(psutil.cpu_percent(interval=0.1), 1)
-            memory = psutil.virtual_memory()
-            ram_used_gb = round(memory.used / (1024 ** 3), 1)
-            ram_percent = round(memory.percent, 1)
-        except Exception as e:
-            print(f"[Metrics] psutil error: {repr(e)}", flush=True)
-
-    try:
-        nvidia_out = subprocess.run(
-            ["nvidia-smi", "--query-gpu=utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=3
-        )
-        if nvidia_out.returncode == 0:
-            parts = nvidia_out.stdout.strip().split(", ")
-            if len(parts) == 2:
-                gpu_percent = round(float(parts[0]), 0)
-                temperature_c = round(float(parts[1]), 0)
-    except Exception as e:
-        print(f"[Metrics] nvidia-smi error: {repr(e)}", flush=True)
-
-    cpu_temperature_c = _get_cpu_temperature()
-
-    print(f"[Metrics] cpu:{cpu_percent} ram:{ram_used_gb} ram%:{ram_percent} gpu:{gpu_percent} gpuTemp:{temperature_c} cpuTemp:{cpu_temperature_c}", flush=True)
-
-    return {
-        "cpuPercent": cpu_percent,
-        "ramUsedGb": ram_used_gb,
-        "ramPercent": ram_percent,
-        "gpuPercent": gpu_percent,
-        "temperatureC": temperature_c,
-        "cpuTemperatureC": cpu_temperature_c,
-    }
+    with _metrics_lock:
+        snap = dict(_metrics_snapshot)
+    return snap
 
 @app.get("/api/system/status")
 def system_status():
