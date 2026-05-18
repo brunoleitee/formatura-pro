@@ -3723,44 +3723,47 @@ def _try_load_ai_cache(foto_path: str, local_path: str = "") -> Optional[Dict[st
             print(f"[AI-CACHE] erro ao ler cache: {e}")
     if local_path and os.path.exists(local_path):
         try:
-            root_dir = Path(__file__).resolve().parents[1]
-            for db_file in (root_dir / "data" / "catalogs").glob("*.db"):
-                try:
-                    conn = sqlite3.connect(str(db_file))
-                    conn.row_factory = sqlite3.Row
+            mtime_ns = int(os.path.getmtime(local_path) * 1e9)
+            fsize = os.path.getsize(local_path)
+            cat = AppState.current_catalog if AppState.current_catalog else ""
+            if not cat:
+                return None
+            try:
+                with get_db(cat) as conn:
                     c = conn.cursor()
-                    c.execute("SELECT foto_path FROM ocorrencias WHERE foto_path = ? LIMIT 1", (foto_path,))
-                    occ = c.fetchone()
-                    if occ:
-                        c.execute("""
-                            SELECT fe.embedding, o.aluno_id
-                            FROM face_embeddings fe
-                            JOIN ocorrencias o ON o.rowid = fe.occurrence_rowid
-                            WHERE fe.foto_path = ? LIMIT 1
-                        """, (foto_path,))
-                        emb_row = c.fetchone()
-                        conn.close()
-                        if emb_row and emb_row["embedding"]:
-                            print("[AI-CACHE] cache encontrado (banco SQLite)")
-                            return {
-                                "success": True,
-                                "cached": True,
-                                "face_detected": True,
-                                "faces_count": 1,
-                                "embedding_ready": True,
-                                "confidence": 0.0,
-                                "ocr_text": "",
-                                "ocr_confidence": 0.0,
-                                "ocr_confidence_pct": 0,
-                                "ocr_score": 0.0,
-                                "ocr_type": "none",
-                                "ocr_label": "OCR geral",
-                                "ai_version": AI_VERSION,
-                                "final_student": str(emb_row["aluno_id"]) if emb_row["aluno_id"] else None,
-                            }
-                    conn.close()
-                except Exception:
-                    pass
+                    c.execute("""
+                        SELECT fe.embedding, fe.mtime_ns, fe.size, o.aluno_id
+                        FROM face_embeddings fe
+                        JOIN ocorrencias o ON o.rowid = fe.occurrence_rowid
+                        WHERE fe.foto_path = ? AND fe.mtime_ns = ? AND fe.size = ?
+                        LIMIT 1
+                    """, (foto_path, mtime_ns, fsize))
+                    emb_row = c.fetchone()
+                    if emb_row and emb_row["embedding"]:
+                        label = f"[face-cache] hit path={os.path.basename(foto_path)}"
+                        print(label)
+                        logging.getLogger(__name__).info(label)
+                        return {
+                            "success": True,
+                            "cached": True,
+                            "face_detected": True,
+                            "faces_count": 1,
+                            "embedding_ready": True,
+                            "confidence": 0.0,
+                            "ocr_text": "",
+                            "ocr_confidence": 0.0,
+                            "ocr_confidence_pct": 0,
+                            "ocr_score": 0.0,
+                            "ocr_type": "none",
+                            "ocr_label": "OCR geral",
+                            "ai_version": AI_VERSION,
+                            "final_student": str(emb_row["aluno_id"]) if emb_row["aluno_id"] else None,
+                        }
+                    label = f"[face-cache] miss path={os.path.basename(foto_path)}"
+                    print(label)
+                    logging.getLogger(__name__).info(label)
+            except Exception:
+                pass
         except Exception as e:
             print(f"[AI-CACHE] erro ao ler banco: {e}")
     return None
@@ -4051,42 +4054,47 @@ class AiBatchStatusReq(BaseModel):
 @app.post("/api/ai/batch-status")
 def ai_batch_status(req: AiBatchStatusReq):
     result_items = []
-    for fp in req.foto_paths:
-        item = {"foto_path": fp, "status": "unknown"}
-        file_id = fp.replace("cloud://", "", 1) if fp.startswith("cloud://") else ""
-        if file_id:
-            try:
-                from cloud.drive_cache import cache
-                meta = cache.load_metadata(file_id)
-                if meta and meta.get("ai_face_detected") is not None:
-                    item["status"] = "completed"
-                    item["face_detected"] = bool(meta.get("ai_face_detected"))
-                    item["faces_count"] = int(meta.get("ai_faces_count", 0))
-                    item["embedding_ready"] = bool(meta.get("ai_embedding_ready", False))
-                    item["ocr_text"] = str(meta.get("ai_ocr_text", ""))
-                    item["ocr_confidence"] = float(meta.get("ai_ocr_confidence", 0.0))
-                    item["final_student"] = meta.get("ai_ocr_text")
-                else:
-                    item["status"] = "pending"
-            except Exception:
-                item["status"] = "error"
-        elif fp:
-            root_dir = Path(__file__).resolve().parents[1]
-            for db_file in (root_dir / "data" / "catalogs").glob("*.db"):
-                try:
-                    conn = sqlite3.connect(str(db_file))
-                    c = conn.cursor()
-                    c.execute("SELECT aluno_id FROM ocorrencias WHERE foto_path = ? LIMIT 1", (fp,))
-                    r = c.fetchone()
-                    conn.close()
-                    if r:
-                        item["status"] = "completed"
-                        item["face_detected"] = True
-                        item["final_student"] = r[0]
-                    break
-                except Exception:
-                    pass
-        result_items.append(item)
+    cat = AppState.current_catalog if AppState.current_catalog else ""
+    try:
+        with get_db(cat) as conn:
+            c = conn.cursor()
+            for fp in req.foto_paths:
+                item = {"foto_path": fp, "status": "unknown"}
+                file_id = fp.replace("cloud://", "", 1) if fp.startswith("cloud://") else ""
+                if file_id:
+                    try:
+                        from cloud.drive_cache import cache
+                        meta = cache.load_metadata(file_id)
+                        if meta and meta.get("ai_face_detected") is not None:
+                            item["status"] = "completed"
+                            item["face_detected"] = bool(meta.get("ai_face_detected"))
+                            item["faces_count"] = int(meta.get("ai_faces_count", 0))
+                            item["embedding_ready"] = bool(meta.get("ai_embedding_ready", False))
+                            item["ocr_text"] = str(meta.get("ai_ocr_text", ""))
+                            item["ocr_confidence"] = float(meta.get("ai_ocr_confidence", 0.0))
+                            item["final_student"] = meta.get("ai_ocr_text")
+                        else:
+                            item["status"] = "pending"
+                    except Exception:
+                        item["status"] = "error"
+                elif fp:
+                    try:
+                        c.execute(
+                            "SELECT fe.embedding FROM face_embeddings fe WHERE fe.foto_path = ? LIMIT 1",
+                            (fp,)
+                        )
+                        r = c.fetchone()
+                        if r and r[0]:
+                            item["status"] = "completed"
+                            item["face_detected"] = True
+                            item["embedding_ready"] = True
+                        else:
+                            item["status"] = "pending"
+                    except Exception:
+                        item["status"] = "pending"
+                result_items.append(item)
+    except Exception:
+        pass
     return {"items": result_items}
 
 

@@ -7,7 +7,8 @@ interface QueueItem {
   addedAt: number;
 }
 
-const MAX_CONCURRENT = 2;
+const MAX_CONCURRENT = 1;
+const MAX_QUEUE_SIZE = 20;
 const DEBOUNCE_MS = 300;
 
 class AIQueueManager {
@@ -25,6 +26,7 @@ class AIQueueManager {
   add(path: string, priority = 0): void {
     if (this.processed.has(path)) return;
     if (this.processing.has(path)) return;
+    if (this.queue.length + this.pendingBatch.size >= MAX_QUEUE_SIZE) return;
     if (aiCacheStore.has(path)) {
       const cached = aiCacheStore.get(path)!;
       if (cached.status === "completed") return;
@@ -42,6 +44,7 @@ class AIQueueManager {
     const pending: string[] = [];
     for (const p of paths) {
       if (this.processed.has(p) || this.processing.has(p)) continue;
+      if (this.queue.length + pending.length >= MAX_QUEUE_SIZE) break;
       if (aiCacheStore.has(p)) {
         const cached = aiCacheStore.get(p)!;
         if (cached.status === "completed") continue;

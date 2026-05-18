@@ -119,7 +119,7 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
   }, [onLoadMore, hasMore]);
 
   useEffect(() => {
-    const limited = photos.slice(0, 50);
+    const limited = photos.slice(0, Math.max(12, columns * 2));
     const paths = limited.map((p) => p.path).filter(Boolean) as string[];
     if (paths.length === 0) return;
     let cancelled = false;

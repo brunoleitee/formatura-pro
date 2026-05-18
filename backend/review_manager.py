@@ -3930,6 +3930,7 @@ def get_cached_occurrence_embedding(conn, occ):
     quiet_external_output = _get("quiet_external_output")
     se = _get("scanner_engine")
     path = occ["foto_path"]
+    name = os.path.basename(path) if path else ""
     if not path or not os.path.exists(path):
         return None
     try:
@@ -3948,7 +3949,10 @@ def get_cached_occurrence_embedding(conn, occ):
     if cached and cached["embedding"]:
         emb = np.frombuffer(cached["embedding"], dtype="float32")
         if emb.size > 0:
+            logger.info("[face-cache] hit occurrence_rowid=%s path=%s", occ["rowid"], name)
             return emb
+
+    logger.info("[face-cache] miss occurrence_rowid=%s path=%s (recomputando)", occ["rowid"], name)
 
     try:
         img = imread_unicode(path)
@@ -4398,13 +4402,14 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
         with get_db(cat) as conn:
             cur = conn.cursor()
 
-            # 1. Obter embeddings do cluster atual para calcular o centroide
+            # 1. Obter embeddings do cluster atual para calcular o centroide (limitado a 100 faces)
             cur.execute("""
                 SELECT o.rowid, fe.embedding
                 FROM unknown_face_clusters u
                 JOIN ocorrencias o ON o.rowid = u.face_id
                 JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
                 WHERE u.cluster_id = ?
+                LIMIT 100
             """, (cluster_id,))
             cluster_rows = cur.fetchall()
 
@@ -4412,6 +4417,7 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
                 cur.execute("""
                     SELECT rowid, embedding FROM face_embeddings
                     WHERE occurrence_rowid IN (SELECT rowid FROM ocorrencias WHERE aluno_id = ?)
+                    LIMIT 100
                 """, (cluster_id,))
                 cluster_rows = cur.fetchall()
 
@@ -4440,7 +4446,7 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
             if cc_norm > 0:
                 cluster_centroid = cluster_centroid / cc_norm
 
-            # 2. Buscar todas as faces identificadas do aluno
+            # 2. Buscar faces identificadas do aluno (limitado a 50 para performance)
             target_id = str(student_id).strip()
 
             cur.execute("""
@@ -4448,6 +4454,7 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
                 FROM ocorrencias o
                 JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
                 WHERE o.aluno_id = ?
+                LIMIT 50
             """, (target_id,))
             student_faces = cur.fetchall()
 
@@ -4457,6 +4464,7 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
                     FROM ocorrencias o
                     JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
                     WHERE o.aluno_id = (SELECT aluno_id FROM alunos WHERE nome = ? OR aluno_id = ? LIMIT 1)
+                    LIMIT 50
                 """, (target_id, target_id))
                  student_faces = cur.fetchall()
 
