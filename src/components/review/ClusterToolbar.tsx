@@ -132,11 +132,14 @@ export default function ClusterToolbar({
 
       {/* Compare button */}
       {(() => {
-        const compareEnabled = !!compareStudent && (compareSimilarity ?? 0) >= 0.30;
+        const sim = compareSimilarity;
+        const simValid = sim != null && isFinite(sim) && !isNaN(sim);
+        const compareEnabled = !!compareStudent && simValid && sim >= 0.30;
+        const simLabel = simValid ? `${Math.round(sim * 100)}%` : '--%';
         return (
-          <button 
-            className={styles.compareBtn} 
-            title={compareEnabled ? `Comparar com ${compareStudent} — ${Math.round((compareSimilarity || 0) * 100)}%` : 'Comparar'}
+          <button
+            className={styles.compareBtn}
+            title={compareEnabled ? `Comparar com ${compareStudent} — ${simLabel}` : 'Comparar'}
             onClick={compareEnabled ? onCompare : undefined}
             disabled={!compareEnabled}
           >

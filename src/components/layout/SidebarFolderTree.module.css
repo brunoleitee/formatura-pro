@@ -86,15 +86,13 @@
 .item.active .folderIcon { color: #60a5fa; }
 
 /* Ícone de pasta */
-.folderIcon {
+.folderIconImage {
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
-  color: #ca8a04;
-  opacity: 0.85;
-}
-
-.item.active .folderIcon {
-  color: #60a5fa;
-  opacity: 1;
+  display: block;
+  object-fit: contain;
+  opacity: 0.95;
 }
 
 /* Label da pasta */

@@ -219,15 +219,22 @@
 }
 
 .folderCardIcon {
-  width: 28px;
-  height: 28px;
+  width: auto;
+  height: auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
-  background: rgba(245, 158, 11, 0.12);
-  color: #f59e0b;
   flex-shrink: 0;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+}
+
+.folderCardIconImage {
+  width: 20px;
+  height: 20px;
+  display: block;
+  object-fit: contain;
 }
 
 .folderCardBody {

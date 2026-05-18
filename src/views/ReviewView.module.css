@@ -68,6 +68,17 @@
   transition: width 0.2s ease;
 }
 
+.analysisCompactBarIndeterminate {
+  width: 100%;
+  background: linear-gradient(90deg, transparent, #60a5fa, transparent);
+  animation: indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
 .analysisButton {
   display: inline-flex;
   align-items: center;

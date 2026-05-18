@@ -512,10 +512,22 @@ def bulk_manual_identify(req: BulkManualIdentifyReq):
 
     new_name = (req.new_name or "").strip() or "Desconhecido"
     updated = 0
-    is_reset = (new_name == "Desconhecido")
+    is_reset = (new_name.lower() in UNKNOWN_ALUNO_IDS)
+
+    print(f"[REMOVE FACE ENDPOINT CALLED] catalog={req.catalog} new_name={new_name!r} rowids={rowids}")
+
     with get_db(req.catalog) as conn:
         cur = conn.cursor()
         _ensure_aluno_row(cur, new_name)
+
+        # ── Salvar old_person ANTES de atualizar ──
+        for rid in rowids:
+            cur.execute("SELECT aluno_id, foto_path FROM ocorrencias WHERE rowid = ?", (rid,))
+            old = cur.fetchone()
+            old_id = str(old["aluno_id"]) if old else ""
+            old_path = str(old["foto_path"]) if old else ""
+            print(f"[REMOVE FACE ENDPOINT CALLED] face_id={rid} rowid={rid} catalog={req.catalog} old_aluno_id={old_id}")
+
         for i in range(0, len(rowids), 900):
             chunk = rowids[i:i + 900]
             placeholders = ",".join(["?"] * len(chunk))
@@ -524,22 +536,68 @@ def bulk_manual_identify(req: BulkManualIdentifyReq):
                 [new_name] + chunk,
             )
             updated += cur.rowcount
+
+        # ── Verificar update ──
+        for rid in rowids:
+            cur.execute("SELECT aluno_id FROM ocorrencias WHERE rowid = ?", (rid,))
+            check = cur.fetchone()
+            new_id = str(check["aluno_id"]) if check else "NOT FOUND"
+            print(f"[Review RemoveFace] face_id={rid} new_aluno_id_after_update={new_id}")
+
+        # ── Verificar embedding ──
+        for rid in rowids:
+            cur.execute("SELECT 1 FROM face_embeddings WHERE occurrence_rowid = ?", (rid,))
+            has_emb = cur.fetchone() is not None
+            print(f"[Review Cluster] face_id={rid} embedding exists={has_emb}")
+
         # If resetting to unknown, clean up legacy state
         if is_reset:
             for rid in rowids:
-                cur.execute("SELECT aluno_id FROM ocorrencias WHERE rowid = ?", (rid,))
-                old = cur.fetchone()
-                old_id = str(old["aluno_id"]) if old else ""
-                print(f"[RESET UNKNOWN] rowid={rid} old_student={old_id}")
+                print(f"[Review RemoveFace] set status pending = True (face_id={rid})")
             placeholders = ",".join(["?"] * len(rowids))
             cur.execute(f"DELETE FROM unknown_face_clusters WHERE face_id IN ({placeholders})", rowids)
+            deleted_clusters = cur.rowcount
+            print(f"[Review RemoveFace] deleted from unknown_face_clusters count={deleted_clusters}")
+
         conn.commit()
+
+        # ── Verificar pós-commit ──
+        if is_reset:
+            cur.execute("SELECT aluno_id FROM ocorrencias WHERE rowid = ?", (rowids[0],))
+            verify = cur.fetchone()
+            print(f"[Review RemoveFace] pos-commit verify face_id={rowids[0]} aluno_id={verify['aluno_id'] if verify else 'NOT FOUND'}")
+
         logging.info(f"[bulk_manual_identify] catalog={req.catalog} name={new_name!r} rowids={len(rowids)} updated={updated}")
-        if new_name and new_name != "Desconhecido":
+        if new_name and not is_reset:
             _ensure_person_reference(conn, req.catalog, new_name)
 
     if is_reset:
         _invalidate_review_cache(req.catalog)
+        # ── Forçar re-clustering imediato ──
+        try:
+            with get_db(req.catalog) as conn2:
+                cur2 = conn2.cursor()
+                # Limpar cache antigo
+                cur2.execute("DELETE FROM unknown_face_clusters")
+                _cache_last_sync.pop(req.catalog, None)
+                conn2.commit()
+
+                # Rodar sync completo
+                sync_result = _sync_review_cluster_cache(cur2)
+                _cache_last_sync[req.catalog] = time.time()
+                conn2.commit()
+
+                print(f"[Review RemoveFace] forced re-cluster: unknown_faces={sync_result['unknown_faces']} clusters={sync_result['cluster_count']}")
+
+                # Verificar se a face aparece nos clusters
+                for rid in rowids:
+                    cur2.execute("SELECT cluster_id FROM unknown_face_clusters WHERE face_id = ?", (rid,))
+                    found = cur2.fetchone()
+                    print(f"[UNKNOWN CLUSTERS] face removida encontrada? face_id={rid} -> {found['cluster_id'] if found else 'NOT FOUND'}")
+        except Exception as e:
+            import traceback
+            print(f"[Review RemoveFace] re-cluster error: {e}")
+            traceback.print_exc()
     return {"ok": True, "status": "ok", "updated": updated, "new_name": new_name}
 
 
@@ -968,22 +1026,169 @@ def _sync_review_cluster_cache(cur) -> dict:
     rows = _load_review_occurrence_rows(cur)
     if not rows:
         _sync_unknown_face_clusters(cur, [])
+        print(f"[Cluster Sync] total unknown faces = 0")
         return {"unknown_faces": 0, "cluster_count": 0}
 
     cat = _current_catalog()
 
+    # Log breakdown por aluno_id
+    id_counts: dict[str, int] = {}
+    for r in rows:
+        aid = str(r["aluno_id"] or "")
+        id_counts[aid] = id_counts.get(aid, 0) + 1
+    print(f"[Cluster Sync] total unknown faces = {len(rows)}")
+    print(f"[Cluster Sync] breakdown por aluno_id = {id_counts}")
     logger.info("[Review] sync clusters catalog=%s rows=%s", cat, len(rows))
 
-    # Apenas agrupa por aluno_id (Scanner já salvou clusters como 'Pessoa X')
-    # Sem deteccao facial, sem embeddings, sem OCR, sem analise de formatura.
-    grouped: dict[str, list[dict]] = {}
+    # ── Separar faces "Pessoa X" (scanner) de faces verdadeiramente desconhecidas ──
+    scanner_rows = []  # Pessoa X: agrupar por label
+    unknown_rows = []  # Desconhecido: agrupar por embedding
+
     for row in rows:
         aluno_id = str(row["aluno_id"] or "")
         if not _is_review_unknown_label(aluno_id):
             continue
-        cluster_id = _build_review_cluster_id(aluno_id, int(row["rowid"]))
+        if aluno_id.lower().startswith("pessoa "):
+            scanner_rows.append(row)
+        else:
+            unknown_rows.append(row)
+
+    grouped: dict[str, list[dict]] = {}
+
+    # ── Faces do scanner: agrupar por label (Pessoa 01, Pessoa 02, etc) ──
+    for row in scanner_rows:
+        cluster_id = _build_review_cluster_id(str(row["aluno_id"] or ""), int(row["rowid"]))
         grouped.setdefault(cluster_id, []).append(_row_to_review_item(row))
 
+    # ── Faces desconhecidas: agrupar por embedding (cosine similarity) ──
+    threshold = 0.50
+    valid_embeddings = []
+    valid_rows = []
+
+    if unknown_rows:
+        # Carregar embeddings do banco para todas as faces desconhecidas
+        rowids = [int(r["rowid"]) for r in unknown_rows]
+        emb_map = {}
+
+        # Primeiro: verificar quantos registros existem na tabela
+        for i in range(0, len(rowids), 900):
+            chunk = rowids[i:i+900]
+            placeholders = ",".join(["?"] * len(chunk))
+            cur.execute(f"SELECT occurrence_rowid, embedding FROM face_embeddings WHERE occurrence_rowid IN ({placeholders})", chunk)
+            db_rows = cur.fetchall()
+            print(f"[Cluster Sync] DB query: requested {len(chunk)} rowids, found {len(db_rows)} embedding rows")
+            for er in db_rows:
+                rid = int(er["occurrence_rowid"])
+                raw = er["embedding"]
+                if raw is None:
+                    print(f"[Cluster Sync] rowid={rid} embedding=NULL")
+                    continue
+                try:
+                    emb = np.frombuffer(raw, dtype="float32")
+                    if emb.size == 0:
+                        print(f"[Cluster Sync] rowid={rid} embedding.size=0")
+                        continue
+                    norm = float(np.linalg.norm(emb))
+                    if norm <= 0:
+                        print(f"[Cluster Sync] rowid={rid} embedding.norm=0")
+                        continue
+                    emb_map[rid] = emb
+                except Exception as e:
+                    print(f"[Cluster Sync] rowid={rid} embedding parse error: {e} raw_type={type(raw)} raw_len={len(raw) if raw else 0}")
+
+        # Fallback: gerar embeddings via InsightFace para faces sem embedding no banco
+        conn_obj = getattr(cur, 'connection', None) or getattr(cur, '_connection', None)
+        for row in unknown_rows:
+            rid = int(row["rowid"])
+            if rid not in emb_map:
+                try:
+                    emb = get_cached_occurrence_embedding(conn_obj, row) if conn_obj else None
+                    if emb is not None:
+                        norm = float(np.linalg.norm(emb))
+                        if norm > 0:
+                            emb_map[rid] = emb
+                            print(f"[Cluster Sync] rowid={rid} embedding generated via InsightFace (norm={norm:.4f})")
+                        else:
+                            print(f"[Cluster Sync] rowid={rid} embedding generated but norm=0")
+                    else:
+                        print(f"[Cluster Sync] rowid={rid} embedding generation failed (image not found?)")
+                except Exception as e:
+                    print(f"[Cluster Sync] rowid={rid} embedding generation error: {e}")
+
+        # Log quais faces tem embedding
+        for row in unknown_rows:
+            rid = int(row["rowid"])
+            has_emb = rid in emb_map
+            if not has_emb:
+                print(f"[Cluster Sync] face rowid={rid} aluno_id={row['aluno_id']} SEM embedding")
+
+        for row in unknown_rows:
+            emb = emb_map.get(int(row["rowid"]))
+            if emb is not None:
+                norm = np.linalg.norm(emb)
+                if norm > 0:
+                    valid_embeddings.append(emb / norm)
+                    valid_rows.append(row)
+
+        print(f"[Cluster Sync] embeddings valid = {len(valid_embeddings)} / {len(unknown_rows)}")
+        print(f"[Cluster Sync] threshold = {threshold}")
+
+        if valid_embeddings and len(valid_embeddings) >= 2:
+            emb_matrix = np.vstack(valid_embeddings)
+            n = len(valid_rows)
+            parent = list(range(n))
+
+            def find(x):
+                while parent[x] != x:
+                    parent[x] = parent[parent[x]]
+                    x = parent[x]
+                return x
+
+            def union(a, b):
+                ra, rb = find(a), find(b)
+                if ra != rb:
+                    parent[rb] = ra
+
+            # Comparar todos os pares
+            block_size = 256
+            max_sim = -1.0
+            for start in range(0, n, block_size):
+                block = emb_matrix[start:start + block_size]
+                sims = block @ emb_matrix.T
+                for local_i in range(sims.shape[0]):
+                    i = start + local_i
+                    row_sims = sims[local_i]
+                    for j in range(i + 1, n):
+                        sim_val = float(row_sims[j])
+                        if sim_val > max_sim:
+                            max_sim = sim_val
+                        if sim_val >= threshold:
+                            union(i, j)
+
+            print(f"[Cluster Sync] similarity max = {max_sim:.4f}")
+
+            # Agrupar por root
+            clusters_by_root: dict[int, list[int]] = {}
+            for idx in range(n):
+                root = find(idx)
+                clusters_by_root.setdefault(root, []).append(idx)
+
+            print(f"[Cluster Sync] clusters created = {len(clusters_by_root)}")
+            sizes = [len(idxs) for idxs in clusters_by_root.values()]
+            print(f"[Cluster Sync] cluster sizes = {sizes}")
+
+            for root, indices in clusters_by_root.items():
+                cluster_id = f"unknown-emb::{valid_rows[indices[0]]['rowid']}"
+                items = [_row_to_review_item(valid_rows[i]) for i in indices]
+                grouped.setdefault(cluster_id, []).extend(items)
+        else:
+            # Sem embeddings suficientes: cada face vira cluster individual
+            print(f"[Cluster Sync] FALLBACK: sem embeddings suficientes, criando clusters individuais")
+            for row in unknown_rows:
+                cluster_id = _build_review_cluster_id(str(row["aluno_id"] or ""), int(row["rowid"]))
+                grouped.setdefault(cluster_id, []).append(_row_to_review_item(row))
+
+    # ── Construir clusters finais ──
     clusters = []
     for idx, cluster_id in enumerate(sorted(grouped.keys(), key=_review_cluster_sort_key), start=1):
         clusters.append(
@@ -996,6 +1201,7 @@ def _sync_review_cluster_cache(cur) -> dict:
         )
 
     _sync_unknown_face_clusters(cur, clusters)
+    print(f"[UNKNOWN CLUSTERS] total clusters retornados = {len(clusters)}")
     return {
         "unknown_faces": len(rows),
         "cluster_count": len(clusters),
@@ -1035,6 +1241,8 @@ def _ensure_review_cluster_cache(cur) -> dict:
 
     last_sync = _cache_last_sync.get(cat)
 
+    print(f"[Review Cache] catalog={cat} unknown_faces={unknown_faces} cached_faces={cached_faces} last_sync={'yes' if last_sync else 'no'}")
+
     logger.info(
         "[Review] catalog=%s unknown_faces=%s total_faces_in_db=%s cached_clusters=%s last_sync=%s",
         cat, unknown_faces, total_faces_in_db, cached_faces,
@@ -1058,6 +1266,7 @@ def _ensure_review_cluster_cache(cur) -> dict:
         return result
 
     if cached_faces != unknown_faces or last_sync is None:
+        print(f"[Review Cache] SYNC TRIGGERED: cached_faces={cached_faces} != unknown_faces={unknown_faces} or last_sync is None")
         sync_info = _sync_review_cluster_cache(cur)
         _cache_last_sync[cat] = time.time()
         logger.info(
@@ -1073,6 +1282,7 @@ def _ensure_review_cluster_cache(cur) -> dict:
             "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
         }
 
+    print(f"[Review Cache] CACHE HIT: cached_faces={cached_faces} == unknown_faces={unknown_faces}")
     cur.execute("SELECT COUNT(DISTINCT cluster_id) AS cnt FROM unknown_face_clusters")
     cluster_count = int((cur.fetchone() or {"cnt": 0})["cnt"] or 0)
     logger.info("[Review] catalog=%s cache hit clusters=%s total_faces=%s", cat, cluster_count, total_faces_in_db)
@@ -4168,8 +4378,8 @@ def clear_cache():
 
 def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
     import traceback
-    print(f"[PREVIEW REQUEST] catalog={catalog} cluster_id={cluster_id} student={student_id}")
-    
+    print(f"[Review Compare] reference_id={student_id} cluster_id={cluster_id}")
+
     try:
         get_db = _get("get_db")
         cat = catalog or _current_catalog()
@@ -4188,18 +4398,17 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
                 WHERE u.cluster_id = ?
             """, (cluster_id,))
             cluster_rows = cur.fetchall()
-            
+
             if not cluster_rows:
-                # Tentar direto na tabela ocorrencias caso não esteja na tabela de clusters (ex: manual identify preliminar)
                 cur.execute("""
-                    SELECT rowid, embedding FROM face_embeddings 
+                    SELECT rowid, embedding FROM face_embeddings
                     WHERE occurrence_rowid IN (SELECT rowid FROM ocorrencias WHERE aluno_id = ?)
                 """, (cluster_id,))
                 cluster_rows = cur.fetchall()
-                
+
             if not cluster_rows:
                 return {
-                    "reference_missing": true,
+                    "reference_missing": True,
                     "message": f"Nenhuma face/embedding encontrada para o cluster {cluster_id}"
                 }
 
@@ -4213,7 +4422,7 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
 
             if not cluster_embs:
                 return {
-                    "reference_missing": true,
+                    "reference_missing": True,
                     "message": f"Não foi possível extrair embeddings válidos do cluster {cluster_id}"
                 }
 
@@ -4223,9 +4432,8 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
                 cluster_centroid = cluster_centroid / cc_norm
 
             # 2. Buscar todas as faces identificadas do aluno
-            # Garantir que student_id seja tratado como string exata (evita perda de zeros à esquerda)
             target_id = str(student_id).strip()
-            
+
             cur.execute("""
                 SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, fe.embedding
                 FROM ocorrencias o
@@ -4235,7 +4443,6 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
             student_faces = cur.fetchall()
 
             if not student_faces:
-                 # Tentar buscar por nome se aluno_id for numérico ou diferente
                  cur.execute("""
                     SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, fe.embedding
                     FROM ocorrencias o
@@ -4254,10 +4461,14 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
             best_sim = -1.0
 
             for f in student_faces:
-                if not f["embedding"]: continue
+                if not f["embedding"]:
+                    print(f"[Review Compare] face rowid={f['rowid']} embedding=MISSING")
+                    continue
                 emb = np.frombuffer(f["embedding"], dtype="float32")
                 norm = np.linalg.norm(emb)
-                if norm <= 0: continue
+                if norm <= 0:
+                    print(f"[Review Compare] face rowid={f['rowid']} embedding_norm=0")
+                    continue
 
                 sim = float(np.dot(cluster_centroid, emb / norm))
                 if sim > best_sim:
@@ -4270,25 +4481,48 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
                      "message": f"Não foi possível comparar faces para o aluno {target_id}"
                  }
 
-            # 3. Obter metadados do aluno
+            # ── Verificar similaridade válida ──
+            if np.isnan(best_sim) or np.isinf(best_sim):
+                print(f"[Review] invalid similarity for reference {target_id} sim={best_sim}")
+                best_sim = 0.0
+
+            print(f"[Review Compare] similarity={best_sim:.4f}")
+
+            # 3. Obter referência do aluno
             student_id_real = best_face["aluno_id"]
             student_label = student_id_real
 
-            print(f"[COMPARE PREVIEW SUCCESS] cluster={cluster_id} student={target_id} sim={best_sim:.4f}")
+            ref_path = ""
+            try:
+                ref_path = get_face_cache_path_cached(cat, student_id_real) or ""
+                if ref_path:
+                    ref_path = str(ref_path)
+                print(f"[Review Compare] reference image path={ref_path}")
+            except Exception as ref_err:
+                print(f"[Review Compare] reference image error: {ref_err}")
+
+            # Fallback: buscar referência via _ensure_person_reference
+            if not ref_path or not os.path.exists(ref_path):
+                try:
+                    ref_path = _ensure_person_reference(conn, cat, student_id_real) or ""
+                    print(f"[Review Compare] reference fallback path={ref_path}")
+                except Exception:
+                    pass
 
             return {
                 "matched_student_rowid": int(best_face["rowid"]),
                 "matched_student_photo_path": best_face["foto_path"],
                 "matched_student_face_box": [best_face["x1"], best_face["y1"], best_face["x2"], best_face["y2"]],
-                "matched_similarity": round(best_sim, 4),
+                "matched_similarity": round(best_sim, 4) if not (np.isnan(best_sim) or np.isinf(best_sim)) else None,
                 "matched_student_id": student_id_real,
                 "matched_student_name": student_label,
                 "matched_student_folder": student_id_real,
-                "matched_student_label": student_label
+                "matched_student_label": student_label,
+                "reference_path": ref_path if ref_path and os.path.exists(ref_path) else None,
             }
     except Exception as e:
         traceback.print_exc()
-        print(f"[PREVIEW ERROR] {e}")
+        print(f"[Review Compare] ERROR: {e}")
         return {
             "error": str(e),
             "reference_missing": True,

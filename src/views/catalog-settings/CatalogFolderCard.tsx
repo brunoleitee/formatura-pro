@@ -1,6 +1,7 @@
-import { Folder, Play, Trash2, Power } from 'lucide-react';
+import { Play, Trash2, Power } from 'lucide-react';
 import type { CatalogFolder } from '../../services/api';
 import styles from '../CatalogSettingsView.module.css';
+import folderIcon from '../../assets/folder.svg';
 
 interface Props {
   folder: CatalogFolder;
@@ -26,7 +27,7 @@ export function CatalogFolderCard({ folder, onRemove, onScan, onToggle }: Props)
   return (
     <div className={`${styles.folderCard} ${!isActive ? styles.folderCardInactive : ''}`}>
       <div className={`${styles.folderCardIcon} ${!isActive ? styles.folderCardIconInactive : ''}`}>
-        <Folder size={16} />
+        <img src={folderIcon} alt="" aria-hidden="true" className={styles.folderCardIconImage} />
       </div>
       <div className={styles.folderCardBody}>
         <span className={styles.folderCardName} title={folderName}>{folderName}</span>

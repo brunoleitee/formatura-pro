@@ -6,6 +6,11 @@ import styles from './ReviewSidebar.module.css';
 
 type PriorityFilter = 'all' | 'gown' | 'diploma' | 'sash' | 'cap' | 'high_priority';
 
+function fmtSim(sim: number | null | undefined): string {
+  if (sim == null || !isFinite(sim) || isNaN(sim)) return '--%';
+  return `${Math.round(sim * 100)}%`;
+}
+
 const CONF_CONFIRMED = 0.92;
 const CONF_POSSIBLE = 0.70;
 
@@ -96,21 +101,21 @@ const ClusterItem = memo(function ClusterItem({
       <div className={styles.itemInfo}>
         <span className={styles.itemName}>Pessoa {String(cluster.cluster_number).padStart(2, '0')}</span>
         <div className={styles.suggestionRow}>
-        {cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.55 ? (
-          <span className={styles.suggestionBadgeStrong} title={`Sugestão: ${cluster.suggested_student} — ${Math.round(cluster.suggested_similarity * 100)}%`}>
-            {cluster.suggested_student} — {Math.round(cluster.suggested_similarity * 100)}%
+        {cluster.suggested_student && cluster.suggested_similarity != null && isFinite(cluster.suggested_similarity) && cluster.suggested_similarity >= 0.55 ? (
+          <span className={styles.suggestionBadgeStrong} title={`Sugestão: ${cluster.suggested_student} — ${fmtSim(cluster.suggested_similarity)}`}>
+            {cluster.suggested_student} — {fmtSim(cluster.suggested_similarity)}
           </span>
-        ) : cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.45 ? (
-            <span className={styles.suggestionBadgePossible} title={`Possível: ${cluster.suggested_student} — ${Math.round(cluster.suggested_similarity * 100)}%`}>
+        ) : cluster.suggested_student && cluster.suggested_similarity != null && isFinite(cluster.suggested_similarity) && cluster.suggested_similarity >= 0.45 ? (
+            <span className={styles.suggestionBadgePossible} title={`Possível: ${cluster.suggested_student} — ${fmtSim(cluster.suggested_similarity)}`}>
               Possível {cluster.suggested_student}
             </span>
-          ) : cluster.best_student_debug && cluster.best_similarity_debug && cluster.best_similarity_debug >= 0.30 ? (
-            <span className={styles.suggestionBadgeDebug} title={`Fraco: ${cluster.best_student_debug} — ${Math.round(cluster.best_similarity_debug * 100)}%`}>
+          ) : cluster.best_student_debug && cluster.best_similarity_debug != null && isFinite(cluster.best_similarity_debug) && cluster.best_similarity_debug >= 0.30 ? (
+            <span className={styles.suggestionBadgeDebug} title={`Fraco: ${cluster.best_student_debug} — ${fmtSim(cluster.best_similarity_debug)}`}>
               Fraco: {cluster.best_student_debug}
             </span>
-          ) : cluster.unknown_similar_id && cluster.unknown_similar_number && cluster.unknown_similar_similarity && cluster.unknown_similar_similarity >= 0.55 ? (
-            <span className={styles.suggestionBadgeUnknown} title={`Provável mesmo formando que grupo #${cluster.unknown_similar_number} — ${Math.round(cluster.unknown_similar_similarity * 100)}%`}>
-              Parece #<strong>{cluster.unknown_similar_number}</strong> — {Math.round(cluster.unknown_similar_similarity * 100)}%
+          ) : cluster.unknown_similar_id && cluster.unknown_similar_number && cluster.unknown_similar_similarity != null && isFinite(cluster.unknown_similar_similarity) && cluster.unknown_similar_similarity >= 0.55 ? (
+            <span className={styles.suggestionBadgeUnknown} title={`Provável mesmo formando que grupo #${cluster.unknown_similar_number} — ${fmtSim(cluster.unknown_similar_similarity)}`}>
+              Parece #<strong>{cluster.unknown_similar_number}</strong> — {fmtSim(cluster.unknown_similar_similarity)}
             </span>
           ) : (
             <span className={styles.suggestionBadgeNone} title="Sem correspondência conhecida">Sem match</span>

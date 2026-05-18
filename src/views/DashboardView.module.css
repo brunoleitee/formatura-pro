@@ -1,12 +1,10 @@
 ﻿.page {
-  min-height: 100%;
   min-height: 0;
   height: 100%;
-  padding: var(--space-5);
-  padding-bottom: var(--space-6);
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: 6px;
   background: linear-gradient(180deg, #0a0d14 0%, #090c12 100%);
   color: #e5e7eb;
   overflow-y: auto;
@@ -18,28 +16,28 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: 8px;
 }
 
 .kicker {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: #7c8aa1;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .title {
-  font-size: 1.3rem;
+  font-size: 1.1rem;
   line-height: 1.1;
   color: #f9fafb;
   margin: 0;
 }
 
 .subtitle {
-  margin: 4px 0 0;
+  margin: 2px 0 0;
   color: #9ca3af;
-  font-size: var(--text-sm);
+  font-size: 11px;
 }
 
 .headerMeta {
@@ -52,22 +50,22 @@
 .metaPill {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  padding: 5px 10px;
+  gap: 4px;
+  padding: 3px 8px;
   border-radius: var(--radius-full);
   border: 1px solid #1f2937;
   background: rgba(17, 24, 39, 0.82);
   color: #d1d5db;
-  font-size: var(--text-xs);
+  font-size: 10px;
 }
 
 .errorBanner {
-  padding: 12px 14px;
-  border-radius: 14px;
+  padding: 6px 10px;
+  border-radius: 10px;
   border: 1px solid rgba(239, 68, 68, 0.22);
   background: rgba(127, 29, 29, 0.22);
   color: #fecaca;
-  font-size: 0.9rem;
+  font-size: 11px;
 }
 
 .cardsGrid {
@@ -88,8 +86,8 @@
 
 .metricCard {
   position: relative;
-  padding: 14px;
-  min-height: 110px;
+  padding: 8px 10px;
+  min-height: 70px;
   overflow: hidden;
 }
 
@@ -99,23 +97,23 @@
 .metricCard[data-tone='violet'] .metricIcon { color: #c4b5fd; background: rgba(124, 58, 237, 0.14); }
 
 .metricIcon {
-  width: 30px;
-  height: 30px;
+  width: 22px;
+  height: 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
-  margin-bottom: 10px;
+  margin-bottom: 5px;
 }
 
 .metricLabel {
-  font-size: var(--text-xs);
+  font-size: 10px;
   color: #9ca3af;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 
 .metricValue {
-  font-size: 1.6rem;
+  font-size: 1.2rem;
   line-height: 1;
   font-weight: 700;
   color: #f9fafb;
@@ -123,14 +121,14 @@
 }
 
 .metricCaption {
-  margin-top: 4px;
+  margin-top: 2px;
   color: #6b7280;
-  font-size: var(--text-xs);
+  font-size: 9px;
 }
 
 .metricProgressTrack {
-  margin-top: 8px;
-  height: 5px;
+  margin-top: 4px;
+  height: 3px;
   border-radius: var(--radius-full);
   background: rgba(31, 41, 55, 0.95);
   overflow: hidden;
@@ -143,18 +141,18 @@
 }
 
 .coverageSection {
-  padding: var(--space-4);
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: 6px;
   min-height: auto;
 }
 
 .classCoverageSection {
-  padding: var(--space-4);
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: 6px;
   min-height: auto;
   border-radius: var(--radius-lg);
   border: 1px solid #1f2937;
@@ -166,7 +164,7 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: 6px;
 }
 
 .coverageHeader h2,
@@ -177,31 +175,31 @@
 
 .coverageHeader h2 {
   color: #f9fafb;
-  font-size: 0.95rem;
+  font-size: 11px;
 }
 
 .coverageHeader p,
 .ringHeader p {
-  margin-top: 4px;
+  margin-top: 2px;
   color: #9ca3af;
-  font-size: var(--text-xs);
+  font-size: 9px;
 }
 
 .coverageStats {
   display: flex;
-  gap: var(--space-1);
+  gap: 4px;
   flex-wrap: wrap;
   justify-content: flex-end;
   color: #8b98ab;
-  font-size: var(--text-xs);
+  font-size: 9px;
 }
 
 .coverageList {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 3px;
   overflow: auto;
-  max-height: clamp(200px, 34vh, 360px);
+  max-height: clamp(120px, 20vh, 200px);
   padding-right: 4px;
 }
 
@@ -215,20 +213,20 @@
 }
 
 .coverageRow {
-  padding: 6px 0 0;
+  padding: 3px 0 0;
 }
 
 .coverageRowTop {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
-  margin-bottom: 4px;
+  gap: 6px;
+  margin-bottom: 2px;
 }
 
 .coverageName {
   color: #f3f4f6;
-  font-size: var(--text-sm);
+  font-size: 11px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -237,14 +235,14 @@
 
 .coverageCount {
   color: #9ca3af;
-  font-size: var(--text-xs);
+  font-size: 9px;
   font-variant-numeric: tabular-nums;
   flex: 0 0 auto;
 }
 
 .coverageBar {
   width: 100%;
-  height: 6px;
+  height: 4px;
   border-radius: var(--radius-full);
   background: rgba(31, 41, 55, 0.96);
   overflow: hidden;
@@ -263,48 +261,48 @@
 
 .classCoverageGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 6px;
 }
 
 .classCoverageCard {
-  padding: var(--space-3);
+  padding: 6px 8px;
   border-radius: var(--radius-lg);
   border: 1px solid rgba(31, 41, 55, 0.96);
   background: rgba(15, 20, 30, 0.84);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 4px;
 }
 
 .classCoverageTop {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: var(--space-2);
+  gap: 6px;
 }
 
 .classCoverageTop strong {
   color: #f9fafb;
-  font-size: var(--text-base);
+  font-size: 11px;
 }
 
 .classCoverageTop span {
   color: #9ca3af;
-  font-size: var(--text-xs);
+  font-size: 9px;
   font-variant-numeric: tabular-nums;
 }
 
 .classCoverageMeta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 8px;
+  gap: 3px 6px;
   color: #9ca3af;
-  font-size: var(--text-xs);
+  font-size: 9px;
 }
 
 .classCoverageMeta span {
-  padding: 2px 6px;
+  padding: 1px 5px;
   border-radius: var(--radius-full);
   background: rgba(17, 24, 39, 0.82);
   border: 1px solid rgba(31, 41, 55, 0.9);
@@ -312,56 +310,56 @@
 
 .bottomGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
-  gap: var(--space-2);
+  grid-template-columns: minmax(0, 1.15fr) minmax(200px, 0.85fr);
+  gap: 6px;
 }
 
 .summaryCard,
 .ringCard {
-  padding: var(--space-4);
+  padding: 8px 10px;
 }
 
 .summaryLabel {
   color: #9ca3af;
-  font-size: var(--text-xs);
+  font-size: 9px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin-bottom: var(--space-2);
+  margin-bottom: 4px;
 }
 
 .summaryList {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
+  gap: 4px;
 }
 
 .summaryList div {
-  padding: var(--space-2) var(--space-3);
+  padding: 4px 6px;
   border-radius: var(--radius-lg);
   background: rgba(15, 20, 30, 0.8);
   border: 1px solid rgba(31, 41, 55, 0.9);
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 1px;
 }
 
 .summaryList span {
   color: #9ca3af;
-  font-size: var(--text-xs);
+  font-size: 9px;
 }
 
 .summaryList strong {
   color: #f9fafb;
-  font-size: var(--text-md);
+  font-size: 11px;
 }
 
 .ringCard {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 4px;
   align-items: center;
   justify-content: center;
-  min-height: 200px;
+  min-height: 120px;
 }
 
 .ringHeader {
@@ -369,12 +367,12 @@
 }
 
 .ring {
-  width: 140px;
-  height: 140px;
+  width: 100px;
+  height: 100px;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  padding: 10px;
+  padding: 6px;
   box-shadow: inset 0 0 0 1px rgba(31, 41, 55, 0.92);
 }
 
@@ -386,19 +384,19 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 1px;
   background: radial-gradient(circle at 30% 20%, rgba(30, 41, 59, 0.95), rgba(8, 12, 20, 0.98));
   border: 1px solid rgba(31, 41, 55, 0.9);
 }
 
 .ringInner strong {
-  font-size: 1.5rem;
+  font-size: 1.1rem;
   color: #f8fafc;
   line-height: 1;
 }
 
 .ringInner span {
-  font-size: var(--text-xs);
+  font-size: 9px;
   color: #9ca3af;
 }
 
@@ -420,7 +418,7 @@
   background: linear-gradient(90deg, rgba(17, 24, 39, 0.95) 0%, rgba(24, 31, 44, 0.95) 45%, rgba(17, 24, 39, 0.95) 100%);
   background-size: 200% 100%;
   animation: shimmer 1.2s ease-in-out infinite;
-  min-height: 110px;
+  min-height: 70px;
 }
 
 .emptyState {
@@ -467,7 +465,7 @@
 
 @media (max-width: 820px) {
   .page {
-    padding: 18px;
+    padding: 8px 10px;
   }
 
   .header {
@@ -486,6 +484,6 @@
   }
 
   .coverageList {
-    max-height: 360px;
+    max-height: 200px;
   }
 }

@@ -3,11 +3,12 @@ import {
   FolderOpen, ChevronDown, ChevronRight, Trash2,
   Image as ImageIcon, Users, UserCheck, Download, LayoutDashboard,
   Settings, Search, ScanLine, Loader, Users as UsersIcon,
-  Folder, Cloud, FolderTree,
+  Cloud,
 } from 'lucide-react';
 import { useApp, type ViewName } from '../../context/AppContext';
 import { api } from '../../services/api';
 import ftStyles from './SidebarFolderTree.module.css';
+import folderIcon from '../../assets/folder.svg';
 
 interface SidebarProps {
   showCatalogDropdown: boolean;
@@ -233,7 +234,7 @@ const toolItems: { view: ViewName; icon: React.ReactNode; label: string }[] = [
                             className={`${ftStyles.item} ${catalogSubfolder === sub ? ftStyles.active : ''}`}
                             onClick={() => { setCatalogSubfolder(sub); navigate('photos'); }}
                           >
-                            <Folder size={12} className={ftStyles.folderIcon} />
+                            <img src={folderIcon} alt="" aria-hidden="true" className={ftStyles.folderIconImage} />
                             <span className={ftStyles.itemLabel}>{sub}</span>
                           </div>
                         ))

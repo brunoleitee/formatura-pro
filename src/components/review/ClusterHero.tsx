@@ -5,6 +5,11 @@ import { api } from '../../services/api';
 import { faceThumb } from './FaceCard';
 import styles from './ClusterHero.module.css';
 
+function fmtSim(sim: number | null | undefined): string {
+  if (sim == null || !isFinite(sim) || isNaN(sim)) return '--%';
+  return `${Math.round(sim * 100)}%`;
+}
+
 interface ClusterHeroProps {
   cluster: RichCluster;
   catalog: string;
@@ -161,23 +166,23 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
           <span className={styles.metaConf}>{cohesionLabel}</span>
         </div>
 
-        {cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.55 && !isAssigned ? (
+        {cluster.suggested_student && cluster.suggested_similarity != null && isFinite(cluster.suggested_similarity) && cluster.suggested_similarity >= 0.55 && !isAssigned ? (
           <div className={styles.suggestionRowStrong}>
             <Sparkles size={12} />
-            <span><strong>{cluster.suggested_student}</strong> — {Math.round(cluster.suggested_similarity * 100)}%</span>
+            <span><strong>{cluster.suggested_student}</strong> — {fmtSim(cluster.suggested_similarity)}</span>
           </div>
-        ) : cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.45 && !isAssigned ? (
+        ) : cluster.suggested_student && cluster.suggested_similarity != null && isFinite(cluster.suggested_similarity) && cluster.suggested_similarity >= 0.45 && !isAssigned ? (
           <div className={styles.suggestionRow}>
             <Sparkles size={12} />
-            <span>Possível: <strong>{cluster.suggested_student}</strong> — {Math.round(cluster.suggested_similarity * 100)}%</span>
+            <span>Possível: <strong>{cluster.suggested_student}</strong> — {fmtSim(cluster.suggested_similarity)}</span>
           </div>
-        ) : cluster.best_student_debug && cluster.best_similarity_debug && cluster.best_similarity_debug >= 0.30 && !isAssigned ? (
+        ) : cluster.best_student_debug && cluster.best_similarity_debug != null && isFinite(cluster.best_similarity_debug) && cluster.best_similarity_debug >= 0.30 && !isAssigned ? (
           <div className={styles.suggestionRowDebug}>
-            <span>Fraco: {cluster.best_student_debug} — {Math.round(cluster.best_similarity_debug * 100)}%</span>
+            <span>Fraco: {cluster.best_student_debug} — {fmtSim(cluster.best_similarity_debug)}</span>
           </div>
-        ) : cluster.unknown_similar_id && cluster.unknown_similar_number && cluster.unknown_similar_similarity && cluster.unknown_similar_similarity >= 0.55 && !isAssigned ? (
+        ) : cluster.unknown_similar_id && cluster.unknown_similar_number && cluster.unknown_similar_similarity != null && isFinite(cluster.unknown_similar_similarity) && cluster.unknown_similar_similarity >= 0.55 && !isAssigned ? (
           <div className={styles.unknownMatchRow}>
-            <span>Provável mesmo formando que grupo <strong>#{cluster.unknown_similar_number}</strong> — {Math.round(cluster.unknown_similar_similarity * 100)}%</span>
+            <span>Provável mesmo formando que grupo <strong>#{cluster.unknown_similar_number}</strong> — {fmtSim(cluster.unknown_similar_similarity)}</span>
           </div>
         ) : !isAssigned ? (
           <div className={styles.noSuggestionRow}>

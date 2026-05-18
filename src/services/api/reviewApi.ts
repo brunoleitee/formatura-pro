@@ -99,4 +99,7 @@ export const reviewApi = {
 
   bulkManualIdentify: (catalog: string, new_name: string, rowids: number[]) =>
     post(`${API_BASE}/review/bulk-manual-identify`, { catalog, new_name, rowids }),
+
+  generateAllEmbeddings: (catalog: string) =>
+    post<{ ok: boolean; stats?: Record<string, number> }>(`${API_BASE}/review/generate-all-embeddings`, { catalog }),
 };

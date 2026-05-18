@@ -404,11 +404,14 @@ export interface StudentMatchPreviewResponse {
   matched_student_rowid: number;
   matched_student_photo_path: string;
   matched_student_face_box: number[];
-  matched_similarity: number;
+  matched_similarity: number | null;
   matched_student_id: string;
   matched_student_name: string | null;
   matched_student_folder: string;
   matched_student_label: string;
+  reference_path?: string | null;
+  reference_missing?: boolean;
+  message?: string;
 }
 
 export interface Stats {

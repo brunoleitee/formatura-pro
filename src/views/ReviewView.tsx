@@ -367,6 +367,10 @@ const wasGraduationRunningRef = useRef(false);
     if (!currentCatalog || graduationStatus?.is_running || isStartingGraduationAnalysis) return;
     setIsStartingGraduationAnalysis(true);
     try {
+      // Gerar embeddings antes da análise de formatura
+      try {
+        await api.generateAllEmbeddings(currentCatalog);
+      } catch { /* continua mesmo se falhar */ }
       await api.startGraduationAnalysis(currentCatalog);
       await refreshGraduationStatus();
     } finally {
@@ -536,7 +540,9 @@ function GraduationAnalysisPanel({
 
   // Status compacto resumido: mostra contagem quando há resultado, ou progresso, ou pronto pra rodar
   let compactStatus: string;
-  if (isRunning) {
+  if (isStarting && !isRunning) {
+    compactStatus = 'Gerando embeddings das fotos...';
+  } else if (isRunning) {
     compactStatus = `Analisando ${status?.processed ?? 0}/${status?.total ?? 0} (${Math.round(progress)}%)`;
   } else if (status?.error) {
     compactStatus = status.error;
@@ -554,9 +560,12 @@ function GraduationAnalysisPanel({
           <Sparkles size={11} />
           <span>{compactStatus}</span>
         </span>
-        {isRunning && (
+        {(isRunning || isStarting) && (
           <span className={styles.analysisCompactBar}>
-            <span className={styles.analysisCompactBarFill} style={{ width: `${progress}%` }} />
+            <span
+              className={`${styles.analysisCompactBarFill} ${isStarting && !isRunning ? styles.analysisCompactBarIndeterminate : ''}`}
+              style={isRunning ? { width: `${progress}%` } : undefined}
+            />
           </span>
         )}
         <button
