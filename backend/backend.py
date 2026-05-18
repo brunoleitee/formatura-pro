@@ -2662,7 +2662,25 @@ def start_scan(req: scm.ScanRequest):
 @app.get("/api/scan/status")
 def get_scan_status():
     try:
-        return scm.get_scan_status()
+        raw = scm.get_scan_status() or {}
+        from scanner_engine import _scan_last_progress_at, _scan_last_progress_file, _scan_last_processed, _scan_stalled
+        now = time.time()
+        last_secs = (now - _scan_last_progress_at) if _scan_last_progress_at > 0 else None
+        if _scan_stalled:
+            raw["status"] = "stalled"
+        elif raw.get("is_scanning"):
+            raw["status"] = "running"
+        elif raw.get("stopped"):
+            raw["status"] = "stopped"
+        elif raw.get("scan_summary"):
+            raw["status"] = "done"
+        else:
+            raw["status"] = "idle"
+        raw["last_progress_seconds"] = round(last_secs, 1) if last_secs is not None else None
+        raw["current_file"] = _scan_last_progress_file or raw.get("current_photo", {}).get("name")
+        raw["processed"] = raw.get("total_processadas", _scan_last_processed)
+        raw["total"] = raw.get("total_validos", 0)
+        return raw
     except Exception:
         _scan_logger = logging.getLogger(__name__)
         _scan_logger.exception("[scanner-status] failed")
@@ -2777,8 +2795,10 @@ def scanner_preview_ocr(path: str = ""):
         primary_face = None
 
         if app_face:
-            with _suppress_stdout():
-                raw_faces = app_face.get(img) or []
+            from scanner_engine import FACE_INFERENCE_LOCK
+            with FACE_INFERENCE_LOCK:
+                with _suppress_stdout():
+                    raw_faces = app_face.get(img) or []
             if raw_faces:
                 raw_faces.sort(key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
                 best = raw_faces[0]
@@ -3053,20 +3073,36 @@ def scanner_preview_faces(path: str = ""):
     try:
         log_info(f"[preview-faces] path={decoded}")
 
-        img = cv2.imread(decoded)
-        if img is None:
-            return {"ok": False, "error": "Falha ao ler imagem", "faces": []}
+        from scanner_engine import FACE_INFERENCE_LOCK, _scan_last_progress_at
+        now = time.time()
+        scanner_active = _scan_last_progress_at > 0 and (now - _scan_last_progress_at) < 120.0
 
-        h, w = img.shape[:2]
-        log_info(f"[preview-faces] img_shape={w}x{h}")
+        if scanner_active:
+            acquired = FACE_INFERENCE_LOCK.acquire(timeout=0.1)
+            if not acquired:
+                log_info("[face-lock] busy by=preview-faces skipped (scanner ativo)")
+                return {"ok": False, "busy": True, "reason": "scanner_running", "faces": []}
+        else:
+            FACE_INFERENCE_LOCK.acquire()
 
-        se.ensure_face_engine()
-        app_face = se.get_app_face()
-        if app_face is None:
-            return {"ok": False, "error": "Motor de deteccao nao disponivel", "faces": []}
+        try:
+            log_info(f"[face-lock] acquired by=preview-faces file={os.path.basename(decoded)}")
+            img = cv2.imread(decoded)
+            if img is None:
+                return {"ok": False, "error": "Falha ao ler imagem", "faces": []}
 
-        with _suppress_stdout():
-            raw_faces = app_face.get(img) or []
+            h, w = img.shape[:2]
+            log_info(f"[preview-faces] img_shape={w}x{h}")
+
+            se.ensure_face_engine()
+            app_face = se.get_app_face()
+            if app_face is None:
+                return {"ok": False, "error": "Motor de deteccao nao disponivel", "faces": []}
+
+            with _suppress_stdout():
+                raw_faces = app_face.get(img) or []
+        finally:
+            FACE_INFERENCE_LOCK.release()
 
         log_info(f"[preview-faces] detected={len(raw_faces)}")
 
@@ -3913,13 +3949,14 @@ def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = "", 
                 return {"success": False, "error": "Falha ao ler imagem"}
             print(f"[AI] image size: {img.shape[1]}x{img.shape[0]}")
 
-            from scanner_engine import ensure_face_engine, get_app_face
+            from scanner_engine import ensure_face_engine, get_app_face, FACE_INFERENCE_LOCK
             ensure_face_engine()
             app_face = get_app_face()
             faces = []
             if app_face:
-                with _suppress_stdout():
-                    faces = app_face.get(img) or []
+                with FACE_INFERENCE_LOCK:
+                    with _suppress_stdout():
+                        faces = app_face.get(img) or []
             print(f"[AI] faces detected count: {len(faces)}")
             if len(faces) > 0:
                 print("[AI] face detectada")
@@ -4294,8 +4331,10 @@ def ai_retry_face_detection(foto_path: str = ""):
         img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
         # Tentar deteccao com threshold padrao
-        with _suppress_stdout():
-            faces = app_face.get(img) or []
+        from scanner_engine import FACE_INFERENCE_LOCK
+        with FACE_INFERENCE_LOCK:
+            with _suppress_stdout():
+                faces = app_face.get(img) or []
 
         print(f"[RetryFace] deteccao padrao: {len(faces)} faces")
 
@@ -4306,8 +4345,9 @@ def ai_retry_face_detection(foto_path: str = ""):
             try:
                 app_face.det_size = (1280, 1280)
                 app_face.prepare(ctx_id=0, det_size=(1280, 1280))
-                with _suppress_stdout():
-                    faces = app_face.get(img) or []
+                with FACE_INFERENCE_LOCK:
+                    with _suppress_stdout():
+                        faces = app_face.get(img) or []
                 print(f"[RetryFace] fallback det_size=1280: {len(faces)} faces")
             except Exception:
                 pass

@@ -13,11 +13,18 @@ import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
-from onnx_provider_utils import get_onnx_providers, get_session_providers, mark_cuda_failed
+from onnx_provider_utils import get_onnx_providers, get_session_providers
 
 os.environ.setdefault("NO_ALBUMENTATIONS_UPDATE", "1")
 
 _FACE_ENGINE_LOCK = threading.Lock()
+FACE_INFERENCE_LOCK = threading.RLock()
+
+# Scanner progress watchdog
+_scan_last_progress_at = 0.0
+_scan_last_progress_file = ""
+_scan_last_processed = 0
+_scan_stalled = False
 
 
 @contextlib.contextmanager
@@ -381,32 +388,22 @@ def ensure_face_engine():
 
             real_providers = get_session_providers(app_face)
             real_provider = real_providers[0] if real_providers else selected_provider
-            if selected_provider == "CUDAExecutionProvider" and "CUDAExecutionProvider" not in real_providers:
-                mark_cuda_failed()
-                face_engine_device = "CPU"
-                face_engine_provider = "CPUExecutionProvider"
-                face_engine_label = "CPU"
-                face_engine_gpu_error = "Sessao real da IA ficou em CPU"
-                _cfg["log_info"]("[AI] CUDA indisponivel, usando CPU")
-                _cfg["log_info"]("[AI] Provider ativo: CPUExecutionProvider")
+            face_engine_device = "GPU" if real_provider in {"CUDAExecutionProvider", "DmlExecutionProvider"} else "CPU"
+            face_engine_provider = real_provider
+            face_engine_label = _provider_label(real_provider)
+            face_engine_gpu_error = provider_info.get("provider_error", "")
+            if face_engine_device == "GPU":
+                _cfg["log_info"](f"[AI] {face_engine_label} ativo")
             else:
-                face_engine_device = "GPU" if real_provider in {"CUDAExecutionProvider", "DmlExecutionProvider"} else "CPU"
-                face_engine_provider = real_provider
-                face_engine_label = _provider_label(real_provider)
-                face_engine_gpu_error = provider_info.get("provider_error", "")
-                if real_provider == "CUDAExecutionProvider":
-                    _cfg["log_info"]("[AI] CUDA ativa")
-                elif selected_provider == "CPUExecutionProvider":
-                    _cfg["log_info"]("[AI] CUDA indisponivel, usando CPU")
-                _cfg["log_info"](f"[AI] Provider ativo: {real_provider}")
+                _cfg["log_info"]("[AI] GPU indisponivel, usando CPU")
+            _cfg["log_info"](f"[AI] Provider ativo: {real_provider}")
         except Exception as e:
             _cfg["log_info"](f"[AI] Falha ao carregar engine de IA: {e}")
             if selected_provider == "CPUExecutionProvider":
                 _cfg["log_debug"](f"[SCAN] Erro fatal no carregamento CPU: {traceback.format_exc()}")
                 raise
 
-            mark_cuda_failed()
-            _cfg["log_info"]("[AI] CUDA indisponivel, usando CPU")
+            _cfg["log_info"](f"[AI] {selected_provider} falhou, fallback para CPU")
             with quiet_external_output():
                 app_face = FaceAnalysis(
                     name="buffalo_l",
@@ -450,7 +447,8 @@ def load_references(ref_path):
             if img is None:
                 continue
             try:
-                faces = _cfg["app_face"].get(img) or []
+                with FACE_INFERENCE_LOCK:
+                    faces = _cfg["app_face"].get(img) or []
             except Exception:
                 continue
             if len(faces) != 1 or not hasattr(faces[0], "embedding") or faces[0].embedding is None:
@@ -776,11 +774,30 @@ def run_scanner_worker(req):
                         scan_state["status_text"] = "Scanner interrompido"
                         break
 
+                    # Watchdog: se passou >60s sem progresso, marca como stalled
+                    if _scan_last_progress_at > 0 and (t0_face - _scan_last_progress_at) > 60.0:
+                        _scan_stalled = True
+                        log_info(f"[scanner-watchdog] stalled last_progress={_scan_last_progress_file} seconds={t0_face - _scan_last_progress_at:.0f}")
+
                     try:
-                        with quiet_external_output():
-                            faces = _cfg["app_face"].get(img) or []
+                        with FACE_INFERENCE_LOCK:
+                            with quiet_external_output():
+                                faces = _cfg["app_face"].get(img) or []
+                        _scan_last_progress_at = time.time()
+                        _scan_last_progress_file = short_name
+                        _scan_last_processed = total_with_faces
+                        _scan_stalled = False
+                        log_info(f"[scanner-progress] processed={total_with_faces}/{total_validos} file={short_name}")
                     except Exception as e:
                         log_debug(f"Falha de AI em {p}: {e}")
+                        provider = _cfg.get("face_engine_provider", "")
+                        if "DmlExecutionProvider" in provider:
+                            _cfg["log_info"](f"[Face] DirectML timeout em {short_name}, descarregando modelo")
+                            _cfg["app_face"] = None
+                            _cfg["face_engine_provider"] = ""
+                            _cfg["face_engine_device"] = ""
+                            _cfg["face_engine_label"] = ""
+                            _cfg["face_engine_gpu_error"] = str(e)
                         ignored_reasons["ai_error"] += 1
                         try: del img
                         except: pass
