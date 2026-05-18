@@ -337,6 +337,21 @@ def get_stats(catalog: str = ""):
             logger.info("[sql-perf] endpoint=/api/stats query=count_discarded rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
 
             _t0 = time.perf_counter()
+            cur.execute("SELECT COUNT(DISTINCT foto_path) FROM ocorrencias WHERE blur_status = 'blurry'")
+            blurred_photos = cur.fetchone()[0]
+            logger.info("[sql-perf] endpoint=/api/stats query=count_blurred rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
+
+            _t0 = time.perf_counter()
+            cur.execute("""
+                SELECT COUNT(DISTINCT foto_path) FROM ocorrencias
+                WHERE x1 IS NOT NULL
+                  AND (aluno_id IS NULL OR aluno_id = '' OR aluno_id LIKE 'Pessoa%'
+                       OR lower(aluno_id) IN ('unknown','desconhecido','sem_nome','nao_mapeado','__unknown__'))
+            """)
+            no_id_faces = cur.fetchone()[0]
+            logger.info("[sql-perf] endpoint=/api/stats query=count_no_id_faces rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
+
+            _t0 = time.perf_counter()
             cur.execute("""
                 SELECT aluno_id, COUNT(*) as cnt
                 FROM ocorrencias
@@ -410,12 +425,15 @@ def get_stats(catalog: str = ""):
             classes_list.sort(key=sort_key)
 
             result = {
+                "total_photos": photos_with_faces,
                 "total_occurrences": total_occurrences,
                 "photos_with_faces": photos_with_faces,
                 "total_people": total_people,
                 "named_people": named_people,
                 "unnamed_people": unnamed_people,
                 "discarded_photos": discarded_count,
+                "blurred_photos": blurred_photos,
+                "no_id_faces": no_id_faces,
                 "avg_photos_per_person": round(avg_photos, 1),
                 "top_people": [{"id": r["aluno_id"], "count": r["cnt"]} for r in photos_per_person[:10]],
                 "classes": classes_list,

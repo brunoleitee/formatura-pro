@@ -37,19 +37,6 @@ import styles from './DashboardView.module.css';
 
 export const DEFAULT_PHOTOS_GOAL = 50;
 
-const UNKNOWN_LABELS = new Set([
-  'unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', '__unknown__',
-]);
-
-function isKnownFaceLabel(value: string | null | undefined) {
-  if (!value) return false;
-  const normalized = value.trim().toLowerCase();
-  if (!normalized) return false;
-  if (UNKNOWN_LABELS.has(normalized)) return false;
-  if (normalized.startsWith('pessoa ')) return false;
-  return true;
-}
-
 function hasKnownFace(photo: Photo) {
   return Boolean(photo.faces?.some((f) => isKnownFaceLabel(f.aluno_id)));
 }
@@ -263,16 +250,16 @@ export default function DashboardView() {
 
     Promise.all([
       api.getStats(currentCatalog, controller.signal),
-      api.getAllPhotos(currentCatalog, undefined, controller.signal),
+      api.getPhotosPage(currentCatalog, 100, 0),
       api.getPeople(false, controller.signal),
       api.getScanStatus(controller.signal).catch(() => null),
       api.getReviewClusters(currentCatalog, 50, 0, controller.signal).catch(() => null),
       api.getFolderStats(currentCatalog, controller.signal).catch(() => null),
     ])
-      .then(([s, ph, pe, sc, cl, fs]) => {
+      .then(([s, pp, pe, sc, cl, fs]) => {
         if (controller.signal.aborted) return;
         setStats(s as Stats);
-        setPhotos(ph as Photo[]);
+        setPhotos((pp as { photos: Photo[] }).photos);
         setPeople(pe as Person[]);
         setScanStatus(sc as ScanStatus | null);
         setClusters(cl as ReviewClustersPageResponse | null);
@@ -292,19 +279,19 @@ export default function DashboardView() {
 
   /* ── Computed data ── */
   const data = useMemo(() => {
-    if (!photos.length && !people.length && !stats) return null;
+    if (!stats && !people.length) return null;
 
-    const totalPhotos = photos.length;
-    const identifiedPhotos = photos.filter(hasKnownFace).length;
+    const totalPhotos = stats?.total_photos ?? photos.length;
+    const identifiedPhotos = stats?.named_people ?? 0;
     const pendingPhotos = Math.max(totalPhotos - identifiedPhotos, 0);
     const completionPct = pct(identifiedPhotos, totalPhotos);
     const studentCount = people.length;
     const unknownClusters = clusters?.total ?? stats?.unknown_count ?? 0;
 
     // Problems
-    const blurredCount = photos.filter((p) => p.blur_status === 'blurry' || p.blur_label === 'Embaçada').length;
+    const blurredCount = stats?.blurred_photos ?? 0;
     const duplicateCount = scanStatus?.duplicate_count ?? 0;
-    const noIdCount = photos.filter((p) => !hasKnownFace(p) && p.faces && p.faces.length > 0).length;
+    const noIdCount = stats?.no_id_faces ?? 0;
 
     // Class coverage
     const classMap = new Map<string, { students: number; photos: number }>();

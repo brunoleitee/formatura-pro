@@ -7,11 +7,13 @@ export const photoApi = {
       `${API_BASE}/explorer/ls?path=${encodeURIComponent(path)}&catalog=${encodeURIComponent(catalog)}`,
       { signal }
     ),
-  getAllPhotos: (catalog = '', limit?: number, signal?: AbortSignal) =>
-    fetchJSON<Photo[]>(
+  getAllPhotos: (catalog = '', limit?: number, signal?: AbortSignal) => {
+    console.warn(`[legacy-api] /api/photos/all chamado por ${new Error().stack?.split('\n')[2]?.trim() || 'desconhecido'}`);
+    return fetchJSON<Photo[]>(
       `${API_BASE}/photos/all?catalog=${encodeURIComponent(catalog)}${typeof limit === 'number' ? `&limit=${limit}` : ''}`,
       { signal }
-    ),
+    );
+  },
   getPhotosPage: (catalog: string, limit = 100, offset = 0) =>
     fetchJSON<PhotosPageResponse>(
       `${API_BASE}/photos?catalog=${encodeURIComponent(catalog)}&limit=${limit}&offset=${offset}`
