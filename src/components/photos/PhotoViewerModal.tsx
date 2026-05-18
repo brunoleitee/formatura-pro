@@ -491,16 +491,20 @@ export function PhotoViewerModal({
   }, [loadPreview, navigationPhotos, currentIndex, photo.path, (photo as ViewerPhoto).original_path, (photo as ViewerPhoto).preview_path]);
 
   useEffect(() => {
-    const allPaths = navigationPhotos
-      .slice(0, 50)
-      .map((p) => p.path)
-      .filter(Boolean) as string[];
-    if (allPaths.length === 0) return;
+    const aroundPaths: string[] = [];
+    for (const offset of [-2, -1, 0, 1, 2]) {
+      const idx = currentIndex + offset;
+      if (idx >= 0 && idx < navigationPhotos.length) {
+        const p = navigationPhotos[idx]?.path;
+        if (p) aroundPaths.push(p);
+      }
+    }
+    if (aroundPaths.length === 0) return;
+    const unique = [...new Set(aroundPaths)];
     let cancelled = false;
-    console.log(`[AI-BATCH] consultando status inicial (${allPaths.length} fotos)`);
-    aiApi.batchStatus(allPaths).then((res) => {
+    console.debug(`[AI-VIEWER] queued=${unique.length} around=${currentIndex}`);
+    aiApi.batchStatus(unique).then((res) => {
       if (cancelled) return;
-      let found = 0;
       for (const item of res.items) {
         if (item.status === "completed") {
           aiCacheStore.set(item.foto_path, {
@@ -510,23 +514,18 @@ export function PhotoViewerModal({
             final_student: item.final_student ?? null,
             status: "completed",
           });
-          found++;
         }
       }
-      console.log(`[AI-BATCH] cache encontrado: ${found}`);
-      const pending = allPaths.filter((p) => {
+      const pending = unique.filter((p) => {
         const c = aiCacheStore.get(p);
         return !c || c.status !== "completed";
       });
-      console.log(`[AI-BATCH] fotos pendentes: ${pending.length}`);
-      aiQueueManager.batchInitialize(pending);
-      console.log(`[AI-BATCH] queue inicializada`);
+      if (pending.length > 0) aiQueueManager.batchInitialize(pending);
     }).catch(() => {
-      if (cancelled) return;
-      aiQueueManager.batchInitialize(allPaths);
+      if (!cancelled) aiQueueManager.batchInitialize(unique);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [currentIndex]);
 
   useEffect(() => {
     const currentPath = photo.path || (photo as ViewerPhoto).original_path;
