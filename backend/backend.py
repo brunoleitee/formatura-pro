@@ -1433,6 +1433,29 @@ def add_catalog_folder(req: AddCatalogFolderReq):
             """, (req.catalog, norm, 1 if req.include_subfolders else 0, req.folder_type))
             conn.commit()
             folder_id = cur.lastrowid
+        # Disparar scan automaticamente se solicitado
+        if req.scan_immediately and req.folder_type != "reference":
+            try:
+                ref_path = ""
+                try:
+                    with get_db(req.catalog) as conn2:
+                        cur2 = conn2.cursor()
+                        cur2.execute("SELECT path FROM catalog_folders WHERE catalog_name = ? AND folder_type = 'reference' ORDER BY id LIMIT 1", (req.catalog,))
+                        row2 = cur2.fetchone()
+                        if row2:
+                            ref_path = row2["path"]
+                except Exception:
+                    pass
+                scan_req = scm.ScanRequest(
+                    event_path=norm,
+                    ref_path=ref_path,
+                    project_name=req.catalog,
+                    extra_paths=[],
+                    selected_folders=[],
+                )
+                scm.start_scan(scan_req)
+            except Exception as scan_err:
+                print(f"[CatalogFolders] scan_immediately error: {scan_err}", flush=True)
         return {"success": True, "folderId": folder_id}
     except Exception as e:
         print(f"[CatalogFolders] add error: {e}", flush=True)
