@@ -1,4 +1,4 @@
-import { Folder, PencilLine, Play, Trash2 } from 'lucide-react';
+import { Folder, Play, Trash2, Power } from 'lucide-react';
 import type { CatalogFolder } from '../../services/api';
 import styles from '../CatalogSettingsView.module.css';
 
@@ -6,10 +6,11 @@ interface Props {
   folder: CatalogFolder;
   onRemove: () => void;
   onScan: () => void;
-  onEdit?: () => void;
+  onToggle?: () => void;
 }
 
-export function CatalogFolderCard({ folder, onRemove, onScan, onEdit }: Props) {
+export function CatalogFolderCard({ folder, onRemove, onScan, onToggle }: Props) {
+  const isActive = folder.status === 'active';
   const folderName = folder.path.split(/[\\/]/).filter(Boolean).pop() || folder.path;
   const lastScan = folder.lastScanAt
     ? new Date(folder.lastScanAt * 1000).toLocaleString('pt-BR', {
@@ -23,8 +24,8 @@ export function CatalogFolderCard({ folder, onRemove, onScan, onEdit }: Props) {
     : '—';
 
   return (
-    <div className={styles.folderCard}>
-      <div className={styles.folderCardIcon}>
+    <div className={`${styles.folderCard} ${!isActive ? styles.folderCardInactive : ''}`}>
+      <div className={`${styles.folderCardIcon} ${!isActive ? styles.folderCardIconInactive : ''}`}>
         <Folder size={16} />
       </div>
       <div className={styles.folderCardBody}>
@@ -44,16 +45,21 @@ export function CatalogFolderCard({ folder, onRemove, onScan, onEdit }: Props) {
             Referência
           </span>
         )}
-        <span className={`${styles.folderCardStatus} ${styles.folderCardStatusActive}`}>
-          {folder.status === 'active' ? '• Ativa' : folder.status}
+        <span className={`${styles.folderCardStatus} ${isActive ? styles.folderCardStatusActive : styles.folderCardStatusInactive}`}>
+          {isActive ? '• Ativa' : '• Inativa'}
         </span>
       </div>
       <div className={styles.folderCardActions}>
         <button className={styles.folderActionBtn} onClick={onScan} title="Escanear">
           <Play size={14} />
         </button>
-        <button className={styles.folderActionBtn} onClick={onEdit} title="Editar" type="button">
-          <PencilLine size={14} />
+        <button
+          className={`${styles.folderActionBtn} ${!isActive ? styles.folderActionBtnToggleOff : ''}`}
+          onClick={onToggle}
+          title={isActive ? 'Desativar pasta' : 'Ativar pasta'}
+          type="button"
+        >
+          <Power size={14} />
         </button>
         <button className={`${styles.folderActionBtn} ${styles.folderActionBtnDanger}`} onClick={onRemove} title="Remover" type="button">
           <Trash2 size={14} />

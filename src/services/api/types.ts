@@ -16,6 +16,9 @@ export interface CatalogFolderStats {
   recognizedPhotos: number;
   newPhotos: number;
   lastScanAt: number | null;
+  totalFaces: number;
+  photosWithFaces: number;
+  knownPersons: number;
 }
 export interface CatalogsResponse {
   current: string;
@@ -73,6 +76,8 @@ export interface Photo {
   blur_status: string | null;
   blur_label: string | null;
   closed_eyes: boolean;
+  source?: string;
+  folder_active?: boolean;
 }
 
 export interface PhotoContextResponse {

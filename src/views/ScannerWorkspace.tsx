@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { api, type ScanStatus, type ScanRecentFace, type ExplorerPhoto } from '../services/api';
 import { useApp } from '../context/AppContext';
+import { ScanCompleteModal } from '../components/ScanCompleteModal';
 import styles from './ScannerWorkspace.module.css';
 
 interface TimelineEntry {
@@ -46,7 +47,7 @@ const CollapsibleSection = ({ title, icon: Icon, children, defaultOpen = true }:
 };
 
 const ScannerWorkspace = memo(function ScannerWorkspace() {
-  const { catalogs, setCatalog, refreshCatalogs, currentCatalog } = useApp();
+  const { catalogs, setCatalog, refreshCatalogs, currentCatalog, navigate } = useApp();
   const [eventPath, setEventPath] = useState('');
   const [refPath, setRefPath] = useState('');
   const [refPathInfo, setRefPathInfo] = useState<{ photos: number; subfolders: number } | null>(null);
@@ -73,6 +74,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   
   // Sorting state
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'size'>(() => (localStorage.getItem('scanner_sort_by') as any) || 'name');
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [completeStats, setCompleteStats] = useState({ photos: 0, faces: 0, time: '' });
   
   // Dragging state
   const [isDragging, setIsDragging] = useState(false);
@@ -400,6 +403,14 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           } else {
             setIsCompleted(true);
             setTimeline(prev => [...prev, { id: `end-${Date.now()}`, kind: 'summary', text: 'Escaneamento finalizado.', timestamp: Date.now() }]);
+            // Mostrar modal de conclusão
+            const timeStr = st.scan_summary?.time_str || '';
+            setCompleteStats({
+              photos: st.total_processadas || st.scan_summary?.total_photos || 0,
+              faces: st.total_faces || st.scan_summary?.total_faces || 0,
+              time: timeStr,
+            });
+            setShowCompleteModal(true);
           }
         }
       } catch { /* ignore */ }
@@ -1425,6 +1436,17 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
         <div className={styles.statusItem}>Versão Engine: <span className={styles.statusValue}>v2.1.4-hybrid</span></div>
         <div className={styles.statusItem} style={{ marginLeft: 'auto' }}><Activity size={10} /> System Healthy</div>
       </div>
+
+      {/* ── SCAN COMPLETE MODAL ── */}
+      <ScanCompleteModal
+        show={showCompleteModal}
+        totalPhotos={completeStats.photos}
+        totalFaces={completeStats.faces}
+        totalTime={completeStats.time}
+        onClose={() => setShowCompleteModal(false)}
+        onGoPeople={() => { setShowCompleteModal(false); navigate('people'); }}
+        onGoReview={() => { setShowCompleteModal(false); navigate('review'); }}
+      />
     </div>
   );
 });

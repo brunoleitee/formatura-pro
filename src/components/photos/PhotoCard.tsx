@@ -381,7 +381,7 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
 
   return (
     <div
-      className={`photo-card ${isSelected ? 'selected' : ''} ${isDiscarded ? 'discarded' : ''}`}
+      className={`photo-card ${isSelected ? 'selected' : ''} ${isDiscarded ? 'discarded' : ''} ${photo.folder_active === false ? 'photo-inactive' : ''}`}
       onClick={(e) => {
         if (wasDraggingRef.current) return;
         onClick(photo, e);

@@ -11,6 +11,9 @@ export function CatalogStatusCards({ stats }: Props) {
     { label: 'Total de fotos', value: stats?.totalPhotos ?? '--', dot: styles.statusDotGreen },
     { label: 'Fotos reconhecidas', value: stats?.recognizedPhotos ?? '--', dot: styles.statusDotPurple },
     { label: 'Fotos novas', value: stats?.newPhotos ?? '--', dot: styles.statusDotAmber },
+    { label: 'Faces detectadas', value: stats?.totalFaces ?? '--', dot: styles.statusDotPink },
+    { label: 'Fotos com faces', value: stats?.photosWithFaces ?? '--', dot: styles.statusDotCyan },
+    { label: 'Pessoas conhecidas', value: stats?.knownPersons ?? '--', dot: styles.statusDotOrange },
     { label: 'Último scan', value: stats?.lastScanAt ? new Date(stats.lastScanAt * 1000).toLocaleDateString() : '--', dot: styles.statusDotBlue },
   ];
 

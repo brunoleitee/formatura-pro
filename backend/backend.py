@@ -1261,12 +1261,41 @@ def list_catalog_folders(catalog: str = ""):
                         print(f"[CatalogSettings] rejected junk path = {r['path']}", flush=True)
                         cur.execute("DELETE FROM catalog_folders WHERE id = ?", (r["id"],))
                         continue
+                    # ── Atualizar photo_count real ──
+                    actual_count = r["photo_count"]
+                    folder_path = r["path"]
+                    if r["folder_type"] == "reference" and os.path.isdir(folder_path):
+                        try:
+                            exts = IMAGE_EXTENSIONS
+                            actual_count = sum(
+                                1 for _root, _, files in os.walk(folder_path)
+                                for f in files
+                                if os.path.splitext(f)[1].lower() in exts
+                            )
+                        except Exception:
+                            pass
+                    elif r["folder_type"] != "reference" and os.path.isdir(folder_path):
+                        try:
+                            exts = IMAGE_EXTENSIONS
+                            actual_count = sum(
+                                1 for f in os.listdir(folder_path)
+                                if os.path.isfile(os.path.join(folder_path, f))
+                                and os.path.splitext(f)[1].lower() in exts
+                            )
+                        except Exception:
+                            pass
+                    if actual_count != r["photo_count"]:
+                        try:
+                            cur.execute("UPDATE catalog_folders SET photo_count = ? WHERE id = ?",
+                                        (actual_count, r["id"]))
+                        except Exception:
+                            pass
                     result.append({
                         "id": r["id"],
                         "catalogName": r["catalog_name"],
                         "path": r["path"],
                         "includeSubfolders": bool(r["include_subfolders"]),
-                        "photoCount": r["photo_count"],
+                        "photoCount": actual_count,
                         "lastScanAt": r["last_scan_at"],
                         "status": r["status"],
                         "folderType": r["folder_type"] or "event",
@@ -1325,12 +1354,41 @@ def list_catalog_folders(catalog: str = ""):
                     print(f"[CatalogSettings] rejected junk path = {r['path']}", flush=True)
                     cur.execute("DELETE FROM catalog_folders WHERE id = ?", (r["id"],))
                     continue
+                # ── Atualizar photo_count real ──
+                actual_count = r["photo_count"]
+                folder_path = r["path"]
+                if r["folder_type"] == "reference" and os.path.isdir(folder_path):
+                    try:
+                        exts = IMAGE_EXTENSIONS
+                        actual_count = sum(
+                            1 for _root, _, files in os.walk(folder_path)
+                            for f in files
+                            if os.path.splitext(f)[1].lower() in exts
+                        )
+                    except Exception:
+                        pass
+                elif r["folder_type"] != "reference" and os.path.isdir(folder_path):
+                    try:
+                        exts = IMAGE_EXTENSIONS
+                        actual_count = sum(
+                            1 for f in os.listdir(folder_path)
+                            if os.path.isfile(os.path.join(folder_path, f))
+                            and os.path.splitext(f)[1].lower() in exts
+                        )
+                    except Exception:
+                        pass
+                if actual_count != r["photo_count"]:
+                    try:
+                        cur.execute("UPDATE catalog_folders SET photo_count = ? WHERE id = ?",
+                                    (actual_count, r["id"]))
+                    except Exception:
+                        pass
                 result.append({
                     "id": r["id"],
                     "catalogName": r["catalog_name"],
                     "path": r["path"],
                     "includeSubfolders": bool(r["include_subfolders"]),
-                    "photoCount": r["photo_count"],
+                    "photoCount": actual_count,
                     "lastScanAt": r["last_scan_at"],
                     "status": r["status"],
                     "folderType": r["folder_type"] or "event",
@@ -1385,11 +1443,59 @@ def remove_catalog_folder(req: RemoveCatalogFolderReq):
     try:
         with get_db(req.catalog) as conn:
             cur = conn.cursor()
+            # Buscar o path da pasta antes de remover
+            cur.execute("SELECT path FROM catalog_folders WHERE id = ? AND catalog_name = ?", (req.folder_id, req.catalog))
+            row = cur.fetchone()
+            folder_path = row["path"] if row else ""
+            # Remover a pasta do catálogo
             cur.execute("DELETE FROM catalog_folders WHERE id = ? AND catalog_name = ?", (req.folder_id, req.catalog))
+            # Remover fotos da pasta das tabelas de ocorrências e descartadas
+            if folder_path:
+                norm = os.path.normpath(folder_path).lower()
+                deleted_occ = 0
+                deleted_disc = 0
+                cur.execute("SELECT foto_path FROM ocorrencias")
+                to_delete_occ = [r["foto_path"] for r in cur.fetchall() if os.path.normpath(r["foto_path"]).lower().startswith(norm + os.sep)]
+                if to_delete_occ:
+                    for i in range(0, len(to_delete_occ), 500):
+                        chunk = to_delete_occ[i:i+500]
+                        placeholders = ",".join(["?"] * len(chunk))
+                        cur.execute(f"DELETE FROM ocorrencias WHERE foto_path IN ({placeholders})", chunk)
+                        deleted_occ += len(chunk)
+                cur.execute("SELECT foto_path FROM discarded_photos")
+                to_delete_disc = [r["foto_path"] for r in cur.fetchall() if os.path.normpath(r["foto_path"]).lower().startswith(norm + os.sep)]
+                if to_delete_disc:
+                    for i in range(0, len(to_delete_disc), 500):
+                        chunk = to_delete_disc[i:i+500]
+                        placeholders = ",".join(["?"] * len(chunk))
+                        cur.execute(f"DELETE FROM discarded_photos WHERE foto_path IN ({placeholders})", chunk)
+                        deleted_disc += len(chunk)
+                print(f"[CatalogFolders] removed folder '{folder_path}': {deleted_occ} ocorrencias, {deleted_disc} discarded", flush=True)
             conn.commit()
         return {"success": True}
     except Exception as e:
         print(f"[CatalogFolders] remove error: {e}", flush=True)
+        return {"success": False, "error": str(e)}
+
+class ToggleFolderReq(BaseModel):
+    catalog: str
+    folder_id: int
+
+@app.post("/api/catalogs/folders/toggle")
+def toggle_catalog_folder(req: ToggleFolderReq):
+    try:
+        with get_db(req.catalog) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT status FROM catalog_folders WHERE id = ? AND catalog_name = ?", (req.folder_id, req.catalog))
+            row = cur.fetchone()
+            if not row:
+                return {"success": False, "error": "Pasta não encontrada"}
+            new_status = "inactive" if row["status"] == "active" else "active"
+            cur.execute("UPDATE catalog_folders SET status = ? WHERE id = ? AND catalog_name = ?", (new_status, req.folder_id, req.catalog))
+            conn.commit()
+        return {"success": True, "status": new_status}
+    except Exception as e:
+        print(f"[CatalogFolders] toggle error: {e}", flush=True)
         return {"success": False, "error": str(e)}
 
 @app.get("/api/catalogs/stats")
@@ -1401,20 +1507,32 @@ def catalog_folder_stats(catalog: str = ""):
             active_folders = cur.fetchone()[0]
             cur.execute("SELECT COALESCE(SUM(photo_count), 0) FROM catalog_folders WHERE catalog_name = ?", (catalog,))
             total_photos = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM ocorrencias")
+            cur.execute("SELECT COUNT(DISTINCT foto_path) FROM ocorrencias")
             recognized = cur.fetchone()[0]
+            # Fotos novas = total no catálogo - fotos já processadas (com pelo menos 1 ocorrência)
+            new_photos = max(0, total_photos - recognized)
             cur.execute("SELECT MAX(last_scan_at) FROM catalog_folders WHERE catalog_name = ?", (catalog,))
             last_scan = cur.fetchone()[0]
+            # Status de reconhecimento facial
+            cur.execute("SELECT COUNT(*) FROM ocorrencias WHERE x1 IS NOT NULL")
+            total_faces = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(DISTINCT foto_path) FROM ocorrencias WHERE x1 IS NOT NULL")
+            photos_with_faces = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(DISTINCT aluno_id) FROM ocorrencias WHERE aluno_id IS NOT NULL AND aluno_id != '' AND aluno_id != 'desconhecido'")
+            known_persons = cur.fetchone()[0]
         return {
             "activeFolders": active_folders,
             "totalPhotos": total_photos,
             "recognizedPhotos": recognized,
-            "newPhotos": 0,
+            "newPhotos": new_photos,
             "lastScanAt": last_scan,
+            "totalFaces": total_faces,
+            "photosWithFaces": photos_with_faces,
+            "knownPersons": known_persons,
         }
     except Exception as e:
         print(f"[CatalogFolders] stats error: {e}", flush=True)
-        return {"activeFolders": 0, "totalPhotos": 0, "recognizedPhotos": 0, "newPhotos": 0, "lastScanAt": None}
+        return {"activeFolders": 0, "totalPhotos": 0, "recognizedPhotos": 0, "newPhotos": 0, "lastScanAt": None, "totalFaces": 0, "photosWithFaces": 0, "knownPersons": 0}
 
 class ScanFolderReq(BaseModel):
     catalog: str

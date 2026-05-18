@@ -1071,6 +1071,16 @@ input[type="checkbox"], input[type="radio"] {
   position: relative;
 }
 
+/* ── PHOTO INACTIVE (folder desativada) ── */
+.photo-card.photo-inactive {
+  opacity: 0.4;
+  filter: grayscale(0.5) saturate(0.6);
+}
+.photo-card.photo-inactive:hover {
+  opacity: 0.7;
+  filter: grayscale(0.2) saturate(0.8);
+}
+
 .photo-img-placeholder {
   width: 100%;
   flex: 1;

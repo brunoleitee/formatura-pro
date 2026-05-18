@@ -313,6 +313,63 @@ def get_photos(aluno_id: str):
     return list(unique_photos.values())
 
 
+_REF_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+
+
+def _collect_ref_photos(cat, discarded):
+    """Coleta fotos das pastas de referência do catálogo."""
+    get_db = _get("get_db")
+    ref_photos = {}
+    inactive_paths = set()
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT path, status FROM catalog_folders WHERE catalog_name = ? AND folder_type = 'reference'", (cat,))
+            ref_rows = cur.fetchall()
+            ref_paths = [r["path"] for r in ref_rows]
+            inactive_paths = {r["path"] for r in ref_rows if r["status"] != "active"}
+    except Exception:
+        return ref_photos
+    for ref_dir in ref_paths:
+        if not ref_dir or not os.path.isdir(ref_dir):
+            continue
+        is_inactive = ref_dir in inactive_paths
+        for root, _, files in os.walk(ref_dir):
+            for fname in files:
+                ext = os.path.splitext(fname)[1].lower()
+                if ext not in _REF_IMAGE_EXTS:
+                    continue
+                p = os.path.normpath(os.path.join(root, fname))
+                if p in ref_photos:
+                    continue
+                ref_photos[p] = {
+                    "path": p,
+                    "name": fname,
+                    "type": ext.lstrip(".") or "img",
+                    "size": None, "mtime": None, "ctime": None,
+                    "faces": [],
+                    "total_faces_in_db": 0,
+                    "discarded": p in discarded,
+                    "blur_score": None,
+                    "blur_status": None,
+                    "blur_label": "",
+                    "closed_eyes": False,
+                    "source": "reference",
+                    "folder_active": not is_inactive,
+                }
+                try:
+                    stat = os.stat(p)
+                    ref_photos[p]["size"] = stat.st_size
+                    ref_photos[p]["mtime"] = stat.st_mtime
+                    w, h = get_image_dimensions(p)
+                    ref_photos[p]["width"] = w
+                    ref_photos[p]["height"] = h
+                except Exception:
+                    ref_photos[p]["width"] = None
+                    ref_photos[p]["height"] = None
+    return ref_photos
+
+
 def get_all_photos(limit: int = None):
     get_db = _get("get_db")
     get_blur_label = _get("get_blur_label")
@@ -324,6 +381,9 @@ def get_all_photos(limit: int = None):
         cur = conn.cursor()
         cur.execute("SELECT foto_path FROM discarded_photos")
         discarded = {r["foto_path"] for r in cur.fetchall()}
+        # Buscar pastas inativas para marcar fotos
+        cur.execute("SELECT path FROM catalog_folders WHERE catalog_name = ? AND status = 'inactive'", (cat,))
+        inactive_folders = [os.path.normpath(r["path"]).lower() for r in cur.fetchall()]
         base_query = """
             SELECT foto_path,
                    MAX(blur_score) as blur_score,
@@ -344,6 +404,8 @@ def get_all_photos(limit: int = None):
         unique_photos = {}
         for r in rows:
             p = r["foto_path"]
+            p_norm = os.path.normpath(p).lower()
+            is_inactive = any(p_norm.startswith(inf + os.sep) or p_norm.startswith(inf + "/") for inf in inactive_folders)
             unique_photos[p] = {
                 "path": p,
                 "name": os.path.basename(p),
@@ -356,12 +418,14 @@ def get_all_photos(limit: int = None):
                 "blur_status": r["blur_status"],
                 "blur_label": get_blur_label(r["blur_score"], qs),
                 "closed_eyes": bool(r["closed_eyes"]),
+                "source": "event",
+                "folder_active": not is_inactive,
             }
             try:
                 stat = os.stat(p)
                 unique_photos[p]["size"] = stat.st_size
                 unique_photos[p]["mtime"] = stat.st_mtime
-                
+
                 w, h = get_image_dimensions(p)
                 unique_photos[p]["width"] = w
                 unique_photos[p]["height"] = h
@@ -387,4 +451,11 @@ def get_all_photos(limit: int = None):
                             "x1": c["x1"], "y1": c["y1"],
                             "x2": c["x2"], "y2": c["y2"],
                         })
+
+    # ── Adicionar fotos de referência ──
+    ref_photos = _collect_ref_photos(cat, discarded)
+    for p, photo in ref_photos.items():
+        if p not in unique_photos:
+            unique_photos[p] = photo
+
     return list(unique_photos.values())

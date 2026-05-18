@@ -20,6 +20,8 @@ export const catalogApi = {
     }),
   removeFolder: (catalog: string, folderId: number) =>
     post<{ success: boolean }>(`${API_BASE}/catalogs/folders/remove`, { catalog, folder_id: folderId }),
+  toggleFolder: (catalog: string, folderId: number) =>
+    post<{ success: boolean; status?: string }>(`${API_BASE}/catalogs/folders/toggle`, { catalog, folder_id: folderId }),
   getFolderStats: (catalog: string) =>
     fetchJSON<CatalogFolderStats>(`${API_BASE}/catalogs/stats?catalog=${encodeURIComponent(catalog)}`),
   scanFolder: (catalog: string, path: string, includeSubfolders: boolean) =>

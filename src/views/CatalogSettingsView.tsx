@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
-import { FolderOpen, Plus, Info, CheckCircle2, Eye, Loader } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { FolderOpen, Plus, Info, CheckCircle2, Eye, Loader, ScanFace, XCircle } from 'lucide-react';
 import { api, catalogApi } from '../services/api';
 import { useApp } from '../context/AppContext';
-import type { CatalogFolder, CatalogFolderStats } from '../services/api';
+import type { CatalogFolder, CatalogFolderStats, ScanStatus } from '../services/api';
 import { CatalogFolderCard } from './catalog-settings/CatalogFolderCard';
 import { CatalogQuickActions } from './catalog-settings/CatalogQuickActions';
 import { CatalogStatusCards } from './catalog-settings/CatalogStatusCards';
@@ -18,6 +18,11 @@ export default function CatalogSettingsView() {
   const [includeSubfolders, setIncludeSubfolders] = useState(false);
   const [scanImmediately, setScanImmediately] = useState(true);
   const [err, setErr] = useState('');
+  const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(0);
+  const [syncStatus, setSyncStatus] = useState('');
+  const [syncDone, setSyncDone] = useState(false);
+  const syncPollRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
     if (!currentCatalog) return;
@@ -58,18 +63,62 @@ export default function CatalogSettingsView() {
     }
   };
 
+  // Poll scan status durante sincronização
+  const startSyncPolling = useCallback(() => {
+    setSyncing(true);
+    setSyncDone(false);
+    setSyncProgress(0);
+    setSyncStatus('Iniciando sincronização...');
+    let startedSeen = false;
+    if (syncPollRef.current) clearInterval(syncPollRef.current);
+    syncPollRef.current = window.setInterval(async () => {
+      try {
+        const st: ScanStatus = await api.getScanStatus();
+        if (st.is_scanning) {
+          startedSeen = true;
+          const pct = st.total_files > 0 ? Math.min(100, Math.round((st.total_processadas / st.total_files) * 100)) : 0;
+          setSyncProgress(pct);
+          setSyncStatus(st.status_text || `Processando... ${st.total_processadas}/${st.total_files}`);
+        } else if (startedSeen || st.total_processadas > 0) {
+          // Scan terminou
+          setSyncProgress(100);
+          setSyncStatus('Sincronização concluída!');
+          setSyncDone(true);
+          if (syncPollRef.current) clearInterval(syncPollRef.current);
+          syncPollRef.current = null;
+          setTimeout(() => { setSyncing(false); setSyncDone(false); }, 3000);
+          await load();
+        } else {
+          setSyncStatus('Aguardando início do scan...');
+        }
+      } catch { /* ignore */ }
+    }, 800);
+  }, [load]);
+
+  // Cleanup polling ao desmontar
+  useEffect(() => {
+    return () => {
+      if (syncPollRef.current) clearInterval(syncPollRef.current);
+    };
+  }, []);
+
   const handleAddFolder = async () => {
     if (!currentCatalog) return;
+    const shouldScan = scanImmediately;
     try {
       const path = selectedFolderPath || await pickFolder();
       if (!path) return;
       setAdding(true);
-      const result = await catalogApi.addFolder(currentCatalog, path, includeSubfolders, scanImmediately);
+      const result = await catalogApi.addFolder(currentCatalog, path, includeSubfolders, shouldScan);
       if (result.success) {
         setSelectedFolderPath('');
         setIncludeSubfolders(false);
         setScanImmediately(true);
-        await load();
+        if (shouldScan) {
+          startSyncPolling();
+        } else {
+          await load();
+        }
       } else {
         setErr(result.error || 'Erro ao adicionar pasta');
       }
@@ -83,7 +132,7 @@ export default function CatalogSettingsView() {
   const handleRemoveFolder = async (folder: CatalogFolder) => {
     if (!currentCatalog) return;
     const confirmed = window.confirm(
-      `Remover "${folder.path}" do catálogo?\n\nAs fotos no computador não serão apagadas.`
+      `Remover "${folder.path}" do catálogo?\n\nAs fotos no computador não serão apagadas, mas serão removidas da visualização de fotos.`
     );
     if (!confirmed) return;
     try {
@@ -98,10 +147,25 @@ export default function CatalogSettingsView() {
     }
   };
 
+  const handleToggleFolder = async (folder: CatalogFolder) => {
+    if (!currentCatalog) return;
+    try {
+      const result = await catalogApi.toggleFolder(currentCatalog, folder.id);
+      if (result.success) {
+        await load();
+      } else {
+        setErr('Erro ao alterar status da pasta');
+      }
+    } catch {
+      setErr('Erro ao alterar status da pasta');
+    }
+  };
+
   const handleScanFolder = async (folder: CatalogFolder) => {
     if (!currentCatalog) return;
     try {
       await catalogApi.scanFolder(currentCatalog, folder.path, folder.includeSubfolders);
+      startSyncPolling();
     } catch {
       setErr('Erro ao iniciar scan');
     }
@@ -111,7 +175,11 @@ export default function CatalogSettingsView() {
     if (!currentCatalog) return;
     try {
       const result = await catalogApi.syncCatalog(currentCatalog);
-      if (!result.success) setErr(result.error || 'Erro ao sincronizar');
+      if (result.success) {
+        startSyncPolling();
+      } else {
+        setErr(result.error || 'Erro ao sincronizar');
+      }
     } catch {
       setErr('Erro ao sincronizar');
     }
@@ -124,6 +192,7 @@ export default function CatalogSettingsView() {
         await catalogApi.scanFolder(currentCatalog, f.path, f.includeSubfolders);
       } catch { /* continue */ }
     }
+    startSyncPolling();
   };
 
   const handleClearSelection = () => {
@@ -179,7 +248,7 @@ export default function CatalogSettingsView() {
                       folder={f}
                       onRemove={() => handleRemoveFolder(f)}
                       onScan={() => handleScanFolder(f)}
-                      onEdit={() => {}}
+                      onToggle={() => handleToggleFolder(f)}
                     />
                   ))
                 ) : (
@@ -189,22 +258,45 @@ export default function CatalogSettingsView() {
                 )}
               </div>
 
-              <div className={styles.dropZone} onClick={handleTopAddFolder}>
-                <FolderOpen size={26} className={styles.dropIcon} />
-                <span className={styles.dropText}>Arraste uma pasta para adicionar</span>
-                <span className={styles.dropSubText}>ou clique no botão acima</span>
-              </div>
             </div>
+
+            {/* ── SYNC PROGRESS BAR ── */}
+            {syncing && (
+              <div className={`${styles.syncBar} ${syncDone ? styles.syncBarDone : ''}`}>
+                <div className={styles.syncBarHeader}>
+                  <div className={styles.syncBarLeft}>
+                    {syncDone ? (
+                      <CheckCircle2 size={15} className={styles.syncBarIconDone} />
+                    ) : (
+                      <Loader size={15} className={`spin ${styles.syncBarIcon}`} />
+                    )}
+                    <span className={styles.syncBarTitle}>
+                      {syncDone ? 'Sincronização concluída' : 'Sincronizando com o catálogo...'}
+                    </span>
+                  </div>
+                  <div className={styles.syncBarRight}>
+                    <span className={styles.syncBarPct}>{syncProgress}%</span>
+                    <button className={styles.syncBarClose} onClick={() => { setSyncing(false); if (syncPollRef.current) clearInterval(syncPollRef.current); }}>
+                      <XCircle size={14} />
+                    </button>
+                  </div>
+                </div>
+                <div className={styles.syncBarTrack}>
+                  <div
+                    className={`${styles.syncBarFill} ${syncDone ? styles.syncBarFillDone : ''}`}
+                    style={{ width: `${syncProgress}%` }}
+                  />
+                </div>
+                <div className={styles.syncBarStatus}>{syncStatus}</div>
+              </div>
+            )}
 
             {err && <div className={styles.errorMsg}>{err}</div>}
 
             <div className={styles.addSectionCard}>
               <div className={styles.addSectionHeader}>
                 <div>
-                  <h2 className={styles.addSectionTitle}>Adicionar nova pasta ao catálogo</h2>
-                  <p className={styles.addSectionSubtitle}>
-                    Selecione uma pasta no seu computador para adicionar ao catálogo.
-                  </p>
+                  <h2 className={styles.addSectionTitle}>Adicionar pasta</h2>
                 </div>
               </div>
 
@@ -279,10 +371,18 @@ export default function CatalogSettingsView() {
             />
             <CatalogStatusCards stats={stats} />
 
-            <div className={styles.syncFooter}>
-              <CheckCircle2 size={14} className={styles.syncIcon} />
-              <span className={styles.syncText}>Catálogo sincronizado com sucesso</span>
-            </div>
+            {!syncing && stats && stats.newPhotos === 0 && (
+              <div className={styles.syncFooter}>
+                <CheckCircle2 size={14} className={styles.syncIcon} />
+                <span className={styles.syncText}>Catálogo sincronizado com sucesso</span>
+              </div>
+            )}
+            {syncing && (
+              <div className={`${styles.syncFooter} ${styles.syncFooterActive}`}>
+                <Loader size={14} className={`spin ${styles.syncIconActive}`} />
+                <span className={styles.syncTextActive}>Sincronizando...</span>
+              </div>
+            )}
 
             <button className={styles.viewNewBtn}>
               <Eye size={14} />
