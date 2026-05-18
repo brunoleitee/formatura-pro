@@ -94,8 +94,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [eventPhotosCount, setEventPhotosCount] = useState(0);
   const [eventPhotosCountStatus, setEventPhotosCountStatus] = useState<'none' | 'loading' | 'done' | 'error'>('none');
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const metricsPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const metricsPollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // true quando o usuário clicou manualmente em uma foto durante o scan — pausa o auto-follow
   const userNavigatedRef = useRef(false);
   const startedAtRef = useRef<number | null>(null);
@@ -349,9 +349,14 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
   const startPolling = useCallback(() => {
     setPolling(true);
+    let pollDelay = 1000;
+    let pollFails = 0;
+    const MAX_POLL_FAILS = 20;
     const poll = async () => {
       try {
         const st = await api.getScanStatus();
+        pollFails = 0;
+        pollDelay = 1000;
         setScanStatus(st);
         
         if (st.is_scanning) {
@@ -389,14 +394,13 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           setPolling(false);
           setActivePhotoIndex(0);
           userNavigatedRef.current = false;
-          if (pollRef.current) clearInterval(pollRef.current);
+          if (pollRef.current) clearTimeout(pollRef.current);
           if (st.stopped) {
             setIsCompleted(false);
             setTimeline(prev => [...prev, { id: `stopped-${Date.now()}`, kind: 'warning', text: 'Escaneamento interrompido.', timestamp: Date.now() }]);
           } else {
             setIsCompleted(true);
             setTimeline(prev => [...prev, { id: `end-${Date.now()}`, kind: 'summary', text: 'Escaneamento finalizado.', timestamp: Date.now() }]);
-            // Mostrar modal de conclusão
             const timeStr = st.scan_summary?.time_str || '';
             setCompleteStats({
               photos: st.total_processadas || st.scan_summary?.total_photos || 0,
@@ -406,53 +410,60 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
             setShowCompleteModal(true);
           }
         }
-      } catch { /* ignore */ }
+      } catch {
+        pollFails++;
+        if (pollFails >= MAX_POLL_FAILS) {
+          setPolling(false);
+          return;
+        }
+        pollDelay = Math.min(pollDelay * 1.5, 15000);
+      }
+      if (pollingWasScanningRef.current) {
+        pollRef.current = setTimeout(poll, pollDelay);
+      }
     };
     poll();
-    pollRef.current = setInterval(poll, 1000);
   }, [processedPhotos]);
 
   // Metrics polling: independente do scan, roda sempre que o componente está montado
   useEffect(() => {
-    const metricsErrorCountRef = { current: 0 };
+    let metricsDelay = 2000;
+    let metricsFails = 0;
+    const MAX_METRICS_FAILS = 3;
+    let metricsActive = true;
     const pollMetrics = async () => {
+      if (!metricsActive) return;
       try {
         const m: any = await api.getSystemMetrics();
+        metricsFails = 0;
+        metricsDelay = 2000;
         if (m?.status === 'warming_up') {
           setSystemMetrics(m);
-          return;
-        }
-        if (m?.metricsWarning === 'gpu_unavailable') {
-          metricsErrorCountRef.current = 0;
+        } else if (m?.metricsWarning === 'gpu_unavailable') {
           setSystemMetrics(m);
+        } else {
+          setSystemMetrics(m);
+        }
+      } catch (err) {
+        metricsFails++;
+        if (metricsFails >= MAX_METRICS_FAILS) {
+          metricsActive = false;
           return;
         }
-        metricsErrorCountRef.current = 0;
-        setSystemMetrics(m);
-      } catch (err) {
-        metricsErrorCountRef.current++;
-        if (metricsErrorCountRef.current === 1) {
+        if (metricsFails === 1) {
           setTimeline(prev => [...prev.slice(-49), {
             id: `metrics-err-${Date.now()}`,
             kind: 'error',
             text: `Erro ao buscar métricas: ${err instanceof Error ? err.message : 'desconhecido'}`,
             timestamp: Date.now()
           }]);
-        } else if (metricsErrorCountRef.current === 10) {
-          setTimeline(prev => [...prev.slice(-49), {
-            id: `metrics-err-repeated-${Date.now()}`,
-            kind: 'warning',
-            text: `Métricas indisponíveis (${metricsErrorCountRef.current} tentativas)`,
-            timestamp: Date.now()
-          }]);
         }
+        metricsDelay = Math.min(metricsDelay * 2, 30000);
       }
+      if (metricsActive) metricsPollRef.current = setTimeout(pollMetrics, metricsDelay);
     };
     pollMetrics();
-    metricsPollRef.current = setInterval(pollMetrics, 2000);
-    return () => {
-      if (metricsPollRef.current) clearInterval(metricsPollRef.current);
-    };
+    return () => { metricsActive = false; if (metricsPollRef.current) clearTimeout(metricsPollRef.current); };
   }, []);
 
   // Floating viewer keyboard navigation
@@ -526,8 +537,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
   useEffect(() => {
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-      if (metricsPollRef.current) clearInterval(metricsPollRef.current);
+      if (pollRef.current) clearTimeout(pollRef.current);
+      if (metricsPollRef.current) clearTimeout(metricsPollRef.current);
     };
   }, []);
   
@@ -606,7 +617,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     setIsScanning(false);
     setStarting(false);
     setPolling(false);
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null; }
     setTimeline(prev => [...prev, {
       id: `stop-${Date.now()}`,
       kind: 'warning',

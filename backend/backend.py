@@ -2661,7 +2661,15 @@ def start_scan(req: scm.ScanRequest):
 
 @app.get("/api/scan/status")
 def get_scan_status():
-    return scm.get_scan_status()
+    try:
+        return scm.get_scan_status()
+    except Exception:
+        _scan_logger = logging.getLogger(__name__)
+        _scan_logger.exception("[scanner-status] failed")
+        return {
+            "running": False, "progress": 0, "processed": 0, "total": 0,
+            "status": "recovering", "error": "temporary_failure",
+        }
 
 @app.post("/api/scan/clear_summary")
 def clear_scan_summary():
@@ -3090,7 +3098,7 @@ def scanner_preview_faces(path: str = ""):
             "faces": result_faces,
         }
     except Exception as e:
-        log_info(f"[preview-faces] error={e}")
+        logging.getLogger(__name__).exception("[preview-faces] failed path=%s", decoded)
         return {"ok": False, "error": str(e), "faces": []}
 
 @app.post("/api/app/exit")

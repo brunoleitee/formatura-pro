@@ -42,6 +42,9 @@ export async function fetchJSON<T = unknown>(url: string, options?: RequestInit)
     if (!res.ok) {
       let detail: string | undefined;
       try { detail = (await res.json()).detail; } catch {}
+      if (res.status >= 500 && !detail) {
+        detail = `server_error_${res.status}`;
+      }
       const err: any = new Error(detail ?? `HTTP ${res.status}: ${res.statusText}`);
       err.status = res.status;
       err.detail = detail;
