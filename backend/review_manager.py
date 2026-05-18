@@ -54,6 +54,10 @@ _cfg = {}
 logger = logging.getLogger(__name__)
 _match_preview_cache: dict[str, tuple[dict, float]] = {}
 _MATCH_PREVIEW_TTL = 10.0
+_cluster_centroid_cache: dict[str, tuple[np.ndarray, float]] = {}
+_CENTROID_CACHE_TTL = 30.0
+_student_embed_cache: dict[str, tuple[list, list, float]] = {}
+_STUDENT_EMBED_CACHE_TTL = 30.0
 UNKNOWN_ALUNO_IDS = (
     "unknown",
     "desconhecido",
@@ -4395,11 +4399,16 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
     import traceback
     _t0 = time.perf_counter()
 
-    cache_key = f"match_preview:{catalog}:{cluster_id}:{student_id}"
+    target_id = str(student_id).strip()
+    cache_key = f"match_preview:{catalog}:{cluster_id}:{target_id}"
+    centroid_key = f"centroid:{catalog}:{cluster_id}"
+    embed_key = f"student_embeds:{catalog}:{target_id}"
+
+    # Layer 1: final result cache (TTL 10s)
     global _match_preview_cache
     cached = _match_preview_cache.get(cache_key)
     if cached and (time.time() - cached[1]) < _MATCH_PREVIEW_TTL:
-        logger.info("[match-preview] cache=hit cluster=%s student=%s total=%.0fms", cluster_id, student_id, (time.perf_counter() - _t0) * 1000)
+        logger.info("[match-preview] cache=hit cluster=%s student=%s total=%.0fms", cluster_id, target_id, (time.perf_counter() - _t0) * 1000)
         return cached[0]
 
     try:
@@ -4408,102 +4417,138 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
         if not cat:
             raise HTTPException(status_code=400, detail="Catalogo obrigatorio")
 
+        cluster_centroid = None
+        student_faces = None
+        st_embs_norm = None
+        st_valid = None
+
+        # Layer 2: cluster centroid cache (TTL 30s)
+        global _cluster_centroid_cache, _student_embed_cache
+        centroid_entry = _cluster_centroid_cache.get(centroid_key)
+        if centroid_entry and (time.time() - centroid_entry[1]) < _CENTROID_CACHE_TTL:
+            cluster_centroid = centroid_entry[0]
+
+        # Layer 3: student embeddings cache (TTL 30s)
+        embed_entry = _student_embed_cache.get(embed_key)
+        if embed_entry and (time.time() - embed_entry[1]) < _STUDENT_EMBED_CACHE_TTL:
+            student_faces, st_embs_norm, st_valid = embed_entry[0], embed_entry[1], embed_entry[2]
+
         with get_db(cat) as conn:
             cur = conn.cursor()
-            _sql_t = time.perf_counter()
-            target_id = str(student_id).strip()
+            _sql_cluster_t = _sql_student_t = _deserialize_cluster_t = _centroid_t = _deserialize_student_t = 0.0
+            _stack_t = _similarity_t = _ref_path_t = 0.0
 
-            # 1. Cluster embeddings — single query, limit 100
-            cur.execute("""
-                SELECT o.rowid, fe.embedding
-                FROM unknown_face_clusters u
-                JOIN ocorrencias o ON o.rowid = u.face_id
-                JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
-                WHERE u.cluster_id = ?
-                LIMIT 100
-            """, (cluster_id,))
-            cluster_rows = cur.fetchall()
-
-            if not cluster_rows:
+            # ── STEP 1: Cluster embeddings ──
+            if cluster_centroid is None:
+                _sql_cluster_t = time.perf_counter()
                 cur.execute("""
-                    SELECT rowid, embedding FROM face_embeddings
-                    WHERE occurrence_rowid IN (SELECT rowid FROM ocorrencias WHERE aluno_id = ?)
+                    SELECT o.rowid, fe.embedding
+                    FROM unknown_face_clusters u
+                    JOIN ocorrencias o ON o.rowid = u.face_id
+                    JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
+                    WHERE u.cluster_id = ?
                     LIMIT 100
                 """, (cluster_id,))
                 cluster_rows = cur.fetchall()
 
-            # 2. Student faces — single query with fallback, limit 50
-            cur.execute("""
-                SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, fe.embedding
-                FROM ocorrencias o
-                JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
-                WHERE o.aluno_id = ?
-                LIMIT 50
-            """, (target_id,))
-            student_faces = cur.fetchall()
+                if not cluster_rows:
+                    cur.execute("""
+                        SELECT rowid, embedding FROM face_embeddings
+                        WHERE occurrence_rowid IN (SELECT rowid FROM ocorrencias WHERE aluno_id = ?)
+                        LIMIT 100
+                    """, (cluster_id,))
+                    cluster_rows = cur.fetchall()
+                _sql_cluster_ms = (time.perf_counter() - _sql_cluster_t) * 1000
 
-            if not student_faces:
+                if not cluster_rows:
+                    return {"reference_missing": True, "message": "Nenhuma face/embedding encontrada no cluster"}
+
+                _deserialize_cluster_t = time.perf_counter()
+                cluster_embs_norm = []
+                for r in cluster_rows:
+                    if not r["embedding"]: continue
+                    emb = np.frombuffer(r["embedding"], dtype="float32")
+                    n = np.linalg.norm(emb)
+                    if n > 0:
+                        cluster_embs_norm.append(emb / n)
+                _deserialize_cluster_ms = (time.perf_counter() - _deserialize_cluster_t) * 1000
+
+                if not cluster_embs_norm:
+                    return {"reference_missing": True, "message": "Nenhum embedding valido no cluster"}
+
+                _centroid_t = time.perf_counter()
+                cluster_centroid = np.mean(cluster_embs_norm, axis=0)
+                cn = np.linalg.norm(cluster_centroid)
+                if cn > 0:
+                    cluster_centroid = cluster_centroid / cn
+                _centroid_ms = (time.perf_counter() - _centroid_t) * 1000
+
+                _cluster_centroid_cache[centroid_key] = (cluster_centroid, time.time())
+            else:
+                _sql_cluster_ms = _deserialize_cluster_ms = _centroid_ms = 0.0
+
+            # ── STEP 2: Student faces ──
+            if student_faces is None:
+                _sql_student_t = time.perf_counter()
                 cur.execute("""
                     SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, fe.embedding
                     FROM ocorrencias o
                     JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
-                    WHERE o.aluno_id = (SELECT aluno_id FROM alunos WHERE nome = ? OR aluno_id = ? LIMIT 1)
+                    WHERE o.aluno_id = ?
                     LIMIT 50
-                """, (target_id, target_id))
+                """, (target_id,))
                 student_faces = cur.fetchall()
 
-            _sql_ms = (time.perf_counter() - _sql_t) * 1000
+                if not student_faces:
+                    cur.execute("""
+                        SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, fe.embedding
+                        FROM ocorrencias o
+                        JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
+                        WHERE o.aluno_id = (SELECT aluno_id FROM alunos WHERE nome = ? OR aluno_id = ? LIMIT 1)
+                        LIMIT 50
+                    """, (target_id, target_id))
+                    student_faces = cur.fetchall()
+                _sql_student_ms = (time.perf_counter() - _sql_student_t) * 1000
 
-            if not cluster_rows or not student_faces:
-                msg = "Nenhuma face/embedding encontrada"
-                return {"reference_missing": True, "message": msg}
+                if not student_faces:
+                    return {"reference_missing": True, "message": f"Nenhuma face encontrada para {target_id}"}
 
-            # 3. Embedding deserialization + centroid
-            _emb_t = time.perf_counter()
-            cluster_embs = []
-            for r in cluster_rows:
-                if not r["embedding"]: continue
-                emb = np.frombuffer(r["embedding"], dtype="float32")
-                n = np.linalg.norm(emb)
-                if n > 0:
-                    cluster_embs.append(emb / n)
+                _deserialize_student_t = time.perf_counter()
+                st_embs_norm = []
+                st_valid = []
+                for i, f in enumerate(student_faces):
+                    if not f["embedding"]: continue
+                    emb = np.frombuffer(f["embedding"], dtype="float32")
+                    n = np.linalg.norm(emb)
+                    if n > 0:
+                        st_embs_norm.append(emb / n)
+                        st_valid.append(i)
+                _deserialize_student_ms = (time.perf_counter() - _deserialize_student_t) * 1000
 
-            if not cluster_embs:
-                return {"reference_missing": True, "message": "Nenhum embedding valido no cluster"}
+                if not st_embs_norm:
+                    return {"reference_missing": True, "message": f"Nenhuma face valida para {target_id}"}
 
-            cluster_centroid = np.mean(cluster_embs, axis=0)
-            cn = np.linalg.norm(cluster_centroid)
-            if cn > 0:
-                cluster_centroid = cluster_centroid / cn
+                _student_embed_cache[embed_key] = (student_faces, st_embs_norm, st_valid, time.time())
+            else:
+                _sql_student_ms = _deserialize_student_ms = 0.0
 
-            # 4. Vectorized similarity — stack all student embeddings, dot product in one shot
-            st_embs = []
-            st_valid = []
-            for i, f in enumerate(student_faces):
-                if not f["embedding"]: continue
-                emb = np.frombuffer(f["embedding"], dtype="float32")
-                n = np.linalg.norm(emb)
-                if n > 0:
-                    st_embs.append(emb / n)
-                    st_valid.append(i)
+            # ── STEP 3: Vectorized similarity ──
+            _stack_t = time.perf_counter()
+            st_matrix = np.stack(st_embs_norm)
+            _stack_ms = (time.perf_counter() - _stack_t) * 1000
 
-            _emb_ms = (time.perf_counter() - _emb_t) * 1000
-
-            if not st_embs:
-                return {"reference_missing": True, "message": f"Nenhuma face valida para {target_id}"}
-
-            _sim_t = time.perf_counter()
-            st_matrix = np.stack(st_embs)
-            similarities = st_matrix @ cluster_centroid
-            best_idx_local = int(np.argmax(similarities))
-            best_sim = float(similarities[best_idx_local])
-            best_face = student_faces[st_valid[best_idx_local]]
-            _sim_ms = (time.perf_counter() - _sim_t) * 1000
+            _similarity_t = time.perf_counter()
+            sims = st_matrix @ cluster_centroid
+            best_idx = int(np.argmax(sims))
+            best_sim = float(sims[best_idx])
+            best_face = student_faces[st_valid[best_idx]]
+            _similarity_ms = (time.perf_counter() - _similarity_t) * 1000
 
             if np.isnan(best_sim) or np.isinf(best_sim):
                 best_sim = 0.0
 
-            # 5. Reference path
+            # ── STEP 4: Reference path ──
+            _ref_t = time.perf_counter()
             student_id_real = best_face["aluno_id"]
             ref_path = ""
             try:
@@ -4516,6 +4561,7 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
                     ref_path = _ensure_person_reference(conn, cat, student_id_real) or ""
                 except Exception:
                     pass
+            _ref_path_ms = (time.perf_counter() - _ref_t) * 1000
 
             result = {
                 "matched_student_rowid": int(best_face["rowid"]),
@@ -4532,13 +4578,19 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
             _match_preview_cache[cache_key] = (result, time.time())
 
         _total_ms = (time.perf_counter() - _t0) * 1000
-        logger.info("[match-preview] cache=miss cluster=%s student=%s sql=%.0fms embedding=%.0fms similarity=%.0fms total=%.0fms",
-                     cluster_id, target_id, _sql_ms, _emb_ms, _sim_ms, _total_ms)
+        logger.info(
+            "[match-preview] cache=miss cluster=%s student=%s"
+            " sql_cluster=%.0fms sql_student=%.0fms deserialize_cluster=%.0fms centroid=%.0fms"
+            " deserialize_student=%.0fms stack=%.0fms similarity=%.0fms ref_path=%.0fms total=%.0fms",
+            cluster_id, target_id,
+            _sql_cluster_ms, _sql_student_ms, _deserialize_cluster_ms, _centroid_ms,
+            _deserialize_student_ms, _stack_ms, _similarity_ms, _ref_path_ms, _total_ms,
+        )
         return result
 
     except Exception as e:
         traceback.print_exc()
-        logger.error("[match-preview] ERROR cluster=%s student=%s: %s", cluster_id, student_id, e)
+        logger.error("[match-preview] ERROR cluster=%s student=%s: %s", cluster_id, target_id, e)
         return {"error": str(e), "reference_missing": True, "message": f"Erro: {str(e)}"}
 
 
