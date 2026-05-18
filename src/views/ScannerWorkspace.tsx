@@ -417,7 +417,11 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     const metricsErrorCountRef = { current: 0 };
     const pollMetrics = async () => {
       try {
-        const m = await api.getSystemMetrics();
+        const m: any = await api.getSystemMetrics();
+        if (m?.status === 'warming_up') {
+          setSystemMetrics(m);
+          return;
+        }
         metricsErrorCountRef.current = 0;
         setSystemMetrics(m);
       } catch (err) {

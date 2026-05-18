@@ -2379,9 +2379,25 @@ def _start_metrics_worker():
 
 @app.get("/api/system/metrics")
 def system_metrics():
-    with _metrics_lock:
-        snap = dict(_metrics_snapshot)
-    return snap
+    _metrics_logger = logging.getLogger(__name__)
+    try:
+        with _metrics_lock:
+            snap = dict(_metrics_snapshot)
+        has_any = any(snap.get(k) is not None for k in ("cpuPercent", "ramUsedGb", "gpuPercent"))
+        if has_any:
+            snap["status"] = "ready"
+            _metrics_logger.info("[metrics-endpoint] status=ready")
+        else:
+            snap["status"] = "warming_up"
+            _metrics_logger.info("[metrics-endpoint] fallback=warming_up snapshot_ainda_vazio")
+        return snap
+    except Exception:
+        _metrics_logger.warning("[metrics-endpoint] fallback=default erro_ao_ler_snapshot", exc_info=True)
+        return {
+            "cpuPercent": 0, "ramUsedGb": 0, "ramPercent": 0,
+            "gpuPercent": 0, "temperatureC": None, "cpuTemperatureC": None,
+            "status": "warming_up",
+        }
 
 @app.get("/api/system/status")
 def system_status():
