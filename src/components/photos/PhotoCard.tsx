@@ -1,5 +1,5 @@
 import React, { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Image as ImageIcon, MoreHorizontal, Brain, ScanFace, FileText } from 'lucide-react';
+import { Image as ImageIcon, Brain, ScanFace, FileText } from 'lucide-react';
 import { type Photo } from '../../services/api';
 import { isPhotoBlurry, isPhotoAttention } from '../../utils/qualityUtils';
 import { isPhotoMapped, isKnownFace } from '../../utils/personIdentity';
@@ -314,37 +314,6 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
               onLoad={handleImageLoad}
               onError={() => setHasError(true)}
             />
-            <button
-              data-interactive="true"
-              data-scroll-hide
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenDetails(photo);
-              }}
-              title="Ver detalhes"
-              className="photo-card-details-btn"
-              style={{
-                position: 'absolute',
-                bottom: '6px',
-                right: '6px',
-                zIndex: 10,
-                background: 'rgba(0,0,0,0.6)',
-                border: 'none',
-                borderRadius: '4px',
-                padding: '4px',
-                color: 'white',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                opacity: 0.8,
-                transition: 'opacity 0.2s'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-              onMouseLeave={(e) => e.currentTarget.style.opacity = '0.8'}
-            >
-              <MoreHorizontal size={16} />
-            </button>
             {isLoaded && containerSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, idx) => (
                   idx < 10 && (
                   <div key={face.rowid ?? idx} data-scroll-hide>

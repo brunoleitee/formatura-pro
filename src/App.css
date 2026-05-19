@@ -1491,7 +1491,7 @@ html.scrolling-fast .photo-info {
 
 
 
-.photo-info { padding: 10px 10px 8px; flex-shrink: 0; }
+.photo-info { padding: 10px 10px 8px; flex-shrink: 0; min-height: 52px; }
 .photo-name {
   font-size: 0.82rem;
   font-weight: 500;
