@@ -23,7 +23,7 @@ _THUMB_CACHE_DEFAULT_MAX_FILES = 50_000
 # Pool de workers para thumbnail engine
 _THUMB_POOL = None
 _THUMB_POOL_LOCK = threading.Lock()
-_THUMB_POOL_MAX_WORKERS = 4
+_THUMB_POOL_MAX_WORKERS = 2
 
 # Semáforo para limitar fallbacks Pillow simultâneos
 _PILLOW_SEMAPHORE = None
@@ -33,11 +33,13 @@ _PILLOW_MAX_CONCURRENT = 2
 # Semáforo global para limitar thumbnails simultâneas
 _THUMB_SEMAPHORE = None
 _THUMB_SEMAPHORE_LOCK = threading.Lock()
-_THUMB_MAX_CONCURRENT = 4
+_THUMB_MAX_CONCURRENT = 2
 
-# Lock para evitar múltiplas gerações da mesma imagem
+# Lock + Event dict para evitar múltiplas gerações da mesma imagem
 _GENERATING_LOCK = threading.Lock()
-_GENERATING = set()
+_GENERATING_EVENTS = {}
+
+_THUMB_WAIT_TIMEOUT = 5.0
 
 # Cache de resultados recentes para evitar regeneration
 _RESULT_CACHE = {}
@@ -54,23 +56,30 @@ def _get_thumb_semaphore():
         return _THUMB_SEMAPHORE
 
 
-def _is_generating(cache_path):
+def _try_start_generating(cache_path):
     with _GENERATING_LOCK:
-        return cache_path in _GENERATING
+        if cache_path in _GENERATING_EVENTS:
+            return False
+        _GENERATING_EVENTS[cache_path] = threading.Event()
+        return True
 
 
-def _start_generating(cache_path):
+def _wait_for_generation(cache_path, timeout=_THUMB_WAIT_TIMEOUT):
+    evt = None
     with _GENERATING_LOCK:
-        _GENERATING.add(cache_path)
+        evt = _GENERATING_EVENTS.get(cache_path)
+    if evt is None:
+        return False
+    evt.wait(timeout=timeout)
+    return os.path.exists(cache_path)
 
 
-def _finish_generating(cache_path, remove=False):
+def _finish_generating(cache_path):
+    evt = None
     with _GENERATING_LOCK:
-        if remove:
-            _GENERATING.discard(cache_path)
-        else:
-            if cache_path in _GENERATING:
-                _GENERATING.discard(cache_path)
+        evt = _GENERATING_EVENTS.pop(cache_path, None)
+    if evt:
+        evt.set()
 
 
 def _get_result_from_cache(cache_path):
@@ -97,15 +106,22 @@ def _get_pillow_semaphore():
         return _PILLOW_SEMAPHORE
 
 
+_PLACEHOLDER_BUF = None
+_PLACEHOLDER_LOCK = threading.Lock()
+
+
 def _create_error_placeholder(size=300):
-    img = Image.new("RGB", (size, size), (200, 200, 200))
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=70)
-    buf.seek(0)
-    return buf
-
-
-_PLACEHOLDER_CACHE = {}
+    global _PLACEHOLDER_BUF
+    if _PLACEHOLDER_BUF is None:
+        with _PLACEHOLDER_LOCK:
+            if _PLACEHOLDER_BUF is None:
+                img = Image.new("RGB", (1, 1), (200, 200, 200))
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=70)
+                buf.seek(0)
+                _PLACEHOLDER_BUF = buf
+    _PLACEHOLDER_BUF.seek(0)
+    return _PLACEHOLDER_BUF
 
 
 def configure(**kwargs):
@@ -245,33 +261,17 @@ def _trim_thumb_cache(force=False):
     t.start()
 
 
-def _log_thumb_perf(kind, decoded_path, size, elapsed_ms, cache_state, extra=""):
+def _log_thumb_perf(kind, decoded_path, size, elapsed_ms, mode, quality=None, extra=""):
     log_info = _get("log_info")
     if not log_info:
         return
     try:
         tail = os.path.basename(decoded_path)
-        endpoint = "image_thumb" if kind == "image" else "thumb"
-        
-        active_count = 0
         with _GENERATING_LOCK:
-            active_count = len(_GENERATING)
-        
-        has_box = extra and ("box" in extra or "crop" in extra)
-        sem_mode = extra if extra else cache_state
-        
-        wait_ms = 0
-        if "wait=" in extra:
-            import re
-            m = re.search(r"wait=(\d+)ms", extra)
-            if m:
-                wait_ms = int(m.group(1))
-        
-        suffix = ""
-        if extra and extra != cache_state:
-            suffix = f" {extra}"
-        
-        log_info(f"[thumb-backend] endpoint={endpoint} size={size} box={int(has_box)} mode={sem_mode} wait={wait_ms:.0f}ms total={elapsed_ms:.0f}ms active={active_count} path={tail}{suffix}")
+            active_count = len(_GENERATING_EVENTS)
+        q_str = f" q={quality}" if quality is not None else ""
+        suffix = f" {extra}" if extra else ""
+        log_info(f"[thumb-backend] mode={mode} size={size}{q_str} total={elapsed_ms:.0f}ms active={active_count} path={tail}{suffix}")
     except Exception:
         pass
 
@@ -640,312 +640,224 @@ def get_image_thumb(path: str, size: int = 300, quality: int = 80):
         return Response(status_code=202)
     
     decoded_path = _resolve_preview_path(path)
-    log_info = _get("log_info")
-    
-    mode = "unknown"
-    error_detail = ""
     
     try:
         if not os.path.exists(decoded_path):
-            mode = "missing"
             raise HTTPException(status_code=404)
         
         cache_path = get_cached_thumb_path(decoded_path, "image", size, quality)
         
         cached_result = _get_result_from_cache(cache_path)
         if cached_result:
-            mode = "result_cache"
-            _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "hit", extra="from_result_cache")
+            _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "cache_hit", quality=quality)
             return cached_result
         
         if os.path.exists(cache_path):
-            mode = "cache_hit"
-            _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "hit")
             result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
             _put_result_in_cache(cache_path, result)
+            _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "cache_hit", quality=quality)
             return result
         
         thumb_sem = _get_thumb_semaphore()
-        wait_start = time.perf_counter()
-        acquired = thumb_sem.acquire(timeout=15)
-        wait_ms = (time.perf_counter() - wait_start) * 1000.0
-        
-        if not acquired:
-            mode = "thumb_limit"
-            error_detail = "muitas requisições simultâneas"
-            if log_info:
-                log_info(f"THUMB LIMIT: {os.path.basename(decoded_path)} - muitas requisições wait={wait_ms:.0f}ms")
+        if not thumb_sem.acquire(timeout=15):
+            _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "timeout", quality=quality, extra="sem_full")
             return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
         
-        if os.path.exists(cache_path):
-            mode = "cache_hit_late"
-            _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "hit")
-            thumb_sem.release()
-            result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-            _put_result_in_cache(cache_path, result)
-            return result
-        
-        if _is_generating(cache_path):
-            mode = "already_generating"
-            elapsed = (time.perf_counter() - started) * 1000.0
-            while _is_generating(cache_path) and elapsed < 5000:
-                time.sleep(0.1)
-                elapsed = (time.perf_counter() - started) * 1000.0
-            
-            if os.path.exists(cache_path):
-                mode = "waited_generated"
-                _log_thumb_perf("image", decoded_path, size, elapsed, "hit", extra="waited")
-                thumb_sem.release()
-                result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-                _put_result_in_cache(cache_path, result)
-                return result
-        
-        _start_generating(cache_path)
-        
         try:
-            if log_info:
-                log_info(f"THUMB generation: path={os.path.basename(decoded_path)} size={size} quality={quality}")
-            
-            # Motor Rust só é usado para qualidade padrão (80)
-            if quality == 80 and _run_thumb_engine("image", decoded_path, cache_path, size):
-                mode = "rust"
-                _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "rust")
+            if os.path.exists(cache_path):
                 result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
                 _put_result_in_cache(cache_path, result)
+                _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "cache_hit", quality=quality)
                 return result
             
-            pillow_sem = _get_pillow_semaphore()
-            pillow_acquired = pillow_sem.acquire(timeout=10)
-            
-            if not pillow_acquired:
-                mode = "pillow_limit"
-                error_detail = "Pillow ocupado"
-                if log_info:
-                    log_info(f"THUMB PILLOW LIMIT: {os.path.basename(decoded_path)} - Pillow ocupado")
-                thumb_sem.release()
-                return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-            
-            try:
-                mode = "pillow"
-                if log_info:
-                    log_info(f"THUMB PILLOW: path={os.path.basename(decoded_path)} quality={quality}")
-                
-                pil = load_pil_with_orientation(decoded_path)
-                pil = pil.convert("RGB")
-                pil.thumbnail((size, size), Image.Resampling.LANCZOS)
-                
-                buf = io.BytesIO()
-                pil.save(buf, format="JPEG", quality=quality, optimize=True)
-                buf.seek(0)
-                
-                saved = False
-                try:
-                    pil.save(cache_path, format="JPEG", quality=quality, optimize=True)
-                    saved = True
-                    _trim_thumb_cache()
-                except Exception as save_err:
-                    if log_info:
-                        log_info(f"THUMB cache save error: {save_err}")
-                
-                mode = "pillow_done"
-                _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "miss", extra=f"wait={wait_ms:.0f}ms saved={saved} q={quality}")
-                # FileResponse é seguro para cache (relê o arquivo a cada request).
-                # StreamingResponse(BytesIO) só pode ser consumido uma vez — não guardar no cache.
-                if saved:
+            if not _try_start_generating(cache_path):
+                generated = _wait_for_generation(cache_path)
+                if generated and os.path.exists(cache_path):
                     result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
                     _put_result_in_cache(cache_path, result)
+                    _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "wait", quality=quality)
+                    return result
                 else:
-                    result = StreamingResponse(buf, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-                return result
+                    _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "timeout", quality=quality, extra="wait_timeout")
+                    return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+            
+            try:
+                if _run_thumb_engine("image", decoded_path, cache_path, size):
+                    result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+                    _put_result_in_cache(cache_path, result)
+                    _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "rust", quality=quality)
+                    return result
                 
-            except MemoryError as me:
-                mode = "memory_error"
-                error_detail = str(me)
-                if log_info:
-                    log_info(f"THUMB MEMORY ERROR: {os.path.basename(decoded_path)} - {error_detail}")
-                thumb_sem.release()
-                return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-            except Exception as pil_err:
-                mode = "pillow_error"
-                error_detail = str(pil_err)
-                if log_info:
-                    log_info(f"THUMB PILLOW ERROR: {os.path.basename(decoded_path)} - {error_detail}")
-                thumb_sem.release()
-                return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+                pillow_sem = _get_pillow_semaphore()
+                if not pillow_sem.acquire(timeout=10):
+                    _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "timeout", quality=quality, extra="pillow_busy")
+                    return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+                
+                try:
+                    pil = load_pil_with_orientation(decoded_path).convert("RGB")
+                    pil.thumbnail((size, size), Image.Resampling.LANCZOS)
+                    
+                    buf = io.BytesIO()
+                    pil.save(buf, format="JPEG", quality=quality, optimize=True)
+                    buf.seek(0)
+                    
+                    saved = False
+                    try:
+                        pil.save(cache_path, format="JPEG", quality=quality, optimize=True)
+                        saved = True
+                        _trim_thumb_cache()
+                    except Exception:
+                        pass
+                    
+                    _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "pillow", quality=quality, extra=f"saved={saved}")
+                    if saved:
+                        result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+                        _put_result_in_cache(cache_path, result)
+                    else:
+                        result = StreamingResponse(buf, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+                    return result
+                    
+                except MemoryError:
+                    _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "error", quality=quality, extra="memory_error")
+                    return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+                except Exception:
+                    _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "error", quality=quality, extra="pillow_error")
+                    return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+                finally:
+                    pillow_sem.release()
+                    
             finally:
-                pillow_sem.release()
+                _finish_generating(cache_path)
                 
         finally:
-            _finish_generating(cache_path)
             thumb_sem.release()
             
     except HTTPException:
         raise
     except Exception as e:
-        mode = "error"
-        error_detail = str(e)
         elapsed = (time.perf_counter() - started) * 1000.0
-        if log_info:
-            log_info(f"THUMB ERROR: path={os.path.basename(decoded_path)} mode={mode} error={error_detail} time={elapsed:.0f}ms")
+        _log_thumb_perf("image", decoded_path, size, elapsed, "error", quality=quality, extra=str(e))
         return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
 
 
 def get_thumb(path: str, x1: int, y1: int, x2: int, y2: int, size: int = 120, expand: float = 0.35, quality: int = 80):
     started = time.perf_counter()
     decoded_path = urllib.parse.unquote(path)
-    log_info = _get("log_info")
-    
-    mode = "unknown"
-    error_detail = ""
     
     try:
         if not os.path.exists(decoded_path):
-            mode = "missing"
             raise HTTPException(status_code=404)
         
         cache_path = get_cached_thumb_path(decoded_path, "face", x1, y1, x2, y2, size, expand, quality)
         
         cached_result = _get_result_from_cache(cache_path)
         if cached_result:
-            mode = "result_cache"
-            _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "hit", extra="from_result_cache")
+            _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "cache_hit", quality=quality)
             return cached_result
         
         if os.path.exists(cache_path):
-            mode = "cache_hit"
-            _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "hit", extra=f"expand={expand}")
             result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
             _put_result_in_cache(cache_path, result)
+            _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "cache_hit", quality=quality)
             return result
         
         thumb_sem = _get_thumb_semaphore()
-        wait_start = time.perf_counter()
-        acquired = thumb_sem.acquire(timeout=15)
-        wait_ms = (time.perf_counter() - wait_start) * 1000.0
-        
-        if not acquired:
-            mode = "thumb_limit"
-            if log_info:
-                log_info(f"FACE THUMB LIMIT: {os.path.basename(decoded_path)} - muitas requisições")
+        if not thumb_sem.acquire(timeout=15):
+            _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "timeout", quality=quality, extra="sem_full")
             return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
         
-        if os.path.exists(cache_path):
-            mode = "cache_hit_late"
-            _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "hit", extra=f"expand={expand}")
-            thumb_sem.release()
-            result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-            _put_result_in_cache(cache_path, result)
-            return result
-        
-        if _is_generating(cache_path):
-            mode = "already_generating"
-            elapsed = (time.perf_counter() - started) * 1000.0
-            while _is_generating(cache_path) and elapsed < 5000:
-                time.sleep(0.1)
-                elapsed = (time.perf_counter() - started) * 1000.0
-            
-            if os.path.exists(cache_path):
-                mode = "waited_generated"
-                _log_thumb_perf("face", decoded_path, size, elapsed, "hit", extra="waited")
-                thumb_sem.release()
-                result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-                _put_result_in_cache(cache_path, result)
-                return result
-        
-        _start_generating(cache_path)
-        
         try:
-            if _run_thumb_engine("face", decoded_path, cache_path, size, x1=x1, y1=y1, x2=x2, y2=y2, expand=expand):
-                mode = "rust"
-                _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "rust", extra=f"expand={expand}")
+            if os.path.exists(cache_path):
                 result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
                 _put_result_in_cache(cache_path, result)
+                _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "cache_hit", quality=quality)
                 return result
             
-            pillow_sem = _get_pillow_semaphore()
-            pillow_acquired = pillow_sem.acquire(timeout=10)
-            
-            if not pillow_acquired:
-                mode = "pillow_limit"
-                if log_info:
-                    log_info(f"FACE PILLOW LIMIT: {os.path.basename(decoded_path)}")
-                thumb_sem.release()
-                return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-            
-            try:
-                mode = "pillow"
-                pil = load_pil_with_orientation(decoded_path).convert("RGB")
-                w, h = pil.size
-                if w == 0 or h == 0:
-                    raise Exception("dimensão inválida")
-
-                x1 = max(0, min(x1, w - 1))
-                y1 = max(0, min(y1, h - 1))
-                x2 = max(x1 + 1, min(x2, w))
-                y2 = max(y1 + 1, min(y2, h))
-                face_w, face_h = x2 - x1, y2 - y1
-
-                v_expand = expand + 0.1
-                left = max(0, x1 - int(face_w * expand))
-                top = max(0, y1 - int(face_h * v_expand))
-                right = min(w, x2 + int(face_w * expand))
-                bottom = min(h, y2 + int(face_h * v_expand))
-
-                crop = pil.crop((left, top, right, bottom))
-                crop.thumbnail((size, size), Image.Resampling.LANCZOS)
-                jpeg_quality = max(60, min(int(quality), 95))
-
-                buf = io.BytesIO()
-                crop.save(buf, format="JPEG", quality=jpeg_quality, optimize=True)
-                buf.seek(0)
-                
-                saved = False
-                try:
-                    crop.save(cache_path, format="JPEG", quality=jpeg_quality, optimize=True)
-                    saved = True
-                    _trim_thumb_cache()
-                except Exception as save_err:
-                    if log_info:
-                        log_info(f"FACE cache save error: {save_err}")
-                
-                mode = "pillow_done"
-                _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "miss", extra=f"wait={wait_ms:.0f}ms saved={saved} q={jpeg_quality}")
-                if saved:
+            if not _try_start_generating(cache_path):
+                generated = _wait_for_generation(cache_path)
+                if generated and os.path.exists(cache_path):
                     result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
                     _put_result_in_cache(cache_path, result)
+                    _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "wait", quality=quality)
+                    return result
                 else:
-                    result = StreamingResponse(buf, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-                return result
+                    _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "timeout", quality=quality, extra="wait_timeout")
+                    return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+            
+            try:
+                if _run_thumb_engine("face", decoded_path, cache_path, size, x1=x1, y1=y1, x2=x2, y2=y2, expand=expand):
+                    result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+                    _put_result_in_cache(cache_path, result)
+                    _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "rust", quality=quality)
+                    return result
                 
-            except MemoryError as me:
-                mode = "memory_error"
-                error_detail = str(me)
-                if log_info:
-                    log_info(f"FACE MEMORY ERROR: {os.path.basename(decoded_path)} - {error_detail}")
-                thumb_sem.release()
-                return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
-            except Exception as pil_err:
-                mode = "pillow_error"
-                error_detail = str(pil_err)
-                if log_info:
-                    log_info(f"FACE PILLOW ERROR: {os.path.basename(decoded_path)} - {error_detail}")
-                thumb_sem.release()
-                return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+                pillow_sem = _get_pillow_semaphore()
+                if not pillow_sem.acquire(timeout=10):
+                    _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "timeout", quality=quality, extra="pillow_busy")
+                    return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+                
+                try:
+                    pil = load_pil_with_orientation(decoded_path).convert("RGB")
+                    w, h = pil.size
+                    if w == 0 or h == 0:
+                        raise Exception("dimensão inválida")
+
+                    x1 = max(0, min(x1, w - 1))
+                    y1 = max(0, min(y1, h - 1))
+                    x2 = max(x1 + 1, min(x2, w))
+                    y2 = max(y1 + 1, min(y2, h))
+                    face_w, face_h = x2 - x1, y2 - y1
+
+                    v_expand = expand + 0.1
+                    left = max(0, x1 - int(face_w * expand))
+                    top = max(0, y1 - int(face_h * v_expand))
+                    right = min(w, x2 + int(face_w * expand))
+                    bottom = min(h, y2 + int(face_h * v_expand))
+
+                    crop = pil.crop((left, top, right, bottom))
+                    crop.thumbnail((size, size), Image.Resampling.LANCZOS)
+                    jpeg_quality = max(60, min(int(quality), 95))
+
+                    buf = io.BytesIO()
+                    crop.save(buf, format="JPEG", quality=jpeg_quality, optimize=True)
+                    buf.seek(0)
+                    
+                    saved = False
+                    try:
+                        crop.save(cache_path, format="JPEG", quality=jpeg_quality, optimize=True)
+                        saved = True
+                        _trim_thumb_cache()
+                    except Exception:
+                        pass
+                    
+                    _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "pillow", quality=jpeg_quality, extra=f"saved={saved}")
+                    if saved:
+                        result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+                        _put_result_in_cache(cache_path, result)
+                    else:
+                        result = StreamingResponse(buf, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+                    return result
+                    
+                except MemoryError:
+                    _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "error", quality=quality, extra="memory_error")
+                    return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+                except Exception:
+                    _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "error", quality=quality, extra="pillow_error")
+                    return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+                finally:
+                    pillow_sem.release()
+                    
             finally:
-                pillow_sem.release()
+                _finish_generating(cache_path)
                 
         finally:
-            _finish_generating(cache_path)
             thumb_sem.release()
             
     except HTTPException:
         raise
     except Exception as e:
-        mode = "error"
-        error_detail = str(e)
         elapsed = (time.perf_counter() - started) * 1000.0
-        if log_info:
-            log_info(f"FACE ERROR: path={os.path.basename(decoded_path)} mode={mode} error={error_detail} time={elapsed:.0f}ms")
+        _log_thumb_perf("face", decoded_path, size, elapsed, "error", quality=quality, extra=str(e))
         return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
 
 

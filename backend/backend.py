@@ -149,24 +149,21 @@ except ImportError:
 
 app = FastAPI(title="Formatura PRO API")
 
-THUMB_SEMAPHORE_SMALL = threading.Semaphore(8)
+THUMB_SEMAPHORE_SMALL = threading.Semaphore(6)
 THUMB_SEMAPHORE_LARGE = threading.Semaphore(2)
 THUMB_SLOT_LOCAL = threading.local()
 THUMB_QUEUE = []
 THUMB_QUEUE_LOCK = threading.Lock()
-THUMB_MAX_QUEUE = 50
+THUMB_MAX_QUEUE = 100
 
-def get_thumb_slot(size=300, timeout=0.5):
+def get_thumb_slot(size=300, timeout=1.0):
     semaphore = THUMB_SEMAPHORE_SMALL if int(size or 0) <= 400 else THUMB_SEMAPHORE_LARGE
     acquired = semaphore.acquire(timeout=timeout)
     if not acquired:
         with THUMB_QUEUE_LOCK:
-            if len(THUMB_QUEUE) < THUMB_MAX_QUEUE:
-                THUMB_QUEUE.append(time.time())
-            else:
-                raise HTTPException(429, "Too many thumbnail requests. Please wait.")
+            THUMB_QUEUE.append(time.time())
     THUMB_SLOT_LOCAL.current = semaphore
-    return True
+    return acquired
 
 def release_thumb_slot():
     try:
@@ -1031,6 +1028,9 @@ class DbConnection:
         c.execute("CREATE INDEX IF NOT EXISTS idx_ocor_aluno_foto ON ocorrencias(aluno_id, foto_path)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_ocor_foto_aluno ON ocorrencias(foto_path, aluno_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_alunos_id_class ON alunos(aluno_id, class_name)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ocor_blur_foto ON ocorrencias(blur_status, foto_path)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ufc_cluster_face ON unknown_face_clusters(cluster_id, face_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ocor_aluno_x1 ON ocorrencias(aluno_id, x1)")
         # Migration: add folder_type column if missing
         try:
             c.execute("ALTER TABLE catalog_folders ADD COLUMN folder_type TEXT DEFAULT 'event'")
@@ -1819,7 +1819,12 @@ def get_review_clusters(
     limit: int = 30,
     offset: int = 0,
 ):
-    return rm.get_review_clusters_page(catalog, limit, offset)
+    try:
+        return rm.get_review_clusters_page(catalog, limit, offset)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/review/clusters/detail")
@@ -2078,16 +2083,26 @@ def get_image_thumb(path: str, size: int = 300, q: int = 80):
     try:
         get_thumb_slot(size=size)
         return mm.get_image_thumb(path, size, q)
+    except HTTPException:
+        raise
+    except Exception:
+        pass
     finally:
         release_thumb_slot()
+    return StreamingResponse(mm._create_error_placeholder(size), media_type="image/jpeg")
 
 @app.get("/api/thumb")
 def get_thumb(path: str, x1: int, y1: int, x2: int, y2: int, size: int = 120, expand: float = 0.35, q: int = 80):
     try:
         get_thumb_slot(size=size)
         return mm.get_thumb(path, x1, y1, x2, y2, size, expand, q)
+    except HTTPException:
+        raise
+    except Exception:
+        pass
     finally:
         release_thumb_slot()
+    return StreamingResponse(mm._create_error_placeholder(size), media_type="image/jpeg")
 
 @app.get("/api/image_full")
 def get_image_full(path: str):
@@ -2677,7 +2692,7 @@ def get_scan_status():
         else:
             raw["status"] = "idle"
         raw["last_progress_seconds"] = round(last_secs, 1) if last_secs is not None else None
-        raw["current_file"] = _scan_last_progress_file or raw.get("current_photo", {}).get("name")
+        raw["current_file"] = _scan_last_progress_file or (raw.get("current_photo") or {}).get("name")
         raw["processed"] = raw.get("total_processadas", _scan_last_processed)
         raw["total"] = raw.get("total_validos", 0)
         return raw

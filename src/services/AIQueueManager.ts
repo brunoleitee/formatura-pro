@@ -8,8 +8,10 @@ interface QueueItem {
 }
 
 const MAX_CONCURRENT = 1;
-const MAX_QUEUE_SIZE = 20;
+const MAX_QUEUE_SIZE = 8;
 const DEBOUNCE_MS = 300;
+
+type PauseReason = "scrolling" | "scanning" | null;
 
 class AIQueueManager {
   private queue: QueueItem[] = [];
@@ -18,9 +20,34 @@ class AIQueueManager {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingBatch = new Set<string>();
   private running = false;
+  private _paused = false;
+  private _pauseReason: PauseReason = null;
 
   private log(msg: string): void {
     console.log(`[AI-QUEUE] ${msg}`);
+  }
+
+  pause(reason: PauseReason): void {
+    if (this._paused && this._pauseReason === reason) return;
+    this._paused = true;
+    this._pauseReason = reason;
+    this.log(`paused reason=${reason}`);
+  }
+
+  resume(reason: string): void {
+    if (!this._paused) return;
+    this._paused = false;
+    this._pauseReason = null;
+    this.log(`resumed reason=${reason}`);
+    this.processNext();
+  }
+
+  isPaused(): boolean {
+    return this._paused;
+  }
+
+  getPauseReason(): PauseReason {
+    return this._pauseReason;
   }
 
   add(path: string, priority = 0): void {
@@ -77,6 +104,12 @@ class AIQueueManager {
   }
 
   private processNext(): void {
+    if (this._paused) {
+      if (this.queue.length > 0) {
+        this.log(`skipped-start paused=true reason=${this._pauseReason}`);
+      }
+      return;
+    }
     if (!this.running) this.running = true;
     while (this.processing.size < MAX_CONCURRENT && this.queue.length > 0) {
       const item = this.queue.shift()!;

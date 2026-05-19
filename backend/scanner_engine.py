@@ -183,35 +183,42 @@ def quiet_external_output():
 
 
 def imread_unicode(path):
+    """Retorna (img, scale) onde scale converte coords detectadas → coords originais."""
     try:
         if not path or not os.path.isfile(path):
             _cfg["log_debug"](f"Arquivo nao existe ou path invalido: {path}")
-            return None
+            return None, 1.0
         file_size = os.path.getsize(path)
         if file_size > 100 * 1024 * 1024:
             _cfg["log_debug"](f"Arquivo muito grande ({file_size / 1024 / 1024:.1f}MB): {path}")
-            return None
+            return None, 1.0
         with Image.open(path) as pil_img:
             if pil_img.mode != "RGB":
                 pil_img = pil_img.convert("RGB")
             pil_img = ImageOps.exif_transpose(pil_img)
             if pil_img.size[0] < 10 or pil_img.size[1] < 10:
                 _cfg["log_debug"](f"Imagem muito pequena: {path}")
-                return None
+                return None, 1.0
+            orig_max = max(pil_img.size)
+            if orig_max > 1920:
+                pil_img.thumbnail((1920, 1920), Image.LANCZOS)
+                img_scale = orig_max / 1920.0
+            else:
+                img_scale = 1.0
             img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
             if img is None or img.size == 0:
                 _cfg["log_debug"](f"Imagem invalida: {path}")
-                return None
+                return None, 1.0
             if img.shape[0] < 20 or img.shape[1] < 20:
                 _cfg["log_debug"](f"Imagem muito pequena para deteccao: {path} - shape: {img.shape}")
-                return None
-            return img
+                return None, 1.0
+            return img, img_scale
     except Image.UnidentifiedImageError:
         _cfg["log_debug"](f"Imagem nao reconhecida (EXIF/corrompida): {path}")
-        return None
+        return None, 1.0
     except PermissionError:
         _cfg["log_debug"](f"Permissao negada: {path}")
-        return None
+        return None, 1.0
     except OSError as e:
         if "truncated" in str(e).lower() or "corrupt" in str(e).lower():
             _cfg["log_debug"](f"Imagem corrompida: {path}")
@@ -388,6 +395,7 @@ def ensure_face_engine():
 
             real_providers = get_session_providers(app_face)
             real_provider = real_providers[0] if real_providers else selected_provider
+            _cfg["log_info"](f"[AI] Sessao ONNX providers reais: {real_providers}")
             face_engine_device = "GPU" if real_provider in {"CUDAExecutionProvider", "DmlExecutionProvider"} else "CPU"
             face_engine_provider = real_provider
             face_engine_label = _provider_label(real_provider)
@@ -395,12 +403,12 @@ def ensure_face_engine():
             if face_engine_device == "GPU":
                 _cfg["log_info"](f"[AI] {face_engine_label} ativo")
             else:
-                _cfg["log_info"]("[AI] GPU indisponivel, usando CPU")
+                _cfg["log_info"](f"[AI] GPU indisponivel, usando CPU (solicitado={selected_provider})")
             _cfg["log_info"](f"[AI] Provider ativo: {real_provider}")
         except Exception as e:
             _cfg["log_info"](f"[AI] Falha ao carregar engine de IA: {e}")
+            _cfg["log_info"](f"[AI] Traceback completo:\n{traceback.format_exc()}")
             if selected_provider == "CPUExecutionProvider":
-                _cfg["log_debug"](f"[SCAN] Erro fatal no carregamento CPU: {traceback.format_exc()}")
                 raise
 
             _cfg["log_info"](f"[AI] {selected_provider} falhou, fallback para CPU")
@@ -443,7 +451,7 @@ def load_references(ref_path):
             if not f.lower().endswith(_cfg["image_extensions"]):
                 continue
             full = os.path.join(r, f)
-            img = imread_unicode(full)
+            img, _ = imread_unicode(full)
             if img is None:
                 continue
             try:
@@ -598,7 +606,7 @@ def _memory_cleanup(scan_state=None):
         scan_state["current_photo"] = None
         scan_state["recent_faces"] = []
         scan_state.pop("processing_history", None)
-        scan_state["progress"] = 0.0
+        # NÃO zera progress aqui — o finally do worker já setou o valor correto
     _cfg["cluster_centers"] = []
     _cfg["cluster_names"] = []
     _cfg["cluster_counts"] = {}
@@ -608,7 +616,7 @@ def _memory_cleanup(scan_state=None):
 
 def _load_single_image(path):
     if _cancel_requested():
-        return None
+        return None, 1.0
     return imread_unicode(path)
 
 
@@ -625,6 +633,7 @@ def _log_memory(label=""):
 
 
 def run_scanner_worker(req):
+    global _scan_last_progress_at, _scan_last_progress_file, _scan_last_processed, _scan_stalled
     scan_state = _scan_state()
     if scan_state is None:
         raise RuntimeError("scan_state nao configurado")
@@ -685,7 +694,8 @@ def run_scanner_worker(req):
         _log_memory("after loading face model")
         face_engine_device = get_face_engine_device()
         face_engine_gpu_error = get_face_engine_gpu_error()
-        scan_state["device"] = get_face_engine_label() or face_engine_device or "CPU"
+        scan_state["device"] = face_engine_device or "CPU"
+        scan_state["device_label"] = get_face_engine_label() or face_engine_device or "CPU"
         scan_state["provider"] = get_face_engine_provider() or ""
         scan_state["gpu_error"] = face_engine_gpu_error
         scan_state["status_text"] = "Carregando Referências..."
@@ -754,7 +764,7 @@ def run_scanner_worker(req):
                         log_info("[Scanner] CANCEL BEFORE IMAGE LOAD")
                         scan_state["status_text"] = "Scanner interrompido"
                         break
-                    img = _load_single_image(p)
+                    img, img_scale = _load_single_image(p)
                     if img is None:
                         if _cancel_requested():
                             break
@@ -784,15 +794,15 @@ def run_scanner_worker(req):
                             with quiet_external_output():
                                 faces = _cfg["app_face"].get(img) or []
                         _scan_last_progress_at = time.time()
-                        _scan_last_progress_file = short_name
-                        _scan_last_processed = total_with_faces
+                        _scan_last_progress_file = os.path.basename(p)
+                        _scan_last_processed = i + 1
                         _scan_stalled = False
-                        log_info(f"[scanner-progress] processed={total_with_faces}/{total_validos} file={short_name}")
+                        log_info(f"[scanner-progress] processed={i + 1}/{total} file={os.path.basename(p)}")
                     except Exception as e:
                         log_debug(f"Falha de AI em {p}: {e}")
                         provider = _cfg.get("face_engine_provider", "")
                         if "DmlExecutionProvider" in provider:
-                            _cfg["log_info"](f"[Face] DirectML timeout em {short_name}, descarregando modelo")
+                            _cfg["log_info"](f"[Face] DirectML timeout em {os.path.basename(p)}, descarregando modelo")
                             _cfg["app_face"] = None
                             _cfg["face_engine_provider"] = ""
                             _cfg["face_engine_device"] = ""
@@ -861,8 +871,9 @@ def run_scanner_worker(req):
                             log_info(f"[DB] ignorada (ja existe) path={p}")
                     else:
                         largest_face_area = max((face_data[5] for face_data in valid_faces), default=0)
-                        
+
                         scored_faces = []
+                        aluno_batch = {}  # nome -> detected_class para executemany
                         for face, x1, y1, x2, y2, area in valid_faces:
                             fg_score, is_fg, f_ratio, c_score, bg_reason = calc_foreground_score(
                                 x1, y1, x2, y2, area, img.shape, face, b_score
@@ -889,13 +900,16 @@ def run_scanner_worker(req):
                         for sf in scored_faces:
                             face, x1, y1, x2, y2, area = sf["face"], sf["x1"], sf["y1"], sf["x2"], sf["y2"], sf["area"]
                             fg_score, is_fg, f_ratio, c_score, bg_reason = sf["fg_score"], sf["is_fg"], sf["f_ratio"], sf["c_score"], sf["bg_reason"]
-                            
+                            # Coords escaladas para o tamanho original da imagem (para DB e display)
+                            sx1, sy1 = round(x1 * img_scale), round(y1 * img_scale)
+                            sx2, sy2 = round(x2 * img_scale), round(y2 * img_scale)
+
                             log_debug(f"[foreground-face] area={f_ratio:.3f} center={c_score:.2f} score={fg_score:.2f} foreground={is_fg} reason={bg_reason}")
 
                             if is_background_face(x1, y1, x2, y2, largest_face_area, img.shape, len(valid_faces)):
                                 scan_state["skipped_background_faces"] += 1
                                 continue
-                                
+
                             total_faces_found += 1
                             emb = face.embedding.astype("float32")
                             norm = np.linalg.norm(emb)
@@ -909,9 +923,9 @@ def run_scanner_worker(req):
                             else:
                                 nome = find_or_create_cluster(emb)
                                 scan_state["total_clusters"] = len(_cfg["cluster_names"])
-                            
+
                             photo_faces.append({
-                                "bbox": [x1, y1, x2, y2],
+                                "bbox": [sx1, sy1, sx2, sy2],
                                 "confidence": 0.95,
                                 "name": nome,
                             })
@@ -921,12 +935,12 @@ def run_scanner_worker(req):
                             log_info(f"[DB] inserindo face path={p} aluno={nome}")
                             cur.execute(
                                 """
-                                INSERT OR IGNORE INTO ocorrencias 
-                                (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status, 
-                                 foreground_score, is_foreground, face_area_ratio, center_score, background_penalty_reason) 
+                                INSERT OR IGNORE INTO ocorrencias
+                                (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status,
+                                 foreground_score, is_foreground, face_area_ratio, center_score, background_penalty_reason)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 """,
-                                (nome, p, x1, y1, x2, y2, photo_hash, b_score, b_status,
+                                (nome, p, sx1, sy1, sx2, sy2, photo_hash, b_score, b_status,
                                  fg_score, is_fg, f_ratio, c_score, bg_reason),
                             )
                             rowcount = cur.rowcount
@@ -938,20 +952,14 @@ def run_scanner_worker(req):
                                 log_info(f"[DB] ignorada (ja existe) path={p} aluno={nome}")
                             detected_class = get_reference_class_name(nome)
                             print(f"[db-save] aluno={nome} class_name={detected_class}")
-                            cur.execute(
-                                """
-                                INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path, class_name)
-                                VALUES (?, ?, ?)
-                                """,
-                                (nome, "n/a", detected_class),
-                            )
+                            aluno_batch[nome] = detected_class
 
                             # Salvar embedding na tabela face_embeddings para permitir
                             # re-match e re-cluster sem precisar re-escanear
                             try:
                                 occ_row = cur.execute(
                                     "SELECT rowid FROM ocorrencias WHERE foto_path = ? AND x1 = ? AND y1 = ? AND x2 = ? AND y2 = ? LIMIT 1",
-                                    (p, x1, y1, x2, y2)
+                                    (p, sx1, sy1, sx2, sy2)
                                 ).fetchone()
                                 if occ_row:
                                     try:
@@ -963,12 +971,12 @@ def run_scanner_worker(req):
                                         INSERT OR REPLACE INTO face_embeddings
                                         (occurrence_rowid, foto_path, x1, y1, x2, y2, embedding, mtime_ns, size)
                                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                    """, (occ_row[0], p, x1, y1, x2, y2,
+                                    """, (occ_row[0], p, sx1, sy1, sx2, sy2,
                                           emb.tobytes(), mtime_ns, fsize))
                             except Exception as _emb_err:
                                 log_info(f"[Scanner] erro ao salvar embedding: {_emb_err}")
 
-                            log_info(f"[Scanner] face found bbox=[{x1}, {y1}, {x2}, {y2}] path={os.path.basename(p)}")
+                            log_info(f"[Scanner] face found bbox=[{sx1}, {sy1}, {sx2}, {sy2}] path={os.path.basename(p)}")
 
                             current_time = time.time()
                             if current_time - last_face_update_time > 0.5:
@@ -976,13 +984,20 @@ def run_scanner_worker(req):
                                     "id": total_faces_found,
                                     "name": nome,
                                     "path": p,
-                                    "box": [x1, y1, x2, y2],
+                                    "box": [sx1, sy1, sx2, sy2],
                                     "confidence": 0.95,
                                 }
                                 scan_state["recent_faces"].insert(0, new_face)
                                 scan_state["recent_faces"] = scan_state["recent_faces"][:50]
                                 log_info(f"[Scanner] recent_faces count={len(scan_state['recent_faces'])}")
                                 last_face_update_time = current_time
+
+                        # Inserir alunos em lote após processar todas as faces da foto
+                        if aluno_batch:
+                            cur.executemany(
+                                "INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path, class_name) VALUES (?, ?, ?)",
+                                [(nome, "n/a", cls) for nome, cls in aluno_batch.items()],
+                            )
 
                     # Log Benchmark
                     total_ms = (time.time() - t0_photo) * 1000
@@ -995,7 +1010,9 @@ def run_scanner_worker(req):
                     )
 
                     # Atualizar current_photo com dados reais para o carrossel live
-                    img_h, img_w = img.shape[:2] if img is not None else (0, 0)
+                    scaled_h, scaled_w = img.shape[:2] if img is not None else (0, 0)
+                    img_h = round(scaled_h * img_scale)
+                    img_w = round(scaled_w * img_scale)
                     scan_state["current_photo"] = {
                         "path": p,
                         "name": os.path.basename(p),
@@ -1021,13 +1038,7 @@ def run_scanner_worker(req):
                         del img
                     except NameError:
                         pass
-                    for _vn in ('faces', 'valid_faces', 'scored_faces'):
-                        try:
-                            _v = locals().get(_vn)
-                            if _v is not None:
-                                del _v
-                        except Exception:
-                            pass
+                    faces = None; valid_faces = None; scored_faces = None
 
                     # Throttling removido — face detection já é CPU-intensive
 

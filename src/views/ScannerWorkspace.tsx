@@ -197,6 +197,17 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [viewMode, activePhotoIndex, activePhotos.length]);
 
+  useEffect(() => {
+    const el = filmstripRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      el.scrollLeft += e.deltaY;
+      e.preventDefault();
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [viewMode]);
+
   // Sync bottom panels (Faces) with the selected photo
   // Guard ref para evitar loops: só atualiza se o path realmente mudou
   const lastSelectedPathRef = useRef('');
@@ -273,8 +284,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           api.explorePhotos(res.path, { recursive: true, limit: 0, include_raw: true }),
           api.exploreTree(res.path, 2),
         ]);
-        const subfolderCount = tree.tree
-          ? (Array.isArray(tree.tree) ? tree.tree : [tree.tree]).reduce((acc: number, n: any) => {
+        const subfolderCount = tree.children
+          ? tree.children.reduce((acc: number, n: any) => {
               const count = (n.children?.length || 0);
               return acc + count;
             }, 0)
@@ -306,7 +317,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
             if (n.children) flatten(n.children, full);
           });
         };
-        if (tree.tree) flatten(Array.isArray(tree.tree) ? tree.tree : [tree.tree]);
+        if (tree.children) flatten(tree.children);
         const statuses: Record<string, 'include' | 'ignore' | 'monitor'> = {};
         allSub.forEach(p => { statuses[p] = 'include'; });
         setEventFolderStatuses(prev => ({ ...prev, [res.path]: statuses }));
@@ -597,9 +608,10 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     setStarting(true);
     setIsScanning(true);
     setIsCompleted(false);
+    pollingWasScanningRef.current = true;
     userNavigatedRef.current = false;
     setTimeline([{ id: `start-${Date.now()}`, kind: 'system', text: `Scanner PRO v2.1 iniciado em ${new Date().toLocaleTimeString()}`, timestamp: Date.now() }]);
-    
+
     try {
       await api.scanFolder(eventPath, refPath || '', name);
       await setCatalog(name);
@@ -1162,12 +1174,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
               <div
                 className={styles.singleFilmstrip}
                 ref={filmstripRef}
-                onWheel={(e) => {
-                  if (filmstripRef.current) {
-                    filmstripRef.current.scrollLeft += e.deltaY;
-                    e.preventDefault();
-                  }
-                }}
               >
                 {activePhotos.map((p, i) => {
                   if (Math.abs(i - activePhotoIndex) > 30) return null;
@@ -1443,7 +1449,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
               <ScanFace size={12} className={styles.metricIcon} />
               <span className={styles.metricLabel}>AI</span>
               <span className={styles.metricValue} style={{ color: scanStatus?.device === 'GPU' ? '#10b981' : '#f59e0b' }}>
-                {scanStatus?.provider ? (scanStatus.device === 'GPU' ? 'GPU' : 'CPU') : '--'}
+                {scanStatus?.provider ? (scanStatus.device_label || (scanStatus.device === 'GPU' ? 'GPU' : 'CPU')) : '--'}
               </span>
             </div>
             <div className={styles.metricItem}>

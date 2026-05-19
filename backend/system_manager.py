@@ -306,56 +306,52 @@ def get_stats(catalog: str = ""):
         with get_db(cat) as conn:
             cur = conn.cursor()
 
-            _t0 = time.perf_counter()
-            cur.execute("SELECT COUNT(*) as cnt FROM ocorrencias")
-            total_occurrences = cur.fetchone()["cnt"]
-            logger.info("[sql-perf] endpoint=/api/stats query=count_ocorrencias rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
-
-            _t0 = time.perf_counter()
-            cur.execute("SELECT COUNT(DISTINCT foto_path) as cnt FROM ocorrencias")
-            photos_with_faces = cur.fetchone()["cnt"]
-            logger.info("[sql-perf] endpoint=/api/stats query=count_distinct_foto_path rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
-
-            _t0 = time.perf_counter()
-            cur.execute("SELECT COUNT(*) as cnt FROM alunos WHERE aluno_id != 'system_catalog'")
-            total_people = cur.fetchone()["cnt"]
-            logger.info("[sql-perf] endpoint=/api/stats query=count_alunos rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
-
-            _t0 = time.perf_counter()
-            cur.execute("SELECT COUNT(DISTINCT aluno_id) as cnt FROM ocorrencias WHERE aluno_id NOT LIKE 'Pessoa %' AND aluno_id != 'system_catalog'")
-            named_people = cur.fetchone()["cnt"]
-            logger.info("[sql-perf] endpoint=/api/stats query=count_named_alunos rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
-
-            _t0 = time.perf_counter()
-            cur.execute("SELECT COUNT(*) as cnt FROM ocorrencias WHERE aluno_id LIKE 'Pessoa %'")
-            unnamed_people = cur.fetchone()["cnt"]
-            logger.info("[sql-perf] endpoint=/api/stats query=count_unnamed rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
-
-            _t0 = time.perf_counter()
-            cur.execute("SELECT COUNT(*) as cnt FROM discarded_photos")
-            discarded_count = cur.fetchone()["cnt"]
-            logger.info("[sql-perf] endpoint=/api/stats query=count_discarded rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
-
-            _t0 = time.perf_counter()
-            cur.execute("SELECT COUNT(DISTINCT foto_path) FROM ocorrencias WHERE blur_status = 'blurry'")
-            blurred_photos = cur.fetchone()[0]
-            logger.info("[sql-perf] endpoint=/api/stats query=count_blurred rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
-
+            # 9 queries consolidadas em 1 para reduzir round-trips com o SQLite
             _t0 = time.perf_counter()
             cur.execute("""
-                SELECT COUNT(DISTINCT foto_path) FROM ocorrencias
-                WHERE x1 IS NOT NULL
-                  AND (aluno_id IS NULL OR aluno_id = '' OR aluno_id LIKE 'Pessoa%'
-                       OR lower(aluno_id) IN ('unknown','desconhecido','sem_nome','nao_mapeado','__unknown__'))
+                SELECT
+                    (SELECT COUNT(*) FROM ocorrencias) AS total_occurrences,
+                    (SELECT COUNT(DISTINCT foto_path) FROM ocorrencias) AS photos_with_faces,
+                    (SELECT COUNT(*) FROM alunos WHERE aluno_id != 'system_catalog') AS total_people,
+                    (SELECT COUNT(DISTINCT aluno_id) FROM ocorrencias
+                     WHERE aluno_id NOT LIKE 'Pessoa %' AND aluno_id != 'system_catalog') AS named_people,
+                    (SELECT COUNT(*) FROM ocorrencias WHERE aluno_id LIKE 'Pessoa %') AS unnamed_people,
+                    (SELECT COUNT(*) FROM discarded_photos) AS discarded_count,
+                    (SELECT COUNT(DISTINCT foto_path) FROM ocorrencias WHERE blur_status = 'blurry') AS blurred_photos,
+                    (SELECT COUNT(DISTINCT foto_path) FROM ocorrencias
+                     WHERE x1 IS NOT NULL
+                       AND (aluno_id IS NULL OR aluno_id = '' OR aluno_id LIKE 'Pessoa%'
+                            OR lower(aluno_id) IN ('unknown','desconhecido','sem_nome','nao_mapeado','__unknown__'))
+                    ) AS no_id_faces,
+                    (SELECT COUNT(*) FROM alunos
+                     WHERE aluno_id != 'system_catalog'
+                       AND aluno_id NOT LIKE 'Pessoa %'
+                       AND aluno_id NOT IN (
+                           SELECT DISTINCT aluno_id FROM ocorrencias
+                           WHERE aluno_id NOT LIKE 'Pessoa %' AND aluno_id != 'Sem Rostos'
+                       )
+                    ) AS refs_without_match
             """)
-            no_id_faces = cur.fetchone()[0]
-            logger.info("[sql-perf] endpoint=/api/stats query=count_no_id_faces rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
+            counts = cur.fetchone()
+            total_occurrences  = counts["total_occurrences"]
+            photos_with_faces  = counts["photos_with_faces"]
+            total_people       = counts["total_people"]
+            named_people       = counts["named_people"]
+            unnamed_people     = counts["unnamed_people"]
+            discarded_count    = counts["discarded_count"]
+            blurred_photos     = counts["blurred_photos"]
+            no_id_faces        = counts["no_id_faces"]
+            refs_without_match = counts["refs_without_match"]
+            logger.info("[sql-perf] endpoint=/api/stats query=counts_consolidated rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
 
+            # photos_per_person com class_name via JOIN — elimina N+1 queries
             _t0 = time.perf_counter()
             cur.execute("""
-                SELECT aluno_id, COUNT(*) as cnt
-                FROM ocorrencias
-                GROUP BY aluno_id
+                SELECT o.aluno_id, COUNT(*) AS cnt,
+                       COALESCE(a.class_name, 'Sem turma') AS class_name
+                FROM ocorrencias o
+                LEFT JOIN alunos a ON a.aluno_id = o.aluno_id
+                GROUP BY o.aluno_id
                 ORDER BY cnt DESC
             """)
             photos_per_person = cur.fetchall()
@@ -390,13 +386,13 @@ def get_stats(catalog: str = ""):
             classes_data = {}
             for r in photos_per_person:
                 aid = r["aluno_id"]
-                class_name = "Sem turma"
-                cur.execute("SELECT class_name FROM alunos WHERE aluno_id = ?", (aid,))
-                row = cur.fetchone()
-                if row and row[0] and row[0] != "Sem turma":
-                    class_name = row[0]
+                db_class = r["class_name"]
+                if db_class and db_class != "Sem turma":
+                    class_name = db_class
                 elif aid in class_map:
                     class_name = class_map[aid]
+                else:
+                    class_name = "Sem turma"
                 if class_name not in classes_data:
                     classes_data[class_name] = {"students_count": 0, "photos_count": 0}
                 classes_data[class_name]["students_count"] += 1
@@ -434,6 +430,7 @@ def get_stats(catalog: str = ""):
                 "discarded_photos": discarded_count,
                 "blurred_photos": blurred_photos,
                 "no_id_faces": no_id_faces,
+                "refs_without_match": refs_without_match,
                 "avg_photos_per_person": round(avg_photos, 1),
                 "top_people": [{"id": r["aluno_id"], "count": r["cnt"]} for r in photos_per_person[:10]],
                 "classes": classes_list,

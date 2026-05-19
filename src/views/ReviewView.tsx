@@ -258,7 +258,7 @@ const wasGraduationRunningRef = useRef(false);
     if (!currentCatalog || !graduationStatus?.is_running) return;
     const timer = window.setInterval(() => {
       refreshGraduationStatus();
-    }, 1500);
+    }, 5000);
     return () => window.clearInterval(timer);
   }, [currentCatalog, graduationStatus?.is_running, refreshGraduationStatus]);
 

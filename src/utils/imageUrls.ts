@@ -2,9 +2,10 @@ import { API_BASE } from '../services/api/core';
 
 const PHOTO_SOURCE_BASE = 'http://127.0.0.1:8000';
 
-function buildThumbUrl(path: string | null | undefined, size: number) {
+function buildThumbUrl(path: string | null | undefined, size: number, q?: number) {
   if (!path) return null;
-  return `${API_BASE}/image_thumb?path=${encodeURIComponent(path)}&size=${size}`;
+  const qStr = q != null ? `&q=${q}` : '';
+  return `${API_BASE}/image_thumb?path=${encodeURIComponent(path)}&size=${size}${qStr}`;
 }
 
 function buildPreviewUrl(path: string | null | undefined, size: number) {
@@ -20,8 +21,8 @@ export function getAvatarThumbUrl(path: string | null | undefined) {
   return buildThumbUrl(path, 160);
 }
 
-export function getGridThumbUrl(path: string | null | undefined, size = 400) {
-  return buildThumbUrl(path, size);
+export function getGridThumbUrl(path: string | null | undefined, size = 400, q?: number) {
+  return buildThumbUrl(path, size, q);
 }
 
 export function getGridHighThumbUrl(path: string | null | undefined, size = 1000) {

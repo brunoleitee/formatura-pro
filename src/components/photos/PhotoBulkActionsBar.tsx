@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Trash, RotateCcw, UserMinus, X } from 'lucide-react';
 import styles from './PhotoBulkActionsBar.module.css';
 
@@ -10,7 +10,7 @@ interface PhotoBulkActionsBarProps {
   onClearSelection?: () => void;
 }
 
-const PhotoBulkActionsBar: React.FC<PhotoBulkActionsBarProps> = ({
+const PhotoBulkActionsBar = memo<PhotoBulkActionsBarProps>(({
   selectedCount,
   onDiscard,
   onRestore,
@@ -78,6 +78,6 @@ const PhotoBulkActionsBar: React.FC<PhotoBulkActionsBarProps> = ({
       </div>
     </div>
   );
-};
+});
 
 export default PhotoBulkActionsBar;

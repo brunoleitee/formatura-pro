@@ -1,13 +1,60 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { ArrowLeft, RefreshCw, Image as ImageIcon } from 'lucide-react';
 import { api, type Photo } from '../services/api';
 import { useApp } from '../context/AppContext';
-import { PhotoCard } from '../components/photos/PhotoCard';
+import { MemoPhotoCard } from '../components/photos/PhotoCard';
 import { PhotoDetailPanel } from '../components/photos/PhotoDetailPanel';
 import { PhotoViewerModal } from '../components/photos/PhotoViewerModal';
 import { usePhotoSelection, getPhotoId } from '../hooks/usePhotoSelection';
 import { usePhotoViewer } from '../hooks/usePhotoViewer';
 import PhotoBulkActionsBar from '../components/photos/PhotoBulkActionsBar';
+
+const PERSON_THUMB_SIZE = 240;
+const PERSON_OBSERVER_MARGIN = '300px';
+
+function ObserverPhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, getSelectionCount, containerRef }: {
+  photo: Photo;
+  isSelected: boolean;
+  onClick: (photo: Photo, event: React.MouseEvent) => void;
+  onDoubleClick?: (photo: Photo) => void;
+  onOpenDetails: (photo: Photo) => void;
+  onDragStart?: (photo: Photo, event: React.PointerEvent) => void;
+  onDragEnd?: (photo: Photo, event: React.PointerEvent) => void;
+  getSelectionCount: () => number;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const [visible, setVisible] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => setVisible(entry.isIntersecting),
+      { rootMargin: PERSON_OBSERVER_MARGIN, threshold: 0 }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [photo.path]);
+
+  return (
+    <div ref={cardRef}>
+      <MemoPhotoCard
+        photo={photo}
+        isSelected={isSelected}
+        onClick={onClick}
+        onDoubleClick={onDoubleClick}
+        onOpenDetails={onOpenDetails}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        getSelectionCount={getSelectionCount}
+        thumbTargetSize={visible ? PERSON_THUMB_SIZE : 0}
+      />
+    </div>
+  );
+}
+
+const MemoObserverPhotoCard = memo(ObserverPhotoCard);
 
 function Section({ 
   title, 
@@ -19,7 +66,8 @@ function Section({
   onOpenDetails,
   onDragStart,
   onDragEnd,
-  getSelectionCount
+  getSelectionCount,
+  containerRef
 }: { 
   title: string; 
   items: Photo[]; 
@@ -31,6 +79,7 @@ function Section({
   onDragStart: (photo: Photo, event: React.PointerEvent) => void;
   onDragEnd: (photo: Photo, event: React.PointerEvent) => void;
   getSelectionCount: () => number;
+  containerRef: React.RefObject<HTMLDivElement | null>;
 }) {
   if (items.length === 0) return null;
   return (
@@ -44,16 +93,17 @@ function Section({
         {items.map((p) => {
           const id = getPhotoId(p);
           return (
-            <PhotoCard 
-              key={id} 
-              photo={p} 
-              isSelected={selectedPaths.has(id)} 
+            <MemoObserverPhotoCard
+              key={id}
+              photo={p}
+              isSelected={selectedPaths.has(id)}
               onClick={onPhotoClick}
               onDoubleClick={onDoubleClick}
               onOpenDetails={onOpenDetails}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
               getSelectionCount={getSelectionCount}
+              containerRef={containerRef}
             />
           );
         })}
@@ -75,6 +125,38 @@ export default function PersonDetailView() {
   const [, setIsDraggingPhoto] = useState(false);
   const selectionCountRef = useRef(0);
   const getSelectionCount = useCallback(() => selectionCountRef.current, []);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastScrollPos = useRef(0);
+  const lastScrollTime = useRef(0);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const now = Date.now();
+    const delta = Math.abs(el.scrollTop - lastScrollPos.current);
+    const dt = now - lastScrollTime.current;
+    lastScrollPos.current = el.scrollTop;
+    lastScrollTime.current = now;
+    const speed = dt > 0 ? delta / dt : 0;
+    if (speed > 1.5) {
+      el.setAttribute('data-scrolling', 'fast');
+    }
+    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    scrollTimerRef.current = setTimeout(() => {
+      el.removeAttribute('data-scrolling');
+    }, 500);
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      el.removeEventListener('scroll', handleScroll);
+      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    };
+  }, [handleScroll]);
 
   useEffect(() => {
     selectionCountRef.current = selectedPaths.size;
@@ -260,7 +342,11 @@ export default function PersonDetailView() {
         </div>
       ) : (
         <div style={{ display: 'flex', gap: 24, flex: 1, overflow: 'hidden' }}>
-          <div style={{ flex: 1, overflowY: 'auto', paddingRight: 8 }}>
+          <div
+            ref={scrollRef}
+            data-scroll-container="true"
+            style={{ flex: 1, overflowY: 'auto', paddingRight: 8 }}
+          >
             <Section 
               title="Boas fotos" 
               items={good.filter(p => p.blur_label !== 'attention')} 
@@ -272,6 +358,7 @@ export default function PersonDetailView() {
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               getSelectionCount={getSelectionCount}
+              containerRef={scrollRef}
             />
             <Section 
               title="Requer atenção" 
@@ -284,6 +371,7 @@ export default function PersonDetailView() {
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               getSelectionCount={getSelectionCount}
+              containerRef={scrollRef}
             />
             <Section 
               title="Desfocadas" 
@@ -296,6 +384,7 @@ export default function PersonDetailView() {
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               getSelectionCount={getSelectionCount}
+              containerRef={scrollRef}
             />
             <Section 
               title="Descartadas" 
@@ -308,6 +397,7 @@ export default function PersonDetailView() {
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               getSelectionCount={getSelectionCount}
+              containerRef={scrollRef}
             />
           </div>
 

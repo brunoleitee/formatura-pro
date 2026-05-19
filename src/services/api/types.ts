@@ -153,6 +153,7 @@ export interface ScanStatus {
   last_folder_scanned?: string;
   eta_seconds: number;
   device: string;
+  device_label?: string;
   provider?: string;
   gpu_error?: string;
   skipped_background_faces?: number;
@@ -419,6 +420,9 @@ export interface Stats {
   total_people: number;
   total_occurrences: number;
   unknown_count: number;
+  no_id_faces?: number;
+  blurred_photos?: number;
+  refs_without_match?: number;
   classes?: {
     class_name: string;
     students_count: number;

@@ -292,6 +292,7 @@ export default function DashboardView() {
     const blurredCount = stats?.blurred_photos ?? 0;
     const duplicateCount = scanStatus?.duplicate_count ?? 0;
     const noIdCount = stats?.no_id_faces ?? 0;
+    const refsWithoutMatch = stats?.refs_without_match ?? null;
 
     // Class coverage
     const classMap = new Map<string, { students: number; photos: number }>();
@@ -366,7 +367,7 @@ export default function DashboardView() {
     return {
       totalPhotos, identifiedPhotos, pendingPhotos, completionPct,
       studentCount, unknownClusters,
-      blurredCount, duplicateCount, noIdCount,
+      blurredCount, duplicateCount, noIdCount, refsWithoutMatch,
       classCoverage, topStudents, aiSuggestions,
       chartBuckets, chartMax,
       totalPeople: stats?.total_people ?? studentCount,
@@ -537,7 +538,7 @@ export default function DashboardView() {
           <ProblemCard icon={<Eye size={18} />} label="Fotos desfocadas" value={d.blurredCount} tone="amber" />
           <ProblemCard icon={<Copy size={18} />} label="Duplicadas" value={d.duplicateCount} tone="amber" />
           <ProblemCard icon={<Fingerprint size={18} />} label="Sem identificação" value={d.noIdCount} tone="red" />
-          <ProblemCard icon={<FileWarning size={18} />} label="Referências sem match" value="--" tone="default" />
+          <ProblemCard icon={<FileWarning size={18} />} label="Referências sem match" value={d.refsWithoutMatch ?? '--'} tone={d.refsWithoutMatch ? 'amber' : 'default'} />
         </div>
       </section>
 

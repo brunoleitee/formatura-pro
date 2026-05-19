@@ -66,7 +66,10 @@ export default function ClusterDetail({
   const [filter, setFilter] = useState<FilterOption>('all');
   const [sort, setSort] = useState<SortOption>('best_match');
   const [viewMode, setViewMode] = useState<ViewMode>('face');
-  const [zoom, setZoom] = useState(ZOOM_FACE_DEFAULT);
+  const [zoom, setZoom] = useState(() => {
+    const saved = localStorage.getItem('review_zoom_face');
+    return saved ? Number(saved) : ZOOM_FACE_DEFAULT;
+  });
   const [collapsed, setCollapsed] = useState(false);
   const [lastSelectedRowId, setLastSelectedRowId] = useState<number | null>(null);
   const [isCompareOpen, setIsCompareOpen] = useState(false);
@@ -90,10 +93,18 @@ export default function ClusterDetail({
     setLastSelectedRowId(null);
   }, [filter, sort]);
 
-  // Resetar zoom ao trocar modo: cada modo tem seu default próprio
+  // Ao trocar modo, restaura o zoom salvo para aquele modo (ou o default)
   useEffect(() => {
-    setZoom(viewMode === 'photo' ? ZOOM_PHOTO_DEFAULT : ZOOM_FACE_DEFAULT);
+    const key = viewMode === 'photo' ? 'review_zoom_photo' : 'review_zoom_face';
+    const saved = localStorage.getItem(key);
+    setZoom(saved ? Number(saved) : (viewMode === 'photo' ? ZOOM_PHOTO_DEFAULT : ZOOM_FACE_DEFAULT));
   }, [viewMode]);
+
+  // Persiste zoom no localStorage ao mudar
+  useEffect(() => {
+    const key = viewMode === 'photo' ? 'review_zoom_photo' : 'review_zoom_face';
+    localStorage.setItem(key, String(zoom));
+  }, [zoom, viewMode]);
 
   useEffect(() => {
     function isTypingInField(target: EventTarget | null): boolean {
