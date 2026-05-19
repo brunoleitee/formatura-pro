@@ -30,7 +30,7 @@ interface VirtualizedPhotoGridProps {
 
 const GRID_GAP = 10;
 const MIN_COL_WIDTH = 140;
-const ESTIMATED_CARD_HEIGHT = 400;
+const ESTIMATED_CARD_HEIGHT = 320;
 const OVERSCAN_STILL = 3;
 const OVERSCAN_SCROLLING = 1;
 
@@ -116,8 +116,7 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
         const cols = columnsFromWidth(w, zoom);
         const cw = cardWidthFromSize(w, cols);
         const sz = thumbSizeForCard(cw);
-        const imageHeight = Math.max(200, Math.min(Math.round(cw * 1.33), 500));
-        const th = imageHeight + 72;
+        const th = sz + 72;
         const rows = Math.ceil(photos.length / cols);
         const totalH = rows * th + Math.max(0, rows - 1) * GRID_GAP;
         const m = metricsRef.current;
@@ -377,6 +376,7 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
                     imgLoading="eager"
                     imgFetchPriority={(start + li) < Math.max(12, cols * 2) ? 'high' : 'low'}
                     onClick={cbRef.current.onClick}
+                    zoom={zoom}
                     onDoubleClick={cbRef.current.onDoubleClick}
                     onOpenDetails={cbRef.current.onOpenDetails}
                     onDragStart={cbRef.current.onDragStart}
