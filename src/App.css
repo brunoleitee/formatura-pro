@@ -1435,20 +1435,16 @@ html.scrolling-fast .photo-info {
 .photo-img-placeholder {
   width: 100%;
   flex: 1;
-  min-height: 0;
-  background-color: #0b0d14;
+  background: transparent;
   position: relative;
   overflow: hidden;
 }
 
 .photo-img-placeholder img {
-  position: absolute;
-  inset: 0;
   width: 100%;
-  height: 100%;
-  object-fit: contain;
+  height: auto;
+  display: block;
   transition: opacity 0.3s ease, transform 0.35s ease;
-  transform: scale(1);
 }
 
 @keyframes shimmer {
