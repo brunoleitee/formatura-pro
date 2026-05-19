@@ -27,7 +27,6 @@ interface PhotoCardProps {
   onDragStart?: (photo: Photo, event: React.PointerEvent) => void;
   onDragEnd?: (photo: Photo, event: React.PointerEvent) => void;
   onFirstThumbLoad?: () => void;
-  zoom?: number;
 }
 
 const FaceOverlayBox = memo(function FaceOverlayBox({
@@ -119,7 +118,7 @@ const CardInfoSection = memo(function CardInfoSection({
   );
 });
 
-export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thumbHeight, cardHeight, thumbTargetSize, thumbLowTargetSize, imgLoading = 'lazy', imgFetchPriority = 'auto', onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad, zoom }: PhotoCardProps) {
+export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thumbHeight, cardHeight, thumbTargetSize, thumbLowTargetSize, imgLoading = 'lazy', imgFetchPriority = 'auto', onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
   const thumbSize = (thumbTargetSize ?? 240) > 0 ? (thumbTargetSize ?? 240) : 0;
   const thumbUrl = useMemo(
     () => thumbSize > 0 ? (getGridThumbUrl(photo.path, thumbSize, 70) ?? '') : '',
@@ -138,7 +137,13 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
     () => ({ w: cardWidth ?? 320, h: thumbHeight ?? 240 }),
     [cardWidth, thumbHeight]
   );
-  const objectFit = zoom != null && zoom >= 220 ? 'contain' : 'cover';
+  const imgStyle = useMemo(() => {
+    const w = photo.width, h = photo.height;
+    const ratio = w && h ? h / w : 0;
+    if (ratio > 1.5) return { objectFit: 'contain' as const, objectPosition: 'center' as const };
+    if (ratio > 1.1) return { objectFit: 'cover' as const, objectPosition: 'top center' as const };
+    return { objectFit: 'cover' as const, objectPosition: 'center' as const };
+  }, [photo.width, photo.height]);
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
   const isDraggingInternal = useRef(false);
   const blobUrlRef = useRef<string | null>(null);
@@ -312,7 +317,7 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
                 opacity: isLoaded ? 1 : 0,
                 userSelect: 'none',
                 pointerEvents: 'none',
-                objectFit,
+                ...imgStyle,
               }}
               onLoad={handleImageLoad}
               onError={() => setHasError(true)}

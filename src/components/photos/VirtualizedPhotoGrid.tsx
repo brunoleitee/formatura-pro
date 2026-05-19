@@ -30,7 +30,14 @@ interface VirtualizedPhotoGridProps {
 
 const GRID_GAP = 10;
 const MIN_COL_WIDTH = 140;
+const FOOTER_HEIGHT = 72;
 const ESTIMATED_CARD_HEIGHT = 320;
+
+function getMediaHeightMultiplier(zoom: number): number {
+  if (zoom >= 260) return 0.95;
+  if (zoom >= 180) return 0.78;
+  return 0.72;
+}
 const OVERSCAN_STILL = 3;
 const OVERSCAN_SCROLLING = 1;
 
@@ -116,7 +123,7 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
         const cols = columnsFromWidth(w, zoom);
         const cw = cardWidthFromSize(w, cols);
         const sz = thumbSizeForCard(cw);
-        const th = sz + 72;
+        const th = Math.round(cw * getMediaHeightMultiplier(zoom)) + FOOTER_HEIGHT;
         const rows = Math.ceil(photos.length / cols);
         const totalH = rows * th + Math.max(0, rows - 1) * GRID_GAP;
         const m = metricsRef.current;
@@ -370,13 +377,12 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
                     isSelected={selRef.current.has(id)}
                     getSelectionCount={cbRef.current.getSelectionCount}
                     cardWidth={cw}
-                    thumbHeight={th - 72}
+                    thumbHeight={th - FOOTER_HEIGHT}
                     cardHeight={th}
                     thumbTargetSize={sz}
                     imgLoading="eager"
                     imgFetchPriority={(start + li) < Math.max(12, cols * 2) ? 'high' : 'low'}
                     onClick={cbRef.current.onClick}
-                    zoom={zoom}
                     onDoubleClick={cbRef.current.onDoubleClick}
                     onOpenDetails={cbRef.current.onOpenDetails}
                     onDragStart={cbRef.current.onDragStart}
