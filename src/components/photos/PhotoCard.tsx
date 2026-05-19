@@ -27,7 +27,6 @@ interface PhotoCardProps {
   onDragStart?: (photo: Photo, event: React.PointerEvent) => void;
   onDragEnd?: (photo: Photo, event: React.PointerEvent) => void;
   onFirstThumbLoad?: () => void;
-  onAspectRatio?: (path: string, ratio: number) => void;
 }
 
 const FaceOverlayBox = memo(function FaceOverlayBox({
@@ -119,7 +118,7 @@ const CardInfoSection = memo(function CardInfoSection({
   );
 });
 
-export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thumbHeight, cardHeight, thumbTargetSize, thumbLowTargetSize, imgLoading = 'lazy', imgFetchPriority = 'auto', onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad, onAspectRatio }: PhotoCardProps) {
+export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thumbHeight, cardHeight, thumbTargetSize, thumbLowTargetSize, imgLoading = 'lazy', imgFetchPriority = 'auto', onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
   const thumbSize = (thumbTargetSize ?? 240) > 0 ? (thumbTargetSize ?? 240) : 0;
   const thumbUrl = useMemo(
     () => thumbSize > 0 ? (getGridThumbUrl(photo.path, thumbSize, 70) ?? '') : '',
@@ -134,15 +133,10 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
   const [dragSelectionCount, setDragSelectionCount] = useState(0);
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const imgAspect = useMemo(() => {
-    if (photo.width && photo.height) return photo.height / photo.width;
-    return null;
-  }, [photo.width, photo.height]);
-  const containerSize = useMemo(() => {
-    const w = cardWidth ?? 320;
-    const h = cardWidth && imgAspect ? Math.round(cardWidth * imgAspect) : (thumbHeight ?? 240);
-    return { w, h };
-  }, [cardWidth, thumbHeight, imgAspect]);
+  const containerSize = useMemo(
+    () => ({ w: cardWidth ?? 320, h: thumbHeight ?? 240 }),
+    [cardWidth, thumbHeight]
+  );
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
   const isDraggingInternal = useRef(false);
   const blobUrlRef = useRef<string | null>(null);
@@ -252,17 +246,13 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
     setDragSelectionCount(0);
   };
 
-  const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
+  const handleImageLoad = useCallback(() => {
     setIsLoaded(true);
-    const img = e.currentTarget;
-    if (img.naturalWidth && img.naturalHeight) {
-      onAspectRatio?.(photo.path, img.naturalHeight / img.naturalWidth);
-    }
     if (isPerfLoggingEnabled()) {
       logPerf('catalog image load', perfNow(), imageContext);
     }
     onFirstThumbLoad?.();
-  }, [onFirstThumbLoad, imageContext, onAspectRatio, photo.path]);
+  }, [onFirstThumbLoad, imageContext]);
 
   const cardStyle: React.CSSProperties = {
     width: cardWidth ? `${cardWidth}px` : '100%',
@@ -306,6 +296,7 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
       <div
         className="photo-img-placeholder"
         ref={containerRef}
+        style={thumbHeight ? { height: `${thumbHeight}px`, flex: '0 0 auto' } : undefined}
       >
         {!hasError && (
           <>
@@ -316,9 +307,6 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
               fetchPriority={imgFetchPriority}
               draggable={false}
               style={{
-                width: '100%',
-                height: 'auto',
-                display: 'block',
                 opacity: isLoaded ? 1 : 0,
                 userSelect: 'none',
                 pointerEvents: 'none',

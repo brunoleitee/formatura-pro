@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Image as ImageIcon, RefreshCw } from 'lucide-react';
 import type { MouseEvent, PointerEvent } from 'react';
@@ -30,8 +30,7 @@ interface VirtualizedPhotoGridProps {
 
 const GRID_GAP = 10;
 const MIN_COL_WIDTH = 140;
-const FOOTER_HEIGHT = 72;
-const ESTIMATED_CARD_HEIGHT = 320;
+const ESTIMATED_CARD_HEIGHT = 400;
 const OVERSCAN_STILL = 3;
 const OVERSCAN_SCROLLING = 1;
 
@@ -95,21 +94,8 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
 }: VirtualizedPhotoGridProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
-  const metricsRef = useRef({ w: 0, cols: 4, cw: 240, th: 320, sz: 200, rows: 0, totalH: 0 });
+  const metricsRef = useRef({ w: 0, cols: 4, cw: 240, th: 400, sz: 200, rows: 0, totalH: 0 });
   const selRef = useRef(selectedPaths);
-  const aspectRatioCacheRef = useRef<Map<string, number>>(new Map());
-  const [arVersion, setArVersion] = useState(0);
-  const measureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const onAspectRatio = useCallback((path: string, ratio: number) => {
-    const cache = aspectRatioCacheRef.current;
-    if (cache.get(path) !== ratio) {
-      cache.set(path, ratio);
-      if (measureTimerRef.current) clearTimeout(measureTimerRef.current);
-      measureTimerRef.current = setTimeout(() => {
-        setArVersion(v => v + 1);
-      }, 80);
-    }
-  }, []);
   selRef.current = selectedPaths;
 
   useEffect(() => {
@@ -130,10 +116,13 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
         const cols = columnsFromWidth(w, zoom);
         const cw = cardWidthFromSize(w, cols);
         const sz = thumbSizeForCard(cw);
+        const imageHeight = Math.max(200, Math.min(Math.round(cw * 1.33), 500));
+        const th = imageHeight + 72;
         const rows = Math.ceil(photos.length / cols);
+        const totalH = rows * th + Math.max(0, rows - 1) * GRID_GAP;
         const m = metricsRef.current;
         const changed = m.w !== w || m.cols !== cols || m.cw !== cw;
-        metricsRef.current = { w, cols, cw, th: 0, sz, rows, totalH: 0 };
+        metricsRef.current = { w, cols, cw, th, sz, rows, totalH };
         if (changed) rowVirtualizer.measure();
       }, 80);
     };
@@ -163,40 +152,11 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
     return () => el.removeEventListener('scroll', cb);
   }, [onLoadMore, hasMore]);
 
-  const cols = metricsRef.current.cols || 4;
-  const cw = metricsRef.current.cw || 240;
-  const sz = metricsRef.current.sz || 240;
-
-  // --- row heights from aspect ratios ---
-  const rowHeights = useMemo(() => {
-    const heights: number[] = [];
-    if (photos.length === 0 || !cols) return heights;
-    const rowCount = Math.ceil(photos.length / cols);
-    const cache = aspectRatioCacheRef.current;
-    for (let ri = 0; ri < rowCount; ri++) {
-      const start = ri * cols;
-      const end = Math.min(start + cols, photos.length);
-      let maxH = 0;
-      for (let i = start; i < end; i++) {
-        const p = photos[i];
-        const ar = cache.get(p.path) ?? (p.width && p.height ? p.height / p.width : 1.33);
-        const cardH = Math.round(cw * ar) + FOOTER_HEIGHT;
-        if (cardH > maxH) maxH = cardH;
-      }
-      heights.push(Math.max(maxH, ESTIMATED_CARD_HEIGHT));
-    }
-    return heights;
-  }, [photos, cols, cw, arVersion]);
-
-  const totalH = rowHeights.length > 0
-    ? rowHeights.reduce((s, h) => s + h + GRID_GAP, -GRID_GAP)
-    : 0;
-
   // --- virtualizer ---
   const rowVirtualizer = useVirtualizer({
-    count: rowHeights.length,
+    count: Math.max(1, Math.ceil(photos.length / Math.max(1, metricsRef.current.cols))),
     getScrollElement: () => parentRef.current,
-    estimateSize: (index) => rowHeights[index] || ESTIMATED_CARD_HEIGHT,
+    estimateSize: () => ESTIMATED_CARD_HEIGHT,
     overscan: OVERSCAN_STILL,
   });
   const vzRef = useRef(rowVirtualizer);
@@ -208,6 +168,12 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
     stableRowsRef.current = virtualItems;
   }
   const visibleRows = stableRowsRef.current;
+
+  const m = metricsRef.current;
+  const cols = m.cols || 4;
+  const cw = m.cw || 240;
+  const th = m.th || 158;
+  const sz = m.sz || 240;
 
   // --- rAF scroll throttle ---
   const scrollStateRef = useRef({ y: 0, speed: 0 });
@@ -388,15 +354,14 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
         contain: 'layout paint style',
       }}
     >
-      <div style={{ height: totalH, position: 'relative' }}>
+      <div style={{ height: m.totalH, position: 'relative' }}>
         {visibleRows.map((vr) => {
           const start = vr.index * cols;
           const end = Math.min(start + cols, photos.length);
           const rowPhotos = photos.slice(start, end);
-          const rowH = rowHeights[vr.index] || ESTIMATED_CARD_HEIGHT;
 
           return (
-            <div key={vr.key} style={getRowStyle(vr.start, rowH, cols, cw)}>
+            <div key={vr.key} style={getRowStyle(vr.start, th, cols, cw)}>
               {rowPhotos.map((photo, li) => {
                 const id = getPhotoId(photo);
                 return (
@@ -406,8 +371,8 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
                     isSelected={selRef.current.has(id)}
                     getSelectionCount={cbRef.current.getSelectionCount}
                     cardWidth={cw}
-                    thumbHeight={rowH - FOOTER_HEIGHT}
-                    cardHeight={rowH}
+                    thumbHeight={th - 72}
+                    cardHeight={th}
                     thumbTargetSize={sz}
                     imgLoading="eager"
                     imgFetchPriority={(start + li) < Math.max(12, cols * 2) ? 'high' : 'low'}
@@ -417,7 +382,6 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
                     onDragStart={cbRef.current.onDragStart}
                     onDragEnd={cbRef.current.onDragEnd}
                     onFirstThumbLoad={cbRef.current.onFirstThumbLoad}
-                    onAspectRatio={onAspectRatio}
                   />
                 );
               })}
