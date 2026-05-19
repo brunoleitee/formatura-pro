@@ -3,10 +3,11 @@ import { Image as ImageIcon, MoreHorizontal, Brain, ScanFace, FileText } from 'l
 import { type Photo } from '../../services/api';
 import { isPhotoBlurry, isPhotoAttention } from '../../utils/qualityUtils';
 import { isPhotoMapped, isKnownFace } from '../../utils/personIdentity';
-import { getGridHighThumbUrl, getGridThumbUrl } from '../../utils/imageUrls';
+import { getGridThumbUrl } from '../../utils/imageUrls';
 import { isPerfLoggingEnabled, logPerf, perfNow } from '../../utils/perf';
 import { aiCacheStore } from '../../services/AICacheStore';
 import { ratingCache } from '../../services/RatingCache';
+import { thumbManager } from '../../services/ThumbRequestManager';
 import styles from './PhotoCard.module.css';
 
 interface PhotoCardProps {
@@ -28,23 +29,30 @@ interface PhotoCardProps {
   onFirstThumbLoad?: () => void;
 }
 
-function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number, h: number }, photoWidth: number, photoHeight: number) {
+const FaceOverlayBox = memo(function FaceOverlayBox({
+  face, containerSize, photoWidth, photoHeight
+}: {
+  face: Photo['faces'][number];
+  containerSize: { w: number, h: number };
+  photoWidth: number;
+  photoHeight: number;
+}) {
   if (face.x1 == null || !photoWidth || !photoHeight) return null;
 
   const imgRatio = photoWidth / photoHeight;
-  const containerRatio = thumbSize.w / thumbSize.h;
+  const containerRatio = containerSize.w / containerSize.h;
 
-  let renderedW = thumbSize.w;
-  let renderedH = thumbSize.h;
+  let renderedW = containerSize.w;
+  let renderedH = containerSize.h;
 
   if (imgRatio > containerRatio) {
-    renderedH = thumbSize.w / imgRatio;
+    renderedH = containerSize.w / imgRatio;
   } else {
-    renderedW = thumbSize.h * imgRatio;
+    renderedW = containerSize.h * imgRatio;
   }
 
-  const offsetX = (thumbSize.w - renderedW) / 2;
-  const offsetY = (thumbSize.h - renderedH) / 2;
+  const offsetX = (containerSize.w - renderedW) / 2;
+  const offsetY = (containerSize.h - renderedH) / 2;
   const isKnown = isKnownFace(face);
 
   const x1 = offsetX + (face.x1 / photoWidth) * renderedW;
@@ -55,7 +63,6 @@ function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number,
 
   return (
     <div
-      key={face.rowid ?? `${face.x1}-${face.y1}-${face.x2}-${face.y2}`}
       style={{
         position: 'absolute',
         left: `${x1}px`,
@@ -82,102 +89,92 @@ function renderFaceOverlay(face: Photo['faces'][number], thumbSize: { w: number,
       )}
     </div>
   );
-}
+});
 
-const HIGH_HQ_CONCURRENCY = 4;
-type HighQueueEntry = {
-  url: string;
-  img: HTMLImageElement | null;
-  started: boolean;
-  cancelled: boolean;
-  onLoad: () => void;
-  onError: () => void;
-};
-
-const highQueue: HighQueueEntry[] = [];
-let activeHighLoads = 0;
-
-function pumpHighQueue() {
-  while (activeHighLoads < HIGH_HQ_CONCURRENCY && highQueue.length > 0) {
-    const entry = highQueue.shift();
-    if (!entry || entry.cancelled) continue;
-
-    activeHighLoads += 1;
-    entry.started = true;
-    const img = new window.Image();
-    entry.img = img;
-    img.decoding = 'async';
-    img.onload = () => {
-      activeHighLoads = Math.max(0, activeHighLoads - 1);
-      if (!entry.cancelled) entry.onLoad();
-      pumpHighQueue();
-    };
-    img.onerror = () => {
-      activeHighLoads = Math.max(0, activeHighLoads - 1);
-      if (!entry.cancelled) entry.onError();
-      pumpHighQueue();
-    };
-    img.src = entry.url;
-  }
-}
-
-function enqueueHighQualityLoad(url: string, onLoad: () => void, onError: () => void) {
-  const entry: HighQueueEntry = {
-    url,
-    img: null,
-    started: false,
-    cancelled: false,
-    onLoad,
-    onError,
-  };
-
-  highQueue.push(entry);
-  pumpHighQueue();
-
-  return () => {
-    if (entry.cancelled) return;
-    entry.cancelled = true;
-
-    const queuedIndex = highQueue.indexOf(entry);
-    if (queuedIndex >= 0) {
-      highQueue.splice(queuedIndex, 1);
-      return;
-    }
-
-    if (entry.started && entry.img) {
-      entry.img.onload = null;
-      entry.img.onerror = null;
-      entry.img.src = '';
-      activeHighLoads = Math.max(0, activeHighLoads - 1);
-      pumpHighQueue();
-    }
-  };
-}
+const CardInfoSection = memo(function CardInfoSection({
+  photo, isMapped, firstName, showRating, photoMeta
+}: {
+  photo: Photo;
+  isMapped: boolean;
+  firstName: string;
+  showRating: boolean;
+  photoMeta: { rating: number; favorite: boolean };
+}) {
+  return (
+    <div className="photo-info">
+      <div className={`photo-name ${styles.photoNameRow}`} title={photo.name}>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto', minWidth: 0 }}>{photo.name}</span>
+        {showRating && (
+          <span data-scroll-hide className={styles.ratingBadge} title={`Rating: ${photoMeta.rating}`}>
+            {'★'.repeat(photoMeta.rating)}{'☆'.repeat(5 - photoMeta.rating)}
+          </span>
+        )}
+      </div>
+      <div className="photo-status">
+        <div className={`status-indicator ${isMapped ? 'mapped' : 'unmapped'}`} />
+        <span>{firstName}</span>
+      </div>
+    </div>
+  );
+});
 
 export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thumbHeight, cardHeight, thumbTargetSize, thumbLowTargetSize, imgLoading = 'lazy', imgFetchPriority = 'auto', onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
-  const lowSize = thumbLowTargetSize ?? 400;
-  const highSize = thumbTargetSize ?? lowSize;
-  const lowUrl = useMemo(() => getGridThumbUrl(photo.path, lowSize) ?? '', [photo.path, lowSize]);
-  const highUrl = useMemo(() => getGridHighThumbUrl(photo.path, highSize) ?? '', [photo.path, highSize]);
+  const thumbSize = (thumbTargetSize ?? 240) > 0 ? (thumbTargetSize ?? 240) : 0;
+  const thumbUrl = useMemo(
+    () => thumbSize > 0 ? (getGridThumbUrl(photo.path, thumbSize, 70) ?? '') : '',
+    [photo.path, thumbSize]
+  );
+  const thumbKey = useMemo(() => `thumb:${photo.path}:${thumbSize}`, [photo.path, thumbSize]);
+
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
-  const [isHighQuality, setIsHighQuality] = useState(false);
-  const [displaySrc, setDisplaySrc] = useState(() => lowUrl);
-  const [thumbSize, setThumbSize] = useState({ w: 0, h: 0 });
   const [isHovered, setIsHovered] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragSelectionCount, setDragSelectionCount] = useState(0);
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const loadedSrcRef = useRef<string | null>(null);
+  const containerSize = useMemo(
+    () => ({ w: cardWidth ?? 320, h: thumbHeight ?? 240 }),
+    [cardWidth, thumbHeight]
+  );
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
   const isDraggingInternal = useRef(false);
-  const promoteCancelRef = useRef<(() => void) | null>(null);
-  const promoteTimerRef = useRef<number | null>(null);
-  const imageLoadStartedAtRef = useRef<number | null>(null);
-  const imageContext = useMemo(() => {
-    return `photo=${photo.path} low=${lowSize} high=${highSize}`;
-  }, [photo.path, lowSize, highSize]);
+  const blobUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!thumbUrl) return;
+    let cancelled = false;
+    let blob: string | null = null;
+
+    thumbManager.request(thumbUrl, thumbKey, 2).then((url) => {
+      if (cancelled) {
+        if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+        return;
+      }
+      blob = url;
+      if (blobUrlRef.current && blobUrlRef.current.startsWith('blob:')) {
+        URL.revokeObjectURL(blobUrlRef.current);
+      }
+      blobUrlRef.current = url;
+      if (imgRef.current) {
+        imgRef.current.src = url;
+      }
+    }).catch(() => {});
+
+    return () => {
+      cancelled = true;
+      thumbManager.cancel(thumbKey);
+      if (blob && blob.startsWith('blob:')) URL.revokeObjectURL(blob);
+    };
+  }, [thumbUrl, thumbKey]);
+
+  useEffect(() => () => {
+    if (blobUrlRef.current && blobUrlRef.current.startsWith('blob:')) {
+      URL.revokeObjectURL(blobUrlRef.current);
+    }
+  }, []);
+
+  const imageContext = useMemo(() => `photo=${photo.path} size=${thumbSize}`, [photo.path, thumbSize]);
 
   const isMapped = isPhotoMapped(photo);
   const isDiscarded = photo.discarded === true;
@@ -200,101 +197,9 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
   const showFavorite = photoMeta.favorite;
 
   useEffect(() => {
-    const shouldPromoteHigh = highUrl !== lowUrl && highSize > lowSize;
-
-    if (promoteTimerRef.current != null) {
-      window.clearTimeout(promoteTimerRef.current);
-      promoteTimerRef.current = null;
-    }
-    promoteCancelRef.current?.();
-    promoteCancelRef.current = null;
-
     setHasError(false);
-    setIsHighQuality(false);
-    setDisplaySrc(lowUrl);
     setIsLoaded(false);
-    loadedSrcRef.current = null;
-    imageLoadStartedAtRef.current = perfNow();
-
-    if (!shouldPromoteHigh) {
-      return () => {
-        if (promoteTimerRef.current != null) {
-          window.clearTimeout(promoteTimerRef.current);
-          promoteTimerRef.current = null;
-        }
-        promoteCancelRef.current?.();
-        promoteCancelRef.current = null;
-      };
-    }
-
-    return () => {
-      if (promoteTimerRef.current != null) {
-        window.clearTimeout(promoteTimerRef.current);
-        promoteTimerRef.current = null;
-      }
-      promoteCancelRef.current?.();
-      promoteCancelRef.current = null;
-    };
-  }, [lowUrl, highUrl, highSize, lowSize]);
-
-  useEffect(() => {
-    if (!isLoaded) return;
-
-    const shouldPromoteHigh = highUrl !== lowUrl && highSize > lowSize;
-    if (!shouldPromoteHigh) return;
-
-    promoteTimerRef.current = window.setTimeout(() => {
-      promoteCancelRef.current = enqueueHighQualityLoad(
-        highUrl,
-        () => {
-          setDisplaySrc(highUrl);
-          setIsHighQuality(true);
-        },
-        () => {
-          setIsHighQuality(false);
-        }
-      );
-      promoteTimerRef.current = null;
-    }, 180);
-
-    return () => {
-      if (promoteTimerRef.current != null) {
-        window.clearTimeout(promoteTimerRef.current);
-        promoteTimerRef.current = null;
-      }
-      promoteCancelRef.current?.();
-      promoteCancelRef.current = null;
-    };
-  }, [isLoaded, highUrl, lowUrl, highSize, lowSize]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const measure = () => {
-      const rect = el.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        setThumbSize({ w: rect.width, h: rect.height });
-      }
-    };
-
-    measure();
-
-    const observer = new ResizeObserver(() => measure());
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const img = imgRef.current;
-    if (!img) return;
-    if (img.complete && img.naturalWidth > 0) {
-      setIsLoaded(true);
-      if (displaySrc) {
-        loadedSrcRef.current = displaySrc;
-      }
-    }
-  }, [displaySrc, lowUrl, highUrl]);
+  }, [thumbUrl]);
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return; // Only left click
@@ -342,19 +247,12 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
   };
 
   const handleImageLoad = useCallback(() => {
-    if (displaySrc) {
-      loadedSrcRef.current = displaySrc;
-    }
     setIsLoaded(true);
-    if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) {
-      setIsLoaded(true);
-    }
-    if (isPerfLoggingEnabled() && imageLoadStartedAtRef.current != null) {
-      logPerf('catalog image load', imageLoadStartedAtRef.current, imageContext);
-      imageLoadStartedAtRef.current = null;
+    if (isPerfLoggingEnabled()) {
+      logPerf('catalog image load', perfNow(), imageContext);
     }
     onFirstThumbLoad?.();
-  }, [displaySrc, onFirstThumbLoad, imageContext]);
+  }, [onFirstThumbLoad, imageContext]);
 
   const cardStyle: React.CSSProperties = {
     width: cardWidth ? `${cardWidth}px` : '100%',
@@ -404,34 +302,21 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
           <>
             <img
               ref={imgRef}
-              src={displaySrc || getGridThumbUrl(photo.path, thumbLowTargetSize ?? 400) || ''}
               alt={photo.name}
               loading={imgLoading}
               fetchPriority={imgFetchPriority}
-              decoding="async"
               draggable={false}
               style={{
                 opacity: isLoaded ? 1 : 0,
                 userSelect: 'none',
                 pointerEvents: 'none',
-                filter: isHighQuality ? 'none' : 'blur(0.5px)',
               }}
               onLoad={handleImageLoad}
-              onError={() => {
-                if (!loadedSrcRef.current) {
-                  setHasError(true);
-                  if (isPerfLoggingEnabled() && imageLoadStartedAtRef.current != null) {
-                    logPerf('catalog image error', imageLoadStartedAtRef.current, imageContext);
-                    imageLoadStartedAtRef.current = null;
-                  }
-                } else {
-                  setDisplaySrc(loadedSrcRef.current);
-                  setIsHighQuality(false);
-                }
-              }}
+              onError={() => setHasError(true)}
             />
             <button
               data-interactive="true"
+              data-scroll-hide
               onClick={(e) => {
                 e.stopPropagation();
                 onOpenDetails(photo);
@@ -460,12 +345,20 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
             >
               <MoreHorizontal size={16} />
             </button>
-            {isLoaded && thumbSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, idx) => (
-                <React.Fragment key={face.rowid ?? idx}>
-                  {renderFaceOverlay(face, thumbSize, photo.width!, photo.height!)}
-                </React.Fragment>
+            {isLoaded && containerSize.w > 0 && photo.width && photo.height && (photo.faces || []).map((face, idx) => (
+                  idx < 10 && (
+                  <div key={face.rowid ?? idx} data-scroll-hide>
+                    <FaceOverlayBox
+                      face={face}
+                      containerSize={containerSize}
+                      photoWidth={photo.width!}
+                      photoHeight={photo.height!}
+                    />
+                  </div>
+                )
               ))}
             <div
+              data-scroll-hide
               aria-hidden="true"
               style={{
                 position: 'absolute',
@@ -491,26 +384,26 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
           </div>
         )}
         {isPhotoBlurry(photo) && (
-          <div className={`${styles.blurBadge} ${styles.blurBadgeBlurry}`} title="Desfocada">Desfocada</div>
+          <div data-scroll-hide className={`${styles.blurBadge} ${styles.blurBadgeBlurry}`} title="Desfocada">Desfocada</div>
         )}
         {isPhotoAttention(photo) && (
-          <div className={`${styles.blurBadge} ${styles.blurBadgeAttention}`} title="Atenção">Verificar foco</div>
+          <div data-scroll-hide className={`${styles.blurBadge} ${styles.blurBadgeAttention}`} title="Atenção">Verificar foco</div>
         )}
         {isDiscarded && (
-          <div className={styles.discardBadge}>Descartada</div>
+          <div data-scroll-hide className={styles.discardBadge}>Descartada</div>
         )}
         {isAiProcessing && (
-          <div className={`${styles.aiBadge} ${styles.aiProcessing}`}>IA...</div>
+          <div data-scroll-hide className={`${styles.aiBadge} ${styles.aiProcessing}`}>IA...</div>
         )}
         {showAiBadge && (
-          <div className={`${styles.aiBadge} ${styles.aiReady}`} title={aiOcrFinal ? `OCR: ${aiOcrFinal}` : aiResult?.face_detected ? 'Rosto detectado' : ''}>
+          <div data-scroll-hide className={`${styles.aiBadge} ${styles.aiReady}`} title={aiOcrFinal ? `OCR: ${aiOcrFinal}` : aiResult?.face_detected ? 'Rosto detectado' : ''}>
             {aiResult?.face_detected ? <ScanFace size={10} /> : null}
             {aiOcrFinal ? <FileText size={10} /> : null}
             {aiResult?.face_detected && aiOcrFinal ? null : !aiResult?.face_detected && !aiOcrFinal ? <Brain size={10} /> : null}
           </div>
         )}
         {showFavorite && (
-          <div className={styles.favBadge} title="Favorito">❤</div>
+          <div data-scroll-hide className={styles.favBadge} title="Favorito">❤</div>
         )}
         {isDragging && dragSelectionCount > 1 && (
           <div
@@ -537,6 +430,7 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
           </div>
         )}
         <div
+          data-scroll-hide
           className={`photo-card-check ${isSelected ? 'photo-card-check-visible' : 'photo-card-check-hidden'}`}
           aria-hidden={!isSelected}
           style={{
@@ -566,20 +460,13 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
           <span style={{ fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.01em', whiteSpace: 'nowrap' }}>Selecionada</span>
         </div>
       </div>
-      <div className="photo-info">
-        <div className={`photo-name ${styles.photoNameRow}`} title={photo.name}>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto', minWidth: 0 }}>{photo.name}</span>
-          {showRating && (
-            <span className={styles.ratingBadge} title={`Rating: ${photoMeta.rating}`}>
-              {'★'.repeat(photoMeta.rating)}{'☆'.repeat(5 - photoMeta.rating)}
-            </span>
-          )}
-        </div>
-        <div className="photo-status">
-          <div className={`status-indicator ${isMapped ? 'mapped' : 'unmapped'}`} />
-          <span>{firstName}</span>
-        </div>
-      </div>
+      <CardInfoSection
+        photo={photo}
+        isMapped={isMapped}
+        firstName={firstName}
+        showRating={showRating}
+        photoMeta={photoMeta}
+      />
     </div>
   );
 }

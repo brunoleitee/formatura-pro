@@ -1,14 +1,14 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Image as ImageIcon, RefreshCw } from 'lucide-react';
 import type { MouseEvent, PointerEvent } from 'react';
 import { api, type Photo } from '../../services/api';
 import { MemoPhotoCard } from './PhotoCard';
 import { getPhotoId } from '../../hooks/usePhotoSelection';
-import { aiCacheStore } from '../../services/AICacheStore';
 import { aiQueueManager } from '../../services/AIQueueManager';
 import { aiApi } from '../../services/aiApi';
-import { ratingCache } from '../../services/RatingCache';
+import { aiCacheStore } from '../../services/AICacheStore';
+import { thumbManager } from '../../services/ThumbRequestManager';
 
 interface VirtualizedPhotoGridProps {
   photos: Photo[];
@@ -30,7 +30,9 @@ interface VirtualizedPhotoGridProps {
 
 const GRID_GAP = 10;
 const MIN_COL_WIDTH = 140;
-const CARD_INFO_HEIGHT = 72;
+const ESTIMATED_CARD_HEIGHT = 280;
+const OVERSCAN_STILL = 3;
+const OVERSCAN_SCROLLING = 1;
 
 function getColumnsByZoom(zoom: number) {
   if (zoom >= 300) return 2;
@@ -41,15 +43,36 @@ function getColumnsByZoom(zoom: number) {
   return 8;
 }
 
-function getThumbSizeForCard(cardWidth: number) {
-  if (cardWidth >= 700) return 1200;
-  if (cardWidth >= 500) return 1000;
-  if (cardWidth >= 350) return 800;
-  return 400;
+function columnsFromWidth(w: number, zoom: number) {
+  const widthCap = Math.max(2, Math.floor((w + GRID_GAP) / (MIN_COL_WIDTH + GRID_GAP)));
+  const zoomTarget = getColumnsByZoom(zoom);
+  return zoom >= 300 ? 2 : Math.max(2, Math.min(zoomTarget, widthCap));
 }
 
-function getLowThumbSizeForCard(cardWidth: number) {
-  return cardWidth >= 500 ? 600 : 400;
+function cardWidthFromSize(w: number, cols: number) {
+  const available = Math.max(0, w - GRID_GAP * Math.max(0, cols - 1));
+  return Math.max(MIN_COL_WIDTH, Math.floor(available / cols));
+}
+
+function thumbSizeForCard(w: number) {
+  if (w >= 350) return 320;
+  if (w >= 250) return 240;
+  return 200;
+}
+
+function getRowStyle(y: number, h: number, cols: number, cw: number): React.CSSProperties {
+  return {
+    position: 'absolute', top: 0, left: 0, width: '100%',
+    transform: `translateY(${y}px)`,
+    height: `${h}px`,
+    display: 'grid',
+    gridTemplateColumns: `repeat(${cols}, ${cw}px)`,
+    gap: `${GRID_GAP}px`,
+    alignItems: 'stretch', justifyContent: 'start',
+    willChange: 'transform',
+    contain: 'layout paint style',
+    contentVisibility: 'auto',
+  } as const;
 }
 
 export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
@@ -71,183 +94,244 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
 }: VirtualizedPhotoGridProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
+  const metricsRef = useRef({ w: 0, cols: 4, cw: 240, th: 158, sz: 240, rows: 0, totalH: 0 });
+  const selRef = useRef(selectedPaths);
+  selRef.current = selectedPaths;
+
   useEffect(() => {
     if (!scrollRef) return;
     (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = parentRef.current;
   });
-  const [viewportWidth, setViewportWidth] = useState(() => 
-    typeof window !== 'undefined' ? window.innerWidth - 320 : 0
-  );
-  const perfEnabled = typeof window !== 'undefined' && window.localStorage.getItem('formaturapro:perf') === '1';
+
+  // --- viewport width (debounced) ---
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const update = () => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        const w = el.clientWidth;
+        const cols = columnsFromWidth(w, zoom);
+        const cw = cardWidthFromSize(w, cols);
+        const th = Math.max(120, Math.round(cw * 0.66)) + 72;
+        const sz = thumbSizeForCard(cw);
+        const rows = Math.ceil(photos.length / cols);
+        const totalH = rows * th + Math.max(0, rows - 1) * GRID_GAP;
+        const m = metricsRef.current;
+        const changed = m.w !== w || m.cols !== cols || m.cw !== cw;
+        metricsRef.current = { w, cols, cw, th, sz, rows, totalH };
+        if (changed) measure();
+      }, 80);
+    };
+    update();
+    const ro = new ResizeObserver(() => update());
+    ro.observe(el);
+    return () => { ro.disconnect(); if (timer) clearTimeout(timer); };
+  }, [photos.length, zoom]);
+
+  // --- reset scroll ---
+  useEffect(() => {
+    if (parentRef.current) parentRef.current.scrollTop = 0;
+  }, [resetScrollKey]);
+
+  // --- load-more trigger ---
+  const isLoadingMoreRef = useRef(false);
+  useEffect(() => { isLoadingMoreRef.current = !!loadingMore; }, [loadingMore]);
+
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el || !onLoadMore || !hasMore) return;
+    const cb = () => {
+      if (isLoadingMoreRef.current) return;
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < 800) onLoadMore();
+    };
+    el.addEventListener('scroll', cb, { passive: true });
+    return () => el.removeEventListener('scroll', cb);
+  }, [onLoadMore, hasMore]);
+
+  // --- virtualizer ---
+  const rowVirtualizer = useVirtualizer({
+    count: Math.max(1, Math.ceil(photos.length / Math.max(1, metricsRef.current.cols))),
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ESTIMATED_CARD_HEIGHT,
+    overscan: OVERSCAN_STILL,
+  });
+  const vzRef = useRef(rowVirtualizer);
+  vzRef.current = rowVirtualizer;
+
+  const virtualItems = rowVirtualizer.getVirtualItems();
+  const stableRowsRef = useRef(virtualItems);
+  if (virtualItems.length > 0 && (stableRowsRef.current.length === 0 || virtualItems[0].index !== stableRowsRef.current[0].index)) {
+    stableRowsRef.current = virtualItems;
+  }
+  const visibleRows = stableRowsRef.current;
+
+  const m = metricsRef.current;
+  const cols = m.cols || 4;
+  const cw = m.cw || 240;
+  const th = m.th || 158;
+  const sz = m.sz || 240;
+
+  // --- rAF scroll throttle ---
+  const scrollStateRef = useRef({ y: 0, speed: 0 });
+  const rAFPending = useRef(false);
+  const isScrollingFastRef = useRef(false);
+  const scrollStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const overscanTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const onScrollFrame = useCallback(() => {
+    rAFPending.current = false;
+    const el = parentRef.current;
+    if (!el) return;
+    const s = scrollStateRef.current;
+    const fast = s.speed > 1.5;
+    const vz = vzRef.current;
+
+    if (fast !== isScrollingFastRef.current) {
+      isScrollingFastRef.current = fast;
+      if (fast) {
+        el.setAttribute('data-scrolling', 'fast');
+        document.documentElement.classList.add('scrolling-fast');
+        if (!aiQueueManager.isPaused()) aiQueueManager.pause('scrolling');
+        vz.options.overscan = OVERSCAN_SCROLLING;
+      }
+    }
+
+    if (scrollStopTimer.current) clearTimeout(scrollStopTimer.current);
+    scrollStopTimer.current = setTimeout(() => {
+      scrollStopTimer.current = null;
+      isScrollingFastRef.current = false;
+      el.removeAttribute('data-scrolling');
+      document.documentElement.classList.remove('scrolling-fast');
+      if (aiQueueManager.getPauseReason() === 'scrolling') aiQueueManager.resume('idle');
+      vz.options.overscan = OVERSCAN_STILL;
+
+      if (overscanTimer.current) clearTimeout(overscanTimer.current);
+      overscanTimer.current = setTimeout(() => {
+        overscanTimer.current = null;
+        const set = new Set<string>();
+        for (const path of visibleKeysRef.current.split(',').filter(Boolean)) {
+          set.add(`thumb:${path}:${sz}`);
+        }
+        thumbManager.cancelOnlyFarAwayRequests(set);
+      }, 150);
+    }, 400);
+  }, [sz]);
+
+  const handleScroll = useCallback(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const now = Date.now();
+    const s = scrollStateRef.current;
+    const prevY = s.y;
+    const y = el.scrollTop;
+    const dt = now - scrollTimeRef.current;
+    scrollTimeRef.current = now;
+    s.speed = dt > 0 ? Math.abs(y - prevY) / dt : 0;
+    s.y = y;
+
+    if (!rAFPending.current) {
+      rAFPending.current = true;
+      requestAnimationFrame(onScrollFrame);
+    }
+  }, [onScrollFrame]);
+
+  const scrollTimeRef = useRef(Date.now());
 
   useEffect(() => {
     const el = parentRef.current;
     if (!el) return;
-
-    const updateWidth = () => {
-      setViewportWidth(el.clientWidth);
-    };
-
-    updateWidth();
-
-    const observer = new ResizeObserver(() => updateWidth());
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!parentRef.current) return;
-    parentRef.current.scrollTop = 0;
-  }, [resetScrollKey]);
-
-  const isLoadingMoreRef = useRef(false);
-  useEffect(() => {
-    isLoadingMoreRef.current = !!loadingMore;
-  }, [loadingMore]);
-  useEffect(() => {
-    const el = parentRef.current;
-    if (!el || !onLoadMore || !hasMore) return;
-    const handleScroll = () => {
-      if (isLoadingMoreRef.current) return;
-      const { scrollTop, scrollHeight, clientHeight } = el;
-      if (scrollHeight - scrollTop - clientHeight < 800) {
-        onLoadMore();
-      }
-    };
     el.addEventListener('scroll', handleScroll, { passive: true });
-    return () => el.removeEventListener('scroll', handleScroll);
-  }, [onLoadMore, hasMore]);
+    return () => {
+      el.removeEventListener('scroll', handleScroll);
+      if (scrollStopTimer.current) clearTimeout(scrollStopTimer.current);
+      if (overscanTimer.current) clearTimeout(overscanTimer.current);
+      document.documentElement.classList.remove('scrolling-fast');
+    };
+  }, [handleScroll]);
 
-  const columns = useMemo(() => {
-    const safeWidth = Math.max(0, viewportWidth);
-    const widthCap = Math.max(2, Math.floor((safeWidth + GRID_GAP) / (MIN_COL_WIDTH + GRID_GAP)));
-    const zoomTarget = getColumnsByZoom(zoom);
-    return zoom >= 300 ? 2 : Math.max(2, Math.min(zoomTarget, widthCap));
-  }, [viewportWidth, zoom]);
-
-  const cardWidth = useMemo(() => {
-    const safeWidth = Math.max(0, viewportWidth);
-    const availableWidth = Math.max(0, safeWidth - GRID_GAP * Math.max(0, columns - 1));
-    return Math.max(MIN_COL_WIDTH, Math.floor(availableWidth / columns));
-  }, [viewportWidth, columns]);
-  const thumbHeight = useMemo(() => Math.max(120, Math.round(cardWidth * 0.66)), [cardWidth]);
-  const cardHeight = useMemo(() => thumbHeight + CARD_INFO_HEIGHT, [thumbHeight]);
-  const thumbSize = useMemo(() => getThumbSizeForCard(cardWidth), [cardWidth]);
-  const thumbLowSize = useMemo(() => getLowThumbSizeForCard(cardWidth), [cardWidth]);
-  const rowCount = useMemo(() => Math.ceil(photos.length / columns), [photos.length, columns]);
-  const totalRowsSize = useMemo(() => {
-    if (rowCount === 0) return 0;
-    return rowCount * cardHeight + Math.max(0, rowCount - 1) * GRID_GAP;
-  }, [rowCount, cardHeight]);
-
-  const rowVirtualizer = useVirtualizer({
-    count: rowCount,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => cardHeight + GRID_GAP,
-    overscan: 3,
-  });
-
-  const virtualRows = rowVirtualizer.getVirtualItems();
-  const renderedCards = useMemo(() => {
-    return virtualRows.reduce((count, virtualRow) => {
-      const startIndex = virtualRow.index * columns;
-      const endIndex = Math.min(startIndex + columns, photos.length);
-      return count + Math.max(0, endIndex - startIndex);
-    }, 0);
-  }, [virtualRows, columns, photos.length]);
-
-  useEffect(() => {
-    rowVirtualizer.measure();
-  }, [rowVirtualizer, cardWidth, thumbHeight, cardHeight, columns]);
-
-  useEffect(() => {
-    if (!perfEnabled) return;
-    // eslint-disable-next-line no-console
-    console.debug('[formaturapro][catalog-grid]', {
-      totalPhotos: photos.length,
-      columns,
-      cardHeight,
-      overscan: 3,
-      virtualRows: virtualRows.length,
-      renderedCards,
-    });
-  }, [perfEnabled, photos.length, columns, cardHeight, virtualRows.length, renderedCards]);
-
+  // --- AI visible detection ---
   const visibleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastVisibleKeyRef = useRef<string>("");
+  const lastAIKeyRef = useRef('');
+  const visibleKeysRef = useRef('');
 
   useEffect(() => {
-    if (virtualRows.length === 0 || !columns) return;
-
-    const visibleIdx = new Set<number>();
-    for (const vr of virtualRows) {
-      const start = vr.index * columns;
-      const end = Math.min(start + columns, photos.length);
-      for (let i = start; i < end; i++) visibleIdx.add(i);
+    if (visibleRows.length === 0 || !cols) return;
+    const idxs: number[] = [];
+    for (const vr of visibleRows) {
+      const start = vr.index * cols;
+      const end = Math.min(start + cols, photos.length);
+      for (let i = start; i < end; i++) idxs.push(i);
     }
-
-    const expandedIdx = new Set<number>(visibleIdx);
-    for (const idx of visibleIdx) {
+    for (let i = 0; i < idxs.length; i++) {
       for (let d = -4; d <= 4; d++) {
-        const n = idx + d;
-        if (n >= 0 && n < photos.length) expandedIdx.add(n);
+        const n = idxs[i] + d;
+        if (n >= 0 && n < photos.length && !idxs.includes(n)) idxs.push(n);
       }
     }
-
-    const visiblePaths: string[] = [];
-    for (const idx of expandedIdx) {
+    const paths: string[] = [];
+    const thumbPaths: string[] = [];
+    for (const idx of [...new Set(idxs)]) {
       const p = photos[idx];
-      if (p?.path) visiblePaths.push(p.path);
+      if (p?.path) { paths.push(p.path); thumbPaths.push(p.path); }
     }
+    visibleKeysRef.current = thumbPaths.join(',');
 
-    const key = visiblePaths.join("|");
-    if (key === lastVisibleKeyRef.current) return;
-    lastVisibleKeyRef.current = key;
+    const key = paths.join('|');
+    if (key === lastAIKeyRef.current) return;
+    lastAIKeyRef.current = key;
 
     if (visibleTimerRef.current) clearTimeout(visibleTimerRef.current);
     visibleTimerRef.current = setTimeout(() => {
-      const pending = visiblePaths.filter((p) => {
+      // Nunca executar batch-status durante scroll ativo
+      if (isScrollingFastRef.current) return;
+      const pending = paths.filter((p) => {
         if (aiQueueManager.isProcessed(p)) return false;
-        if (aiCacheStore.has(p)) {
-          const c = aiCacheStore.get(p)!;
-          if (c.status === "completed") return false;
-        }
-        return true;
+        const c = aiCacheStore.get(p);
+        return !c || c.status !== 'completed';
       });
-
       if (pending.length === 0) return;
-
       const first8 = pending.slice(0, 8);
       aiApi.batchStatus(first8).then((res) => {
         for (const item of res.items) {
-          if (item.status === "completed") {
-            aiCacheStore.set(item.foto_path, {
-              face_detected: item.face_detected ?? false,
-              faces_count: item.faces_count ?? 0,
-              embedding_ready: item.embedding_ready ?? false,
-              final_student: item.final_student ?? null,
-              status: "completed",
-            });
+          if (item.status === 'completed') {
+            aiCacheStore.set(item.foto_path, { face_detected: item.face_detected ?? false, faces_count: item.faces_count ?? 0, embedding_ready: item.embedding_ready ?? false, final_student: item.final_student ?? null, status: 'completed' });
           }
         }
-        const stillPending = first8.filter((p) => {
-          const c = aiCacheStore.get(p);
-          return !c || c.status !== "completed";
-        });
-        if (stillPending.length > 0) {
-          aiQueueManager.batchInitialize(stillPending);
-        }
-        console.debug(`[AI-VISIBLE] queued=${stillPending.length} visible=${visibleIdx.size} total=${photos.length}`);
-      }).catch(() => {
-        aiQueueManager.batchInitialize(first8);
-        console.debug(`[AI-VISIBLE] queued=${first8.length} visible=${visibleIdx.size} total=${photos.length}`);
-      });
+        const sp = first8.filter(p => { const c = aiCacheStore.get(p); return !c || c.status !== 'completed'; });
+        if (sp.length > 0) aiQueueManager.batchInitialize(sp);
+      }).catch(() => aiQueueManager.batchInitialize(first8));
     }, 250);
+    return () => { if (visibleTimerRef.current) clearTimeout(visibleTimerRef.current); };
+  }, [visibleRows, cols, photos]);
 
-    return () => {
-      if (visibleTimerRef.current) clearTimeout(visibleTimerRef.current);
+  // --- scan status poll ---
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const st = await api.getScanStatus();
+        if (cancelled) return;
+        if (st?.is_scanning) { if (!aiQueueManager.isPaused()) aiQueueManager.pause('scanning'); }
+        else if (aiQueueManager.getPauseReason() === 'scanning') aiQueueManager.resume('scan_end');
+      } catch { if (aiQueueManager.getPauseReason() === 'scanning') aiQueueManager.resume('scan_end'); }
     };
-  }, [virtualRows, columns, photos]);
+    const id = setInterval(poll, 5000);
+    poll();
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  // --- stable callbacks ---
+  const cbRef = useRef({ onClick: onPhotoClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, getSelectionCount, onFirstThumbLoad });
+  cbRef.current.onClick = onPhotoClick;
+  cbRef.current.onDoubleClick = onDoubleClick;
+  cbRef.current.onOpenDetails = onOpenDetails;
+  cbRef.current.onDragStart = onDragStart;
+  cbRef.current.onDragEnd = onDragEnd;
+  cbRef.current.getSelectionCount = getSelectionCount;
+  cbRef.current.onFirstThumbLoad = onFirstThumbLoad;
 
   if (photos.length === 0) {
     return (
@@ -262,63 +346,41 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
   return (
     <div
       ref={parentRef}
+      data-scroll-container="true"
       style={{
-        flex: 1,
-        minHeight: 0,
-        overflowY: 'auto',
-        position: 'relative',
-        paddingBottom: '20px',
-        contain: 'layout paint',
+        flex: 1, minHeight: 0, overflowY: 'auto',
+        position: 'relative', paddingBottom: '20px',
+        contain: 'layout paint style',
       }}
     >
-      <div style={{ height: totalRowsSize, position: 'relative' }}>
-        {virtualRows.map((virtualRow) => {
-          const startIndex = virtualRow.index * columns;
-          const endIndex = Math.min(startIndex + columns, photos.length);
-          const rowPhotos = photos.slice(startIndex, endIndex);
+      <div style={{ height: m.totalH, position: 'relative' }}>
+        {visibleRows.map((vr) => {
+          const start = vr.index * cols;
+          const end = Math.min(start + cols, photos.length);
+          const rowPhotos = photos.slice(start, end);
 
           return (
-            <div
-              key={virtualRow.key}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${virtualRow.start}px)`,
-                height: `${cardHeight}px`,
-                display: 'grid',
-                gridTemplateColumns: `repeat(${columns}, ${cardWidth}px)`,
-                gap: `${GRID_GAP}px`,
-                alignItems: 'stretch',
-                justifyContent: 'start',
-              }}
-            >
-              {rowPhotos.map((photo, localIndex) => {
+            <div key={vr.key} style={getRowStyle(vr.start, th, cols, cw)}>
+              {rowPhotos.map((photo, li) => {
                 const id = getPhotoId(photo);
-                const globalIndex = startIndex + localIndex;
-                const eager = true;
-                const highPriority = globalIndex < Math.max(12, columns * 2);
-
                 return (
                   <MemoPhotoCard
                     key={id}
                     photo={photo}
-                    isSelected={selectedPaths.has(id)}
-                    getSelectionCount={getSelectionCount}
-                    cardWidth={cardWidth}
-                    thumbHeight={thumbHeight}
-                    cardHeight={cardHeight}
-                    thumbTargetSize={thumbSize}
-                    thumbLowTargetSize={thumbLowSize}
-                    imgLoading={eager ? 'eager' : 'lazy'}
-                    imgFetchPriority={highPriority ? 'high' : 'low'}
-                    onClick={onPhotoClick}
-                    onDoubleClick={onDoubleClick}
-                    onOpenDetails={onOpenDetails}
-                    onDragStart={onDragStart}
-                    onDragEnd={onDragEnd}
-                    onFirstThumbLoad={onFirstThumbLoad}
+                    isSelected={selRef.current.has(id)}
+                    getSelectionCount={cbRef.current.getSelectionCount}
+                    cardWidth={cw}
+                    thumbHeight={th - 72}
+                    cardHeight={th}
+                    thumbTargetSize={sz}
+                    imgLoading="eager"
+                    imgFetchPriority={(start + li) < Math.max(12, cols * 2) ? 'high' : 'low'}
+                    onClick={cbRef.current.onClick}
+                    onDoubleClick={cbRef.current.onDoubleClick}
+                    onOpenDetails={cbRef.current.onOpenDetails}
+                    onDragStart={cbRef.current.onDragStart}
+                    onDragEnd={cbRef.current.onDragEnd}
+                    onFirstThumbLoad={cbRef.current.onFirstThumbLoad}
                   />
                 );
               })}
