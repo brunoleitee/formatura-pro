@@ -651,7 +651,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     }
   };
 
-  const progressPct = scanStatus ? Math.min(100, Math.max(0, (scanStatus.total_processadas / (scanStatus.total_files || 1)) * 100)) : 0;
+  const progressPct = scanStatus ? Math.min(100, Math.max(0, ((scanStatus.total_processadas ?? 0) / (scanStatus.total_files || 1)) * 100)) : 0;
   const formatTime = (sec: number) => {
     const h = Math.floor(sec / 3600);
     const m = Math.floor((sec % 3600) / 60);
@@ -705,7 +705,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const CircularGauge = ({ pct }: { pct: number }) => {
     const radius = 38;
     const circ = 2 * Math.PI * radius;
-    const offset = circ - (pct / 100) * circ;
+    const safePct = Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 0;
+    const offset = circ - (safePct / 100) * circ;
     return (
       <div className={styles.gaugeContainer}>
         <svg width="100" height="100" viewBox="0 0 100 100">
