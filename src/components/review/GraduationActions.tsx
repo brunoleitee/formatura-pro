@@ -4,15 +4,16 @@ import type { RichCluster } from '../../services/api';
 import { api } from '../../services/api';
 import styles from './GraduationActions.module.css';
 
-export type GraduationItem = 'gown' | 'diploma' | 'sash' | 'cap';
+export type GraduationItem = 'gown' | 'diploma' | 'sash' | 'cap' | 'jabor';
 
-const ITEMS: GraduationItem[] = ['gown', 'diploma', 'sash', 'cap'];
+const ITEMS: GraduationItem[] = ['gown', 'diploma', 'sash', 'cap', 'jabor'];
 
 const ITEM_TAG: Record<GraduationItem, string> = {
   gown: 'beca',
   diploma: 'canudo',
   sash: 'faixa',
   cap: 'capelo',
+  jabor: 'jabor',
 };
 
 const ITEM_LABEL: Record<GraduationItem, string> = {
@@ -20,6 +21,7 @@ const ITEM_LABEL: Record<GraduationItem, string> = {
   diploma: 'Canudo',
   sash: 'Faixa',
   cap: 'Capelo',
+  jabor: 'Jabor',
 };
 
 const ITEM_CONFIDENCE_KEY: Record<GraduationItem, keyof RichCluster> = {
@@ -27,6 +29,7 @@ const ITEM_CONFIDENCE_KEY: Record<GraduationItem, keyof RichCluster> = {
   diploma: 'diploma_confidence',
   sash: 'sash_confidence',
   cap: 'cap_confidence',
+  jabor: 'jabor_confidence',
 };
 
 const ITEM_HAS_KEY: Record<GraduationItem, keyof RichCluster> = {
@@ -34,6 +37,7 @@ const ITEM_HAS_KEY: Record<GraduationItem, keyof RichCluster> = {
   diploma: 'has_diploma',
   sash: 'has_sash',
   cap: 'has_cap',
+  jabor: 'has_jabor',
 };
 
 const CONF_CONFIRMED = 0.92;

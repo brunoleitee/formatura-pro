@@ -148,8 +148,17 @@ def _student_export_dir(dest_path: str, aid: str, class_name: str, sanitize_fold
     export_base = os.path.join(dest_path, "Exportação")
     if not organize_by_class:
         return os.path.join(export_base, student_dir)
-    safe_class = sanitize_folder_name(str(class_name or "").strip() or "Sem turma")
-    return os.path.join(export_base, safe_class, student_dir)
+    
+    class_str = str(class_name or "").strip()
+    if not class_str:
+        class_str = "Sem turma"
+    
+    parts = class_str.replace("\\", "/").split("/")
+    safe_parts = [sanitize_folder_name(p) for p in parts if p.strip()]
+    if not safe_parts:
+        safe_parts = ["Sem turma"]
+        
+    return os.path.join(export_base, *safe_parts, student_dir)
 
 
 def detect_class_from_reference_path(reference_root: str, reference_path: str) -> str:
@@ -160,10 +169,9 @@ def detect_class_from_reference_path(reference_root: str, reference_path: str) -
         path = os.path.abspath(reference_path)
         rel = os.path.relpath(path, root)
         parts = rel.replace("\\", "/").split("/")
-        if len(parts) >= 2:
-            turma = parts[0].strip()
-            return turma or "Sem turma"
-        return "Sem turma"
+        ignored_folders = {"#BASE", "BASE", "base", "referencias", "referências", "referencia", "referência"}
+        valid_parts = [p for p in parts[:-1] if p.strip() and p.strip().casefold() not in {f.casefold() for f in ignored_folders}]
+        return "/".join(valid_parts) if valid_parts else "Sem turma"
     except Exception:
         return "Sem turma"
 
@@ -198,7 +206,7 @@ def build_class_map_from_reference_root(reference_root: str) -> dict:
                 rel = os.path.relpath(full_path, reference_root)
                 parts = rel.replace("\\", "/").split("/")
                 valid_parts = [p for p in parts[:-1] if p.strip() and p.strip().casefold() not in {f.casefold() for f in ignored_folders}]
-                class_name = valid_parts[-1] if valid_parts else "Sem turma"
+                class_name = "/".join(valid_parts) if valid_parts else "Sem turma"
                 student_name = os.path.splitext(filename)[0].strip()
                 class_map[student_name] = class_name
             except Exception:

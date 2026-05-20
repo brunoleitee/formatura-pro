@@ -63,12 +63,18 @@ const ClusterItem = memo(function ClusterItem({
     if (conf >= CONF_POSSIBLE) return { id: 'capelo_possible', label: 'Possível capelo', variant: 'tagMuted' as const };
     return null;
   }
+  function jaborBadge() {
+    const conf = cluster.jabor_confidence ?? (cluster.has_jabor ? 1 : 0);
+    if (conf >= CONF_CONFIRMED) return { id: 'jabor', label: 'Jabor', variant: 'tag' as const };
+    if (conf >= CONF_POSSIBLE) return { id: 'jabor_possible', label: 'Possível jabor', variant: 'tagMuted' as const };
+    return null;
+  }
   const badgeLabels: Array<{ id: string; label: string; variant: 'ia' | 'success' | 'tag' | 'tagMuted' }> = [
     { id: 'ia', label: 'IA', variant: 'ia' as const },
     ...(cluster.status === 'identified' || cluster.status === 'confirmed'
       ? [{ id: 'identified', label: 'Identificado', variant: 'success' as const }]
       : []),
-    ...([gownBadge(), diplomaBadge(), sashBadge(), capBadge()].filter(Boolean) as { id: string; label: string; variant: 'tag' | 'tagMuted' }[]),
+    ...([gownBadge(), diplomaBadge(), sashBadge(), capBadge(), jaborBadge()].filter(Boolean) as { id: string; label: string; variant: 'tag' | 'tagMuted' }[]),
   ];
   const photoCount = cluster.total_photos ?? cluster.photo_count ?? cluster.face_count;
   const photoCountLabel = `${photoCount} foto${photoCount !== 1 ? 's' : ''}`;
@@ -172,6 +178,7 @@ export default function ReviewSidebar({
       (cluster.diploma_confidence ?? (cluster.has_diploma ? 1 : 0)) >= CONF_POSSIBLE ||
       (cluster.sash_confidence ?? (cluster.has_sash ? 1 : 0)) >= CONF_POSSIBLE ||
       (cluster.cap_confidence ?? (cluster.has_cap ? 1 : 0)) >= CONF_POSSIBLE ||
+      (cluster.jabor_confidence ?? (cluster.has_jabor ? 1 : 0)) >= CONF_POSSIBLE ||
       (cluster.graduation_tags?.length ?? 0) > 0
     )
   );
@@ -202,6 +209,11 @@ export default function ReviewSidebar({
       if (graduationFilter === 'cap') {
         const conf = cluster.cap_confidence ?? (cluster.has_cap ? 1 : 0);
         return conf >= CONF_POSSIBLE || tags.includes('capelo');
+      }
+
+      if (graduationFilter === 'jabor') {
+        const conf = cluster.jabor_confidence ?? (cluster.has_jabor ? 1 : 0);
+        return conf >= CONF_POSSIBLE || tags.includes('jabor');
       }
 
       if (graduationFilter === 'high_priority') {
@@ -283,6 +295,7 @@ export default function ReviewSidebar({
           <option value="diploma">Com canudo</option>
           <option value="sash">Com faixa</option>
           <option value="cap">Com capelo</option>
+          <option value="jabor">Com jabor</option>
           <option value="high_priority">Alta prioridade IA</option>
         </select>
       </div>

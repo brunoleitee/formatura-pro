@@ -118,6 +118,8 @@ export default function PersonDetailView() {
   const [loading, setLoading] = useState(false);
   const [detailsPhoto, setDetailsPhoto] = useState<Photo | null>(null);
   const [personInfo, setPersonInfo] = useState<{ name: string; class_name: string } | null>(null);
+  const [planeFilter, setPlaneFilter] = useState<'all' | 'foreground' | 'background'>('all');
+  const [sortBy, setSortBy] = useState<'name' | 'mtime_desc' | 'mtime_asc' | 'quality_desc'>('name');
 
   const { selectedPaths, toggleSelection, clearSelection } = usePhotoSelection(photos);
   const { viewerPhoto, setViewerPhoto } = usePhotoViewer(photos);
@@ -303,10 +305,48 @@ export default function PersonDetailView() {
 
   if (!selectedPersonId) return null;
 
+  const getFilteredAndSortedPhotos = (items: Photo[]) => {
+    let filtered = [...items];
+    if (planeFilter !== 'all') {
+      filtered = filtered.filter(photo => {
+        const face = (photo.faces || []).find(f => f.aluno_id === selectedPersonId);
+        if (!face) return false;
+        const isFg = face.is_foreground === 1 || (face.foreground_score != null && face.foreground_score >= 0.65);
+        if (planeFilter === 'foreground') return isFg;
+        
+        const isBg = face.is_foreground === 0 || (face.foreground_score !== undefined && face.foreground_score !== null && face.foreground_score < 0.45);
+        return isBg;
+      });
+    }
+
+    filtered.sort((a, b) => {
+      if (sortBy === 'name') {
+        return a.name.localeCompare(b.name, undefined, { numeric: true });
+      }
+      if (sortBy === 'mtime_desc') {
+        return (b.mtime || 0) - (a.mtime || 0);
+      }
+      if (sortBy === 'mtime_asc') {
+        return (a.mtime || 0) - (b.mtime || 0);
+      }
+      if (sortBy === 'quality_desc') {
+        return (b.blur_score || 0) - (a.blur_score || 0);
+      }
+      return 0;
+    });
+
+    return filtered;
+  };
+
   const good = photos.filter(p => !p.discarded && p.blur_label !== 'blurry');
   const attention = photos.filter(p => !p.discarded && p.blur_label === 'attention');
   const blurry = photos.filter(p => !p.discarded && p.blur_label === 'blurry');
   const discarded = photos.filter(p => p.discarded);
+
+  const filteredGood = getFilteredAndSortedPhotos(good.filter(p => p.blur_label !== 'attention'));
+  const filteredAttention = getFilteredAndSortedPhotos(attention);
+  const filteredBlurry = getFilteredAndSortedPhotos(blurry);
+  const filteredDiscarded = getFilteredAndSortedPhotos(discarded);
 
   return (
     <div className="view-container" style={{ position: 'relative' }}>
@@ -330,6 +370,88 @@ export default function PersonDetailView() {
         </div>
       </div>
 
+      {!loading && photos.length > 0 && (
+        <div 
+          style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            gap: '16px',
+            padding: '8px 0 16px 0',
+            borderBottom: '1px solid var(--border-default)',
+            marginBottom: '20px',
+            flexWrap: 'wrap'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Plano do Formando:</span>
+            <div className="tab-group">
+              <button 
+                className={`tab-btn ${planeFilter === 'all' ? 'active' : ''}`}
+                onClick={() => setPlaneFilter('all')}
+                style={{ fontSize: '0.75rem', height: '28px', padding: '0 12px' }}
+              >
+                Todos
+              </button>
+              <button 
+                className={`tab-btn ${planeFilter === 'foreground' ? 'active' : ''}`}
+                onClick={() => setPlaneFilter('foreground')}
+                style={{ fontSize: '0.75rem', height: '28px', padding: '0 12px' }}
+              >
+                1º Plano (Destaque)
+              </button>
+              <button 
+                className={`tab-btn ${planeFilter === 'background' ? 'active' : ''}`}
+                onClick={() => setPlaneFilter('background')}
+                style={{ fontSize: '0.75rem', height: '28px', padding: '0 12px' }}
+              >
+                2º Plano (Fundo)
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Ordenar por:</span>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <select
+                className="select-base"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                style={{ 
+                  height: '28px', 
+                  fontSize: '0.75rem', 
+                  padding: '0 28px 0 10px',
+                  background: 'var(--bg-tertiary)',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-default)',
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  outline: 'none'
+                }}
+              >
+                <option value="name">Nome do arquivo (A-Z)</option>
+                <option value="mtime_desc">Mais recentes primeiro</option>
+                <option value="mtime_asc">Mais antigas primeiro</option>
+                <option value="quality_desc">Melhor qualidade/foco</option>
+              </select>
+              <span 
+                style={{ 
+                  position: 'absolute', 
+                  right: '8px', 
+                  color: 'var(--text-secondary)', 
+                  pointerEvents: 'none', 
+                  display: 'flex', 
+                  alignItems: 'center',
+                  fontSize: '0.65rem'
+                }}
+              >
+                ▼
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {loading && photos.length === 0 ? (
         <div className="empty-state">
           <RefreshCw size={32} className="spin" />
@@ -349,7 +471,7 @@ export default function PersonDetailView() {
           >
             <Section 
               title="Boas fotos" 
-              items={good.filter(p => p.blur_label !== 'attention')} 
+              items={filteredGood} 
               color="var(--success-color)" 
               selectedPaths={selectedPaths}
               onPhotoClick={toggleSelection}
@@ -362,7 +484,7 @@ export default function PersonDetailView() {
             />
             <Section 
               title="Requer atenção" 
-              items={attention} 
+              items={filteredAttention} 
               color="var(--warning-color)" 
               selectedPaths={selectedPaths}
               onPhotoClick={toggleSelection}
@@ -375,7 +497,7 @@ export default function PersonDetailView() {
             />
             <Section 
               title="Desfocadas" 
-              items={blurry} 
+              items={filteredBlurry} 
               color="var(--danger-color)" 
               selectedPaths={selectedPaths}
               onPhotoClick={toggleSelection}
@@ -388,7 +510,7 @@ export default function PersonDetailView() {
             />
             <Section 
               title="Descartadas" 
-              items={discarded} 
+              items={filteredDiscarded} 
               color="var(--text-secondary)" 
               selectedPaths={selectedPaths}
               onPhotoClick={toggleSelection}

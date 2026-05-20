@@ -133,13 +133,38 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
   const [dragSelectionCount, setDragSelectionCount] = useState(0);
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const containerSize = useMemo(
-    () => ({ w: cardWidth ?? 320, h: thumbHeight ?? 240 }),
-    [cardWidth, thumbHeight]
-  );
+  const [containerSize, setContainerSize] = useState({ w: cardWidth ?? 320, h: thumbHeight ?? 240 });
+
+  useEffect(() => {
+    if (cardWidth && thumbHeight) {
+      setContainerSize({ w: cardWidth, h: thumbHeight });
+      return;
+    }
+
+    const el = containerRef.current;
+    if (!el) return;
+
+    setContainerSize({
+      w: el.getBoundingClientRect().width || cardWidth || 320,
+      h: el.getBoundingClientRect().height || thumbHeight || 240
+    });
+
+    const observer = new ResizeObserver((entries) => {
+      if (!entries || entries.length === 0) return;
+      const entry = entries[0];
+      const rect = entry.target.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setContainerSize({ w: rect.width, h: rect.height });
+      }
+    });
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [cardWidth, thumbHeight]);
+
   const imgStyle = useMemo(() => ({
     objectFit: 'contain' as const,
-    objectPosition: 'center top' as const,
+    objectPosition: 'center center' as const,
   }), []);
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
   const isDraggingInternal = useRef(false);
@@ -304,7 +329,7 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
           height: `${thumbHeight}px`,
           flexShrink: 0,
           overflow: 'hidden',
-          background: '#111',
+          background: isLoaded ? 'transparent' : '#111',
         } : undefined}
       >
         {!hasError && (

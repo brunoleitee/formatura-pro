@@ -308,7 +308,7 @@
 
 .filmstripItem {
   position: relative;
-  width: 78px;
+  width: 87px;
   height: 58px;
   flex: 0 0 auto;
   padding: 0;
@@ -334,7 +334,7 @@
   width: 100%;
   height: 100%;
   display: block;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .filmstripLabel {

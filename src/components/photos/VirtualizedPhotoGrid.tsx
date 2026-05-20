@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Image as ImageIcon, RefreshCw } from 'lucide-react';
 import type { MouseEvent, PointerEvent } from 'react';
@@ -28,15 +28,13 @@ interface VirtualizedPhotoGridProps {
   scrollRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-const GRID_GAP = 10;
+const GRID_GAP = 16;
 const MIN_COL_WIDTH = 140;
 const FOOTER_HEIGHT = 72;
 const ESTIMATED_CARD_HEIGHT = 320;
 
 function getMediaRatioByZoom(zoom: number): number {
-  if (zoom >= 260) return 1.42;
-  if (zoom >= 180) return 1.28;
-  return 1.15;
+  return 0.667;
 }
 const OVERSCAN_STILL = 3;
 const OVERSCAN_SCROLLING = 1;
@@ -101,8 +99,7 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
 }: VirtualizedPhotoGridProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
-  const metricsRef = useRef({ w: 0, cols: 4, cw: 240, th: 400, sz: 200, rows: 0, totalH: 0 });
-  const rowHeightsRef = useRef<number[]>([]);
+  const [width, setWidth] = useState(0);
   const selRef = useRef(selectedPaths);
   selRef.current = selectedPaths;
 
@@ -111,40 +108,41 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
     (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = parentRef.current;
   });
 
-  // --- viewport width (debounced) ---
+  // Monitora a largura do contêiner pai em tempo real de forma síncrona
   useEffect(() => {
     const el = parentRef.current;
     if (!el) return;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const update = () => {
-      if (timer) return;
-      timer = setTimeout(() => {
-        timer = null;
-        const w = el.clientWidth;
-        const cols = columnsFromWidth(w, zoom);
-        const cw = cardWidthFromSize(w, cols);
-        const sz = thumbSizeForCard(cw);
-        const mediaRatio = getMediaRatioByZoom(zoom);
-        const mediaHeight = Math.round(cw * mediaRatio);
-        const uniformRowHeight = mediaHeight + FOOTER_HEIGHT;
-        const rowCount = Math.ceil(photos.length / cols);
-        const rh: number[] = [];
-        for (let r = 0; r < rowCount; r++) {
-          rh.push(uniformRowHeight);
-        }
-        rowHeightsRef.current = rh;
-        const totalH = rh.reduce((a, b) => a + b, 0) + Math.max(0, rowCount - 1) * GRID_GAP;
-        const m = metricsRef.current;
-        const changed = m.w !== w || m.cols !== cols || m.cw !== cw;
-        metricsRef.current = { w, cols, cw, th: 0, sz, rows: rowCount, totalH };
-        if (changed) rowVirtualizer.measure();
-      }, 80);
-    };
-    update();
-    const ro = new ResizeObserver(() => update());
+
+    setWidth(el.clientWidth);
+
+    const ro = new ResizeObserver((entries) => {
+      if (entries[0]) {
+        requestAnimationFrame(() => {
+          if (el) setWidth(el.clientWidth);
+        });
+      }
+    });
     ro.observe(el);
-    return () => { ro.disconnect(); if (timer) clearTimeout(timer); };
-  }, [photos.length, zoom]);
+    return () => ro.disconnect();
+  }, []);
+
+  // Calcula síncronamente as métricas de layout durante o render
+  const layoutMetrics = useMemo(() => {
+    const w = width || 800;
+    const cols = columnsFromWidth(w, zoom);
+    const cw = cardWidthFromSize(w, cols);
+    const sz = thumbSizeForCard(cw);
+    const mediaRatio = getMediaRatioByZoom(zoom);
+    const mediaHeight = Math.round(cw * mediaRatio);
+    const uniformRowHeight = mediaHeight + FOOTER_HEIGHT;
+    const rowCount = Math.ceil(photos.length / cols);
+    const rh: number[] = [];
+    for (let r = 0; r < rowCount; r++) {
+      rh.push(uniformRowHeight);
+    }
+    const totalH = rh.reduce((a, b) => a + b, 0) + Math.max(0, rowCount - 1) * GRID_GAP;
+    return { w, cols, cw, sz, rows: rowCount, totalH, rh };
+  }, [width, zoom, photos.length]);
 
   // --- reset scroll ---
   useEffect(() => {
@@ -168,25 +166,31 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
 
   // --- virtualizer ---
   const rowVirtualizer = useVirtualizer({
-    count: Math.max(1, Math.ceil(photos.length / Math.max(1, metricsRef.current.cols))),
+    count: Math.max(1, Math.ceil(photos.length / Math.max(1, layoutMetrics.cols))),
     getScrollElement: () => parentRef.current,
-    estimateSize: (index) => rowHeightsRef.current[index] || ESTIMATED_CARD_HEIGHT,
+    estimateSize: useCallback((index: number) => layoutMetrics.rh[index] || ESTIMATED_CARD_HEIGHT, [layoutMetrics.rh]),
     overscan: OVERSCAN_STILL,
   });
   const vzRef = useRef(rowVirtualizer);
   vzRef.current = rowVirtualizer;
 
+  // Mede e ajusta o virtualizer imediatamente sempre que as colunas ou largura mudarem
+  useEffect(() => {
+    rowVirtualizer.measure();
+  }, [layoutMetrics.cols, layoutMetrics.cw, rowVirtualizer]);
+
   const virtualItems = rowVirtualizer.getVirtualItems();
   const stableRowsRef = useRef(virtualItems);
-  if (virtualItems.length > 0 && (stableRowsRef.current.length === 0 || virtualItems[0].index !== stableRowsRef.current[0].index)) {
+  if (virtualItems.length > 0) {
     stableRowsRef.current = virtualItems;
   }
   const visibleRows = stableRowsRef.current;
 
-  const m = metricsRef.current;
-  const cols = m.cols || 4;
-  const cw = m.cw || 240;
-  const sz = m.sz || 240;
+  const cols = layoutMetrics.cols;
+  const cw = layoutMetrics.cw;
+  const sz = layoutMetrics.sz;
+  const totalH = layoutMetrics.totalH;
+  const rowHeights = layoutMetrics.rh;
 
   // --- rAF scroll throttle ---
   const scrollStateRef = useRef({ y: 0, speed: 0 });
@@ -367,12 +371,12 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
         contain: 'layout paint style',
       }}
     >
-      <div style={{ height: m.totalH, position: 'relative' }}>
+      <div style={{ height: totalH, position: 'relative' }}>
         {visibleRows.map((vr) => {
           const start = vr.index * cols;
           const end = Math.min(start + cols, photos.length);
           const rowPhotos = photos.slice(start, end);
-          const rowH = rowHeightsRef.current[vr.index] || ESTIMATED_CARD_HEIGHT;
+          const rowH = rowHeights[vr.index] || ESTIMATED_CARD_HEIGHT;
           const mediaH = Math.round(cw * getMediaRatioByZoom(zoom));
 
           return (

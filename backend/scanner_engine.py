@@ -467,8 +467,11 @@ def load_references(ref_path):
                 continue
             emb = emb / norm
             ref_name = Path(f).stem
-            rel_parent = Path(os.path.relpath(full, ref_path)).parent.name
-            class_name = rel_parent if rel_parent not in ("", ".") else "Sem turma"
+            rel_parent = Path(os.path.relpath(full, ref_path)).parent
+            parts = rel_parent.as_posix().split("/")
+            ignored_folders = {"#BASE", "BASE", "base", "referencias", "referências", "referencia", "referência"}
+            valid_parts = [p for p in parts if p.strip() and p.strip().casefold() not in {f.casefold() for f in ignored_folders}]
+            class_name = "/".join(valid_parts) if valid_parts else "Sem turma"
             print(f"[reference-import] arquivo={full} turma={class_name}")
             refs.append({"id": ref_name, "class_name": class_name, "emb": emb})
             ref_classes[ref_name.casefold()] = class_name
@@ -917,16 +920,27 @@ def run_scanner_worker(req):
                                 continue
                             emb = emb / norm
                             ref_name, ref_sim = find_best_reference(emb)
-                            if ref_name is not None and ref_sim >= _cfg["ref_match_threshold"]:
+                            ref_exists = (ref_name is not None)
+
+                            # Determinar nome e motivo
+                            if ref_exists and ref_sim >= _cfg["ref_match_threshold"]:
                                 nome = ref_name
                                 scan_state["total_matches"] += 1
                             else:
                                 nome = find_or_create_cluster(emb)
-                                scan_state["total_clusters"] = len(_cfg["cluster_names"])
+
+                            scan_state["total_clusters"] = len(_cfg["cluster_names"])
+
+                            log_info(
+                                f"[Scanner Decisão] foto={os.path.basename(p)} | "
+                                f"ID sugerido={ref_name} | "
+                                f"confiança facial={ref_sim:.4f} | "
+                                f"existência de referência={ref_exists}"
+                            )
 
                             photo_faces.append({
                                 "bbox": [sx1, sy1, sx2, sy2],
-                                "confidence": 0.95,
+                                "confidence": round(float(ref_sim), 4) if ref_exists else 0.95,
                                 "name": nome,
                             })
 

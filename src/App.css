@@ -1356,8 +1356,7 @@ html.scrolling-fast .photo-info {
 .photo-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--grid-item-size, 220px), 1fr));
-  grid-auto-rows: calc(var(--grid-item-size, 220px) * 1.09);
-  gap: 10px;
+  gap: 16px;
   overflow-y: auto;
   padding-bottom: 20px;
   flex: 1;
@@ -1433,6 +1432,7 @@ html.scrolling-fast .photo-info {
 
 .photo-img-placeholder {
   width: 100%;
+  aspect-ratio: 3 / 2;
   background-color: #111;
   position: relative;
   overflow: hidden;
@@ -1445,7 +1445,7 @@ html.scrolling-fast .photo-info {
   height: 100%;
   display: block;
   object-fit: contain;
-  object-position: center top;
+  object-position: center;
   transition: opacity 0.3s ease, transform 0.35s ease;
   transform: scale(1);
 }

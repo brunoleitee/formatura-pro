@@ -3,5 +3,8 @@
     "allow": [
       "Bash(git checkout *)"
     ]
+  },
+  "enabledPlugins": {
+    "andrej-karpathy-skills@karpathy-skills": false
   }
 }

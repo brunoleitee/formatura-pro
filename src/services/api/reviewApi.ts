@@ -87,7 +87,7 @@ export const reviewApi = {
 
   graduationManualOverride: (
     catalog: string,
-    payload: { rowids: number[]; action: 'confirm' | 'remove'; item: 'gown' | 'diploma' | 'sash' | 'cap' }
+    payload: { rowids: number[]; action: 'confirm' | 'remove'; item: 'gown' | 'diploma' | 'sash' | 'cap' | 'jabor' }
   ) => post<{ ok: boolean; updated: number; item: string; action: string }>(
     `${API_BASE}/review/graduation/manual-override`,
     { catalog, ...payload }

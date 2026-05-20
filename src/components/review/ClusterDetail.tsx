@@ -122,7 +122,7 @@ export default function ClusterDetail({
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
-      const map: Record<string, GraduationItem> = { b: 'gown', c: 'diploma', f: 'sash', k: 'cap' };
+      const map: Record<string, GraduationItem> = { b: 'gown', c: 'diploma', f: 'sash', k: 'cap', j: 'jabor' };
       if (map[k]) {
         e.preventDefault();
         graduationRef.current?.toggle(map[k]);
