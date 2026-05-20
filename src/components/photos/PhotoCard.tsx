@@ -302,10 +302,7 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
         ref={containerRef}
         style={thumbHeight ? {
           height: `${thumbHeight}px`,
-          flex: '0 0 auto',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          flexShrink: 0,
           overflow: 'hidden',
           background: '#111',
         } : undefined}
@@ -323,10 +320,9 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
                 userSelect: 'none',
                 pointerEvents: 'none',
                 position: 'relative',
-                maxWidth: '100%',
-                maxHeight: '100%',
-                width: 'auto',
-                height: 'auto',
+                width: '100%',
+                height: '100%',
+                display: 'block',
                 ...imgStyle,
               }}
               onLoad={handleImageLoad}
