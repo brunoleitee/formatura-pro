@@ -348,10 +348,11 @@ def get_stats(catalog: str = ""):
             _t0 = time.perf_counter()
             cur.execute("""
                 SELECT o.aluno_id, COUNT(*) AS cnt,
-                       COALESCE(a.class_name, 'Sem turma') AS class_name
+                       COALESCE(a.class_name, 'Sem turma') AS class_name,
+                       COALESCE(NULLIF(TRIM(o.person_key), ''), o.aluno_id) AS person_key
                 FROM ocorrencias o
                 LEFT JOIN alunos a ON a.aluno_id = o.aluno_id
-                GROUP BY o.aluno_id
+                GROUP BY COALESCE(NULLIF(TRIM(o.person_key), ''), o.aluno_id)
                 ORDER BY cnt DESC
             """)
             photos_per_person = cur.fetchall()

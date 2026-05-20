@@ -124,6 +124,7 @@ def get_people(unknown: bool = False):
                     "id": row["aluno_id"],
                     "name": row["aluno_id"],
                     "class_name": "Sem turma",
+                    "person_key": "",
                     "total_photos": row["total"],
                     "cover_path": None,
                     "cover_box": None,
@@ -185,7 +186,8 @@ def get_people(unknown: bool = False):
                         cov.x2,
                         cov.y2,
                         a.face_cache_path,
-                        a.class_name
+                        a.class_name,
+                        a.person_key
                     FROM stats s
                     LEFT JOIN covers cov ON cov.aluno_id = s.aluno_id
                     LEFT JOIN alunos a ON a.aluno_id = s.aluno_id
@@ -240,6 +242,7 @@ def get_people(unknown: bool = False):
                         "id": aluno_id,
                         "name": aluno_id,
                         "class_name": str(row["class_name"] or "").strip() or "Sem turma",
+                        "person_key": str(row["person_key"] or "").strip() or "",
                         "total_photos": row["total"],
                         "favorites_count": row["favorites_count"],
                         "discarded_count": row["discarded_count"],
@@ -279,7 +282,28 @@ def get_photos(aluno_id: str):
         cur = conn.cursor()
         cur.execute("SELECT foto_path FROM discarded_photos")
         discarded = {r["foto_path"] for r in cur.fetchall()}
-        cur.execute("SELECT rowid, foto_path, x1, y1, x2, y2, blur_score, blur_status, closed_eyes, is_foreground, foreground_score, background_penalty_reason FROM ocorrencias WHERE aluno_id = ?", (aluno_id,))
+
+        # Primeiro, tentar buscar pela person_key (mais específica) se disponível
+        cur.execute("SELECT person_key, class_name FROM alunos WHERE aluno_id = ? LIMIT 1", (aluno_id,))
+        aluno_row = cur.fetchone()
+        person_key_filter = str(aluno_row["person_key"] or "").strip() if aluno_row else ""
+        class_name = str(aluno_row["class_name"] or "").strip() or "Sem turma" if aluno_row else "Sem turma"
+
+        if person_key_filter:
+            cur.execute("""
+                SELECT rowid, foto_path, x1, y1, x2, y2, blur_score, blur_status, closed_eyes,
+                       is_foreground, foreground_score, background_penalty_reason, person_key
+                FROM ocorrencias
+                WHERE person_key = ?
+                   OR (aluno_id = ? AND (person_key IS NULL OR person_key = ''))
+            """, (person_key_filter, aluno_id))
+        else:
+            cur.execute("""
+                SELECT rowid, foto_path, x1, y1, x2, y2, blur_score, blur_status, closed_eyes,
+                       is_foreground, foreground_score, background_penalty_reason, person_key
+                FROM ocorrencias
+                WHERE aluno_id = ?
+            """, (aluno_id,))
         rows = cur.fetchall()
 
         unique_photos = {}
@@ -315,15 +339,19 @@ def get_photos(aluno_id: str):
                     unique_photos[p]["height"] = None
                     pass
             if r["x1"] is not None:
-                unique_photos[p]["faces"].append({
+                face_data = {
                     "rowid": r["rowid"],
                     "aluno_id": aluno_id,
                     "x1": r["x1"], "y1": r["y1"],
                     "x2": r["x2"], "y2": r["y2"],
                     "is_foreground": r["is_foreground"],
                     "foreground_score": r["foreground_score"],
-                    "background_penalty_reason": r["background_penalty_reason"]
-                })
+                    "background_penalty_reason": r["background_penalty_reason"],
+                }
+                pk = r.get("person_key")
+                if pk:
+                    face_data["person_key"] = str(pk)
+                unique_photos[p]["faces"].append(face_data)
 
         if unique_photos:
             paths = list(unique_photos.keys())

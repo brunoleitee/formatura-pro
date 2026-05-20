@@ -102,6 +102,7 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
         cluster_id: cluster.cluster_id,
         aluno_id: alunoId,
         nome_formando: nomeFormando,
+        class_name: selectedStudent?.class_name || '',
       });
       onAssigned(result);
     } catch (err) {
@@ -204,16 +205,19 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
             {cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.55 && !isAssigned && !identifying ? (
               <button
                 className={styles.btnConfirm}
-                onClick={() => {
-                  if (onAssigned) onAssigned({
-                    cluster_id: cluster.cluster_id,
-                    aluno_id: cluster.suggested_student!,
-                    nome_formando: cluster.suggested_student!,
-                    updated_count: cluster.face_count,
-                    status: "assigned",
-                    success: true,
-                    student_name: cluster.suggested_student ?? null,
-                  });
+                onClick={async () => {
+                  try {
+                    const result = await api.assignCluster(catalog, {
+                      cluster_id: cluster.cluster_id,
+                      aluno_id: cluster.suggested_student!,
+                      nome_formando: cluster.suggested_student!,
+                      class_name: '',
+                    });
+                    if (onAssigned) onAssigned(result);
+                  } catch (err) {
+                    console.error('[assignCluster] erro:', err);
+                    setSaveError('Não foi possível confirmar. Tente novamente.');
+                  }
                 }}
                 type="button"
               >

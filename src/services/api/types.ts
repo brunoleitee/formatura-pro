@@ -41,6 +41,7 @@ export interface Person {
   id: string;
   name: string;
   class_name: string;
+  person_key?: string;
   total_photos: number;
   favorites_count?: number;
   discarded_count?: number;
@@ -54,6 +55,7 @@ export interface Person {
 export interface PhotoFace {
   rowid: number;
   aluno_id: string;
+  person_key?: string;
   x1: number; y1: number; x2: number; y2: number;
   is_foreground?: number;
   foreground_score?: number | null;

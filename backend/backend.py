@@ -279,6 +279,30 @@ def ensure_alunos_class_column(conn):
         raise
     return True
 
+
+def ensure_identity_columns(conn):
+    cur = conn.cursor()
+    try:
+        cur.execute("PRAGMA table_info(alunos)")
+        cols = [row[1] for row in cur.fetchall()]
+        if "person_key" not in cols:
+            cur.execute("ALTER TABLE alunos ADD COLUMN person_key TEXT DEFAULT ''")
+        if "reference_folder" not in cols:
+            cur.execute("ALTER TABLE alunos ADD COLUMN reference_folder TEXT DEFAULT ''")
+        cur.execute("PRAGMA table_info(ocorrencias)")
+        cols = [row[1] for row in cur.fetchall()]
+        if "person_key" not in cols:
+            cur.execute("ALTER TABLE ocorrencias ADD COLUMN person_key TEXT DEFAULT ''")
+        if "reference_folder" not in cols:
+            cur.execute("ALTER TABLE ocorrencias ADD COLUMN reference_folder TEXT DEFAULT ''")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_ocor_person_key ON ocorrencias(person_key)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_ocor_person_key_aluno ON ocorrencias(person_key, aluno_id)")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return True
+
 def sanitize_folder_name(name):
     """Remove caracteres inválidos para nomes de pastas no Windows/Linux/Mac."""
     if name is None:
@@ -909,6 +933,7 @@ class DbConnection:
         """)
         ensure_quality_columns(self.conn)
         ensure_graduation_columns(self.conn)
+        ensure_identity_columns(self.conn)
         c.execute("""
             CREATE TABLE IF NOT EXISTS alunos (
                 aluno_id TEXT PRIMARY KEY,
@@ -1886,6 +1911,10 @@ def assign_cluster(req: AssignUnknownClusterRequest):
                 "detail": str(e),
             },
         )
+
+@app.post("/api/migrate-person-keys")
+def migrate_person_keys():
+    return rm.migrate_person_keys()
 
 @app.post("/api/review/unknown-clusters/ignore")
 @app.post("/api/review/ignore")

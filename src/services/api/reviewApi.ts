@@ -42,7 +42,7 @@ export const reviewApi = {
 
   assignCluster: (
     catalog: string,
-    payload: { cluster_id: string; aluno_id: string | null; nome_formando: string | null }
+    payload: { cluster_id: string; aluno_id: string | null; nome_formando: string | null; class_name?: string }
   ) => post<AssignClusterResponse>(`${API_BASE}/review/unknown-clusters/assign`, { catalog, ...payload }),
 
   ignoreCluster: async (catalog: string, cluster_id: string, rowids: number[] = []) => {

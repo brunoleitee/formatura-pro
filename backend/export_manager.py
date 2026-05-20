@@ -229,12 +229,13 @@ def build_export_worklist(conn, req: ExportReq):
     class_map = build_class_map_from_reference_root(reference_root)
     log_info(f"[class-map] built {len(class_map)} entries: {list(class_map.keys())[:20]}")
 
-    cur.execute("SELECT aluno_id, class_name, face_cache_path FROM alunos")
+    cur.execute("SELECT aluno_id, class_name, face_cache_path, person_key FROM alunos")
     students_data = {}
     for r in cur.fetchall():
         aid = r["aluno_id"]
         class_name = r["class_name"] or "Sem turma"
         ref_path = r["face_cache_path"] or ""
+        person_key = r["person_key"] or ""
 
         if class_name == "Sem turma" and aid in class_map:
             class_name = class_map[aid]
@@ -245,7 +246,8 @@ def build_export_worklist(conn, req: ExportReq):
 
         students_data[aid] = {
             "class_name": class_name,
-            "reference_path": ref_path
+            "reference_path": ref_path,
+            "person_key": person_key,
         }
 
     student_classes = {aid: data["class_name"] for aid, data in students_data.items()}
@@ -287,7 +289,17 @@ def build_export_worklist(conn, req: ExportReq):
     organize_by_class = bool(getattr(req, "organize_by_class", False))
     for aid in req.ids:
         class_name = student_classes.get(aid, "Sem turma")
-        cur.execute("SELECT DISTINCT foto_path FROM ocorrencias WHERE aluno_id = ?", (aid,))
+        student_pk = students_data.get(aid, {}).get("person_key", "")
+        if student_pk:
+            cur.execute(
+                "SELECT DISTINCT foto_path FROM ocorrencias WHERE person_key = ?",
+                (student_pk,),
+            )
+        else:
+            cur.execute(
+                "SELECT DISTINCT foto_path FROM ocorrencias WHERE aluno_id = ?",
+                (aid,),
+            )
         fotos = [r[0] for r in cur.fetchall() if r[0] and r[0] not in discarded_manual]
         p_al = _student_export_dir(req.dest_path, aid, class_name, _get("sanitize_folder_name"), organize_by_class)
         log_info(f"[export-debug] student={aid} selected_class={getattr(req, 'selected_class', 'N/A')} organize_by_class={organize_by_class} class_name={class_name} photos_count={len(fotos)} dest_dir={p_al}")

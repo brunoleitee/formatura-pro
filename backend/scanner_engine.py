@@ -437,12 +437,55 @@ def ensure_face_engine():
         _cfg["log_info"](f"[Face] model loaded device={face_engine_device} provider={face_engine_provider} label={face_engine_label}")
 
 
+def _detect_photo_class_context(photo_path: str, scan_roots: list[str]) -> str:
+    for root in scan_roots:
+        root_norm = os.path.normpath(root)
+        photo_norm = os.path.normpath(photo_path)
+        if photo_norm.startswith(root_norm):
+            try:
+                rel = os.path.relpath(photo_norm, root_norm)
+                parts = Path(rel).parts
+                if len(parts) > 1:
+                    return parts[0]
+            except Exception:
+                pass
+    return ""
+
+
+def _normalize_pk_part(value: str) -> str:
+    if not value or not str(value).strip():
+        return ""
+    import re
+    return re.sub(r"\s+", " ", str(value).strip().upper())
+
+
+def make_person_key(
+    catalog: str = "",
+    class_name: str = "",
+    reference_folder: str = "",
+    student_id: str = "",
+    person_name: str = "",
+) -> str:
+    catalog_part = _normalize_pk_part(catalog) or "__SEM_CATALOGO__"
+    class_part = _normalize_pk_part(class_name) or "__SEM_TURMA__"
+    ref_folder_part = _normalize_pk_part(reference_folder) or "__SEM_REFERENCIA__"
+    student_part = _normalize_pk_part(student_id) or _normalize_pk_part(person_name)
+    if not student_part:
+        return "__UNKNOWN__"
+    parts = [catalog_part, class_part, ref_folder_part, student_part]
+    return "::".join(parts)
+
+
 def load_references(ref_path):
     global _cfg
     faiss_index = None
     ref_ids = []
     refs = []
     ref_classes = {}
+    ref_person_keys = {}
+    ref_reference_folders = {}
+    catalog = _cfg.get("current_catalog", "")
+    scan_roots = _cfg.get("_scan_roots", [])
     if not ref_path or not os.path.isdir(ref_path):
         return
     _cfg["log_info"](f"Carregando referências de: {ref_path}")
@@ -472,9 +515,18 @@ def load_references(ref_path):
             ignored_folders = {"#BASE", "BASE", "base", "referencias", "referências", "referencia", "referência"}
             valid_parts = [p for p in parts if p.strip() and p.strip().casefold() not in {f.casefold() for f in ignored_folders}]
             class_name = "/".join(valid_parts) if valid_parts else "Sem turma"
-            print(f"[reference-import] arquivo={full} turma={class_name}")
-            refs.append({"id": ref_name, "class_name": class_name, "emb": emb})
+            reference_folder = "/".join(valid_parts) if valid_parts else ""
+            person_key = make_person_key(
+                catalog=catalog,
+                class_name=class_name,
+                reference_folder=reference_folder,
+                student_id=ref_name,
+            )
+            print(f"[reference-import] arquivo={full} turma={class_name} person_key={person_key}")
+            refs.append({"id": ref_name, "class_name": class_name, "person_key": person_key, "emb": emb})
             ref_classes[ref_name.casefold()] = class_name
+            ref_person_keys[ref_name.casefold()] = person_key
+            ref_reference_folders[ref_name.casefold()] = reference_folder
     if not refs:
         return
     ref_embs = np.array([r["emb"] for r in refs], dtype="float32")
@@ -489,6 +541,17 @@ def load_references(ref_path):
     _cfg["faiss_index"] = faiss_index
     _cfg["ref_ids"] = ref_ids
     _cfg["ref_classes"] = ref_classes
+    _cfg["ref_person_keys"] = ref_person_keys
+    _cfg["ref_reference_folders"] = ref_reference_folders
+
+    # Build per-class index mappings for class-guarded matching
+    ref_class_to_ids = {}
+    for i, r in enumerate(refs):
+        cls = r["class_name"]
+        if cls not in ref_class_to_ids:
+            ref_class_to_ids[cls] = []
+        ref_class_to_ids[cls].append(i)
+    _cfg["ref_class_to_ids"] = ref_class_to_ids
 
 
 def find_best_reference(emb):
@@ -510,12 +573,84 @@ def find_best_reference(emb):
     return ref_ids[idx], score
 
 
+def find_best_reference_filtered(emb, photo_class_context=None):
+    """
+    Find best reference, preferring same-class matches when class context is available.
+    
+    If photo_class_context is provided, this function:
+    1. Searches the top K global matches
+    2. Prefers the first match within the same class
+    3. Falls back to global best only if no same-class match exists above threshold
+    
+    Returns (ref_name, similarity_score).
+    """
+    faiss_index = _cfg["faiss_index"]
+    ref_ids = _cfg["ref_ids"]
+    if faiss_index is None or not ref_ids:
+        return None, 0.0
+    
+    emb = emb.astype("float32").reshape(1, -1)
+    n_results = min(50, len(ref_ids))
+    
+    if _cfg["faiss_available"]:
+        D, I = faiss_index.search(emb, n_results)
+        scores = D[0]
+        indices = I[0]
+    else:
+        sims = np.dot(faiss_index, emb[0])
+        indices = np.argsort(sims)[::-1][:n_results]
+        scores = sims[indices]
+    
+    ref_classes = _cfg.get("ref_classes") or {}
+    
+    if photo_class_context:
+        for idx, score in zip(indices, scores):
+            if idx < 0 or idx >= len(ref_ids):
+                continue
+            name = ref_ids[idx]
+            ref_class = ref_classes.get(name.casefold(), "")
+            if ref_class == photo_class_context:
+                return name, float(score)
+        
+        best_idx = int(indices[0])
+        if best_idx >= 0 and best_idx < len(ref_ids):
+            best_name = ref_ids[best_idx]
+            best_score = float(scores[0])
+            _cfg["log_info"](
+                f"[identity-guard] nenhuma referencia na mesma turma: "
+                f"photo_turma={photo_class_context} best_global={best_name} score={best_score:.4f}"
+            )
+            return best_name, best_score
+        return None, 0.0
+    
+    best_idx = int(indices[0])
+    if best_idx < 0 or best_idx >= len(ref_ids):
+        return None, 0.0
+    return ref_ids[best_idx], float(scores[0])
+
+
 def get_reference_class_name(ref_name: str | None) -> str:
     ref_classes = _cfg.get("ref_classes") or {}
     key = str(ref_name or "").strip().casefold()
     if not key:
         return "Sem turma"
     return ref_classes.get(key, "Sem turma")
+
+
+def get_reference_person_key(ref_name: str | None) -> str:
+    ref_person_keys = _cfg.get("ref_person_keys") or {}
+    key = str(ref_name or "").strip().casefold()
+    if not key:
+        return ""
+    return ref_person_keys.get(key, "")
+
+
+def get_reference_folder(ref_name: str | None) -> str:
+    ref_folders = _cfg.get("ref_reference_folders") or {}
+    key = str(ref_name or "").strip().casefold()
+    if not key:
+        return ""
+    return ref_folders.get(key, "")
 
 
 def find_or_create_cluster(emb):
@@ -709,6 +844,8 @@ def run_scanner_worker(req):
             if extra and os.path.isdir(extra):
                 scan_roots.append(extra)
 
+        _cfg["_scan_roots"] = scan_roots
+
         scan_inputs = collect_scan_inputs(scan_roots, _cfg["image_extensions"])
         fotos = scan_inputs["files"]
         total = len(fotos)
@@ -862,8 +999,8 @@ def run_scanner_worker(req):
                         log_info(f"[Face] Nenhum rosto valido em {os.path.basename(p)} (total_detectado={total_faces_in_photo})")
                         log_info(f"[DB] inserindo foto sem rosto path={p}")
                         cur.execute(
-                            "INSERT OR IGNORE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                            ("Sem Rostos", p, None, None, None, None, photo_hash, b_score, b_status),
+                            "INSERT OR IGNORE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status, person_key, reference_folder) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            ("Sem Rostos", p, None, None, None, None, photo_hash, b_score, b_status, f"__SEM_TURMA__::__SEM_REFERENCIA__::Sem_Rostos::{os.path.basename(p)}", ""),
                         )
                         rowcount = cur.rowcount
                         if p not in existing_photo_paths:
@@ -919,15 +1056,50 @@ def run_scanner_worker(req):
                             if norm == 0:
                                 continue
                             emb = emb / norm
-                            ref_name, ref_sim = find_best_reference(emb)
+                            photo_class_context = _detect_photo_class_context(p, scan_roots)
+                            ref_name, ref_sim = find_best_reference_filtered(emb, photo_class_context)
                             ref_exists = (ref_name is not None)
 
-                            # Determinar nome e motivo
                             if ref_exists and ref_sim >= _cfg["ref_match_threshold"]:
                                 nome = ref_name
                                 scan_state["total_matches"] += 1
+                                ref_class_name = get_reference_class_name(nome)
+                                ref_person_key = get_reference_person_key(nome)
+                                ref_folder = get_reference_folder(nome)
+
+                                if ref_class_name and photo_class_context and ref_class_name != photo_class_context:
+                                    _cfg["log_info"](
+                                        f"[identity-guard] match aceito com turma diferente (sem alternativa na mesma turma): "
+                                        f"nome={ref_name} ref_turma={ref_class_name} photo_turma={photo_class_context} "
+                                        f"sim={ref_sim:.4f} foto={p}"
+                                    )
                             else:
                                 nome = find_or_create_cluster(emb)
+                                ref_class_name = ""
+                                ref_person_key = ""
+                                ref_folder = ""
+
+                            if not ref_person_key:
+                                ref_person_key = make_person_key(
+                                    catalog=cname,
+                                    class_name=ref_class_name or photo_class_context or "__SEM_TURMA__",
+                                    reference_folder=ref_folder or photo_class_context or "__SEM_REFERENCIA__",
+                                    student_id=nome,
+                                )
+                            else:
+                                nome = find_or_create_cluster(emb)
+                                ref_class_name = ""
+                                ref_person_key = ""
+                                ref_folder = ""
+
+                            if not ref_person_key:
+                                photo_class_context = _detect_photo_class_context(p, scan_roots)
+                                ref_person_key = make_person_key(
+                                    catalog=cname,
+                                    class_name=ref_class_name or photo_class_context or "Sem turma",
+                                    reference_folder=ref_folder or photo_class_context or "",
+                                    student_id=nome,
+                                )
 
                             scan_state["total_clusters"] = len(_cfg["cluster_names"])
 
@@ -935,36 +1107,39 @@ def run_scanner_worker(req):
                                 f"[Scanner Decisão] foto={os.path.basename(p)} | "
                                 f"ID sugerido={ref_name} | "
                                 f"confiança facial={ref_sim:.4f} | "
-                                f"existência de referência={ref_exists}"
+                                f"existência de referência={ref_exists} | "
+                                f"person_key={ref_person_key[:60]}"
                             )
 
                             photo_faces.append({
                                 "bbox": [sx1, sy1, sx2, sy2],
                                 "confidence": round(float(ref_sim), 4) if ref_exists else 0.95,
                                 "name": nome,
+                                "person_key": ref_person_key,
                             })
 
                             t_face = (time.time() - t0_face) * 1000
 
-                            log_info(f"[DB] inserindo face path={p} aluno={nome}")
+                            log_info(f"[DB] inserindo face path={p} aluno={nome} person_key={ref_person_key[:60]}")
                             cur.execute(
                                 """
                                 INSERT OR IGNORE INTO ocorrencias
                                 (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status,
-                                 foreground_score, is_foreground, face_area_ratio, center_score, background_penalty_reason)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                 foreground_score, is_foreground, face_area_ratio, center_score, background_penalty_reason,
+                                 person_key, reference_folder)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 """,
                                 (nome, p, sx1, sy1, sx2, sy2, photo_hash, b_score, b_status,
-                                 fg_score, is_fg, f_ratio, c_score, bg_reason),
+                                 fg_score, is_fg, f_ratio, c_score, bg_reason, ref_person_key, ref_folder),
                             )
                             rowcount = cur.rowcount
                             if p not in existing_photo_paths:
                                 inserted_photo_paths.add(p)
                                 existing_photo_paths.add(p)
-                                log_info(f"[DB] inserida path={p} aluno={nome} rowcount={rowcount}")
+                                log_info(f"[DB] inserida path={p} aluno={nome} person_key={ref_person_key[:60]} rowcount={rowcount}")
                             else:
                                 log_info(f"[DB] ignorada (ja existe) path={p} aluno={nome}")
-                            detected_class = get_reference_class_name(nome)
+                            detected_class = get_reference_class_name(nome) or photo_class_context or "Sem turma"
                             print(f"[db-save] aluno={nome} class_name={detected_class}")
                             aluno_batch[nome] = detected_class
 
@@ -1008,10 +1183,22 @@ def run_scanner_worker(req):
 
                         # Inserir alunos em lote após processar todas as faces da foto
                         if aluno_batch:
-                            cur.executemany(
-                                "INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path, class_name) VALUES (?, ?, ?)",
-                                [(nome, "n/a", cls) for nome, cls in aluno_batch.items()],
-                            )
+                            for anome, acls in aluno_batch.items():
+                                a_person_key = get_reference_person_key(anome)
+                                a_ref_folder = get_reference_folder(anome)
+                                if not a_person_key:
+                                    a_person_key = make_person_key(
+                                        catalog=cname,
+                                        class_name=acls,
+                                        reference_folder=a_ref_folder or acls,
+                                        student_id=anome,
+                                    )
+                                if not a_ref_folder:
+                                    a_ref_folder = acls
+                                cur.execute(
+                                    "INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path, class_name, person_key, reference_folder) VALUES (?, ?, ?, ?, ?)",
+                                    (anome, "n/a", acls, a_person_key, a_ref_folder),
+                                )
 
                     # Log Benchmark
                     total_ms = (time.time() - t0_photo) * 1000

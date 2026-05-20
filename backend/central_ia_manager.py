@@ -460,10 +460,12 @@ async def confirm_suggestion(req: ConfirmRequest, catalog: str = Query(...)):
             x1, y1 = face["x"], face["y"]
             x2, y2 = x1 + face["width"], y1 + face["height"]
             
+            cat_name = str(catalog or "").strip()
+            person_key = "{}::{}::{}".format(cat_name, "Sem turma", person["name"])
             c.execute("""
-                INSERT OR REPLACE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (person["name"], photo["original_path"], x1, y1, x2, y2))
+                INSERT OR REPLACE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2, person_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (person["name"], photo["original_path"], x1, y1, x2, y2, person_key))
             
             db.commit()
             return {"message": "Sugestão confirmada"}

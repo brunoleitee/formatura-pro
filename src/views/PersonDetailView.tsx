@@ -358,7 +358,9 @@ export default function PersonDetailView() {
           <div>
             <h1>{selectedPersonId}</h1>
             <p className="view-subtitle">
-              <strong>{personInfo?.class_name || 'Sem turma'}</strong>·{' '}
+              {personInfo?.class_name && personInfo.class_name !== 'Sem turma' ? (
+                <><strong>{personInfo.class_name}</strong> · </>
+              ) : null}
               {photos.length} foto{photos.length !== 1 ? 's' : ''} no total
             </p>
           </div>

@@ -199,6 +199,7 @@ def get_absent_people():
                 SELECT a.aluno_id, COUNT(o.foto_path) as foto_count
                 FROM alunos a
                 LEFT JOIN ocorrencias o ON o.aluno_id = a.aluno_id
+                   AND (o.person_key = a.person_key OR o.person_key IS NULL OR o.person_key = '')
                 WHERE a.face_cache_path = 'ABSENT' AND a.aluno_id != 'system_catalog'
                 GROUP BY a.aluno_id
                 """

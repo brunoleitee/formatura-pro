@@ -113,6 +113,35 @@ UNKNOWN_ALUNO_IDS = (
 )
 GRADUATION_TAG_ORDER = ("beca", "canudo", "faixa", "capelo", "jabor")
 
+PERSON_KEY_SEPARATOR = "::"
+
+
+def _normalize_pk_part(value: str) -> str:
+    if not value or not str(value).strip():
+        return ""
+    return re.sub(r"\s+", " ", str(value).strip().upper())
+
+
+def make_person_key(
+    catalog: str = "",
+    class_name: str = "",
+    reference_folder: str = "",
+    student_id: str = "",
+    person_name: str = "",
+) -> str:
+    catalog_part = _normalize_pk_part(catalog) or "__SEM_CATALOGO__"
+    class_part = _normalize_pk_part(class_name) or "__SEM_TURMA__"
+    ref_folder_part = _normalize_pk_part(reference_folder) or "__SEM_REFERENCIA__"
+    student_part = _normalize_pk_part(student_id) or _normalize_pk_part(person_name)
+    if not student_part:
+        return "__UNKNOWN__"
+    parts = [catalog_part, class_part, ref_folder_part, student_part]
+    return PERSON_KEY_SEPARATOR.join(parts)
+
+
+def identity_guard_log(msg: str):
+    logger.warning("[identity-guard] %s", msg)
+
 
 def configure(**kwargs):
     _cfg.update(kwargs)
@@ -147,9 +176,9 @@ def _safe_filename(name: str) -> str:
     return cleaned or "Sem_Nome"
 
 
-def _ensure_aluno_row(cur, aluno_id: str, face_cache_path: str = "n/a", class_name: str | None = None):
+def _ensure_aluno_row(cur, aluno_id: str, face_cache_path: str = "n/a", class_name: str | None = None, person_key: str | None = None, catalog: str = ""):
     resolved_class = str(class_name or "").strip() or "Sem turma"
-    cur.execute("SELECT face_cache_path, class_name FROM alunos WHERE aluno_id = ? LIMIT 1", (aluno_id,))
+    cur.execute("SELECT face_cache_path, class_name, person_key FROM alunos WHERE aluno_id = ? LIMIT 1", (aluno_id,))
     row = cur.fetchone()
     if row:
         existing_class = str(row["class_name"] or "").strip()
@@ -158,14 +187,23 @@ def _ensure_aluno_row(cur, aluno_id: str, face_cache_path: str = "n/a", class_na
         existing_face = str(row["face_cache_path"] or "").strip()
         if face_cache_path and existing_face in ("", "n/a"):
             cur.execute("UPDATE alunos SET face_cache_path = ? WHERE aluno_id = ?", (face_cache_path, aluno_id))
+        existing_pk = str(row["person_key"] or "").strip()
+        if person_key and not existing_pk:
+            cur.execute("UPDATE alunos SET person_key = ? WHERE aluno_id = ?", (person_key, aluno_id))
+        elif not existing_pk and resolved_class:
+            fallback_pk = make_person_key(catalog=catalog, class_name=resolved_class, student_id=aluno_id)
+            cur.execute("UPDATE alunos SET person_key = ? WHERE aluno_id = ?", (fallback_pk, aluno_id))
         return
+
+    if not person_key and resolved_class:
+        person_key = make_person_key(catalog=catalog, class_name=resolved_class, student_id=aluno_id)
 
     cur.execute(
         """
-        INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path, class_name)
-        VALUES (?, ?, ?)
+        INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path, class_name, person_key)
+        VALUES (?, ?, ?, ?)
         """,
-        (aluno_id, face_cache_path or "n/a", resolved_class),
+        (aluno_id, face_cache_path or "n/a", resolved_class, person_key or ""),
     )
 
 
@@ -319,9 +357,19 @@ def _ensure_person_reference(conn, catalog: str, aluno_id: str, force: bool = Fa
         else:
             if not _save_resized_reference(dest, img_np):
                 shutil.copy2(candidate_path, dest)
+        existing_pk = ""
+        try:
+            cur.execute("SELECT person_key FROM alunos WHERE aluno_id = ? LIMIT 1", (aluno_id,))
+            pk_row = cur.fetchone()
+            if pk_row:
+                existing_pk = str(pk_row["person_key"] or "")
+        except Exception:
+            pass
+        if not existing_pk:
+            existing_pk = make_person_key(catalog=catalog, student_id=aluno_id)
         cur.execute(
-            "INSERT OR REPLACE INTO alunos (aluno_id, face_cache_path, class_name) VALUES (?, ?, ?)",
-            (aluno_id, dest, "Sem turma"),
+            "INSERT OR REPLACE INTO alunos (aluno_id, face_cache_path, class_name, person_key) VALUES (?, ?, ?, ?)",
+            (aluno_id, dest, "Sem turma", existing_pk),
         )
         conn.commit()
         return dest
@@ -467,6 +515,7 @@ class AssignUnknownClusterRequest(BaseModel):
     cluster_id: str
     aluno_id: str | None = None
     nome_formando: str | None = None
+    class_name: str = ""
 
 
 class IgnoreUnknownClusterRequest(BaseModel):
@@ -499,14 +548,14 @@ def manual_identify(req: ManualIdentifyReq):
     
     Atualiza o aluno_id da ocorrência facial e cria entrada na tabela alunos se necessário.
     """
-    def update_single_face(cur, foto_path, x1, y1, x2, y2, new_name):
-        _ensure_aluno_row(cur, new_name)
+    def update_single_face(cur, foto_path, x1, y1, x2, y2, new_name, person_key):
+        _ensure_aluno_row(cur, new_name, person_key=person_key, catalog=req.catalog)
         cur.execute(
             """
-            UPDATE ocorrencias SET aluno_id = ?
+            UPDATE ocorrencias SET aluno_id = ?, person_key = ?
             WHERE foto_path COLLATE NOCASE = ? AND x1 = ? AND y1 = ? AND x2 = ? AND y2 = ?
             """,
-            (new_name, foto_path, x1, y1, x2, y2),
+            (new_name, person_key, foto_path, x1, y1, x2, y2),
         )
 
     backup_catalog_db = _get("backup_catalog_db")
@@ -527,6 +576,7 @@ def manual_identify(req: ManualIdentifyReq):
     with get_db(req.catalog) as conn:
         cur = conn.cursor()
         new_name = (req.new_name or "").strip() or "Desconhecido"
+        person_key = make_person_key(catalog=req.catalog, student_id=new_name)
         cur.execute(
             "SELECT aluno_id FROM ocorrencias WHERE foto_path COLLATE NOCASE = ? AND x1 = ? AND y1 = ? AND x2 = ? AND y2 = ?",
             (req.foto_path, x1, y1, x2, y2),
@@ -535,19 +585,19 @@ def manual_identify(req: ManualIdentifyReq):
         old_id = row["aluno_id"] if row else None
 
         if old_id and old_id.startswith("Pessoa ") and new_name != "Desconhecido":
-            _ensure_aluno_row(cur, new_name)
-            cur.execute("UPDATE ocorrencias SET aluno_id = ? WHERE aluno_id = ?", (new_name, old_id))
+            _ensure_aluno_row(cur, new_name, person_key=person_key, catalog=req.catalog)
+            cur.execute("UPDATE ocorrencias SET aluno_id = ?, person_key = ? WHERE aluno_id = ?", (new_name, person_key, old_id))
             cur.execute("DELETE FROM alunos WHERE aluno_id = ?", (old_id,))
         elif old_id:
-            update_single_face(cur, req.foto_path, x1, y1, x2, y2, new_name)
+            update_single_face(cur, req.foto_path, x1, y1, x2, y2, new_name, person_key)
         else:
-            _ensure_aluno_row(cur, new_name)
+            _ensure_aluno_row(cur, new_name, person_key=person_key, catalog=req.catalog)
             cur.execute(
                 """
-                INSERT OR IGNORE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2, person_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (new_name, req.foto_path, x1, y1, x2, y2),
+                (new_name, req.foto_path, x1, y1, x2, y2, person_key),
             )
 
         conn.commit()
@@ -567,6 +617,7 @@ def bulk_manual_identify(req: BulkManualIdentifyReq):
         raise HTTPException(status_code=400, detail="Nenhuma face informada.")
 
     new_name = (req.new_name or "").strip() or "Desconhecido"
+    person_key = make_person_key(catalog=req.catalog, student_id=new_name)
     updated = 0
     is_reset = (new_name.lower() in UNKNOWN_ALUNO_IDS)
 
@@ -574,7 +625,7 @@ def bulk_manual_identify(req: BulkManualIdentifyReq):
 
     with get_db(req.catalog) as conn:
         cur = conn.cursor()
-        _ensure_aluno_row(cur, new_name)
+        _ensure_aluno_row(cur, new_name, person_key=person_key, catalog=req.catalog)
 
         # ── Salvar old_person ANTES de atualizar ──
         for rid in rowids:
@@ -588,8 +639,8 @@ def bulk_manual_identify(req: BulkManualIdentifyReq):
             chunk = rowids[i:i + 900]
             placeholders = ",".join(["?"] * len(chunk))
             cur.execute(
-                f"UPDATE OR REPLACE ocorrencias SET aluno_id = ? WHERE rowid IN ({placeholders})",
-                [new_name] + chunk,
+                f"UPDATE OR REPLACE ocorrencias SET aluno_id = ?, person_key = ? WHERE rowid IN ({placeholders})",
+                [new_name, person_key] + chunk,
             )
             updated += cur.rowcount
 
@@ -716,7 +767,7 @@ def _build_stable_aluno_id(name: str) -> str:
     return ascii_name or "FORMANDO"
 
 
-def _find_existing_aluno_id(cur, candidates: list[str]) -> str | None:
+def _find_existing_aluno_id(cur, candidates: list[str], class_name: str | None = None) -> str | None:
     seen = set()
     filtered = []
     for candidate in candidates:
@@ -730,10 +781,24 @@ def _find_existing_aluno_id(cur, candidates: list[str]) -> str | None:
         filtered.append(value)
 
     for value in filtered:
-        cur.execute("SELECT aluno_id FROM alunos WHERE lower(aluno_id) = lower(?) LIMIT 1", (value,))
+        cur.execute("SELECT aluno_id, class_name FROM alunos WHERE lower(aluno_id) = lower(?) LIMIT 1", (value,))
         row = cur.fetchone()
         if row and row["aluno_id"]:
             return str(row["aluno_id"])
+
+    # identity-guard: se encontrar aluno com mesmo nome mas class_name diferente, logar
+    if class_name:
+        for value in filtered:
+            cur.execute(
+                "SELECT aluno_id, class_name FROM alunos WHERE lower(aluno_id) = lower(?) AND class_name != ? LIMIT 1",
+                (value, class_name),
+            )
+            row = cur.fetchone()
+            if row and row["aluno_id"]:
+                identity_guard_log(
+                    f"match rejeitado: mesmo nome/ficha, turma diferente "
+                    f"nome={value} turma_existente={row['class_name']} turma_solicitada={class_name}"
+                )
 
     for value in filtered:
         cur.execute("SELECT aluno_id FROM ocorrencias WHERE lower(aluno_id) = lower(?) LIMIT 1", (value,))
@@ -743,23 +808,27 @@ def _find_existing_aluno_id(cur, candidates: list[str]) -> str | None:
     return None
 
 
-def _resolve_assign_aluno(cur, aluno_id: str | None, nome_formando: str | None) -> tuple[str, str]:
+def _resolve_assign_aluno(cur, aluno_id: str | None, nome_formando: str | None, class_name: str | None = None, catalog: str = "") -> tuple[str, str]:
     resolved_aluno_id = str(aluno_id or "").strip()
     normalized_name = _normalize_formando_name(nome_formando)
 
     if not resolved_aluno_id and not normalized_name:
         raise HTTPException(status_code=400, detail="Informe aluno_id ou nome_formando")
 
+    resolved_class = str(class_name or "").strip() or "Sem turma"
+
     if resolved_aluno_id:
-        existing = _find_existing_aluno_id(cur, [resolved_aluno_id])
+        existing = _find_existing_aluno_id(cur, [resolved_aluno_id], class_name=resolved_class)
         resolved_aluno_id = existing or resolved_aluno_id
-        _ensure_aluno_row(cur, resolved_aluno_id)
+        person_key = make_person_key(catalog=catalog, class_name=resolved_class, student_id=resolved_aluno_id)
+        _ensure_aluno_row(cur, resolved_aluno_id, class_name=resolved_class, person_key=person_key, catalog=catalog)
         return resolved_aluno_id, normalized_name or resolved_aluno_id
 
     generated_aluno_id = _build_stable_aluno_id(normalized_name)
-    existing = _find_existing_aluno_id(cur, [normalized_name, generated_aluno_id])
+    existing = _find_existing_aluno_id(cur, [normalized_name, generated_aluno_id], class_name=resolved_class)
     resolved_aluno_id = existing or generated_aluno_id
-    _ensure_aluno_row(cur, resolved_aluno_id)
+    person_key = make_person_key(catalog=catalog, class_name=resolved_class, student_id=resolved_aluno_id)
+    _ensure_aluno_row(cur, resolved_aluno_id, class_name=resolved_class, person_key=person_key, catalog=catalog)
     return resolved_aluno_id, normalized_name
 
 
@@ -938,6 +1007,7 @@ def _row_to_review_item(row) -> dict:
     result = {
         "rowid": int(row["rowid"]),
         "aluno_id": row["aluno_id"],
+        "person_key": row.get("person_key", ""),
         "foto_path": row["foto_path"],
         "box": [row["x1"], row["y1"], row["x2"], row["y2"]],
         "blur_status": row["blur_status"],
@@ -2130,7 +2200,11 @@ def assign_cluster(req: AssignUnknownClusterRequest):
 
     with get_db(catalog) as conn:
         cur = conn.cursor()
-        resolved_aluno_id, normalized_name = _resolve_assign_aluno(cur, req.aluno_id, req.nome_formando)
+        class_name = str(getattr(req, 'class_name', '') or '').strip() or "Sem turma"
+        resolved_aluno_id, normalized_name = _resolve_assign_aluno(
+            cur, req.aluno_id, req.nome_formando,
+            class_name=class_name, catalog=catalog,
+        )
 
         cur.execute(
             """
@@ -2145,6 +2219,12 @@ def assign_cluster(req: AssignUnknownClusterRequest):
         if not cluster_rows:
             raise HTTPException(status_code=404, detail="Cluster desconhecido não encontrado.")
 
+        person_key = make_person_key(
+            catalog=catalog,
+            class_name=class_name,
+            student_id=resolved_aluno_id,
+        )
+
         face_ids = [int(row["face_id"]) for row in cluster_rows if row["face_id"] is not None]
         updated = 0
         if face_ids:
@@ -2152,8 +2232,8 @@ def assign_cluster(req: AssignUnknownClusterRequest):
                 chunk = face_ids[idx:idx + 900]
                 placeholders = ",".join(["?"] * len(chunk))
                 cur.execute(
-                    f"UPDATE OR REPLACE ocorrencias SET aluno_id = ? WHERE rowid IN ({placeholders})",
-                    [resolved_aluno_id] + chunk,
+                    f"UPDATE OR REPLACE ocorrencias SET aluno_id = ?, person_key = ? WHERE rowid IN ({placeholders})",
+                    [resolved_aluno_id, person_key] + chunk,
                 )
                 updated += cur.rowcount
         else:
@@ -2166,14 +2246,14 @@ def assign_cluster(req: AssignUnknownClusterRequest):
                 cur.execute(
                     f"""
                     UPDATE ocorrencias
-                    SET aluno_id = ?
+                    SET aluno_id = ?, person_key = ?
                     WHERE foto_path IN ({placeholders})
                       AND (
                           lower(aluno_id) IN ({",".join(["?"] * len(UNKNOWN_ALUNO_IDS))})
                           OR aluno_id LIKE 'Pessoa%'
                       )
                     """,
-                    [resolved_aluno_id] + chunk + list(UNKNOWN_ALUNO_IDS),
+                    [resolved_aluno_id, person_key] + chunk + list(UNKNOWN_ALUNO_IDS),
                 )
                 updated += cur.rowcount
 
@@ -2187,6 +2267,8 @@ def assign_cluster(req: AssignUnknownClusterRequest):
                         "cluster_id": req.cluster_id,
                         "aluno_id": resolved_aluno_id,
                         "nome_formando": normalized_name or resolved_aluno_id,
+                        "person_key": person_key,
+                        "class_name": class_name,
                         "updated": updated,
                     },
                     ensure_ascii=False,
@@ -2199,15 +2281,13 @@ def assign_cluster(req: AssignUnknownClusterRequest):
         if resolved_aluno_id and resolved_aluno_id != "Desconhecido":
             _ensure_person_reference(conn, catalog, resolved_aluno_id)
 
-        class_name = "Sem turma"
-        if resolved_aluno_id:
-            try:
-                cur.execute("SELECT class_name FROM alunos WHERE aluno_id = ? LIMIT 1", (resolved_aluno_id,))
-                row = cur.fetchone()
-                if row and row["class_name"]:
-                    class_name = str(row["class_name"]).strip() or "Sem turma"
-            except Exception:
-                class_name = "Sem turma"
+        try:
+            cur.execute("SELECT class_name FROM alunos WHERE aluno_id = ? LIMIT 1", (resolved_aluno_id,))
+            row = cur.fetchone()
+            if row and row["class_name"]:
+                class_name = str(row["class_name"]).strip() or "Sem turma"
+        except Exception:
+            class_name = "Sem turma"
 
     try:
         import people_data_manager as pdm
@@ -2568,11 +2648,11 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
 
         print(f"[CLUSTER] clusters finais: {len(clusters_by_root)} (apos {iteration} iteracoes)")
 
-        # Load identified students for suggestion matching
-        identified_centroids: list[tuple[str, np.ndarray]] = []
+        # Load identified students for suggestion matching (with class context)
+        identified_centroids: list[tuple[str, str, np.ndarray]] = []
         try:
             cur.execute("""
-                SELECT DISTINCT o.aluno_id, fe.embedding
+                SELECT DISTINCT o.aluno_id, o.person_key, fe.embedding
                 FROM ocorrencias o
                 JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
                 WHERE o.x1 IS NOT NULL
@@ -2585,40 +2665,92 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             """)
             id_rows = cur.fetchall()
             id_emb_map: dict[str, list[np.ndarray]] = {}
+            id_class_map: dict[str, str] = {}
             for r in id_rows:
                 name = str(r["aluno_id"])
+                pk = str(r["person_key"] or "")
                 emb = np.frombuffer(r["embedding"], dtype="float32")
                 emb = emb / np.linalg.norm(emb) if np.linalg.norm(emb) > 0 else emb
                 id_emb_map.setdefault(name, []).append(emb)
+                if pk and name not in id_class_map:
+                    parts = pk.split("::")
+                    if len(parts) >= 2:
+                        id_class_map[name] = parts[1]
             for name, embs in id_emb_map.items():
                 centroid = np.mean(embs, axis=0)
                 cn = np.linalg.norm(centroid)
                 if cn > 0:
-                    identified_centroids.append((name, centroid / cn))
+                    class_name = id_class_map.get(name, "")
+                    identified_centroids.append((name, class_name, centroid / cn))
             print(f"[STUDENT DB] identified_students_count={len(identified_centroids)}")
-            for name, _ in identified_centroids:
+            for name, cls, _ in identified_centroids:
                 emb_count = len(id_emb_map.get(name, []))
-                print(f"[STUDENT DB] student={name} embeddings={emb_count}")
+                print(f"[STUDENT DB] student={name} class={cls} embeddings={emb_count}")
             if not identified_centroids:
                 print(f"[STUDENT DB] nenhum formando identificado com embedding encontrado (query returned {len(id_rows)} rows)")
         except Exception as e:
             print(f"[CLUSTER] erro ao carregar formandos: {e}")
 
-        def _best_student_match(centroid: np.ndarray) -> tuple[str | None, float]:
+        def _best_student_match(centroid: np.ndarray, cluster_items: list[dict] | None = None) -> tuple[str | None, float]:
             if not identified_centroids or centroid is None:
                 return None, 0.0
+
+            # Inferir turma do cluster a partir dos itens
+            cluster_class_names: set[str] = set()
+            if cluster_items:
+                for item in cluster_items:
+                    pk = item.get("person_key") or ""
+                    if pk:
+                        parts = pk.split("::")
+                        if len(parts) >= 2 and parts[1] and parts[1] != "__SEM_TURMA__":
+                            cluster_class_names.add(parts[1])
+                    aluno_id = item.get("aluno_id", "")
+                    if aluno_id:
+                        for _n, cls_name, _c in identified_centroids:
+                            if cls_name:
+                                cluster_class_names.add(cls_name)
+
             best_name, best_sim = None, 0.0
-            all_matches: list[tuple[str, float]] = []
-            for name, ref_cent in identified_centroids:
+            best_cross_name, best_cross_sim = None, 0.0
+            all_matches: list[tuple[str, str, float]] = []
+
+            for name, class_name, ref_cent in identified_centroids:
                 sim = float(np.dot(centroid, ref_cent))
-                all_matches.append((name, sim))
-                if sim > best_sim:
-                    best_sim = sim
-                    best_name = name
-            all_matches.sort(key=lambda x: x[1], reverse=True)
+                all_matches.append((name, class_name, sim))
+
+                # Prefer same-class matches when cluster has class context
+                if cluster_class_names:
+                    if class_name in cluster_class_names and sim > best_sim:
+                        best_sim = sim
+                        best_name = name
+                    elif sim > best_cross_sim:
+                        best_cross_sim = sim
+                        best_cross_name = name
+                else:
+                    if sim > best_sim:
+                        best_sim = sim
+                        best_name = name
+
+            # If no same-class match found, fall back to best overall
+            if cluster_class_names and best_name is None and best_cross_name is not None:
+                best_name = best_cross_name
+                best_sim = best_cross_sim
+                identity_guard_log(
+                    f"sugestão cluster sem match na mesma turma: "
+                    f"cluster_turma={cluster_class_names} best_cross={best_cross_name} sim={best_cross_sim:.4f}"
+                )
+
+            all_matches.sort(key=lambda x: x[2], reverse=True)
             top3 = all_matches[:3]
-            if any(s >= 0.40 for _, s in top3):
-                print(f"[CLUSTER] TOP MATCHES: {' | '.join(f'{n}={s:.2f}' for n, s in top3)}")
+            if any(s >= 0.40 for _, _, s in top3):
+                print(f"[CLUSTER] TOP MATCHES: {' | '.join(f'{n}({c})={s:.2f}' for n, c, s in top3)}")
+            if best_name and cluster_class_names:
+                matched_class = next((c for n, c, _ in identified_centroids if n == best_name), "")
+                if matched_class and matched_class not in cluster_class_names:
+                    identity_guard_log(
+                        f"sugestão entre turmas diferentes: sugestao={best_name} "
+                        f"turma_sugerida={matched_class} turma_cluster={cluster_class_names} sim={best_sim:.4f}"
+                    )
             return best_name, best_sim
 
         import datetime as _dt
@@ -2667,7 +2799,7 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             rep_item_meta = priority_meta[comp_items.index(rep_item)]
             graduation_tags = _ordered_cluster_tags(priority_meta)
             debug_graduation_source = _resolve_cluster_graduation_source(priority_meta)
-            suggested_student, suggested_similarity = _best_student_match(centroid)
+            suggested_student, suggested_similarity = _best_student_match(centroid, comp_items)
             
             # 1. Detecção de "cluster misto"
             is_mixed = False
@@ -2719,7 +2851,9 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             # Always save best match (even below threshold) for debug display
             best_debug_name, best_debug_sim = None, 0.0
             if identified_centroids and centroid is not None:
-                for name, ref_cent in identified_centroids:
+                for entry in identified_centroids:
+                    name = entry[0]
+                    ref_cent = entry[2]
                     sim = float(np.dot(centroid, ref_cent))
                     if sim > best_debug_sim:
                         best_debug_sim = sim
@@ -3083,7 +3217,7 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
             cur.execute(
                 f"""
                 SELECT u.cluster_id,
-                       o.rowid, o.aluno_id, o.foto_path, o.x1, o.y1, o.x2, o.y2,
+                       o.rowid, o.aluno_id, o.person_key, o.foto_path, o.x1, o.y1, o.x2, o.y2,
                        o.blur_status, o.blur_score, o.closed_eyes,
                        o.has_gown, o.has_diploma, o.has_sash, o.has_cap, o.has_jabor,
                        o.face_front_score, o.graduation_score, o.graduation_tags,
@@ -3091,9 +3225,9 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                        o.gown_confidence, o.diploma_confidence, o.sash_confidence, o.cap_confidence, o.jabor_confidence,
                        o.manual_graduation_tags,
                        o.is_foreground, o.foreground_score, o.background_penalty_reason,
-                        u.suggested_student, u.suggested_similarity,
-                        u.unknown_similar_id, u.unknown_similar_similarity,
-                        u.best_student_debug, u.best_similarity_debug
+                       u.suggested_student, u.suggested_similarity,
+                       u.unknown_similar_id, u.unknown_similar_similarity,
+                       u.best_student_debug, u.best_similarity_debug
                  FROM unknown_face_clusters u
                  JOIN ocorrencias o ON o.rowid = u.face_id
                  WHERE u.cluster_id IN ({placeholders})
@@ -3122,10 +3256,10 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
         # Fallback: compute student match directly if missing from DB sync
         if clusters and not clusters[0].get("best_student_debug"):
             print("[PAGE STUDENT PATCH] computando matches...")
-            identified_centroids: list[tuple[str, np.ndarray]] = []
+            identified_centroids: list[tuple[str, str, np.ndarray]] = []
             try:
                 cur.execute("""
-                    SELECT DISTINCT o.aluno_id, fe.embedding
+                    SELECT DISTINCT o.aluno_id, o.person_key, fe.embedding
                     FROM ocorrencias o
                     JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
                     WHERE o.x1 IS NOT NULL
@@ -3135,16 +3269,23 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                       AND fe.embedding IS NOT NULL
                 """)
                 id_emb_map: dict[str, list[np.ndarray]] = {}
+                id_class_map: dict[str, str] = {}
                 for r in cur.fetchall():
                     name = str(r["aluno_id"])
+                    pk = str(r["person_key"] or "")
                     emb = np.frombuffer(r["embedding"], dtype="float32")
                     emb = emb / np.linalg.norm(emb) if np.linalg.norm(emb) > 0 else emb
                     id_emb_map.setdefault(name, []).append(emb)
+                    if pk and name not in id_class_map:
+                        parts = pk.split("::")
+                        if len(parts) >= 2:
+                            id_class_map[name] = parts[1]
                 for name, embs in id_emb_map.items():
                     cent = np.mean(embs, axis=0)
                     cn = np.linalg.norm(cent)
                     if cn > 0:
-                        identified_centroids.append((name, cent / cn))
+                        class_name = id_class_map.get(name, "")
+                        identified_centroids.append((name, class_name, cent / cn))
             except Exception as e:
                 print(f"[PAGE STUDENT PATCH] erro: {e}")
 
@@ -3156,6 +3297,16 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                     continue
                 try:
                     best_name, best_sim = None, 0.0
+                    best_cross_name, best_cross_sim = None, 0.0
+
+                    # Inferir turma do cluster
+                    cluster_class_names: set[str] = set()
+                    for f in comp_items_for_cl:
+                        pk = f.get("person_key") or ""
+                        if pk:
+                            parts = pk.split("::")
+                            if len(parts) >= 2 and parts[1] and parts[1] != "__SEM_TURMA__":
+                                cluster_class_names.add(parts[1])
                     
                     ph = ",".join(["?"] * len(all_rowids))
                     cur.execute(f"SELECT occurrence_rowid, embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", all_rowids)
@@ -3171,11 +3322,19 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                         cn = np.linalg.norm(centroid)
                         if cn > 0:
                             centroid = centroid / cn
-                        for name, rc in identified_centroids:
+                        for name, class_name, rc in identified_centroids:
                             sim = float(np.dot(centroid, rc))
-                            if sim > best_sim:
-                                best_sim = sim
-                                best_name = name
+                            if cluster_class_names and class_name in cluster_class_names:
+                                if sim > best_sim:
+                                    best_sim = sim
+                                    best_name = name
+                            elif sim > best_cross_sim:
+                                best_cross_sim = sim
+                                best_cross_name = name
+                    
+                    if best_name is None and best_cross_name is not None:
+                        best_name = best_cross_name
+                        best_sim = best_cross_sim
                     
                     if not best_name and not embs:
                         logger.info("[Review] skipping image-load embedding for student match (run Scanner to populate embeddings)")
@@ -3191,7 +3350,9 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                             cn = np.linalg.norm(centroid)
                             if cn > 0:
                                 centroid = centroid / cn
-                            for name, rc in identified_centroids:
+                            for entry in identified_centroids:
+                                name = entry[0]
+                                rc = entry[2]
                                 sim = float(np.dot(centroid, rc))
                                 if sim > best_sim:
                                     best_sim = sim
@@ -4526,11 +4687,13 @@ def rename_person(req: RenameReq):
     backup_catalog_db(current_catalog, "antes_renomear")
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT face_cache_path FROM alunos WHERE aluno_id = ?", (req.old_id,))
+        cur.execute("SELECT face_cache_path, class_name FROM alunos WHERE aluno_id = ?", (req.old_id,))
         old_row = cur.fetchone()
         old_ref_path = str(old_row["face_cache_path"]) if old_row and old_row["face_cache_path"] else ""
-        _ensure_aluno_row(cur, req.new_id)
-        cur.execute("UPDATE ocorrencias SET aluno_id = ? WHERE aluno_id = ?", (req.new_id, req.old_id))
+        old_class_name = str(old_row["class_name"] or "").strip() or "Sem turma" if old_row else "Sem turma"
+        new_person_key = make_person_key(catalog=current_catalog, class_name=old_class_name, student_id=req.new_id)
+        _ensure_aluno_row(cur, req.new_id, class_name=old_class_name, person_key=new_person_key, catalog=current_catalog)
+        cur.execute("UPDATE ocorrencias SET aluno_id = ?, person_key = ? WHERE aluno_id = ?", (req.new_id, new_person_key, req.old_id))
         cur.execute("DELETE FROM alunos WHERE aluno_id = ?", (req.old_id,))
         conn.commit()
         if old_ref_path and os.path.exists(old_ref_path):
@@ -4735,21 +4898,32 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
             else:
                 _sql_cluster_ms = _deserialize_cluster_ms = _centroid_ms = 0.0
 
-            # ── STEP 2: Student faces ──
+            # ── STEP 2: Student faces (filtered by person_key if available) ──
             if student_faces is None:
                 _sql_student_t = time.perf_counter()
                 cur.execute("""
-                    SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, fe.embedding
+                    SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, o.person_key, fe.embedding
                     FROM ocorrencias o
                     JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
-                    WHERE o.aluno_id = ?
+                    WHERE o.person_key IS NOT NULL AND o.person_key != ''
+                      AND o.person_key LIKE ? || '::%'
                     LIMIT 50
                 """, (target_id,))
                 student_faces = cur.fetchall()
 
                 if not student_faces:
                     cur.execute("""
-                        SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, fe.embedding
+                        SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, o.person_key, fe.embedding
+                        FROM ocorrencias o
+                        JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
+                        WHERE o.aluno_id = ?
+                        LIMIT 50
+                    """, (target_id,))
+                    student_faces = cur.fetchall()
+
+                if not student_faces:
+                    cur.execute("""
+                        SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, o.person_key, fe.embedding
                         FROM ocorrencias o
                         JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
                         WHERE o.aluno_id = (SELECT aluno_id FROM alunos WHERE nome = ? OR aluno_id = ? LIMIT 1)
@@ -4899,3 +5073,75 @@ def generate_all_embeddings(catalog: str = ""):
 
     print(f"[EMBEDDINGS] {stats}")
     return stats
+
+
+def migrate_person_keys(catalog: str = ""):
+    """
+    Backfill person_key for old records that don't have one.
+    person_key = catalog::class_name::aluno_id
+    Records without class_name get __SEM_TURMA__ placeholder.
+    """
+    get_db = _get("get_db")
+    cat = _sanitize_catalog_name(catalog or _current_catalog())
+    if not cat:
+        return {"ok": False, "error": "Nenhum catálogo"}
+
+    stats = {"alunos_updated": 0, "ocorrencias_updated": 0, "erros": 0, "sem_turma": 0}
+
+    with get_db(cat) as conn:
+        cur = conn.cursor()
+
+        # Backfill alunos
+        cur.execute("""
+            SELECT aluno_id, COALESCE(NULLIF(TRIM(class_name), ''), 'Sem turma') as class_name,
+                   COALESCE(NULLIF(TRIM(person_key), ''), '') as existing_key
+            FROM alunos
+        """)
+        alunos_rows = cur.fetchall()
+
+        for row in alunos_rows:
+            try:
+                if row["existing_key"]:
+                    continue
+                aluno_id = row["aluno_id"]
+                class_name = str(row["class_name"] or "").strip() or "__SEM_TURMA__"
+                if class_name == "__SEM_TURMA__":
+                    stats["sem_turma"] += 1
+                    logger.info(
+                        "[identity-guard] person_key gerado com __SEM_TURMA__ para aluno=%s confianca reduzida",
+                        aluno_id,
+                    )
+                new_key = make_person_key(catalog=cat, class_name=class_name, student_id=aluno_id)
+                cur.execute("UPDATE alunos SET person_key = ? WHERE aluno_id = ?", (new_key, aluno_id))
+                stats["alunos_updated"] += 1
+            except Exception as e:
+                logger.error("[migrate-person-keys] erro aluno: %s", e)
+                stats["erros"] += 1
+
+        # Backfill ocorrencias
+        cur.execute("""
+            SELECT o.rowid, o.aluno_id,
+                   COALESCE(NULLIF(TRIM(a.class_name), ''), 'Sem turma') as class_name,
+                   COALESCE(NULLIF(TRIM(o.person_key), ''), '') as existing_key
+            FROM ocorrencias o
+            LEFT JOIN alunos a ON a.aluno_id = o.aluno_id
+        """)
+        occ_rows = cur.fetchall()
+
+        for row in occ_rows:
+            try:
+                if row["existing_key"]:
+                    continue
+                aluno_id = row["aluno_id"]
+                class_name = str(row["class_name"] or "").strip() or "__SEM_TURMA__"
+                new_key = make_person_key(catalog=cat, class_name=class_name, student_id=aluno_id)
+                cur.execute("UPDATE ocorrencias SET person_key = ? WHERE rowid = ?", (new_key, row["rowid"]))
+                stats["ocorrencias_updated"] += 1
+            except Exception as e:
+                logger.error("[migrate-person-keys] erro ocorrencia: %s", e)
+                stats["erros"] += 1
+
+        conn.commit()
+
+    logger.info("[migrate-person-keys] stats=%s", stats)
+    return {"ok": True, "stats": stats}
