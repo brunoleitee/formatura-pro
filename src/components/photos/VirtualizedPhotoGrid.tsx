@@ -33,10 +33,10 @@ const MIN_COL_WIDTH = 140;
 const FOOTER_HEIGHT = 72;
 const ESTIMATED_CARD_HEIGHT = 320;
 
-function getMediaHeightMultiplier(zoom: number): number {
-  if (zoom >= 260) return 0.95;
-  if (zoom >= 180) return 0.78;
-  return 0.72;
+function getMediaRatioByZoom(zoom: number): number {
+  if (zoom >= 260) return 1.42;
+  if (zoom >= 180) return 1.28;
+  return 1.15;
 }
 const OVERSCAN_STILL = 3;
 const OVERSCAN_SCROLLING = 1;
@@ -102,6 +102,7 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
   const parentRef = useRef<HTMLDivElement>(null);
 
   const metricsRef = useRef({ w: 0, cols: 4, cw: 240, th: 400, sz: 200, rows: 0, totalH: 0 });
+  const rowHeightsRef = useRef<number[]>([]);
   const selRef = useRef(selectedPaths);
   selRef.current = selectedPaths;
 
@@ -123,12 +124,19 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
         const cols = columnsFromWidth(w, zoom);
         const cw = cardWidthFromSize(w, cols);
         const sz = thumbSizeForCard(cw);
-        const th = Math.round(cw * getMediaHeightMultiplier(zoom)) + FOOTER_HEIGHT;
-        const rows = Math.ceil(photos.length / cols);
-        const totalH = rows * th + Math.max(0, rows - 1) * GRID_GAP;
+        const mediaRatio = getMediaRatioByZoom(zoom);
+        const mediaHeight = Math.round(cw * mediaRatio);
+        const uniformRowHeight = mediaHeight + FOOTER_HEIGHT;
+        const rowCount = Math.ceil(photos.length / cols);
+        const rh: number[] = [];
+        for (let r = 0; r < rowCount; r++) {
+          rh.push(uniformRowHeight);
+        }
+        rowHeightsRef.current = rh;
+        const totalH = rh.reduce((a, b) => a + b, 0) + Math.max(0, rowCount - 1) * GRID_GAP;
         const m = metricsRef.current;
         const changed = m.w !== w || m.cols !== cols || m.cw !== cw;
-        metricsRef.current = { w, cols, cw, th, sz, rows, totalH };
+        metricsRef.current = { w, cols, cw, th: 0, sz, rows: rowCount, totalH };
         if (changed) rowVirtualizer.measure();
       }, 80);
     };
@@ -162,7 +170,7 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
   const rowVirtualizer = useVirtualizer({
     count: Math.max(1, Math.ceil(photos.length / Math.max(1, metricsRef.current.cols))),
     getScrollElement: () => parentRef.current,
-    estimateSize: () => ESTIMATED_CARD_HEIGHT,
+    estimateSize: (index) => rowHeightsRef.current[index] || ESTIMATED_CARD_HEIGHT,
     overscan: OVERSCAN_STILL,
   });
   const vzRef = useRef(rowVirtualizer);
@@ -178,7 +186,6 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
   const m = metricsRef.current;
   const cols = m.cols || 4;
   const cw = m.cw || 240;
-  const th = m.th || 158;
   const sz = m.sz || 240;
 
   // --- rAF scroll throttle ---
@@ -365,9 +372,11 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
           const start = vr.index * cols;
           const end = Math.min(start + cols, photos.length);
           const rowPhotos = photos.slice(start, end);
+          const rowH = rowHeightsRef.current[vr.index] || ESTIMATED_CARD_HEIGHT;
+          const mediaH = Math.round(cw * getMediaRatioByZoom(zoom));
 
           return (
-            <div key={vr.key} style={getRowStyle(vr.start, th, cols, cw)}>
+            <div key={vr.key} style={getRowStyle(vr.start, rowH, cols, cw)}>
               {rowPhotos.map((photo, li) => {
                 const id = getPhotoId(photo);
                 return (
@@ -377,8 +386,8 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
                     isSelected={selRef.current.has(id)}
                     getSelectionCount={cbRef.current.getSelectionCount}
                     cardWidth={cw}
-                    thumbHeight={th - FOOTER_HEIGHT}
-                    cardHeight={th}
+                    thumbHeight={mediaH}
+                    cardHeight={mediaH + FOOTER_HEIGHT}
                     thumbTargetSize={sz}
                     imgLoading="eager"
                     imgFetchPriority={(start + li) < Math.max(12, cols * 2) ? 'high' : 'low'}
