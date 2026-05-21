@@ -13,10 +13,13 @@ export function CloudRecentCatalogs({ catalogs, loading = false, onOpenCatalog }
   return (
     <section className={styles.recentPanel}>
       <div className={styles.recentHeader}>
-        <span>
-          <Clock3 size={15} />
-          Catálogos recentes
-        </span>
+        <div>
+          <span>
+            <Clock3 size={15} />
+            Catálogos recentes
+          </span>
+          <small>Workspace principal</small>
+        </div>
         {loading && <small>Atualizando...</small>}
       </div>
 

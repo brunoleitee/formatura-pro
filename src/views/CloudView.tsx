@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
-import { CloudOff } from 'lucide-react';
+import { CheckCircle2, CloudOff } from 'lucide-react';
 import { CloudEventDashboard } from '../features/cloud/CloudEventDashboard';
 import { CloudExplorer } from '../features/cloud/CloudExplorer';
 import { CloudNavigationBar } from '../features/cloud/CloudNavigationBar';
 import { CloudRecentCatalogs } from '../features/cloud/CloudRecentCatalogs';
 import { CloudWorkflowPanel } from '../features/cloud/CloudWorkflowPanel';
-import { catalogToDraft } from '../features/cloud/cloudCatalogStore';
+import { catalogToDraft, draftToCatalog } from '../features/cloud/cloudCatalogStore';
 import {
   canGoUp,
   createNavigationSnapshot,
@@ -51,6 +51,7 @@ export default function CloudView() {
   const [folderInsights, setFolderInsights] = useState<Record<string, CloudFolderInsight>>({});
   const [loading, setLoading] = useState(true);
   const [catalogsLoading, setCatalogsLoading] = useState(false);
+  const [catalogSuccess, setCatalogSuccess] = useState('');
   const [preparing, setPreparing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [catalogProgress, setCatalogProgress] = useState<{ percent: number; label: string } | null>(null);
@@ -266,6 +267,15 @@ export default function CloudView() {
       setCatalogProgress({ percent: 100, label: 'Catálogo criado' });
       await new Promise(resolve => window.setTimeout(resolve, 280));
       setDraft(indexedDraft);
+      const optimisticCatalog = draftToCatalog(indexedDraft);
+      if (optimisticCatalog) {
+        setRecentCatalogs(prev => [
+          optimisticCatalog,
+          ...prev.filter(catalog => catalog.id !== optimisticCatalog.id),
+        ].slice(0, 12));
+      }
+      setCatalogSuccess('Catálogo criado com sucesso');
+      window.setTimeout(() => setCatalogSuccess(''), 3200);
       await loadRecentCatalogs();
       return indexedDraft;
     } finally {
@@ -334,6 +344,18 @@ export default function CloudView() {
           loading={catalogsLoading}
           onOpenCatalog={handleOpenRecentCatalog}
         />
+
+        {catalogSuccess && (
+          <div className={styles.successNotice}>
+            <CheckCircle2 size={15} />
+            {catalogSuccess}
+          </div>
+        )}
+
+        <div className={styles.importHeader}>
+          <span>Entrada/importação</span>
+          <small>Use o explorer apenas para escolher novas pastas do Google Drive.</small>
+        </div>
 
         <CloudNavigationBar
           currentFolderName={currentFolderName}

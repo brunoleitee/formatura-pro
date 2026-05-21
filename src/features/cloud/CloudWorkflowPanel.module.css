@@ -338,6 +338,11 @@
   margin-bottom: 10px;
 }
 
+.recentHeader div {
+  display: grid;
+  gap: 3px;
+}
+
 .recentHeader span {
   display: inline-flex;
   align-items: center;
