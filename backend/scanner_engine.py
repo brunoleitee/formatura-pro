@@ -204,7 +204,7 @@ def imread_unicode(path):
                 return None, 1.0
             orig_max = max(pil_img.size)
             if orig_max > 1920:
-                pil_img.thumbnail((1920, 1920), Image.LANCZOS)
+                pil_img.thumbnail((1920, 1920), Image.NEAREST)
                 img_scale = orig_max / 1920.0
             else:
                 img_scale = 1.0
@@ -933,21 +933,48 @@ def run_scanner_worker(req):
 
             try:
                 scan_state["started_at"] = time.time()
+                import concurrent.futures
+
+                def _prepare_worker(idx_path_tuple):
+                    idx, path = idx_path_tuple
+                    if _cancel_requested():
+                        return idx, path, None, 1.0, None, None, 0.0, 0.0
+                    t0_dec = time.time()
+                    loaded_img, loaded_scale = _load_single_image(path)
+                    t_dec = (time.time() - t0_dec) * 1000
+                    
+                    b_sc = None
+                    b_st = None
+                    t0_bl = time.time()
+                    if loaded_img is not None and _cfg.get("get_blur_info"):
+                        bl_info = _cfg["get_blur_info"](path, loaded_img) or {}
+                        b_sc = bl_info.get("blur_score")
+                        b_st = bl_info.get("blur_status")
+                    t_bl = (time.time() - t0_bl) * 1000
+                    
+                    return idx, path, loaded_img, loaded_scale, b_sc, b_st, t_dec, t_bl
+
+                max_workers = 6
+                pending_futures = []
+                next_submit_idx = 0
+                executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+
                 for i in range(0, total, batch_size):
                     if _cancel_requested():
                         log_info("[Scanner] CANCEL BEFORE BATCH — interrompendo")
                         scan_state["status_text"] = "Scanner interrompido"
                         break
 
-                    p = fotos[i]
-                    scan_state["status_text"] = f"Processando {i+1}/{total}: {os.path.basename(p)}"
+                    # Preenche a fila de futures no pool para manter a CPU sempre ocupada lendo
+                    while len(pending_futures) < max_workers * 2 and next_submit_idx < total:
+                        pending_futures.append(executor.submit(_prepare_worker, (next_submit_idx, fotos[next_submit_idx])))
+                        next_submit_idx += 1
 
-                    # Carregar UMA foto por vez — nunca um lote inteiro
-                    if _cancel_requested():
-                        log_info("[Scanner] CANCEL BEFORE IMAGE LOAD")
-                        scan_state["status_text"] = "Scanner interrompido"
-                        break
-                    img, img_scale = _load_single_image(p)
+                    future = pending_futures.pop(0)
+                    f_idx, p, img, img_scale, b_score, b_status, t_decode, t_blur = future.result()
+
+                    scan_state["status_text"] = f"Processando {f_idx+1}/{total}: {os.path.basename(p)}"
+
                     if img is None:
                         if _cancel_requested():
                             break
@@ -955,7 +982,7 @@ def run_scanner_worker(req):
                         continue
 
                     processed_photo_paths.add(p)
-                    photo_hash = None  # SHA1 removido — duplicatas já detectadas por path
+                    photo_hash = None  # SHA1 removido
                     faces = []
                     valid_faces = []
                     t0_face = time.time()
@@ -967,7 +994,7 @@ def run_scanner_worker(req):
                         scan_state["status_text"] = "Scanner interrompido"
                         break
 
-                    # Watchdog: se passou >60s sem progresso, marca como stalled
+                    # Watchdog
                     if _scan_last_progress_at > 0 and (t0_face - _scan_last_progress_at) > 60.0:
                         _scan_stalled = True
                         log_info(f"[scanner-watchdog] stalled last_progress={_scan_last_progress_file} seconds={t0_face - _scan_last_progress_at:.0f}")
@@ -978,9 +1005,9 @@ def run_scanner_worker(req):
                                 faces = _cfg["app_face"].get(img) or []
                         _scan_last_progress_at = time.time()
                         _scan_last_progress_file = os.path.basename(p)
-                        _scan_last_processed = i + 1
+                        _scan_last_processed = f_idx + 1
                         _scan_stalled = False
-                        log_info(f"[scanner-progress] processed={i + 1}/{total} file={os.path.basename(p)}")
+                        log_info(f"[scanner-progress] processed={f_idx + 1}/{total} file={os.path.basename(p)}")
                     except Exception as e:
                         log_debug(f"Falha de AI em {p}: {e}")
                         provider = _cfg.get("face_engine_provider", "")
@@ -1020,20 +1047,7 @@ def run_scanner_worker(req):
                             continue
                         valid_faces.append((face, x1, y1, x2, y2, area))
 
-                    # Calcular blur uma vez por foto
-                    t0_photo = time.time()
-                    
-                    # 1. Decode/Read
-                    t0_decode = time.time()
-                    t_decode = (time.time() - t0_decode) * 1000
-
-                    # 2. Blur
-                    t0_blur = time.time()
-                    blur_info = _cfg["get_blur_info"](p, img) if _cfg.get("get_blur_info") else {}
-                    b_score = blur_info.get("blur_score")
-                    b_status = blur_info.get("blur_status")
-                    t_blur = (time.time() - t0_blur) * 1000
-
+                    t0_photo = t0_face - (t_decode/1000.0) - (t_blur/1000.0)
                     t_face = 0
 
                     photo_faces = []
@@ -1353,6 +1367,8 @@ def run_scanner_worker(req):
                         pass
                     conn.commit()
             finally:
+                if 'executor' in locals():
+                    executor.shutdown(wait=False)
                 gc.collect()
 
         if _cancel_requested():

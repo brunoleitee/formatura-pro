@@ -70,16 +70,24 @@ def find_export_reports(dest_path: str):
     result = {"report_path": "", "pdf_report_path": ""}
     if not dest_path or not os.path.isdir(dest_path):
         return result
+    
+    # Permitir buscar tanto no dest_path raiz quanto na subpasta "Exportação"
+    paths_to_check = [dest_path]
+    export_sub = os.path.join(dest_path, "Exportação")
+    if os.path.isdir(export_sub):
+        paths_to_check.append(export_sub)
+
     try:
         candidates = []
-        for name in os.listdir(dest_path):
-            lower = name.lower()
-            if not lower.startswith("relatorio_exportacao_formaturapro"):
-                continue
-            if not (lower.endswith(".xlsx") or lower.endswith(".pdf")):
-                continue
-            path = os.path.join(dest_path, name)
-            candidates.append((os.path.getmtime(path), path, lower))
+        for path_dir in paths_to_check:
+            for name in os.listdir(path_dir):
+                lower = name.lower()
+                if not lower.startswith("relatorio_exportacao_formaturapro"):
+                    continue
+                if not (lower.endswith(".xlsx") or lower.endswith(".pdf")):
+                    continue
+                path = os.path.join(path_dir, name)
+                candidates.append((os.path.getmtime(path), path, lower))
         for _mtime, path, lower in sorted(candidates, reverse=True):
             if lower.endswith(".xlsx") and not result["report_path"]:
                 result["report_path"] = path
@@ -135,16 +143,34 @@ def _collect_reference_dirs(conn):
     return sorted(reference_dirs)
 
 
+def _clean_student_id(aid: str) -> str:
+    if not aid:
+        return aid
+    if aid in ("#BASE", "#DESCARTE"):
+        return aid
+    import re
+    cleaned = aid
+    cleaned = re.sub(r'^MAX_+', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'^SEM_TURMA_+', '', cleaned, flags=re.IGNORECASE)
+    
+    # Ex: 1772_1772 -> 1772
+    parts = cleaned.split('_')
+    if len(parts) >= 2 and parts[0] == parts[1] and parts[0].strip():
+        cleaned = parts[0]
+        
+    return cleaned.strip()
+
+
 def _export_folder_name(aid, sanitize_folder_name):
     if aid == "#BASE":
         return "BASE_REF"
     if aid == "#DESCARTE":
         return "DESCARTE"
-    return sanitize_folder_name(aid)
+    return sanitize_folder_name(_clean_student_id(aid))
 
 
 def _student_export_dir(dest_path: str, aid: str, class_name: str, sanitize_folder_name, organize_by_class: bool):
-    student_dir = sanitize_folder_name(aid)
+    student_dir = sanitize_folder_name(_clean_student_id(aid))
     export_base = os.path.join(dest_path, "Exportação")
     class_str = str(class_name or "").strip()
 
@@ -161,6 +187,8 @@ def _student_export_dir(dest_path: str, aid: str, class_name: str, sanitize_fold
             safe_class = sanitize_folder_name(class_str)
             return os.path.join(export_base, f"{safe_class} - {student_dir}")
     
+    if organize_by_class:
+        return os.path.join(export_base, "Sem turma", student_dir)
     return os.path.join(export_base, student_dir)
 
 
@@ -408,7 +436,8 @@ def check_export_conflicts(req: ExportReq):
                     "dest": dest_file,
                     "name": os.path.basename(f),
                 })
-        for report_path in export_report_paths(req.dest_path):
+        export_base = os.path.join(req.dest_path, "Exportação")
+        for report_path in export_report_paths(export_base):
             if os.path.exists(report_path):
                 conflicts.append({
                     "aluno_id": "Relatorio",
@@ -845,6 +874,8 @@ def run_export_worker(req: ExportReq, catalog_name: str):
                 export_state["is_exporting"] = False
                 return
 
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
             start_time = time.time()
             exported_files = 0
             exported_folders = set()
@@ -860,59 +891,98 @@ def run_export_worker(req: ExportReq, catalog_name: str):
                     if os.path.exists(dest_path_check):
                         existing_dest_keys.add(dest_path_check.lower())
 
-            file_report_rows = [["Formando/Pasta", "Arquivo", "Origem", "Destino", "Status"]]
-            for i, (aid, f, _p_al_ignored) in enumerate(worklist):
+            state_lock = threading.Lock()
+            results = [None] * total
+            processed_count = 0
+
+            def process_copy(idx, aid, f):
                 if not export_state["is_exporting"]:
-                    break
+                    return idx, aid, os.path.basename(f), f, "", "Cancelado", None, False, False
 
                 p_al = safe_p_al_map.get(aid)
                 if not p_al:
-                    file_report_rows.append([aid, os.path.basename(f), f, "", "Erro: Pasta de destino invalida"])
-                    continue
+                    return idx, aid, os.path.basename(f), f, "", "Erro: Pasta de destino invalida", None, False, False
 
                 try:
                     if os.path.exists(f):
-                        dest_file = _unique_dest_file(p_al, os.path.basename(f), req.conflict_strategy)
-                        dest_existed_before_export = dest_file.lower() in existing_dest_keys
+                        with state_lock:
+                            dest_file = _unique_dest_file(p_al, os.path.basename(f), req.conflict_strategy)
+                            dest_existed_before_export = dest_file.lower() in existing_dest_keys
 
-                        if dest_existed_before_export and req.conflict_strategy == "replace":
-                            status = "Ja existia"
-                        elif incremental_mode and os.path.exists(dest_file):
-                            status = "Ja existia (incremental)"
-                        else:
-                            if req.conflict_strategy == "replace" and os.path.exists(dest_file):
-                                dest_file = _next_available_dest_file(p_al, os.path.basename(f))
-
-                            is_copy_only = aid == "#BASE"
-                            if req.mode == "move" and not is_copy_only:
-                                shutil.move(f, dest_file)
-                                status = "Movido"
+                            if dest_existed_before_export and req.conflict_strategy == "replace":
+                                return idx, aid, os.path.basename(f), f, dest_file, "Ja existia", None, False, True
+                            elif incremental_mode and os.path.exists(dest_file):
+                                return idx, aid, os.path.basename(f), f, dest_file, "Ja existia (incremental)", None, False, True
                             else:
-                                shutil.copy2(f, dest_file)
-                                status = "Copiado"
+                                if req.conflict_strategy == "replace" and os.path.exists(dest_file):
+                                    dest_file = _next_available_dest_file(p_al, os.path.basename(f))
+                                existing_dest_keys.add(dest_file.lower())
+                                copied_path = dest_file
+                                file_copied = True
 
-                            exported_files += 1
-                            files_copied_this_export.append(dest_file)
+                        is_copy_only = aid == "#BASE"
+                        if req.mode == "move" and not is_copy_only:
+                            shutil.move(f, dest_file)
+                            status = "Movido"
+                        else:
+                            shutil.copy2(f, dest_file)
+                            status = "Copiado"
 
-                        if aid == "#BASE":
-                            base_copy_count += 1
-                            exported_folders.add(p_al)
-                        elif aid != "#DESCARTE":
-                            per_person_counts[aid] = per_person_counts.get(aid, 0) + 1
-                            exported_folders.add(p_al)
-
-                        file_report_rows.append([aid, os.path.basename(f), f, dest_file, status])
+                        return idx, aid, os.path.basename(f), f, dest_file, status, copied_path, file_copied, True
                     else:
-                        file_report_rows.append([aid, os.path.basename(f), f, "", "Erro: Fonte nao encontrada"])
+                        return idx, aid, os.path.basename(f), f, "", "Erro: Fonte nao encontrada", None, False, False
                 except Exception as e:
-                    file_report_rows.append([aid, os.path.basename(f), f, "", f"Erro: {str(e)}"])
+                    return idx, aid, os.path.basename(f), f, "", f"Erro: {str(e)}", None, False, False
 
-                export_state["processed_files"] = i + 1
-                if i % 5 == 0:
-                    elapsed = time.time() - start_time
-                    avg = elapsed / (i + 1)
-                    export_state["eta_seconds"] = int(avg * (total - (i + 1)))
-                    export_state["progress"] = round(((i + 1) / total) * 100, 1)
+            # Usar ThreadPoolExecutor para paralelizar a gravação de arquivos (I/O)
+            max_workers = 8
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(process_copy, idx, aid, f): idx for idx, (aid, f, _) in enumerate(worklist)}
+                for future in as_completed(futures):
+                    if not export_state["is_exporting"]:
+                        for fut in futures:
+                            fut.cancel()
+                        break
+                    
+                    try:
+                        res = future.result()
+                        idx, aid, filename, f, dest_file, status, copied_path, file_copied, success = res
+                        results[idx] = res
+
+                        with state_lock:
+                            processed_count += 1
+                            if file_copied and copied_path:
+                                exported_files += 1
+                                files_copied_this_export.append(copied_path)
+
+                            p_al = safe_p_al_map.get(aid)
+                            if success and p_al:
+                                if aid == "#BASE":
+                                    base_copy_count += 1
+                                    exported_folders.add(p_al)
+                                elif aid != "#DESCARTE":
+                                    per_person_counts[aid] = per_person_counts.get(aid, 0) + 1
+                                    exported_folders.add(p_al)
+
+                            export_state["processed_files"] = processed_count
+                            if processed_count % 5 == 0 or processed_count == total:
+                                elapsed = time.time() - start_time
+                                avg = elapsed / processed_count
+                                export_state["eta_seconds"] = int(avg * (total - processed_count))
+                                export_state["progress"] = round((processed_count / total) * 100, 1)
+                    except Exception as e:
+                        log_info(f"Worker: Erro no processamento concorrente do arquivo: {e}")
+
+            # Reconstruir o file_report_rows na ordem sequencial original
+            file_report_rows = [["Formando/Pasta", "Arquivo", "Origem", "Destino", "Status"]]
+            for idx in range(total):
+                res = results[idx]
+                if res is None:
+                    aid, f, _ = worklist[idx]
+                    file_report_rows.append([aid, os.path.basename(f), f, "", "Erro: Cancelado ou Nao Processado"])
+                else:
+                    idx, aid, filename, f, dest_file, status, copied_path, file_copied, success = res
+                    file_report_rows.append([aid, filename, f, dest_file, status])
 
             export_uuid = str(uuid.uuid4())
             try:
@@ -950,9 +1020,9 @@ def run_export_worker(req: ExportReq, catalog_name: str):
             elapsed_total = time.time() - start_time
 
             try:
-                all_reports = export_report_paths(req.dest_path)
-                report_path = _unique_dest_file(req.dest_path, os.path.basename(all_reports[0]), "copy")
-                pdf_report_path = _unique_dest_file(req.dest_path, os.path.basename(all_reports[1]), "copy")
+                all_reports = export_report_paths(export_base)
+                report_path = _unique_dest_file(export_base, os.path.basename(all_reports[0]), "copy")
+                pdf_report_path = _unique_dest_file(export_base, os.path.basename(all_reports[1]), "copy")
 
                 folder_count = len(exported_folders)
                 destination_photo_total = exported_files
