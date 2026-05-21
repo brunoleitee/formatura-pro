@@ -1,4 +1,4 @@
-import { CalendarClock, Images } from 'lucide-react';
+import { CalendarClock, Cloud, Images } from 'lucide-react';
 import { CloudCatalogStatusBadge } from './CloudCatalogStatusBadge';
 import type { CloudCatalog } from './types';
 import styles from './CloudWorkflowPanel.module.css';
@@ -22,13 +22,22 @@ const modeLabel: Record<CloudCatalog['mode'], string> = {
 };
 
 export function CloudCatalogCard({ catalog, onOpen }: CloudCatalogCardProps) {
+  const isCloud = catalog.source === 'cloud' || catalog.provider === 'google_drive';
+
   return (
     <button type="button" className={styles.catalogCard} onClick={() => onOpen(catalog)}>
       <div className={styles.catalogCardHeader}>
         <strong>{catalog.name}</strong>
         <CloudCatalogStatusBadge status={catalog.status} />
       </div>
+      {isCloud && (
+        <span className={styles.cloudBadge}>
+          <Cloud size={12} />
+          Cloud
+        </span>
+      )}
       <div className={styles.catalogCardMeta}>
+        <span>Google Drive</span>
         <span>
           <Images size={13} />
           {catalog.totalFiles} fotos

@@ -26,6 +26,7 @@ export type CloudCatalogMode = 'catalog' | 'face' | 'full';
 
 export type CloudEventDraft = {
   id?: string;
+  source?: 'cloud' | 'local';
   name: string;
   provider: 'google_drive';
   sourceFolderId: string;
@@ -44,6 +45,7 @@ export type CloudEventDraft = {
 
 export type CloudCatalog = CloudEventDraft & {
   id: string;
+  source: 'cloud' | 'local';
   cacheEnabled: boolean;
   cacheSize: number;
   lastSync?: string;

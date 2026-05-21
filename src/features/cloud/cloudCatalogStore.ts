@@ -3,6 +3,7 @@ import type { CloudCatalog, CloudEventDraft } from './types';
 export function catalogToDraft(catalog: CloudCatalog): CloudEventDraft {
   return {
     id: catalog.id,
+    source: catalog.source,
     name: catalog.name,
     provider: catalog.provider,
     sourceFolderId: catalog.sourceFolderId,
@@ -26,6 +27,7 @@ export function draftToCatalog(draft: CloudEventDraft): CloudCatalog | null {
   return {
     ...draft,
     id: draft.id,
+    source: draft.source ?? 'cloud',
     cacheEnabled: draft.cacheEnabled ?? true,
     cacheSize: draft.cacheSize ?? 0,
     lastSync: draft.lastSync ?? draft.updatedAt ?? now,

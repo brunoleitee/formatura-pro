@@ -3881,6 +3881,7 @@ def _cloud_event_row_to_dict(row) -> Dict[str, Any]:
         references = []
     return {
         "id": row["id"],
+        "source": "cloud",
         "name": row["name"],
         "provider": row["provider"],
         "sourceFolderId": row["source_folder_id"],
@@ -3914,15 +3915,7 @@ def cloud_create_catalog(req: CloudCatalogCreateRequest):
         if req.mode not in {"catalog", "face", "full"}:
             return {"error": "Modo de catálogo inválido", "status": "draft"}
 
-        result = cloud_google_create_catalog(
-            folder_id=folder_id,
-            catalog_name=event_name,
-            mode="metadata_only",
-        )
-        if result.get("error"):
-            return {"error": result.get("error"), "status": "draft"}
-
-        catalog_id = result.get("catalog") or str(uuid.uuid4())
+        catalog_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
         conn = sqlite3.connect(str(_cloud_events_db_path()))
         try:
@@ -3958,6 +3951,23 @@ def cloud_create_catalog(req: CloudCatalogCreateRequest):
             "success": True,
             "catalogId": catalog_id,
             "status": "indexed",
+            "catalog": {
+                "id": catalog_id,
+                "source": "cloud",
+                "name": event_name,
+                "provider": req.provider,
+                "sourceFolderId": folder_id,
+                "sourceFolderName": source_folder_name,
+                "references": req.references,
+                "mode": req.mode,
+                "totalFiles": int(total_files or 0),
+                "status": "indexed",
+                "cacheEnabled": True,
+                "cacheSize": 0,
+                "lastSync": now,
+                "createdAt": now,
+                "updatedAt": now,
+            },
         }
     except Exception as e:
         return {"success": False, "error": str(e), "status": "draft"}

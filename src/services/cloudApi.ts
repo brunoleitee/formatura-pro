@@ -162,33 +162,70 @@ export const cloudApi = {
 
   createCloudCatalog: async (draft: CloudEventDraft) => {
     try {
-      const result = await post<{ success?: boolean; catalogId: string; status: CloudEventDraft['status']; error?: string }>(
+      const payload = {
+        provider: draft.provider,
+        folderId: draft.sourceFolderId,
+        source_folder_id: draft.sourceFolderId,
+        source_folder_name: draft.sourceFolderName,
+        eventName: draft.name,
+        name: draft.name,
+        references: draft.references,
+        totalFiles: draft.totalFiles,
+        total_files: draft.totalFiles,
+        mode: draft.mode,
+      };
+      console.log('[cloud-catalog] criando', payload);
+      const result = await post<{ success?: boolean; catalogId: string; status: CloudEventDraft['status']; catalog?: CloudCatalog; error?: string }>(
         `${API_BASE}/cloud/catalogs`,
-        {
-          provider: draft.provider,
-          folderId: draft.sourceFolderId,
-          source_folder_id: draft.sourceFolderId,
-          source_folder_name: draft.sourceFolderName,
-          eventName: draft.name,
-          name: draft.name,
-          references: draft.references,
-          totalFiles: draft.totalFiles,
-          total_files: draft.totalFiles,
-          mode: draft.mode,
-        }
+        payload
       );
+      console.log('[cloud-catalog] criado', result);
+      if (result.error || result.success === false || !result.catalogId) {
+        throw new Error(result.error || 'Falha ao criar catálogo cloud');
+      }
       return {
         catalog: {
           ...draft,
           id: result.catalogId,
+          source: 'cloud',
           status: result.status,
-          createdAt: new Date().toISOString(),
+          cacheEnabled: result.catalog?.cacheEnabled ?? true,
+          cacheSize: result.catalog?.cacheSize ?? 0,
+          lastSync: result.catalog?.lastSync,
+          createdAt: result.catalog?.createdAt ?? new Date().toISOString(),
+          updatedAt: result.catalog?.updatedAt ?? new Date().toISOString(),
         },
         catalogId: result.catalogId,
         status: result.status,
         error: result.error,
       };
-    } catch {
+    } catch (error: any) {
+      if (error?.status !== 404) {
+        throw error;
+      }
+      const localId = `cloud-draft-${Date.now()}`;
+      const response = {
+        catalog: {
+          ...draft,
+          id: localId,
+          source: 'cloud' as const,
+          provider: 'google_drive' as const,
+          status: 'draft' as const,
+          cacheEnabled: true,
+          cacheSize: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        catalogId: localId,
+        status: 'draft' as const,
+        error: 'Endpoint real indisponível; fallback local temporário.',
+      };
+      console.log('[cloud-catalog] criado', response);
+      return response;
+    }
+  },
+
+  createLegacyGoogleCatalog: async (draft: CloudEventDraft) => {
       const result = await cloudApi.createCatalog(draft.sourceFolderId, draft.name);
       return {
         catalog: {
@@ -201,7 +238,6 @@ export const cloudApi = {
         status: result.status,
         error: result.error,
       };
-    }
   },
 
   listCloudCatalogs: async () => {

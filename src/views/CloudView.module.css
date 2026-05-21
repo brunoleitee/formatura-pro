@@ -67,6 +67,20 @@
   font-weight: 700;
 }
 
+.errorNotice {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 10px;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid rgba(239, 68, 68, 0.24);
+  border-radius: 8px;
+  color: #fca5a5;
+  background: rgba(127, 29, 29, 0.12);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
 .importHeader {
   display: flex;
   align-items: baseline;

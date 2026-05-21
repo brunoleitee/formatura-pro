@@ -28,6 +28,7 @@ function buildDraft(
 ): CloudEventDraft {
   return {
     name: folder.name,
+    source: 'cloud',
     provider: 'google_drive',
     sourceFolderId: folder.id,
     sourceFolderName: folder.name,
@@ -52,6 +53,7 @@ export default function CloudView() {
   const [loading, setLoading] = useState(true);
   const [catalogsLoading, setCatalogsLoading] = useState(false);
   const [catalogSuccess, setCatalogSuccess] = useState('');
+  const [catalogError, setCatalogError] = useState('');
   const [preparing, setPreparing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [catalogProgress, setCatalogProgress] = useState<{ percent: number; label: string } | null>(null);
@@ -246,8 +248,12 @@ export default function CloudView() {
   };
 
   const handleCreateCatalog = async () => {
-    if (!selectedDraft) return null;
+    if (!selectedDraft?.sourceFolderId) {
+      setCatalogError('Selecione uma pasta do Google Drive antes de criar o catálogo.');
+      return null;
+    }
     setCreating(true);
+    setCatalogError('');
     setCatalogProgress({ percent: 0, label: 'Preparando catálogo' });
     try {
       await new Promise(resolve => window.setTimeout(resolve, 180));
@@ -256,12 +262,27 @@ export default function CloudView() {
       setCatalogProgress({ percent: 50, label: 'Contando fotos' });
       await new Promise(resolve => window.setTimeout(resolve, 180));
       setCatalogProgress({ percent: 75, label: 'Detectando referências' });
+      const payload = {
+        provider: selectedDraft.provider,
+        folderId: selectedDraft.sourceFolderId,
+        eventName: selectedDraft.name,
+        references: selectedDraft.references,
+        totalFiles: selectedDraft.totalFiles,
+        mode: selectedDraft.mode,
+      };
+      console.log('[cloud-catalog] criando', payload);
       const result = await cloudApi.createCloudCatalog(selectedDraft);
+      console.log('[cloud-catalog] criado', result);
+      if (result.error && result.status !== 'draft') {
+        throw new Error(result.error);
+      }
+      const isFallback = result.status === 'draft' && Boolean(result.error);
       const nextDraft = result.catalog || selectedDraft;
       const indexedDraft: CloudEventDraft = {
         ...nextDraft,
+        source: 'cloud',
         id: nextDraft.id || result.catalogId || selectedDraft.sourceFolderId,
-        status: nextDraft.status === 'draft' ? 'indexed' : nextDraft.status,
+        status: nextDraft.status,
         createdAt: nextDraft.createdAt || new Date().toISOString(),
       };
       setCatalogProgress({ percent: 100, label: 'Catálogo criado' });
@@ -274,10 +295,15 @@ export default function CloudView() {
           ...prev.filter(catalog => catalog.id !== optimisticCatalog.id),
         ].slice(0, 12));
       }
-      setCatalogSuccess('Catálogo criado com sucesso');
+      setCatalogSuccess(isFallback ? 'Catálogo cloud criado localmente em modo draft' : 'Catálogo criado com sucesso');
       window.setTimeout(() => setCatalogSuccess(''), 3200);
-      await loadRecentCatalogs();
+      if (!isFallback) {
+        await loadRecentCatalogs();
+      }
       return indexedDraft;
+    } catch (error: any) {
+      setCatalogError(error?.message || 'Erro ao criar catálogo cloud. Tente novamente.');
+      return null;
     } finally {
       setCreating(false);
       setCatalogProgress(null);
@@ -349,6 +375,12 @@ export default function CloudView() {
           <div className={styles.successNotice}>
             <CheckCircle2 size={15} />
             {catalogSuccess}
+          </div>
+        )}
+
+        {catalogError && (
+          <div className={styles.errorNotice}>
+            {catalogError}
           </div>
         )}
 
