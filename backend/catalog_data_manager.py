@@ -35,8 +35,14 @@ def export_catalog_json(catalog: str = ""):
             cur = conn.cursor()
 
             # Otimizar queries selecionando apenas campos necessários
-            cur.execute("SELECT aluno_id, face_cache_path, class_name FROM alunos")
-            alunos = [{"aluno_id": r[0], "face_cache_path": r[1], "class_name": r[2] or "Sem turma"} for r in cur.fetchall()]
+            alunos = []
+            try:
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+                if cur.fetchone() is not None:
+                    cur.execute("SELECT aluno_id, face_cache_path, class_name FROM alunos")
+                    alunos = [{"aluno_id": r[0], "face_cache_path": r[1], "class_name": r[2] or "Sem turma"} for r in cur.fetchall()]
+            except Exception:
+                pass
 
             cur.execute("SELECT aluno_id, foto_path, x1, y1, x2, y2, blur_score, blur_status, closed_eyes FROM ocorrencias")
             ocorrencias = [{"aluno_id": r[0], "foto_path": r[1], "x1": r[2], "y1": r[3], "x2": r[4], "y2": r[5], "blur_score": r[6], "blur_status": r[7], "closed_eyes": r[8]} for r in cur.fetchall()]
@@ -90,22 +96,27 @@ def import_catalog_json(req: ImportCatalogReq):
         with get_db(cname) as conn:
             cur = conn.cursor()
 
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+            _has_alunos_import = cur.fetchone() is not None
+
             if req.overwrite:
                 cur.execute("DELETE FROM ocorrencias")
-                cur.execute("DELETE FROM alunos")
+                if _has_alunos_import:
+                    cur.execute("DELETE FROM alunos")
                 cur.execute("DELETE FROM discarded_photos")
 
             data = req.data
-            alunos_rows = [
-                (aluno["aluno_id"], aluno.get("face_cache_path", ""), aluno.get("class_name", "Sem turma"))
-                for aluno in data.get("alunos", [])
-                if "aluno_id" in aluno
-            ]
-            if alunos_rows:
-                cur.executemany(
-                    "INSERT OR REPLACE INTO alunos (aluno_id, face_cache_path, class_name) VALUES (?, ?, ?)",
-                    alunos_rows,
-                )
+            if _has_alunos_import:
+                alunos_rows = [
+                    (aluno["aluno_id"], aluno.get("face_cache_path", ""), aluno.get("class_name", "Sem turma"))
+                    for aluno in data.get("alunos", [])
+                    if "aluno_id" in aluno
+                ]
+                if alunos_rows:
+                    cur.executemany(
+                        "INSERT OR REPLACE INTO alunos (aluno_id, face_cache_path, class_name) VALUES (?, ?, ?)",
+                        alunos_rows,
+                    )
 
             ocorrencias_rows = [
                 (
@@ -168,6 +179,9 @@ def mark_people_absent(req: MarkAbsentReq):
     try:
         with get_db(cat) as conn:
             cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+            if cur.fetchone() is None:
+                return {"status": "ok", "marked": 0, "warning": "tabela alunos nao existe"}
 
             marked = 0
             for aid in req.aluno_ids:
@@ -194,6 +208,9 @@ def get_absent_people():
     try:
         with get_db(cat) as conn:
             cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+            if cur.fetchone() is None:
+                return []
             cur.execute(
                 """
                 SELECT a.aluno_id, COUNT(o.foto_path) as foto_count

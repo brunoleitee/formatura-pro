@@ -177,21 +177,25 @@ export default function PersonDetailView() {
     if (!selectedPersonId || !currentCatalog) return;
     setLoading(true);
     try {
+      const personIdParam = selectedPersonId.includes('::') ? selectedPersonId : selectedPersonId;
       const [data, people] = await Promise.all([
-        api.getPersonPhotos(selectedPersonId, controller.signal),
+        api.getPersonPhotos(personIdParam, controller.signal),
         api.getPeople(false, controller.signal).catch(() => []),
       ]);
       if (controller.signal.aborted) return;
       setPhotos(data);
-      const matched = (people as Array<{ id?: string; name?: string; class_name?: string }>).find(
-        (person) => person.id === selectedPersonId || person.name === selectedPersonId
+
+      const matched = (people as Array<{ id?: string; name?: string; class_name?: string; person_key?: string }>).find(
+        (person) => (person.person_key && person.person_key === selectedPersonId) ||
+                     person.id === selectedPersonId ||
+                     person.name === selectedPersonId
       );
       setPersonInfo(matched ? {
         name: matched.name || selectedPersonId,
         class_name: (matched.class_name || 'Sem turma').trim() || 'Sem turma',
       } : {
-        name: selectedPersonId,
-        class_name: 'Sem turma',
+        name: selectedPersonId.includes('::') ? selectedPersonId.split('::').pop() || selectedPersonId : selectedPersonId,
+        class_name: selectedPersonId.includes('::') ? selectedPersonId.split('::')[1] || 'Sem turma' : 'Sem turma',
       });
     } catch (e: any) {
       if (e?.name !== 'AbortError') {
@@ -309,7 +313,10 @@ export default function PersonDetailView() {
     let filtered = [...items];
     if (planeFilter !== 'all') {
       filtered = filtered.filter(photo => {
-        const face = (photo.faces || []).find(f => f.aluno_id === selectedPersonId);
+        const face = (photo.faces || []).find(
+          f => (f.person_key && f.person_key === selectedPersonId) ||
+               f.aluno_id === selectedPersonId
+        );
         if (!face) return false;
         const isFg = face.is_foreground === 1 || (face.foreground_score != null && face.foreground_score >= 0.65);
         if (planeFilter === 'foreground') return isFg;
@@ -356,7 +363,7 @@ export default function PersonDetailView() {
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h1>{selectedPersonId}</h1>
+            <h1>{personInfo?.name || selectedPersonId}</h1>
             <p className="view-subtitle">
               {personInfo?.class_name && personInfo.class_name !== 'Sem turma' ? (
                 <><strong>{personInfo.class_name}</strong> · </>

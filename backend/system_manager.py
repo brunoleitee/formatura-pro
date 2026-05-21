@@ -308,30 +308,51 @@ def get_stats(catalog: str = ""):
 
             # 9 queries consolidadas em 1 para reduzir round-trips com o SQLite
             _t0 = time.perf_counter()
-            cur.execute("""
-                SELECT
-                    (SELECT COUNT(*) FROM ocorrencias) AS total_occurrences,
-                    (SELECT COUNT(DISTINCT foto_path) FROM ocorrencias) AS photos_with_faces,
-                    (SELECT COUNT(*) FROM alunos WHERE aluno_id != 'system_catalog') AS total_people,
-                    (SELECT COUNT(DISTINCT aluno_id) FROM ocorrencias
-                     WHERE aluno_id NOT LIKE 'Pessoa %' AND aluno_id != 'system_catalog') AS named_people,
-                    (SELECT COUNT(*) FROM ocorrencias WHERE aluno_id LIKE 'Pessoa %') AS unnamed_people,
-                    (SELECT COUNT(*) FROM discarded_photos) AS discarded_count,
-                    (SELECT COUNT(DISTINCT foto_path) FROM ocorrencias WHERE blur_status = 'blurry') AS blurred_photos,
-                    (SELECT COUNT(DISTINCT foto_path) FROM ocorrencias
-                     WHERE x1 IS NOT NULL
-                       AND (aluno_id IS NULL OR aluno_id = '' OR aluno_id LIKE 'Pessoa%'
-                            OR lower(aluno_id) IN ('unknown','desconhecido','sem_nome','nao_mapeado','__unknown__'))
-                    ) AS no_id_faces,
-                    (SELECT COUNT(*) FROM alunos
-                     WHERE aluno_id != 'system_catalog'
-                       AND aluno_id NOT LIKE 'Pessoa %'
-                       AND aluno_id NOT IN (
-                           SELECT DISTINCT aluno_id FROM ocorrencias
-                           WHERE aluno_id NOT LIKE 'Pessoa %' AND aluno_id != 'Sem Rostos'
-                       )
-                    ) AS refs_without_match
-            """)
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+            _has_alunos_stats = cur.fetchone() is not None
+            if _has_alunos_stats:
+                cur.execute("""
+                    SELECT
+                        (SELECT COUNT(*) FROM ocorrencias) AS total_occurrences,
+                        (SELECT COUNT(DISTINCT foto_path) FROM ocorrencias) AS photos_with_faces,
+                        (SELECT COUNT(*) FROM alunos WHERE aluno_id != 'system_catalog') AS total_people,
+                        (SELECT COUNT(DISTINCT aluno_id) FROM ocorrencias
+                         WHERE aluno_id NOT LIKE 'Pessoa %' AND aluno_id != 'system_catalog') AS named_people,
+                        (SELECT COUNT(*) FROM ocorrencias WHERE aluno_id LIKE 'Pessoa %') AS unnamed_people,
+                        (SELECT COUNT(*) FROM discarded_photos) AS discarded_count,
+                        (SELECT COUNT(DISTINCT foto_path) FROM ocorrencias WHERE blur_status = 'blurry') AS blurred_photos,
+                        (SELECT COUNT(DISTINCT foto_path) FROM ocorrencias
+                         WHERE x1 IS NOT NULL
+                           AND (aluno_id IS NULL OR aluno_id = '' OR aluno_id LIKE 'Pessoa%'
+                                OR lower(aluno_id) IN ('unknown','desconhecido','sem_nome','nao_mapeado','__unknown__'))
+                        ) AS no_id_faces,
+                        (SELECT COUNT(*) FROM alunos
+                         WHERE aluno_id != 'system_catalog'
+                           AND aluno_id NOT LIKE 'Pessoa %'
+                           AND aluno_id NOT IN (
+                               SELECT DISTINCT aluno_id FROM ocorrencias
+                               WHERE aluno_id NOT LIKE 'Pessoa %' AND aluno_id != 'Sem Rostos'
+                           )
+                        ) AS refs_without_match
+                """)
+            else:
+                cur.execute("""
+                    SELECT
+                        (SELECT COUNT(*) FROM ocorrencias) AS total_occurrences,
+                        (SELECT COUNT(DISTINCT foto_path) FROM ocorrencias) AS photos_with_faces,
+                        0 AS total_people,
+                        (SELECT COUNT(DISTINCT aluno_id) FROM ocorrencias
+                         WHERE aluno_id NOT LIKE 'Pessoa %' AND aluno_id != 'system_catalog') AS named_people,
+                        (SELECT COUNT(*) FROM ocorrencias WHERE aluno_id LIKE 'Pessoa %') AS unnamed_people,
+                        (SELECT COUNT(*) FROM discarded_photos) AS discarded_count,
+                        (SELECT COUNT(DISTINCT foto_path) FROM ocorrencias WHERE blur_status = 'blurry') AS blurred_photos,
+                        (SELECT COUNT(DISTINCT foto_path) FROM ocorrencias
+                         WHERE x1 IS NOT NULL
+                           AND (aluno_id IS NULL OR aluno_id = '' OR aluno_id LIKE 'Pessoa%'
+                                OR lower(aluno_id) IN ('unknown','desconhecido','sem_nome','nao_mapeado','__unknown__'))
+                        ) AS no_id_faces,
+                        0 AS refs_without_match
+                """)
             counts = cur.fetchone()
             total_occurrences  = counts["total_occurrences"]
             photos_with_faces  = counts["photos_with_faces"]
@@ -344,17 +365,27 @@ def get_stats(catalog: str = ""):
             refs_without_match = counts["refs_without_match"]
             logger.info("[sql-perf] endpoint=/api/stats query=counts_consolidated rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
 
-            # photos_per_person com class_name via JOIN — elimina N+1 queries
+            # photos_per_person com class_name via JOIN (apenas se alunos existir)
             _t0 = time.perf_counter()
-            cur.execute("""
-                SELECT o.aluno_id, COUNT(*) AS cnt,
-                       COALESCE(a.class_name, 'Sem turma') AS class_name,
-                       COALESCE(NULLIF(TRIM(o.person_key), ''), o.aluno_id) AS person_key
-                FROM ocorrencias o
-                LEFT JOIN alunos a ON a.aluno_id = o.aluno_id
-                GROUP BY COALESCE(NULLIF(TRIM(o.person_key), ''), o.aluno_id)
-                ORDER BY cnt DESC
-            """)
+            if _has_alunos_stats:
+                cur.execute("""
+                    SELECT o.aluno_id, COUNT(*) AS cnt,
+                           COALESCE(a.class_name, 'Sem turma') AS class_name,
+                           COALESCE(NULLIF(TRIM(o.person_key), ''), o.aluno_id) AS person_key
+                    FROM ocorrencias o
+                    LEFT JOIN alunos a ON a.aluno_id = o.aluno_id
+                    GROUP BY COALESCE(NULLIF(TRIM(o.person_key), ''), o.aluno_id)
+                    ORDER BY cnt DESC
+                """)
+            else:
+                cur.execute("""
+                    SELECT o.aluno_id, COUNT(*) AS cnt,
+                           'Sem turma' AS class_name,
+                           COALESCE(NULLIF(TRIM(o.person_key), ''), o.aluno_id) AS person_key
+                    FROM ocorrencias o
+                    GROUP BY COALESCE(NULLIF(TRIM(o.person_key), ''), o.aluno_id)
+                    ORDER BY cnt DESC
+                """)
             photos_per_person = cur.fetchall()
             logger.info("[sql-perf] endpoint=/api/stats query=photos_per_person rows=%d ms=%.0f", len(photos_per_person), (time.perf_counter() - _t0) * 1000)
 
@@ -363,10 +394,12 @@ def get_stats(catalog: str = ""):
                 avg_photos = sum(r["cnt"] for r in photos_per_person) / total_people
 
             _t0 = time.perf_counter()
-            cur.execute("SELECT face_cache_path FROM alunos WHERE aluno_id = ?", ("system_catalog",))
-            res = cur.fetchone()
+            reference_root = ""
+            if _has_alunos_stats:
+                cur.execute("SELECT face_cache_path FROM alunos WHERE aluno_id = ?", ("system_catalog",))
+                res = cur.fetchone()
+                reference_root = res[0] if res and res[0] and os.path.isdir(res[0]) else ""
             logger.info("[sql-perf] endpoint=/api/stats query=system_catalog rows=1 ms=%.0f", (time.perf_counter() - _t0) * 1000)
-            reference_root = res[0] if res and res[0] and os.path.isdir(res[0]) else ""
             class_map = {}
             if reference_root:
                 ignored_folders = {"#BASE", "BASE", "base", "referencias", "referências", "referencia", "referência"}

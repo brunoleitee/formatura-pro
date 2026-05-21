@@ -194,8 +194,14 @@ function ExportViewContent() {
     });
   };
 
-  const getPersonId = (person: Person) => person.id || person.name || 'Sem_Nome';
-  const getPersonLabel = (person: Person) => person.name || person.id || 'Sem nome';
+  const getPersonId = (person: Person) => person.person_key || person.id || person.name || 'Sem_Nome';
+  const getPersonLabel = (person: Person) => {
+    const label = person.name || person.id || 'Sem nome';
+    if (person.class_name && person.class_name !== 'Sem turma') {
+      return `${label} · ${person.class_name}`;
+    }
+    return label;
+  };
 
   const classOptions = useMemo(() => {
     const values = new Set(people.map(p => (p.class_name || 'Sem turma').trim() || 'Sem turma'));

@@ -146,19 +146,22 @@ def _export_folder_name(aid, sanitize_folder_name):
 def _student_export_dir(dest_path: str, aid: str, class_name: str, sanitize_folder_name, organize_by_class: bool):
     student_dir = sanitize_folder_name(aid)
     export_base = os.path.join(dest_path, "Exportação")
-    if not organize_by_class:
-        return os.path.join(export_base, student_dir)
-    
     class_str = str(class_name or "").strip()
-    if not class_str:
-        class_str = "Sem turma"
+
+    # Sempre incluir turma no nome da pasta quando disponível, para evitar colisão
+    if class_str and class_str not in ("Sem turma", "__SEM_TURMA__"):
+        if organize_by_class:
+            parts = class_str.replace("\\", "/").split("/")
+            safe_parts = [sanitize_folder_name(p) for p in parts if p.strip()]
+            if not safe_parts:
+                safe_parts = ["Sem turma"]
+            return os.path.join(export_base, *safe_parts, student_dir)
+        else:
+            # Nome da pasta: "9 A - ADRIANA"
+            safe_class = sanitize_folder_name(class_str)
+            return os.path.join(export_base, f"{safe_class} - {student_dir}")
     
-    parts = class_str.replace("\\", "/").split("/")
-    safe_parts = [sanitize_folder_name(p) for p in parts if p.strip()]
-    if not safe_parts:
-        safe_parts = ["Sem turma"]
-        
-    return os.path.join(export_base, *safe_parts, student_dir)
+    return os.path.join(export_base, student_dir)
 
 
 def detect_class_from_reference_path(reference_root: str, reference_path: str) -> str:
@@ -178,10 +181,15 @@ def detect_class_from_reference_path(reference_root: str, reference_path: str) -
 
 def get_reference_root(conn) -> str:
     cur = conn.cursor()
-    cur.execute("SELECT face_cache_path FROM alunos WHERE aluno_id = ?", ("system_catalog",))
-    res = cur.fetchone()
-    if res and res[0] and os.path.isdir(res[0]):
-        return res[0]
+    try:
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+        if cur.fetchone() is not None:
+            cur.execute("SELECT face_cache_path FROM alunos WHERE aluno_id = ?", ("system_catalog",))
+            res = cur.fetchone()
+            if res and res[0] and os.path.isdir(res[0]):
+                return res[0]
+    except Exception:
+        pass
     cur.execute("SELECT ori_path, ref_path FROM scan_checkpoints LIMIT 1")
     row = cur.fetchone()
     if row and row[1]:
@@ -229,26 +237,31 @@ def build_export_worklist(conn, req: ExportReq):
     class_map = build_class_map_from_reference_root(reference_root)
     log_info(f"[class-map] built {len(class_map)} entries: {list(class_map.keys())[:20]}")
 
-    cur.execute("SELECT aluno_id, class_name, face_cache_path, person_key FROM alunos")
     students_data = {}
-    for r in cur.fetchall():
-        aid = r["aluno_id"]
-        class_name = r["class_name"] or "Sem turma"
-        ref_path = r["face_cache_path"] or ""
-        person_key = r["person_key"] or ""
+    try:
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+        if cur.fetchone() is not None:
+            cur.execute("SELECT aluno_id, class_name, face_cache_path, person_key FROM alunos")
+            for r in cur.fetchall():
+                aid = r["aluno_id"]
+                class_name = r["class_name"] or "Sem turma"
+                ref_path = r["face_cache_path"] or ""
+                person_key = r["person_key"] or ""
 
-        if class_name == "Sem turma" and aid in class_map:
-            class_name = class_map[aid]
-            log_info(f"[export-class-final] student={aid} class_name={class_name} class_map_hit=True")
-        elif class_name == "Sem turma" and ref_path and reference_root:
-            class_name = detect_class_from_reference_path(reference_root, ref_path)
-            log_info(f"[export-class-debug] student={aid} class_name={class_name} class_map_hit=False")
+                if class_name == "Sem turma" and aid in class_map:
+                    class_name = class_map[aid]
+                    log_info(f"[export-class-final] student={aid} class_name={class_name} class_map_hit=True")
+                elif class_name == "Sem turma" and ref_path and reference_root:
+                    class_name = detect_class_from_reference_path(reference_root, ref_path)
+                    log_info(f"[export-class-debug] student={aid} class_name={class_name} class_map_hit=False")
 
-        students_data[aid] = {
-            "class_name": class_name,
-            "reference_path": ref_path,
-            "person_key": person_key,
-        }
+                students_data[aid] = {
+                    "class_name": class_name,
+                    "reference_path": ref_path,
+                    "person_key": person_key,
+                }
+    except Exception:
+        pass
 
     student_classes = {aid: data["class_name"] for aid, data in students_data.items()}
     log_info(f"[export] turmas detectadas: {dict(list(student_classes.items())[:10])}")
@@ -260,8 +273,15 @@ def build_export_worklist(conn, req: ExportReq):
     source_dirs = {r["ori_path"] for r in cur.fetchall() if r["ori_path"] and os.path.isdir(r["ori_path"])}
     if not source_dirs:
         # Fallback: tentar pegar da tabela alunos onde salvamos o catalog_root
-        cur.execute("SELECT face_cache_path FROM alunos WHERE aluno_id = ?", ("system_catalog",))
-        res = cur.fetchone()
+        try:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+            if cur.fetchone() is not None:
+                cur.execute("SELECT face_cache_path FROM alunos WHERE aluno_id = ?", ("system_catalog",))
+                res = cur.fetchone()
+            else:
+                res = None
+        except Exception:
+            res = None
         if res and res[0] and os.path.isdir(res[0]):
             source_dirs.add(res[0])
         elif res and res[0]:
@@ -288,8 +308,19 @@ def build_export_worklist(conn, req: ExportReq):
 # 1. Fotos de alunos selecionados (inclui "Pessoa X" se selecionado)
     organize_by_class = bool(getattr(req, "organize_by_class", False))
     for aid in req.ids:
-        class_name = student_classes.get(aid, "Sem turma")
-        student_pk = students_data.get(aid, {}).get("person_key", "")
+        # Extrair person_key, person_name e class_name do identificador
+        if "::" in aid:
+            pk_parts = aid.split("::")
+            student_pk = aid
+            person_name = pk_parts[-1] if len(pk_parts) >= 1 else aid
+            class_name = pk_parts[1] if len(pk_parts) >= 2 else (student_classes.get(aid, "Sem turma"))
+            if class_name in ("__SEM_TURMA__",):
+                class_name = "Sem turma"
+        else:
+            student_pk = students_data.get(aid, {}).get("person_key", "")
+            person_name = aid
+            class_name = student_classes.get(aid, "Sem turma")
+
         if student_pk:
             cur.execute(
                 "SELECT DISTINCT foto_path FROM ocorrencias WHERE person_key = ?",
@@ -301,8 +332,8 @@ def build_export_worklist(conn, req: ExportReq):
                 (aid,),
             )
         fotos = [r[0] for r in cur.fetchall() if r[0] and r[0] not in discarded_manual]
-        p_al = _student_export_dir(req.dest_path, aid, class_name, _get("sanitize_folder_name"), organize_by_class)
-        log_info(f"[export-debug] student={aid} selected_class={getattr(req, 'selected_class', 'N/A')} organize_by_class={organize_by_class} class_name={class_name} photos_count={len(fotos)} dest_dir={p_al}")
+        p_al = _student_export_dir(req.dest_path, person_name, class_name, _get("sanitize_folder_name"), organize_by_class)
+        log_info(f"[export] folder={os.path.basename(p_al)} person_key={student_pk} photos={len(fotos)} dest_dir={p_al}")
         for f in fotos:
             if os.path.exists(f):
                 worklist.append((aid, f, p_al))

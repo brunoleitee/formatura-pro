@@ -7,6 +7,9 @@ import { resolveAvatarUrl } from '../utils/avatarUrl';
 import { faceThumb } from '../components/review/FaceCard';
 import styles from './PeopleView.module.css';
 
+const getIdentity = (person: Person): string =>
+  person.person_key || person.id || person.name;
+
 interface PeopleViewProps {
   onRequestConfirm: (options: { title: string; message: string; confirmText: string; cancelText: string }) => Promise<boolean>;
 }
@@ -95,7 +98,7 @@ const PeopleCard = memo(function PeopleCard({
   // ── Modo lista (inalterado) ──
   if (isList) {
     return (
-      <div className={styles.card} onClick={() => !isRenaming && onOpen(person.id)}>
+      <div className={styles.card} onClick={() => !isRenaming && onOpen(person.person_key || person.id)}>
         <PersonAvatar person={person} />
 
         <div className={styles.infoSection}>
@@ -118,7 +121,7 @@ const PeopleCard = memo(function PeopleCard({
             <>
               <h3 className={styles.name}>{person.name}</h3>
               <div className={styles.badgesRow} style={{ justifyContent: 'flex-start' }}>
-                <span className={styles.idBadge}>ID {person.id.substring(0, 6)}</span>
+                <span className={styles.idBadge}>ID {(person.person_key || person.id).substring(0, 12)}</span>
                 <span className={styles.classBadge}>{person.class_name || 'Sem turma'}</span>
               </div>
               <div className={styles.statsRow} style={{ justifyContent: 'flex-start', gap: '16px' }}>
@@ -143,11 +146,11 @@ const PeopleCard = memo(function PeopleCard({
           )}
         </div>
 
-        <Collage person={person} onPhotoClick={() => onOpen(person.id)} />
+        <Collage person={person} onPhotoClick={() => onOpen(person.person_key || person.id)} />
 
         <div className={styles.actionsSection} onClick={e => e.stopPropagation()}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <button className={styles.actionBtn} onClick={() => onOpen(person.id)} title="Abrir">
+            <button className={styles.actionBtn} onClick={() => onOpen(person.person_key || person.id)} title="Abrir">
               <ExternalLink size={14} /> Abrir
             </button>
             <button className={styles.actionBtn} onClick={() => onStartRename(person)} title="Renomear">
@@ -167,7 +170,7 @@ const PeopleCard = memo(function PeopleCard({
   const discards = person.discarded_count || 0;
 
   return (
-    <div className={styles.cardCompact} onClick={() => !isRenaming && onOpen(person.id)}>
+    <div className={styles.cardCompact} onClick={() => !isRenaming && onOpen(person.person_key || person.id)}>
       {/* 1. Área da foto */}
       <div className={styles.gridPhotoArea}>
         {(!avatarUrl || photoFailed) ? (
@@ -217,7 +220,7 @@ const PeopleCard = memo(function PeopleCard({
       {/* 2. Área de info */}
       <div className={styles.gridInfoSection}>
         <h3 className={styles.gridName}>{person.name}</h3>
-        <div className={styles.gridId}>{person.id.substring(0, 8)}</div>
+        <div className={styles.gridId}>{(person.person_key || person.id).substring(0, 12)}</div>
         <div className={styles.gridStatsRow}>
           <div className={styles.gridStatItem} style={{ color: '#a89af7' }}>
             <Camera size={13} />
@@ -240,7 +243,7 @@ const PeopleCard = memo(function PeopleCard({
           {person.class_name || 'Sem turma'}
         </span>
         <div className={styles.gridActions}>
-          <button className={styles.gridActionBtn} onClick={() => onOpen(person.id)} title="Abrir">
+          <button className={styles.gridActionBtn} onClick={() => onOpen(person.person_key || person.id)} title="Abrir">
             <ExternalLink size={14} />
           </button>
           <button className={styles.gridActionBtn} onClick={() => onStartRename(person)} title="Renomear">
@@ -451,21 +454,26 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
           </div>
         ) : (
           <div className={viewMode === 'list' ? styles.grid : styles.gridCards}>
-            {filtered.map((person) => (
-              <PeopleCard
-                key={person.id || person.name}
-                person={person}
-                viewMode={viewMode}
-                isRenaming={renamingId === person.id}
-                renameValue={renameValue}
-                onOpen={handleOpenPerson}
-                onStartRename={handleStartRename}
-                onCancelRename={handleCancelRename}
-                onRenameValue={handleRenameValue}
-                onConfirmRename={handleRenameSubmit}
-                onDelete={handleDeletePerson}
-              />
-            ))}
+            {filtered.map((person) => {
+              if (process.env.NODE_ENV !== 'production') {
+                console.debug('[people-card]', { name: person.name, id: person.id, person_key: person.person_key, identity: getIdentity(person) });
+              }
+              return (
+                <PeopleCard
+                  key={getIdentity(person)}
+                  person={person}
+                  viewMode={viewMode}
+                  isRenaming={renamingId === getIdentity(person)}
+                  renameValue={renameValue}
+                  onOpen={handleOpenPerson}
+                  onStartRename={handleStartRename}
+                  onCancelRename={handleCancelRename}
+                  onRenameValue={handleRenameValue}
+                  onConfirmRename={handleRenameSubmit}
+                  onDelete={handleDeletePerson}
+                />
+              );
+            })}
           </div>
         )}
       </div>

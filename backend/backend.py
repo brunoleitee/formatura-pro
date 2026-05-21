@@ -268,6 +268,9 @@ def validate_destination_path(dest_path):
 def ensure_alunos_class_column(conn):
     cur = conn.cursor()
     try:
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+        if cur.fetchone() is None:
+            return True
         cur.execute("PRAGMA table_info(alunos)")
         cols = [row[1] for row in cur.fetchall()]
         if "class_name" not in cols:
@@ -283,12 +286,17 @@ def ensure_alunos_class_column(conn):
 def ensure_identity_columns(conn):
     cur = conn.cursor()
     try:
-        cur.execute("PRAGMA table_info(alunos)")
-        cols = [row[1] for row in cur.fetchall()]
-        if "person_key" not in cols:
-            cur.execute("ALTER TABLE alunos ADD COLUMN person_key TEXT DEFAULT ''")
-        if "reference_folder" not in cols:
-            cur.execute("ALTER TABLE alunos ADD COLUMN reference_folder TEXT DEFAULT ''")
+        # Alunos table - only alter if it exists
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+        has_alunos = cur.fetchone() is not None
+        if has_alunos:
+            cur.execute("PRAGMA table_info(alunos)")
+            cols = [row[1] for row in cur.fetchall()]
+            if "person_key" not in cols:
+                cur.execute("ALTER TABLE alunos ADD COLUMN person_key TEXT DEFAULT ''")
+            if "reference_folder" not in cols:
+                cur.execute("ALTER TABLE alunos ADD COLUMN reference_folder TEXT DEFAULT ''")
+        # Ocorrencias table - always exists
         cur.execute("PRAGMA table_info(ocorrencias)")
         cols = [row[1] for row in cur.fetchall()]
         if "person_key" not in cols:
@@ -1808,7 +1816,41 @@ def get_photo_context(path: str = "", catalog: str = ""):
 
 @app.get("/api/photos/{aluno_id}")
 def get_photos(aluno_id: str):
-    return pdm.get_photos(aluno_id)
+    from urllib.parse import unquote
+    decoded = unquote(aluno_id)
+    log_info(f"[photos-api] incoming={aluno_id} decoded={decoded}")
+    try:
+        if "::" in decoded:
+            log_info(f"[photos-api] mode=person_key person_key={decoded}")
+            result = pdm.get_photos_by_person_key(decoded)
+            log_info(f"[photos-api] photos_found={len(result)}")
+            if not result:
+                # Log person_keys from DB for debugging
+                try:
+                    db = _get("get_db")
+                    with db() as conn:
+                        cur = conn.cursor()
+                        cur.execute("""
+                            SELECT DISTINCT person_key, aluno_id, COUNT(*) as cnt
+                            FROM ocorrencias
+                            WHERE person_key IS NOT NULL AND person_key != ''
+                              AND aluno_id = ?
+                            GROUP BY person_key
+                            ORDER BY cnt DESC
+                            LIMIT 10
+                        """, (decoded.split("::")[-1] if "::" in decoded else decoded,))
+                        samples = [dict(r) for r in cur.fetchall()]
+                        log_info(f"[photos-api] person_keys_for_aluno: {samples}")
+                except Exception as log_e:
+                    log_info(f"[photos-api] debug_query_error: {log_e}")
+            return result
+        log_info(f"[photos-api] mode=legacy aluno_id={decoded}")
+        result = pdm.get_photos(decoded)
+        log_info(f"[photos-api] photos_found={len(result)}")
+        return result
+    except Exception as e:
+        logging.getLogger(__name__).exception("[photos] erro ao buscar fotos de %s", decoded)
+        return []
 
 qa.configure(
     load_pil_with_orientation=mm.load_pil_with_orientation,
@@ -3770,12 +3812,21 @@ def ai_photo_details(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
                         details["processing"] = row["status"] in ("pending", "curating")
 
             if resolved_path:
-                c.execute("""
-                    SELECT o.aluno_id, a.aluno_id as student_name, a.class_name
-                    FROM ocorrencias o
-                    LEFT JOIN alunos a ON a.aluno_id = o.aluno_id
-                    WHERE o.foto_path = ? LIMIT 1
-                """, (resolved_path,))
+                c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+                _has_alunos_photo = c.fetchone() is not None
+                if _has_alunos_photo:
+                    c.execute("""
+                        SELECT o.aluno_id, a.aluno_id as student_name, a.class_name
+                        FROM ocorrencias o
+                        LEFT JOIN alunos a ON a.aluno_id = o.aluno_id
+                        WHERE o.foto_path = ? LIMIT 1
+                    """, (resolved_path,))
+                else:
+                    c.execute("""
+                        SELECT o.aluno_id, o.aluno_id as student_name, NULL as class_name
+                        FROM ocorrencias o
+                        WHERE o.foto_path = ? LIMIT 1
+                    """, (resolved_path,))
                 occ = c.fetchone()
                 if occ:
                     details["face_detected"] = True
@@ -3831,12 +3882,21 @@ def ai_photo_details(photo_id: int = 0, catalog: str = "", foto_path: str = ""):
                     c = conn.cursor()
                     c.execute("SELECT 1 FROM ocorrencias WHERE foto_path = ? LIMIT 1", (foto_path,))
                     if c.fetchone():
-                        c.execute("""
-                            SELECT o.aluno_id, a.aluno_id as student_name
-                            FROM ocorrencias o
-                            LEFT JOIN alunos a ON a.aluno_id = o.aluno_id
-                            WHERE o.foto_path = ? LIMIT 1
-                        """, (foto_path,))
+                        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+                        _ha2 = c.fetchone() is not None
+                        if _ha2:
+                            c.execute("""
+                                SELECT o.aluno_id, a.aluno_id as student_name
+                                FROM ocorrencias o
+                                LEFT JOIN alunos a ON a.aluno_id = o.aluno_id
+                                WHERE o.foto_path = ? LIMIT 1
+                            """, (foto_path,))
+                        else:
+                            c.execute("""
+                                SELECT o.aluno_id, o.aluno_id as student_name
+                                FROM ocorrencias o
+                                WHERE o.foto_path = ? LIMIT 1
+                            """, (foto_path,))
                         occ = c.fetchone()
                         if occ:
                             details["face_detected"] = True

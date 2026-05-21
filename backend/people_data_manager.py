@@ -131,11 +131,20 @@ def get_people(unknown: bool = False):
                     "avatar_path": None,
                 } for row in rows]
             else:
+                # Diagnostic: check person_key coverage
+                cur.execute("SELECT COUNT(*) as total, COUNT(DISTINCT COALESCE(NULLIF(TRIM(person_key), ''), aluno_id)) as distinct_identity FROM ocorrencias WHERE lower(aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__') AND aluno_id NOT LIKE 'Pessoa%'")
+                _diag = cur.fetchone()
+                logging.getLogger(__name__).info(
+                    "[people] diagnostic: total_rows=%d distinct_identities=%d",
+                    _diag["total"], _diag["distinct_identity"],
+                )
+
                 _t = time.perf_counter()
                 cur.execute("""
                     WITH stats AS (
                         SELECT 
-                            o.aluno_id, 
+                            COALESCE(NULLIF(TRIM(o.person_key), ''), o.aluno_id) AS identity_key,
+                            o.aluno_id,
                             COUNT(*) AS total,
                             AVG(COALESCE(o.foreground_score, 0)) AS avg_quality,
                             COUNT(CASE WHEN pm.favorite = 1 THEN 1 END) AS favorites_count,
@@ -145,37 +154,39 @@ def get_people(unknown: bool = False):
                         LEFT JOIN discarded_photos dp ON dp.foto_path = o.foto_path
                         WHERE lower(o.aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__')
                           AND o.aluno_id NOT LIKE 'Pessoa%'
-                        GROUP BY o.aluno_id
+                        GROUP BY COALESCE(NULLIF(TRIM(o.person_key), ''), o.aluno_id)
                     ),
                     covers AS (
-                        SELECT aluno_id, foto_path, x1, y1, x2, y2
+                        SELECT identity_key, foto_path, x1, y1, x2, y2
                         FROM (
                             SELECT
-                                aluno_id, foto_path, x1, y1, x2, y2,
+                                COALESCE(NULLIF(TRIM(o2.person_key), ''), o2.aluno_id) AS identity_key,
+                                o2.foto_path, o2.x1, o2.y1, o2.x2, o2.y2,
                                 CASE
-                                    WHEN is_foreground = 1 AND COALESCE(foreground_score, 0) >= 0.3 THEN 0
+                                    WHEN o2.is_foreground = 1 AND COALESCE(o2.foreground_score, 0) >= 0.3 THEN 0
                                     ELSE 1
                                 END AS tier,
                                 ROW_NUMBER() OVER (
-                                    PARTITION BY aluno_id
+                                    PARTITION BY COALESCE(NULLIF(TRIM(o2.person_key), ''), o2.aluno_id)
                                     ORDER BY
                                         CASE
-                                            WHEN is_foreground = 1 AND COALESCE(foreground_score, 0) >= 0.3 THEN 0
+                                            WHEN o2.is_foreground = 1 AND COALESCE(o2.foreground_score, 0) >= 0.3 THEN 0
                                             ELSE 1
                                         END ASC,
-                                        (x1 IS NULL) ASC,
+                                        (o2.x1 IS NULL) ASC,
                                         (
-                                            COALESCE(foreground_score, 0) * 0.40 +
-                                            COALESCE(center_score, 0) * 0.20 +
-                                            MIN(COALESCE(blur_score, 0) / 300.0, 1.0) * 0.20 +
-                                            MIN(COALESCE(face_area_ratio, 0) / 0.15, 1.0) * 0.20
+                                            COALESCE(o2.foreground_score, 0) * 0.40 +
+                                            COALESCE(o2.center_score, 0) * 0.20 +
+                                            MIN(COALESCE(o2.blur_score, 0) / 300.0, 1.0) * 0.20 +
+                                            MIN(COALESCE(o2.face_area_ratio, 0) / 0.15, 1.0) * 0.20
                                         ) DESC
                                 ) as rn
-                            FROM ocorrencias
+                            FROM ocorrencias o2
                         ) WHERE rn = 1
                     )
                     SELECT
                         s.aluno_id,
+                        s.identity_key,
                         s.total,
                         s.avg_quality,
                         s.favorites_count,
@@ -184,13 +195,9 @@ def get_people(unknown: bool = False):
                         cov.x1,
                         cov.y1,
                         cov.x2,
-                        cov.y2,
-                        a.face_cache_path,
-                        a.class_name,
-                        a.person_key
+                        cov.y2
                     FROM stats s
-                    LEFT JOIN covers cov ON cov.aluno_id = s.aluno_id
-                    LEFT JOIN alunos a ON a.aluno_id = s.aluno_id
+                    LEFT JOIN covers cov ON cov.identity_key = s.identity_key
                     ORDER BY s.aluno_id ASC
                 """)
                 rows = cur.fetchall()
@@ -200,20 +207,21 @@ def get_people(unknown: bool = False):
                 cur.execute("""
                     WITH ranked AS (
                         SELECT 
+                            COALESCE(NULLIF(TRIM(person_key), ''), aluno_id) AS identity_key,
                             aluno_id, foto_path, x1, y1, x2, y2,
-                            ROW_NUMBER() OVER (PARTITION BY aluno_id ORDER BY rowid ASC) as rn
+                            ROW_NUMBER() OVER (PARTITION BY COALESCE(NULLIF(TRIM(person_key), ''), aluno_id) ORDER BY rowid ASC) as rn
                         FROM ocorrencias
                         WHERE x1 IS NOT NULL
                           AND lower(aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__')
                           AND aluno_id NOT LIKE 'Pessoa%'
                     )
-                    SELECT * FROM ranked WHERE rn <= 4
+                    SELECT identity_key, aluno_id, foto_path, x1, y1, x2, y2 FROM ranked WHERE rn <= 4
                 """)
                 samples_data = cur.fetchall()
                 _sql_logger.info("[sql-perf] endpoint=/api/people query=sample_photos rows=%d ms=%.0f", len(samples_data), (time.perf_counter() - _t) * 1000)
                 samples_by_aluno = {}
                 for s in samples_data:
-                    aid = s["aluno_id"]
+                    aid = s["identity_key"]
                     if aid not in samples_by_aluno:
                         samples_by_aluno[aid] = []
                     samples_by_aluno[aid].append({
@@ -221,15 +229,43 @@ def get_people(unknown: bool = False):
                         "box": [s["x1"], s["y1"], s["x2"], s["y2"]],
                     })
 
+                # Check if alunos table exists for additional fields
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+                _has_alunos = cur.fetchone() is not None
+                if _has_alunos:
+                    cur.execute("""
+                        SELECT aluno_id, face_cache_path, class_name, person_key FROM alunos
+                    """)
+                    alunos_map = {}
+                    alunos_by_pk = {}
+                    for ar in cur.fetchall():
+                        aid = ar["aluno_id"]
+                        pk = str(ar["person_key"] or "")
+                        alunos_map[aid] = {
+                            "face_cache_path": ar["face_cache_path"] or "",
+                            "class_name": ar["class_name"] or "Sem turma",
+                            "person_key": pk,
+                        }
+                        if pk:
+                            alunos_by_pk[pk] = alunos_map[aid]
+                else:
+                    alunos_map = {}
+                    alunos_by_pk = {}
+
                 results = []
                 for row in rows:
                     aluno_id = row["aluno_id"]
+                    identity_key = str(row["identity_key"] or "")
+                    person_key = identity_key if "::" in identity_key else ""
                     cover_path = row["cover_path"]
                     cover_box = None
                     if cover_path and row["x1"] is not None:
                         cover_box = [row["x1"], row["y1"], row["x2"], row["y2"]]
 
-                    face_cache_path = str(row["face_cache_path"] or "").strip()
+                    # Lookup by person_key first, then by aluno_id
+                    aluno_extra = alunos_by_pk.get(person_key) or alunos_map.get(aluno_id) or {}
+                    _row_fcp = row["face_cache_path"] if "face_cache_path" in row.keys() else ""
+                    face_cache_path = str(aluno_extra.get("face_cache_path") or _row_fcp or "").strip()
                     avatar_path = None
                     if face_cache_path and os.path.exists(face_cache_path):
                         avatar_path = face_cache_path
@@ -238,11 +274,29 @@ def get_people(unknown: bool = False):
                     else:
                         avatar_path = cover_path if cover_path else None
 
+                    if not person_key:
+                        person_key = str(aluno_extra.get("person_key", "") or "").strip()
+
+                    # class_name from person_key (nunca sobrescrever person_key com alunos_map quando já temos identity_key)
+                    class_name = "Sem turma"
+                    if person_key:
+                        pk_parts = person_key.split("::")
+                        if len(pk_parts) >= 2:
+                            cn = pk_parts[1].strip()
+                            if cn and cn != "__SEM_TURMA__":
+                                class_name = cn
+
+                    if person_key and "::" in person_key:
+                        logging.getLogger(__name__).info(
+                            "[people] returned person_key=%s name=%s class=%s",
+                            person_key, aluno_id, class_name,
+                        )
+
                     results.append({
-                        "id": aluno_id,
+                        "id": person_key if person_key else aluno_id,
                         "name": aluno_id,
-                        "class_name": str(row["class_name"] or "").strip() or "Sem turma",
-                        "person_key": str(row["person_key"] or "").strip() or "",
+                        "class_name": class_name,
+                        "person_key": person_key,
                         "total_photos": row["total"],
                         "favorites_count": row["favorites_count"],
                         "discarded_count": row["discarded_count"],
@@ -250,7 +304,7 @@ def get_people(unknown: bool = False):
                         "cover_path": cover_path,
                         "cover_box": cover_box,
                         "avatar_path": avatar_path,
-                        "sample_photos": samples_by_aluno.get(aluno_id, []),
+                        "sample_photos": samples_by_aluno.get(identity_key, []),
                     })
 
         with _people_cache_lock:
@@ -283,11 +337,19 @@ def get_photos(aluno_id: str):
         cur.execute("SELECT foto_path FROM discarded_photos")
         discarded = {r["foto_path"] for r in cur.fetchall()}
 
-        # Primeiro, tentar buscar pela person_key (mais específica) se disponível
-        cur.execute("SELECT person_key, class_name FROM alunos WHERE aluno_id = ? LIMIT 1", (aluno_id,))
-        aluno_row = cur.fetchone()
-        person_key_filter = str(aluno_row["person_key"] or "").strip() if aluno_row else ""
-        class_name = str(aluno_row["class_name"] or "").strip() or "Sem turma" if aluno_row else "Sem turma"
+        # Tentar buscar pela person_key (se tabela alunos existir)
+        person_key_filter = ""
+        class_name = "Sem turma"
+        try:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+            if cur.fetchone() is not None:
+                cur.execute("SELECT person_key, class_name FROM alunos WHERE aluno_id = ? LIMIT 1", (aluno_id,))
+                row = cur.fetchone()
+                if row:
+                    person_key_filter = str(row["person_key"] or "").strip()
+                    class_name = str(row["class_name"] or "").strip() or "Sem turma"
+        except Exception:
+            pass
 
         if person_key_filter:
             cur.execute("""
@@ -348,9 +410,9 @@ def get_photos(aluno_id: str):
                     "foreground_score": r["foreground_score"],
                     "background_penalty_reason": r["background_penalty_reason"],
                 }
-                pk = r.get("person_key")
-                if pk:
-                    face_data["person_key"] = str(pk)
+                _r_pk = r["person_key"] if "person_key" in r.keys() else ""
+                if _r_pk:
+                    face_data["person_key"] = str(_r_pk)
                 unique_photos[p]["faces"].append(face_data)
 
         if unique_photos:
@@ -363,6 +425,166 @@ def get_photos(aluno_id: str):
                     unique_photos[c["foto_path"]]["total_faces_in_db"] = c["cnt"]
 
     return list(unique_photos.values())
+
+
+def get_photos_by_person_key(person_key: str):
+    """
+    Busca fotos filtradas por person_key (identidade composta).
+    Com fallback tolerante para normalização.
+    """
+    get_db = _get("get_db")
+    get_blur_label = _get("get_blur_label")
+    load_quality_settings = _get("load_quality_settings")
+    cat = current_catalog()
+    if not cat:
+        return []
+
+    import logging as _log
+    _log.getLogger(__name__).info("[get_photos_by_person_key] buscando key=%s", person_key)
+
+    def _fetch_photos(cur, where_clause, params) -> list:
+        cur.execute(f"""
+            SELECT rowid, foto_path, x1, y1, x2, y2, blur_score, blur_status, closed_eyes,
+                   is_foreground, foreground_score, background_penalty_reason, person_key
+            FROM ocorrencias
+            WHERE {where_clause}
+        """, params)
+        return cur.fetchall()
+
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+
+            # Diagnostic: check if any rows have this person_key
+            cur.execute("SELECT COUNT(*) as cnt FROM ocorrencias WHERE person_key = ?", (person_key,))
+            _cnt = cur.fetchone()["cnt"]
+            if _cnt == 0:
+                cur.execute("SELECT COUNT(*) as cnt FROM ocorrencias WHERE person_key IS NOT NULL AND person_key != ''")
+                _total_pk = cur.fetchone()["cnt"]
+                cur.execute("SELECT COUNT(*) as cnt FROM ocorrencias WHERE aluno_id = ?", (person_key.split("::")[-1] if "::" in person_key else person_key,))
+                _by_name = cur.fetchone()["cnt"]
+                _log.getLogger(__name__).info(
+                    "[get_photos_by_person_key] person_key=%s NOT FOUND: total_rows_with_pk=%d rows_with_name=%d",
+                    person_key, _total_pk, _by_name,
+                )
+
+            cur.execute("SELECT foto_path FROM discarded_photos")
+            discarded = {r["foto_path"] for r in cur.fetchall()}
+
+            # ── Estratégia 1: match exato ──
+            rows = _fetch_photos(cur, "person_key = ?", (person_key,))
+            _log.getLogger(__name__).info("[get_photos_by_person_key] exact match: %d rows", len(rows))
+
+            # ── Estratégia 2: case-insensitive ──
+            if not rows:
+                rows = _fetch_photos(cur, "UPPER(person_key) = UPPER(?)", (person_key,))
+                _log.getLogger(__name__).info("[get_photos_by_person_key] upper match: %d rows", len(rows))
+
+            # ── Estratégia 3: remover espaços duplicados ──
+            if not rows:
+                import re as _re
+                normalized = _re.sub(r"\s+", " ", person_key.strip().upper())
+                rows = _fetch_photos(cur, "UPPER(person_key) = ?", (normalized,))
+                _log.getLogger(__name__).info("[get_photos_by_person_key] normalized match: %d rows key=%s", len(rows), normalized)
+
+            # ── Estratégia 4: LIKE com os segmentos mais significativos ──
+            if not rows:
+                pk_parts = person_key.split("::")
+                # Usar últimos 2 segmentos: class_name::person_name
+                if len(pk_parts) >= 2:
+                    suffix = "::" + "::".join(pk_parts[-2:])
+                    suffix_upper = suffix.upper()
+                    rows = _fetch_photos(cur, "UPPER(person_key) LIKE ?", (f"%{suffix_upper}",))
+                    _log.getLogger(__name__).info("[get_photos_by_person_key] suffix match: %d rows suffix=%s", len(rows), suffix_upper)
+
+            # ── Estratégia 5: fallback por catalog + último segmento (person_name) ──
+            if not rows:
+                pk_parts = person_key.split("::")
+                person_name_seg = pk_parts[-1].strip().upper() if len(pk_parts) >= 1 else ""
+                if person_name_seg:
+                    rows = _fetch_photos(cur, "UPPER(aluno_id) = UPPER(?)", (person_name_seg,))
+                    _log.getLogger(__name__).info("[get_photos_by_person_key] name fallback: %d rows name=%s", len(rows), person_name_seg)
+
+            # ── Diagnóstico: se ainda sem resultados, listar exemplos ──
+            if not rows:
+                cur.execute("""
+                    SELECT DISTINCT person_key, aluno_id, COUNT(*) as cnt
+                    FROM ocorrencias
+                    WHERE person_key IS NOT NULL AND person_key != ''
+                    GROUP BY person_key
+                    ORDER BY cnt DESC
+                    LIMIT 20
+                """)
+                samples = [dict(r) for r in cur.fetchall()]
+                _log.getLogger(__name__).info(
+                    "[get_photos_by_person_key] ZERO photos for key=%s available_keys=%s",
+                    person_key, samples[:5],
+                )
+
+            # Extrair nome legível
+            pk_parts = person_key.split("::")
+            display_name = pk_parts[-1] if len(pk_parts) >= 1 else "Desconhecido"
+
+            unique_photos = {}
+            for r in rows:
+                p = r["foto_path"]
+                if p not in unique_photos:
+                    unique_photos[p] = {
+                        "path": p,
+                        "name": os.path.basename(p),
+                        "type": os.path.splitext(p)[1].lower().lstrip(".") or "img",
+                        "size": None,
+                        "mtime": None,
+                        "ctime": None,
+                        "faces": [],
+                        "total_faces_in_db": 1,
+                        "discarded": p in discarded,
+                        "blur_score": r["blur_score"],
+                        "blur_status": r["blur_status"],
+                        "blur_label": get_blur_label(r["blur_score"], load_quality_settings()),
+                        "closed_eyes": bool(r["closed_eyes"]),
+                    }
+                    try:
+                        stat = os.stat(p)
+                        unique_photos[p]["size"] = stat.st_size
+                        unique_photos[p]["mtime"] = stat.st_mtime
+                        unique_photos[p]["ctime"] = stat.st_ctime
+                        w, h = get_image_dimensions(p)
+                        unique_photos[p]["width"] = w
+                        unique_photos[p]["height"] = h
+                    except Exception:
+                        unique_photos[p]["width"] = None
+                        unique_photos[p]["height"] = None
+                        pass
+                if r["x1"] is not None:
+                    face_data = {
+                        "rowid": r["rowid"],
+                        "aluno_id": display_name,
+                        "person_key": person_key,
+                        "x1": r["x1"], "y1": r["y1"],
+                        "x2": r["x2"], "y2": r["y2"],
+                        "is_foreground": r["is_foreground"],
+                        "foreground_score": r["foreground_score"],
+                        "background_penalty_reason": r["background_penalty_reason"],
+                    }
+                    _r_pk2 = r["person_key"] if "person_key" in r.keys() else ""
+                    if _r_pk2:
+                        face_data["person_key"] = str(_r_pk2)
+                    unique_photos[p]["faces"].append(face_data)
+
+            if unique_photos:
+                paths = list(unique_photos.keys())
+                for i in range(0, len(paths), 900):
+                    chunk = paths[i:i + 900]
+                    placeholders = ",".join(["?"] * len(chunk))
+                    cur.execute(f"SELECT foto_path, COUNT(aluno_id) as cnt FROM ocorrencias WHERE foto_path IN ({placeholders}) GROUP BY foto_path", chunk)
+                    for c in cur.fetchall():
+                        unique_photos[c["foto_path"]]["total_faces_in_db"] = c["cnt"]
+
+            return list(unique_photos.values())
+    except Exception as e:
+        _log.getLogger(__name__).exception("[get_photos_by_person_key] erro: %s", e)
+        return []
 
 
 _REF_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
