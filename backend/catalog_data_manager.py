@@ -113,9 +113,15 @@ def import_catalog_json(req: ImportCatalogReq):
                     if "aluno_id" in aluno
                 ]
                 if alunos_rows:
+                    import scanner_engine as _se
+                    alunos_rows_with_pk = []
+                    for row in alunos_rows:
+                        aid, fcp, cls = row
+                        pk = _se.make_person_key(class_name=cls, student_id=aid)
+                        alunos_rows_with_pk.append((pk, aid, fcp, cls))
                     cur.executemany(
-                        "INSERT OR REPLACE INTO alunos (aluno_id, face_cache_path, class_name) VALUES (?, ?, ?)",
-                        alunos_rows,
+                        "INSERT OR REPLACE INTO alunos (person_key, aluno_id, face_cache_path, class_name) VALUES (?, ?, ?, ?)",
+                        alunos_rows_with_pk,
                     )
 
             ocorrencias_rows = [
@@ -184,12 +190,14 @@ def mark_people_absent(req: MarkAbsentReq):
                 return {"status": "ok", "marked": 0, "warning": "tabela alunos nao existe"}
 
             marked = 0
+            import scanner_engine as _se
             for aid in req.aluno_ids:
                 cur.execute("SELECT * FROM alunos WHERE aluno_id = ?", (aid,))
                 if not cur.fetchone():
+                    pk = _se.make_person_key(class_name="Sem turma", student_id=aid)
                     cur.execute(
-                        "INSERT INTO alunos (aluno_id, face_cache_path, class_name) VALUES (?, ?, ?)",
-                        (aid, "ABSENT", "Sem turma"),
+                        "INSERT OR IGNORE INTO alunos (person_key, aluno_id, face_cache_path, class_name) VALUES (?, ?, ?, ?)",
+                        (pk, aid, "ABSENT", "Sem turma"),
                     )
                     marked += 1
 

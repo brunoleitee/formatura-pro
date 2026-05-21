@@ -296,6 +296,17 @@ def ensure_identity_columns(conn):
                 cur.execute("ALTER TABLE alunos ADD COLUMN person_key TEXT DEFAULT ''")
             if "reference_folder" not in cols:
                 cur.execute("ALTER TABLE alunos ADD COLUMN reference_folder TEXT DEFAULT ''")
+
+            # Migration: recriar tabela com person_key como PK
+            # Verificar se ainda usa aluno_id como PK (formato antigo)
+            pk_col = None
+            for row in cur.execute("PRAGMA table_info(alunos)"):
+                if row[5] == 1:  # pk flag
+                    pk_col = row[1]
+                    break
+            if pk_col == "aluno_id":
+                _migrate_alunos_to_person_key_pk(conn, cur, cols)
+
         # Ocorrencias table - always exists
         cur.execute("PRAGMA table_info(ocorrencias)")
         cols = [row[1] for row in cur.fetchall()]
@@ -305,11 +316,221 @@ def ensure_identity_columns(conn):
             cur.execute("ALTER TABLE ocorrencias ADD COLUMN reference_folder TEXT DEFAULT ''")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_ocor_person_key ON ocorrencias(person_key)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_ocor_person_key_aluno ON ocorrencias(person_key, aluno_id)")
+
+        # Garantir UNIQUE constraint em (foto_path, x1, y1, x2, y2) para ON CONFLICT funcionar
+        _ensure_ocorrencias_unique(cur)
+
+        # Backfill person_key vazio em ocorrências usando alunos como referência
+        _backfill_ocorrencias_person_key(cur)
+
         conn.commit()
     except Exception:
         conn.rollback()
         raise
     return True
+
+
+def _backfill_ocorrencias_person_key(cur):
+    """Atualiza person_key vazio em ocorrências usando a tabela alunos como referência."""
+    try:
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+        if not cur.fetchone():
+            return
+        cur.execute("SELECT COUNT(*) FROM ocorrencias WHERE person_key IS NULL OR TRIM(person_key) = ''")
+        count = cur.fetchone()[0]
+        if count == 0:
+            return
+        logging.getLogger(__name__).info("[migration] Backfilling person_key em %d ocorrencias", count)
+
+        # Mapear aluno_id -> person_key (quando há apenas 1 aluno com esse nome)
+        cur.execute("""
+            SELECT aluno_id, person_key FROM alunos
+            WHERE person_key IS NOT NULL AND TRIM(person_key) != ''
+              AND aluno_id IS NOT NULL AND TRIM(aluno_id) != ''
+        """)
+        name_to_pk = {}
+        ambiguous = set()
+        for row in cur.fetchall():
+            aid = row[0]
+            pk = row[1]
+            if aid in name_to_pk and name_to_pk[aid] != pk:
+                ambiguous.add(aid)
+            else:
+                name_to_pk[aid] = pk
+
+        # Atualizar ocorrências com person_key vazio (apenas nomes não-ambíguos)
+        updated = 0
+        for aid, pk in name_to_pk.items():
+            if aid in ambiguous:
+                continue
+            cur.execute(
+                "UPDATE ocorrencias SET person_key = ? WHERE aluno_id = ? AND (person_key IS NULL OR TRIM(person_key) = '')",
+                (pk, aid),
+            )
+            updated += cur.rowcount
+
+        if updated:
+            logging.getLogger(__name__).info("[migration] person_key atualizado em %d ocorrencias", updated)
+        if ambiguous:
+            logging.getLogger(__name__).info(
+                "[migration] %d nomes ambíguos (mesmo nome em turmas diferentes) precisam de re-scan: %s",
+                len(ambiguous), ", ".join(sorted(ambiguous)[:5])
+            )
+    except Exception as e:
+        logging.getLogger(__name__).warning("[migration] Backfill person_key falhou: %s", e)
+
+
+def _ensure_ocorrencias_unique(cur):
+    """Garante UNIQUE constraint em (foto_path, x1, y1, x2, y2) removendo duplicatas se necessário."""
+    # Verificar se já existe constraint UNIQUE
+    cur.execute("PRAGMA index_list(ocorrencias)")
+    indexes = cur.fetchall()
+    has_unique = False
+    for idx in indexes:
+        idx_name = idx[1]
+        is_unique = idx[2]  # 1 = UNIQUE
+        if is_unique:
+            cur.execute(f"PRAGMA index_info({idx_name})")
+            cols = [row[2] for row in cur.fetchall()]
+            if set(cols) == {"foto_path", "x1", "y1", "x2", "y2"}:
+                has_unique = True
+                break
+
+    if has_unique:
+        return
+
+    logging.getLogger(__name__).info("[migration] Adicionando UNIQUE constraint em ocorrencias(foto_path, x1, y1, x2, y2)")
+
+    # Remover duplicatas: manter o registro com person_key preenchido ou o mais recente
+    cur.execute("""
+        DELETE FROM ocorrencias WHERE rowid NOT IN (
+            SELECT MIN(rowid) FROM ocorrencias
+            GROUP BY foto_path, x1, y1, x2, y2
+        )
+    """)
+    removed = cur.rowcount
+    if removed:
+        logging.getLogger(__name__).info("[migration] Removidas %d duplicatas de ocorrencias", removed)
+
+    # Criar tabela temporária com constraint UNIQUE, copiar dados, substituir
+    cur.execute("DROP TABLE IF EXISTS ocorrencias_new")
+
+    # Construir CREATE TABLE dinamicamente a partir da estrutura existente
+    cur.execute("PRAGMA table_info(ocorrencias)")
+    col_defs = []
+    for row in cur.fetchall():
+        cname, ctype, notnull, dflt, pk = row[1], row[2], row[3], row[4], row[5]
+        parts = f"{cname} {ctype}"
+        if notnull:
+            parts += " NOT NULL"
+        if dflt is not None:
+            parts += f" DEFAULT {dflt}"
+        col_defs.append(parts)
+    col_defs.append("UNIQUE(foto_path, x1, y1, x2, y2)")
+
+    cur.execute(f"CREATE TABLE ocorrencias_new ({', '.join(col_defs)})")
+
+    # Copiar dados existentes
+    existing_cols = [row[1] for row in cur.execute("PRAGMA table_info(ocorrencias)").fetchall()]
+    col_list = ", ".join(existing_cols)
+    cur.execute(f"INSERT OR IGNORE INTO ocorrencias_new ({col_list}) SELECT {col_list} FROM ocorrencias")
+
+    # Substituir tabela
+    cur.execute("DROP TABLE ocorrencias")
+    cur.execute("ALTER TABLE ocorrencias_new RENAME TO ocorrencias")
+
+    # Recriar índices
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_ocor_foto ON ocorrencias(foto_path)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_ocor_person_key ON ocorrencias(person_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_ocor_person_key_aluno ON ocorrencias(person_key, aluno_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_ocor_aluno_foto ON ocorrencias(aluno_id, foto_path)")
+
+    logging.getLogger(__name__).info("[migration] UNIQUE constraint adicionado em ocorrencias")
+
+
+def _migrate_alunos_to_person_key_pk(conn, cur, existing_cols):
+    """Recria tabela alunos com person_key como PK para permitir formandos com mesmo nome em turmas diferentes."""
+    import scanner_engine as _se
+
+    # Coletar todos os dados existentes
+    cur.execute("SELECT * FROM alunos")
+    rows = cur.fetchall()
+    col_names = [d[0] for d in cur.description]
+
+    # Descobrir quais colunas extras existem além das base
+    base_cols = {"aluno_id", "face_cache_path", "class_name", "person_key", "reference_folder"}
+    extra_cols = [c for c in col_names if c not in base_cols]
+    all_new_cols = ["person_key", "aluno_id", "face_cache_path", "class_name", "reference_folder"] + extra_cols
+
+    # Criar tabela nova
+    extra_col_defs = []
+    for c in extra_cols:
+        # Buscar tipo da coluna original
+        col_type = "TEXT"
+        for row in cur.execute("PRAGMA table_info(alunos)"):
+            if row[1] == c:
+                col_type = row[2] or "TEXT"
+                break
+        default_val = ""
+        for row in cur.execute("PRAGMA table_info(alunos)"):
+            if row[1] == c and row[4] is not None:
+                default_val = f" DEFAULT {row[4]}"
+                break
+        extra_col_defs.append(f", {c} {col_type}{default_val}")
+
+    extra_sql = "".join(extra_col_defs)
+    cur.execute(f"""
+        CREATE TABLE alunos_new (
+            person_key TEXT PRIMARY KEY,
+            aluno_id TEXT,
+            face_cache_path TEXT,
+            class_name TEXT DEFAULT 'Sem turma',
+            reference_folder TEXT DEFAULT ''{extra_sql}
+        )
+    """)
+
+    # Migrar dados
+    migrated = 0
+    for row in rows:
+        data = dict(zip(col_names, row))
+        aluno_id = data.get("aluno_id", "")
+        class_name = str(data.get("class_name", "") or "").strip() or "Sem turma"
+        person_key = str(data.get("person_key", "") or "").strip()
+        reference_folder = str(data.get("reference_folder", "") or "").strip()
+        face_cache_path = data.get("face_cache_path", "n/a")
+
+        # Gerar person_key se vazio
+        if not person_key:
+            if aluno_id == "system_catalog":
+                person_key = "__SYSTEM_CATALOG__"
+            else:
+                person_key = _se.make_person_key(
+                    class_name=class_name,
+                    reference_folder=reference_folder or class_name,
+                    student_id=aluno_id,
+                )
+
+        # Construir VALUES
+        vals = [person_key, aluno_id, face_cache_path, class_name, reference_folder]
+        for c in extra_cols:
+            vals.append(data.get(c, None))
+
+        placeholders = ",".join(["?"] * len(vals))
+        col_list = ",".join(all_new_cols)
+        try:
+            cur.execute(f"INSERT OR IGNORE INTO alunos_new ({col_list}) VALUES ({placeholders})", vals)
+            migrated += 1
+        except Exception:
+            pass
+
+    # Substituir tabela
+    cur.execute("DROP TABLE alunos")
+    cur.execute("ALTER TABLE alunos_new RENAME TO alunos")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_alunos_aluno_id ON alunos(aluno_id)")
+    conn.commit()
+    logging.getLogger(__name__).info(
+        "[migration] alunos: PK migrada de aluno_id para person_key (%d registros)", migrated
+    )
 
 def sanitize_folder_name(name):
     """Remove caracteres inválidos para nomes de pastas no Windows/Linux/Mac."""
@@ -944,11 +1165,14 @@ class DbConnection:
         ensure_identity_columns(self.conn)
         c.execute("""
             CREATE TABLE IF NOT EXISTS alunos (
-                aluno_id TEXT PRIMARY KEY,
+                person_key TEXT PRIMARY KEY,
+                aluno_id TEXT,
                 face_cache_path TEXT,
-                class_name TEXT DEFAULT 'Sem turma'
+                class_name TEXT DEFAULT 'Sem turma',
+                reference_folder TEXT DEFAULT ''
             )
         """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_alunos_aluno_id ON alunos(aluno_id)")
         ensure_alunos_class_column(self.conn)
         c.execute("""
             CREATE TABLE IF NOT EXISTS discarded_photos (

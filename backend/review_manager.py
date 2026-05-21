@@ -235,29 +235,26 @@ def _ensure_aluno_row(cur, aluno_id: str, face_cache_path: str = "n/a", class_na
     if not _alunos_exists(cur):
         return
     resolved_class = str(class_name or "").strip() or "Sem turma"
-    row = _safe_alunos_fetchone(cur, "SELECT face_cache_path, class_name, person_key FROM alunos WHERE aluno_id = ? LIMIT 1", (aluno_id,))
+
+    # Gerar person_key se não fornecido
+    if not person_key:
+        person_key = make_person_key(catalog=catalog, class_name=resolved_class, student_id=aluno_id)
+
+    # Buscar por person_key (PK)
+    row = _safe_alunos_fetchone(cur, "SELECT face_cache_path, class_name, person_key FROM alunos WHERE person_key = ? LIMIT 1", (person_key,))
     if row:
         existing_class = str(row["class_name"] or "").strip()
         if resolved_class and existing_class in ("", "Sem turma"):
-            _safe_alunos_execute(cur, "UPDATE alunos SET class_name = ? WHERE aluno_id = ?", (resolved_class, aluno_id))
+            _safe_alunos_execute(cur, "UPDATE alunos SET class_name = ? WHERE person_key = ?", (resolved_class, person_key))
         existing_face = str(row["face_cache_path"] or "").strip()
         if face_cache_path and existing_face in ("", "n/a"):
-            _safe_alunos_execute(cur, "UPDATE alunos SET face_cache_path = ? WHERE aluno_id = ?", (face_cache_path, aluno_id))
-        existing_pk = str(row["person_key"] or "").strip()
-        if person_key and not existing_pk:
-            _safe_alunos_execute(cur, "UPDATE alunos SET person_key = ? WHERE aluno_id = ?", (person_key, aluno_id))
-        elif not existing_pk and resolved_class:
-            fallback_pk = make_person_key(catalog=catalog, class_name=resolved_class, student_id=aluno_id)
-            _safe_alunos_execute(cur, "UPDATE alunos SET person_key = ? WHERE aluno_id = ?", (fallback_pk, aluno_id))
+            _safe_alunos_execute(cur, "UPDATE alunos SET face_cache_path = ? WHERE person_key = ?", (face_cache_path, person_key))
         return
-
-    if not person_key and resolved_class:
-        person_key = make_person_key(catalog=catalog, class_name=resolved_class, student_id=aluno_id)
 
     _safe_alunos_execute(
         cur,
-        "INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path, class_name, person_key) VALUES (?, ?, ?, ?)",
-        (aluno_id, face_cache_path or "n/a", resolved_class, person_key or ""),
+        "INSERT OR IGNORE INTO alunos (person_key, aluno_id, face_cache_path, class_name) VALUES (?, ?, ?, ?)",
+        (person_key, aluno_id, face_cache_path or "n/a", resolved_class),
     )
 
 
@@ -420,8 +417,8 @@ def _ensure_person_reference(conn, catalog: str, aluno_id: str, force: bool = Fa
                 existing_pk = make_person_key(catalog=catalog, student_id=aluno_id)
             _safe_alunos_execute(
                 cur,
-                "INSERT OR REPLACE INTO alunos (aluno_id, face_cache_path, class_name, person_key) VALUES (?, ?, ?, ?)",
-                (aluno_id, dest, "Sem turma", existing_pk),
+                "INSERT OR REPLACE INTO alunos (person_key, aluno_id, face_cache_path, class_name) VALUES (?, ?, ?, ?)",
+                (existing_pk, aluno_id, dest, "Sem turma"),
             )
         conn.commit()
         return dest
@@ -627,7 +624,28 @@ def manual_identify(req: ManualIdentifyReq):
     with get_db(req.catalog) as conn:
         cur = conn.cursor()
         new_name = (req.new_name or "").strip() or "Desconhecido"
-        person_key = make_person_key(catalog=req.catalog, student_id=new_name)
+
+        # Buscar class_name do formando já existente ou da ocorrência
+        resolved_class = "Sem turma"
+        existing_row = _safe_alunos_fetchone(cur, "SELECT class_name FROM alunos WHERE aluno_id = ? LIMIT 1", (new_name,))
+        if existing_row:
+            resolved_class = str(existing_row["class_name"] or "").strip() or "Sem turma"
+        else:
+            # Tentar buscar da ocorrência atual
+            cur.execute(
+                "SELECT person_key FROM ocorrencias WHERE foto_path COLLATE NOCASE = ? AND x1 = ? AND y1 = ? AND x2 = ? AND y2 = ?",
+                (req.foto_path, x1, y1, x2, y2),
+            )
+            occ_row = cur.fetchone()
+            if occ_row:
+                occ_pk = str(occ_row["person_key"] or "")
+                if occ_pk:
+                    pk_parts = occ_pk.split("::")
+                    if len(pk_parts) >= 2 and pk_parts[1] not in ("__SEM_TURMA__", ""):
+                        resolved_class = pk_parts[1]
+
+        person_key = make_person_key(catalog=req.catalog, class_name=resolved_class, student_id=new_name)
+
         cur.execute(
             "SELECT aluno_id FROM ocorrencias WHERE foto_path COLLATE NOCASE = ? AND x1 = ? AND y1 = ? AND x2 = ? AND y2 = ?",
             (req.foto_path, x1, y1, x2, y2),
@@ -636,13 +654,13 @@ def manual_identify(req: ManualIdentifyReq):
         old_id = row["aluno_id"] if row else None
 
         if old_id and old_id.startswith("Pessoa ") and new_name != "Desconhecido":
-            _ensure_aluno_row(cur, new_name, person_key=person_key, catalog=req.catalog)
+            _ensure_aluno_row(cur, new_name, class_name=resolved_class, person_key=person_key, catalog=req.catalog)
             cur.execute("UPDATE ocorrencias SET aluno_id = ?, person_key = ? WHERE aluno_id = ?", (new_name, person_key, old_id))
             _safe_alunos_execute(cur, "DELETE FROM alunos WHERE aluno_id = ?", (old_id,))
         elif old_id:
             update_single_face(cur, req.foto_path, x1, y1, x2, y2, new_name, person_key)
         else:
-            _ensure_aluno_row(cur, new_name, person_key=person_key, catalog=req.catalog)
+            _ensure_aluno_row(cur, new_name, class_name=resolved_class, person_key=person_key, catalog=req.catalog)
             cur.execute(
                 """
                 INSERT OR IGNORE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2, person_key)
@@ -4275,33 +4293,62 @@ def merge_people(req: MergePeopleReq):
     backup_catalog_db = _get("backup_catalog_db")
     get_db = _get("get_db")
     backup_catalog_db(req.catalog, "antes_mesclar_pessoas")
-    
+
     target_name = req.target_id.strip()
     if not target_name:
         raise HTTPException(status_code=400, detail="Nome de destino inválido")
 
     with get_db(req.catalog) as conn:
         cur = conn.cursor()
-        
-        # 1. Garantir que o alvo exista na tabela alunos
-        _ensure_aluno_row(cur, target_name)
-        
-        # 2. Atualizar todas as ocorrências dos IDs de origem para o ID de destino
-        placeholders = ",".join(["?"] * len(req.source_ids))
-        cur.execute(f"UPDATE ocorrencias SET aluno_id = ? WHERE aluno_id IN ({placeholders})", [target_name] + req.source_ids)
-        
-        # 3. Remover os IDs de origem da tabela alunos (se não forem o alvo)
-        sources_to_delete = [sid for sid in req.source_ids if sid != target_name]
-        if sources_to_delete:
-            del_placeholders = ",".join(["?"] * len(sources_to_delete))
-            _safe_alunos_execute(cur, f"DELETE FROM alunos WHERE aluno_id IN ({del_placeholders})", sources_to_delete)
-        
+
+        # Resolver target: pode ser person_key ou aluno_id
+        target_row = _safe_alunos_fetchone(cur, "SELECT aluno_id, person_key FROM alunos WHERE person_key = ?", (target_name,))
+        if not target_row:
+            target_row = _safe_alunos_fetchone(cur, "SELECT aluno_id, person_key FROM alunos WHERE aluno_id = ?", (target_name,))
+        if target_row:
+            target_name = target_row["aluno_id"]
+            target_pk = str(target_row["person_key"] or "").strip()
+        else:
+            target_pk = ""
+
+        # Garantir que o alvo exista na tabela alunos
+        _ensure_aluno_row(cur, target_name, person_key=target_pk or None, catalog=req.catalog)
+        if not target_pk:
+            target_pk = make_person_key(catalog=req.catalog, student_id=target_name)
+
+        # Atualizar ocorrências: tentar por person_key primeiro, depois por aluno_id
+        sources_to_delete_pks = []
+        sources_to_delete_names = []
+        for sid in req.source_ids:
+            if sid == target_name or sid == target_pk:
+                continue
+            # Verificar se sid é um person_key
+            row = _safe_alunos_fetchone(cur, "SELECT aluno_id, person_key FROM alunos WHERE person_key = ?", (sid,))
+            if row:
+                cur.execute("UPDATE ocorrencias SET aluno_id = ?, person_key = ? WHERE person_key = ?", (target_name, target_pk, sid))
+                sources_to_delete_pks.append(sid)
+            else:
+                # Tratar como aluno_id
+                cur.execute("UPDATE ocorrencias SET aluno_id = ?, person_key = ? WHERE aluno_id = ?", (target_name, target_pk, sid))
+                sources_to_delete_names.append(sid)
+
+        # Remover origens da tabela alunos
+        if sources_to_delete_pks:
+            ph = ",".join(["?"] * len(sources_to_delete_pks))
+            _safe_alunos_execute(cur, f"DELETE FROM alunos WHERE person_key IN ({ph})", sources_to_delete_pks)
+        if sources_to_delete_names:
+            ph = ",".join(["?"] * len(sources_to_delete_names))
+            _safe_alunos_execute(cur, f"DELETE FROM alunos WHERE aluno_id IN ({ph})", sources_to_delete_names)
+
         conn.commit()
         _ensure_person_reference(conn, req.catalog, target_name)
-        for source_id in sources_to_delete:
-            _remove_person_reference(conn, req.catalog, source_id)
-        
-    return {"status": "ok", "merged_count": len(req.source_ids), "target": target_name}
+        for pk in sources_to_delete_pks:
+            _remove_person_reference(conn, req.catalog, pk)
+        for name in sources_to_delete_names:
+            _remove_person_reference(conn, req.catalog, name)
+
+    total_deleted = len(sources_to_delete_pks) + len(sources_to_delete_names)
+    return {"status": "ok", "merged_count": total_deleted, "target": target_name}
 
 
 def folder_stats(path: str = Query(...)):
@@ -4736,14 +4783,33 @@ def rename_person(req: RenameReq):
         cur = conn.cursor()
         old_ref_path = ""
         old_class_name = "Sem turma"
-        old_row = _safe_alunos_fetchone(cur, "SELECT face_cache_path, class_name FROM alunos WHERE aluno_id = ?", (req.old_id,))
+        old_person_key = ""
+
+        # Buscar por person_key primeiro (pode ser identity_key do frontend)
+        old_row = _safe_alunos_fetchone(cur, "SELECT face_cache_path, class_name, person_key FROM alunos WHERE person_key = ?", (req.old_id,))
+        if not old_row:
+            # Fallback: buscar por aluno_id
+            old_row = _safe_alunos_fetchone(cur, "SELECT face_cache_path, class_name, person_key FROM alunos WHERE aluno_id = ?", (req.old_id,))
         if old_row:
             old_ref_path = str(old_row["face_cache_path"]) if old_row["face_cache_path"] else ""
             old_class_name = str(old_row["class_name"] or "").strip() or "Sem turma"
+            old_person_key = str(old_row["person_key"] or "").strip()
+
+        # Atualizar ocorrências: buscar por person_key ou aluno_id
         new_person_key = make_person_key(catalog=current_catalog, class_name=old_class_name, student_id=req.new_id)
+        if old_person_key:
+            cur.execute("UPDATE ocorrencias SET aluno_id = ?, person_key = ? WHERE person_key = ?", (req.new_id, new_person_key, old_person_key))
+        else:
+            cur.execute("UPDATE ocorrencias SET aluno_id = ?, person_key = ? WHERE aluno_id = ?", (req.new_id, new_person_key, req.old_id))
+
         _ensure_aluno_row(cur, req.new_id, class_name=old_class_name, person_key=new_person_key, catalog=current_catalog)
-        cur.execute("UPDATE ocorrencias SET aluno_id = ?, person_key = ? WHERE aluno_id = ?", (req.new_id, new_person_key, req.old_id))
-        _safe_alunos_execute(cur, "DELETE FROM alunos WHERE aluno_id = ?", (req.old_id,))
+
+        # Remover registro antigo
+        if old_person_key:
+            _safe_alunos_execute(cur, "DELETE FROM alunos WHERE person_key = ?", (old_person_key,))
+        else:
+            _safe_alunos_execute(cur, "DELETE FROM alunos WHERE aluno_id = ?", (req.old_id,))
+
         conn.commit()
         if old_ref_path and os.path.exists(old_ref_path):
             try:
@@ -4764,9 +4830,20 @@ def delete_person(req: DeletePersonReq):
         print(f"Aviso: backup falhou antes de excluir pessoa: {e}")
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM ocorrencias WHERE aluno_id = ?", (req.aluno_id,))
-        _remove_person_reference(conn, current_catalog, req.aluno_id)
-        _safe_alunos_execute(cur, "DELETE FROM alunos WHERE aluno_id = ?", (req.aluno_id,))
+
+        # Descobrir se aluno_id recebido é um person_key ou um nome
+        lookup = req.aluno_id
+        aluno_name = lookup
+        pk_row = _safe_alunos_fetchone(cur, "SELECT aluno_id FROM alunos WHERE person_key = ?", (lookup,))
+        if pk_row:
+            aluno_name = pk_row["aluno_id"]
+            cur.execute("DELETE FROM ocorrencias WHERE person_key = ?", (lookup,))
+            _safe_alunos_execute(cur, "DELETE FROM alunos WHERE person_key = ?", (lookup,))
+        else:
+            cur.execute("DELETE FROM ocorrencias WHERE aluno_id = ?", (lookup,))
+            _safe_alunos_execute(cur, "DELETE FROM alunos WHERE aluno_id = ?", (lookup,))
+
+        _remove_person_reference(conn, current_catalog, aluno_name)
         conn.commit()
     return {"status": "ok"}
 

@@ -61,6 +61,9 @@ _cfg = {
     "faiss_index": None,
     "ref_ids": [],
     "ref_classes": {},
+    "ref_person_keys": {},
+    "ref_reference_folders": {},
+    "ref_names": {},
     "cluster_centers": [],
     "cluster_names": [],
     "cluster_counts": {},
@@ -490,6 +493,7 @@ def load_references(ref_path):
     ref_classes = {}
     ref_person_keys = {}
     ref_reference_folders = {}
+    ref_names = {}
     catalog = _cfg.get("current_catalog", "")
     scan_roots = _cfg.get("_scan_roots", [])
     if not ref_path or not os.path.isdir(ref_path):
@@ -558,10 +562,11 @@ def load_references(ref_path):
                 f"[reference-loader] ref encontrada catalog={catalog} "
                 f"class={class_name} person={ref_name} key={person_key} arquivo={full}"
             )
-            refs.append({"id": ref_name, "class_name": class_name, "person_key": person_key, "emb": emb})
-            ref_classes[ref_name.casefold()] = class_name
-            ref_person_keys[ref_name.casefold()] = person_key
-            ref_reference_folders[ref_name.casefold()] = reference_folder
+            refs.append({"id": person_key, "name": ref_name, "class_name": class_name, "person_key": person_key, "emb": emb})
+            ref_classes[person_key] = class_name
+            ref_person_keys[person_key] = person_key
+            ref_reference_folders[person_key] = reference_folder
+            ref_names[person_key] = ref_name
     if not refs:
         _cfg["log_info"]("[reference-loader] Nenhuma referencia valida encontrada em: %s", ref_path)
         return
@@ -580,6 +585,7 @@ def load_references(ref_path):
     _cfg["ref_classes"] = ref_classes
     _cfg["ref_person_keys"] = ref_person_keys
     _cfg["ref_reference_folders"] = ref_reference_folders
+    _cfg["ref_names"] = ref_names
 
     # Build per-class index mappings for class-guarded matching
     ref_class_to_ids = {}
@@ -641,7 +647,7 @@ def find_best_reference_filtered(emb, photo_class_context=None):
         if idx < 0 or idx >= len(ref_ids):
             continue
         name = ref_ids[idx]
-        ref_class = ref_classes.get(name.casefold(), "")
+        ref_class = ref_classes.get(name, "")
         if ref_class == photo_class_context:
             return name, float(score)
 
@@ -654,28 +660,33 @@ def find_best_reference_filtered(emb, photo_class_context=None):
     return best_name, best_score
 
 
-def get_reference_class_name(ref_name: str | None) -> str:
+def get_reference_class_name(person_key: str | None) -> str:
     ref_classes = _cfg.get("ref_classes") or {}
-    key = str(ref_name or "").strip().casefold()
+    key = str(person_key or "").strip()
     if not key:
         return "Sem turma"
     return ref_classes.get(key, "Sem turma")
 
 
-def get_reference_person_key(ref_name: str | None) -> str:
-    ref_person_keys = _cfg.get("ref_person_keys") or {}
-    key = str(ref_name or "").strip().casefold()
-    if not key:
-        return ""
-    return ref_person_keys.get(key, "")
+def get_reference_person_key(person_key: str | None) -> str:
+    return str(person_key or "").strip()
 
 
-def get_reference_folder(ref_name: str | None) -> str:
+def get_reference_folder(person_key: str | None) -> str:
     ref_folders = _cfg.get("ref_reference_folders") or {}
-    key = str(ref_name or "").strip().casefold()
+    key = str(person_key or "").strip()
     if not key:
         return ""
     return ref_folders.get(key, "")
+
+
+def get_reference_name(person_key: str | None) -> str:
+    """Retorna o nome de exibição (file_stem) a partir do person_key."""
+    ref_names = _cfg.get("ref_names") or {}
+    key = str(person_key or "").strip()
+    if not key:
+        return ""
+    return ref_names.get(key, key)
 
 
 def find_or_create_cluster(emb):
@@ -1045,7 +1056,7 @@ def run_scanner_worker(req):
                         largest_face_area = max((face_data[5] for face_data in valid_faces), default=0)
 
                         scored_faces = []
-                        aluno_batch = {}  # nome -> detected_class para executemany
+                        aluno_batch = {}  # person_key -> (nome, class_name, ref_folder)
                         for face, x1, y1, x2, y2, area in valid_faces:
                             fg_score, is_fg, f_ratio, c_score, bg_reason = calc_foreground_score(
                                 x1, y1, x2, y2, area, img.shape, face, b_score
@@ -1092,23 +1103,22 @@ def run_scanner_worker(req):
                             _cfg["log_info"](
                                 f"[scan-match] foto={os.path.basename(p)} photo_turma={photo_class_context!r}"
                             )
-                            ref_name, ref_sim = find_best_reference_filtered(emb, photo_class_context)
-                            ref_exists = (ref_name is not None)
+                            ref_person_key, ref_sim = find_best_reference_filtered(emb, photo_class_context)
+                            ref_exists = (ref_person_key is not None)
 
                             if ref_exists and ref_sim >= _cfg["ref_match_threshold"]:
-                                nome = ref_name
                                 scan_state["total_matches"] += 1
-                                ref_class_name = get_reference_class_name(nome)
-                                ref_person_key = get_reference_person_key(nome)
-                                ref_folder = get_reference_folder(nome)
+                                ref_class_name = get_reference_class_name(ref_person_key)
+                                ref_folder = get_reference_folder(ref_person_key)
+                                nome = get_reference_name(ref_person_key)
                                 _cfg["log_info"](
-                                    f"[scan-match] matched person_key={ref_person_key[:60]} score={ref_sim:.4f} foto={os.path.basename(p)}"
+                                    f"[scan-match] matched person_key={ref_person_key[:60]} nome={nome} score={ref_sim:.4f} foto={os.path.basename(p)}"
                                 )
 
                                 if ref_class_name and photo_class_context and ref_class_name != photo_class_context:
                                     _cfg["log_info"](
                                         f"[identity-guard] match aceito com turma diferente (sem alternativa na mesma turma): "
-                                        f"nome={ref_name} ref_turma={ref_class_name} photo_turma={photo_class_context} "
+                                        f"nome={nome} ref_turma={ref_class_name} photo_turma={photo_class_context} "
                                         f"sim={ref_sim:.4f} foto={p}"
                                     )
                             else:
@@ -1137,7 +1147,7 @@ def run_scanner_worker(req):
 
                             log_info(
                                 f"[Scanner Decisão] foto={os.path.basename(p)} | "
-                                f"ID sugerido={ref_name} | "
+                                f"ID sugerido={nome} | "
                                 f"confiança facial={ref_sim:.4f} | "
                                 f"existência de referência={ref_exists} | "
                                 f"person_key={ref_person_key[:60]}"
@@ -1155,11 +1165,15 @@ def run_scanner_worker(req):
                             _cfg["log_info"](f"[scan-save] final foto={os.path.basename(p)} aluno={nome} class_name={ref_class_name or '?'} person_key={ref_person_key}")
                             cur.execute(
                                 """
-                                INSERT OR IGNORE INTO ocorrencias
+                                INSERT INTO ocorrencias
                                 (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status,
                                  foreground_score, is_foreground, face_area_ratio, center_score, background_penalty_reason,
                                  person_key, reference_folder)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                ON CONFLICT(foto_path, x1, y1, x2, y2) DO UPDATE SET
+                                    aluno_id = excluded.aluno_id,
+                                    person_key = excluded.person_key,
+                                    reference_folder = excluded.reference_folder
                                 """,
                                 (nome, p, sx1, sy1, sx2, sy2, photo_hash, b_score, b_status,
                                  fg_score, is_fg, f_ratio, c_score, bg_reason, ref_person_key, ref_folder),
@@ -1172,8 +1186,9 @@ def run_scanner_worker(req):
                             else:
                                 log_info(f"[DB] ignorada (ja existe) path={p} aluno={nome}")
                             detected_class = get_reference_class_name(nome) or photo_class_context or "Sem turma"
-                            print(f"[db-save] aluno={nome} class_name={detected_class}")
-                            aluno_batch[nome] = detected_class
+                            print(f"[db-save] aluno={nome} class_name={detected_class} person_key={ref_person_key[:60]}")
+                            if ref_person_key:
+                                aluno_batch[ref_person_key] = (nome, detected_class, ref_folder or detected_class)
 
                             # Salvar embedding na tabela face_embeddings para permitir
                             # re-match e re-cluster sem precisar re-escanear
@@ -1218,22 +1233,11 @@ def run_scanner_worker(req):
                             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
                             has_alunos_table = cur.fetchone() is not None
                             if has_alunos_table:
-                                for anome, acls in aluno_batch.items():
-                                    a_person_key = get_reference_person_key(anome)
-                                    a_ref_folder = get_reference_folder(anome)
-                                    if not a_person_key:
-                                        a_person_key = make_person_key(
-                                            catalog=cname,
-                                            class_name=acls,
-                                            reference_folder=a_ref_folder or acls,
-                                            student_id=anome,
-                                        )
-                                    if not a_ref_folder:
-                                        a_ref_folder = acls
+                                for apkey, (anome, acls, aref) in aluno_batch.items():
                                     try:
                                         cur.execute(
-                                            "INSERT OR IGNORE INTO alunos (aluno_id, face_cache_path, class_name, person_key, reference_folder) VALUES (?, ?, ?, ?, ?)",
-                                            (anome, "n/a", acls, a_person_key, a_ref_folder),
+                                            "INSERT OR REPLACE INTO alunos (person_key, aluno_id, face_cache_path, class_name, reference_folder) VALUES (?, ?, ?, ?, ?)",
+                                            (apkey, anome, "n/a", acls, aref),
                                         )
                                     except Exception:
                                         pass
@@ -1342,8 +1346,8 @@ def run_scanner_worker(req):
                         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
                         if cur.fetchone() is not None:
                             cur.execute(
-                                "INSERT OR REPLACE INTO alunos (aluno_id, face_cache_path, class_name) VALUES (?, ?, ?)",
-                                ("system_catalog", catalog_root, "Sem turma"),
+                                "INSERT OR REPLACE INTO alunos (person_key, aluno_id, face_cache_path, class_name) VALUES (?, ?, ?, ?)",
+                                ("__SYSTEM_CATALOG__", "system_catalog", catalog_root, "Sem turma"),
                             )
                     except Exception:
                         pass
