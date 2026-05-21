@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { RefreshCw, ShieldCheck } from 'lucide-react';
+import { RefreshCw, ShieldCheck, Keyboard, X } from 'lucide-react';
 import { api, catalogApi, type Photo, type QualityAuditStatus } from '../services/api';
 import { useApp } from '../context/AppContext';
 import { useCatalogPhotos } from '../hooks/useCatalogPhotos';
@@ -13,6 +13,7 @@ import { ZoomControl } from '../components/photos/ZoomControl';
 import PhotoBulkActionsBar from '../components/photos/PhotoBulkActionsBar';
 import { VirtualizedPhotoGrid } from '../components/photos/VirtualizedPhotoGrid';
 import { extractSubfolders } from '../utils/pathUtils';
+import { getPhotoPath, normalizePath, findCommonPrefix } from '../utils/catalogPathUtils';
 import { logPerf, perfNow } from '../utils/perf';
 
 const ZOOM_MIN = 100;
@@ -33,6 +34,23 @@ function zoomToSize(zoom: number) {
   return ZOOM_MIN + (zoom / 100) * (ZOOM_MAX - ZOOM_MIN);
 }
 
+const HOTKEYS_GRID = [
+  { key: '← →', desc: 'Navegar entre fotos' },
+  { key: 'Espaço', desc: 'Abrir viewer' },
+  { key: 'Enter', desc: 'Abrir foto selecionada' },
+  { key: 'D', desc: 'Descartar selecionadas' },
+];
+
+const HOTKEYS_VIEWER = [
+  { key: '← →', desc: 'Foto anterior / próxima' },
+  { key: 'Esc / Espaço', desc: 'Fechar viewer' },
+  { key: 'Delete / ↓', desc: 'Descartar foto' },
+  { key: '↑', desc: 'Restaurar foto' },
+  { key: '1–5', desc: 'Avaliar com estrelas' },
+  { key: 'F', desc: 'Favoritar' },
+  { key: 'Enter', desc: 'Confirmar sugestão IA' },
+];
+
 export default function CatalogView() {
   const { currentCatalog, catalogSubfolder, setCatalogSubfolders, setIsLoadingCatalogPhotos } = useApp();
   const { photos, loading, loadingMore, hasMore, loadPhotos, loadMore, discardPhoto, restorePhoto } = useCatalogPhotos();
@@ -47,6 +65,8 @@ export default function CatalogView() {
   const [auditStatus, setAuditStatus] = useState<QualityAuditStatus | null>(null);
   const [auditStarting, setAuditStarting] = useState(false);
   const [detailsPhoto, setDetailsPhoto] = useState<Photo | null>(null);
+  const [showHotkeys, setShowHotkeys] = useState(false);
+
   const firstThumbLoadStartRef = useRef<number | null>(null);
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
   const savedScrollRef = useRef(0);
@@ -165,44 +185,104 @@ export default function CatalogView() {
     }
   }, [!!viewerPhoto]);
 
-  // Space = abrir foto grande
+  // ── Hotkeys do catálogo (grid) ──
+  const lastFocusedIndexRef = useRef(0);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== " " && e.code !== "Space") return;
+      // Ignorar quando viewer aberto (ele tem seu próprio handler)
+      if (viewerPhoto) return;
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
-      if (viewerPhoto) return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (selectedPaths.size > 0) {
-        const first = filteredPhotos.find((p) => selectedPaths.has(getPhotoId(p)));
-        if (first) { setViewerPhoto(first); console.log("[HOTKEY] space open viewer"); return; }
+
+      // Espaço — abre a foto selecionada (ou a primeira) no viewer
+      if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (selectedPaths.size > 0) {
+          const first = filteredPhotos.find((p) => selectedPaths.has(getPhotoId(p)));
+          if (first) { setViewerPhoto(first); return; }
+        }
+        if (filteredPhotos.length > 0) setViewerPhoto(filteredPhotos[0]);
+        return;
       }
-      if (filteredPhotos.length > 0) {
-        setViewerPhoto(filteredPhotos[0]);
-        console.log("[HOTKEY] space open viewer");
+
+      // ← → — navegar entre fotos (seleciona a anterior/próxima)
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        if (filteredPhotos.length === 0) return;
+        e.preventDefault();
+        const currentIdx = lastFocusedIndexRef.current;
+        const direction = e.key === "ArrowRight" ? 1 : -1;
+        const nextIdx = Math.max(0, Math.min(filteredPhotos.length - 1, currentIdx + direction));
+        lastFocusedIndexRef.current = nextIdx;
+        const nextPhoto = filteredPhotos[nextIdx];
+        if (nextPhoto) {
+          // Se viewer fechado: apenas seleciona a foto
+          toggleSelection(nextPhoto, { ctrlKey: false, metaKey: false, shiftKey: false } as any);
+        }
+        return;
+      }
+
+      // Enter — abre viewer na foto selecionada ou focada
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const idx = lastFocusedIndexRef.current;
+        const photo = filteredPhotos[idx];
+        if (photo) setViewerPhoto(photo);
+        return;
+      }
+
+      // D — descartar fotos selecionadas
+      if ((e.key === "d" || e.key === "D") && !e.ctrlKey && !e.metaKey) {
+        if (selectedPaths.size === 0) return;
+        e.preventDefault();
+        handleDiscardSelected();
+        return;
       }
     };
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [viewerPhoto, filteredPhotos, selectedPaths, setViewerPhoto]);
+  }, [viewerPhoto, filteredPhotos, selectedPaths, setViewerPhoto, toggleSelection, handleDiscardSelected]);
 
   // Publica subfolders no contexto para a Sidebar mostrar a árvore
   useEffect(() => {
-    const subfolders = extractSubfolders(photos);
-    // Também buscar pastas de referência do catálogo
-    if (currentCatalog) {
-      catalogApi.listFolders(currentCatalog).then(folders => {
-        const allNames = folders
-          .map(f => f.path.split(/[\\/]/).filter(Boolean).pop() || '')
-          .filter(Boolean);
-        setCatalogSubfolders([...new Set([...subfolders, ...allNames])]);
-      }).catch(() => {
-        setCatalogSubfolders(subfolders);
-      });
-    } else {
-      setCatalogSubfolders(subfolders);
+    if (!currentCatalog) {
+      setCatalogSubfolders([]);
+      return;
     }
+    
+    catalogApi.getAllSubfolders(currentCatalog).then(res => {
+      if (res && res.ok && Array.isArray(res.subfolders)) {
+        const photoPaths = photos.map(p => getPhotoPath(p));
+        const allPaths = [...res.subfolders, ...photoPaths];
+        const prefix = findCommonPrefix(allPaths);
+        
+        const relativeSubfolders = res.subfolders.map(folder => {
+          const normFolder = normalizePath(folder);
+          const normPrefix = normalizePath(prefix);
+          
+          if (normPrefix && normFolder.toLowerCase().startsWith(normPrefix.toLowerCase() + '/')) {
+            return normFolder.slice(normPrefix.length + 1);
+          } else if (normPrefix && normFolder.toLowerCase() === normPrefix.toLowerCase()) {
+            return '';
+          }
+          return folder.split(/[\\/]/).filter(Boolean).pop() || '';
+        }).filter(Boolean);
+        
+        const sortedUnique = Array.from(new Set(relativeSubfolders))
+          .filter(s => s.length > 0)
+          .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+          
+        setCatalogSubfolders(sortedUnique);
+      } else {
+        const subfolders = extractSubfolders(photos);
+        setCatalogSubfolders(subfolders);
+      }
+    }).catch(err => {
+      console.error("[CatalogView] falha ao buscar subpastas:", err);
+      const subfolders = extractSubfolders(photos);
+      setCatalogSubfolders(subfolders);
+    });
   }, [photos, setCatalogSubfolders, currentCatalog]);
 
   useEffect(() => {
@@ -313,6 +393,59 @@ export default function CatalogView() {
         <div className="view-header-actions">
           <PhotoFilters filter={filter} onFilterChange={setFilter} hideDiscarded={hideDiscarded} onHideDiscardedChange={setHideDiscarded} />
           <ZoomControl zoom={zoom} onZoom={setZoom} min={0} max={100} step={5} />
+
+          {/* Hotkeys popover */}
+          <div style={{ position: 'relative' }}>
+            <button
+              className="icon-btn"
+              title="Atalhos de teclado"
+              onClick={() => setShowHotkeys(v => !v)}
+              style={{ color: showHotkeys ? 'var(--accent, #7c5cbf)' : undefined }}
+            >
+              <Keyboard size={16} />
+            </button>
+            {showHotkeys && (
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 999,
+                background: 'var(--surface-2, #1e1e2e)', border: '1px solid var(--border, rgba(255,255,255,0.1))',
+                borderRadius: 10, padding: '14px 16px', minWidth: 240, boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Atalhos de teclado</span>
+                  <button
+                    onClick={() => setShowHotkeys(false)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)', lineHeight: 1 }}
+                  ><X size={13} /></button>
+                </div>
+
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>No Catálogo</div>
+                {HOTKEYS_GRID.map(h => (
+                  <div key={h.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 0', gap: 12 }}>
+                    <kbd style={{
+                      background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)',
+                      borderRadius: 4, padding: '1px 7px', fontSize: '0.75rem', fontFamily: 'monospace',
+                      color: 'var(--text-primary)', whiteSpace: 'nowrap', flexShrink: 0,
+                    }}>{h.key}</kbd>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', textAlign: 'right' }}>{h.desc}</span>
+                  </div>
+                ))}
+
+                <div style={{ height: 1, background: 'var(--border, rgba(255,255,255,0.08))', margin: '10px 0' }} />
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>No Viewer</div>
+                {HOTKEYS_VIEWER.map(h => (
+                  <div key={h.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 0', gap: 12 }}>
+                    <kbd style={{
+                      background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)',
+                      borderRadius: 4, padding: '1px 7px', fontSize: '0.75rem', fontFamily: 'monospace',
+                      color: 'var(--text-primary)', whiteSpace: 'nowrap', flexShrink: 0,
+                    }}>{h.key}</kbd>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', textAlign: 'right' }}>{h.desc}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <button className="icon-btn" title="Atualizar" onClick={loadPhotos}>
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
           </button>
@@ -346,7 +479,7 @@ export default function CatalogView() {
       </div>
 
       <div style={{ display: 'flex', flex: 1, gap: '16px', overflow: 'hidden', minHeight: 0 }}>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
           {loading && photos.length === 0 ? (
             <div className="empty-state">
               <RefreshCw size={32} className="spin" />
@@ -373,6 +506,7 @@ export default function CatalogView() {
               />
             </>
           )}
+
         </div>
 
         {detailsPhoto && (

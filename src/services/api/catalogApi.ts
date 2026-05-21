@@ -14,6 +14,9 @@ export const catalogApi = {
   // Catalog Folders
   listFolders: (catalog: string) =>
     fetchJSON<CatalogFolder[]>(`${API_BASE}/catalogs/folders?catalog=${encodeURIComponent(catalog)}`),
+  getAllSubfolders: (catalog: string) =>
+    fetchJSON<{ ok: boolean; subfolders: string[] }>(`${API_BASE}/catalogs/all-subfolders?catalog=${encodeURIComponent(catalog)}`),
+
   addFolder: (catalog: string, path: string, includeSubfolders: boolean, scanImmediately: boolean, folderType = 'event') =>
     post<{ success: boolean; folderId?: number; error?: string }>(`${API_BASE}/catalogs/folders`, {
       catalog, path, include_subfolders: includeSubfolders, scan_immediately: scanImmediately, folder_type: folderType,

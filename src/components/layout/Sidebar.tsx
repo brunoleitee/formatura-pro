@@ -48,6 +48,26 @@ export function Sidebar({
   const [openSubmenu, setOpenSubmenu] = useLocalStorage<string>('sidebar_open_submenu', '');
   const [sidebarStats, setSidebarStats] = useState<{ photos: number; people: number } | null>(null);
   const [flyout, setFlyout] = useState<{ key: string; y: number } | null>(null);
+  const [expandedPaths, setExpandedPaths] = useState<Record<string, boolean>>({});
+
+  const toggleExpand = (e: React.MouseEvent, path: string) => {
+    e.stopPropagation();
+    setExpandedPaths(prev => ({
+      ...prev,
+      [path]: prev[path] === false ? true : false
+    }));
+  };
+
+  const isSubfolderVisible = (path: string) => {
+    const parts = path.split('/');
+    for (let i = 1; i < parts.length; i++) {
+      const parentPath = parts.slice(0, i).join('/');
+      if (expandedPaths[parentPath] === false) {
+        return false;
+      }
+    }
+    return true;
+  };
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ name: string; catalog: string }[]>([]);
@@ -93,14 +113,31 @@ export function Sidebar({
     return () => document.removeEventListener('mousedown', handler);
   }, [flyout]);
 
-  const handleSearch = async (q: string) => {
+  const [searchLoading, setSearchLoading] = useState(false);
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearch = (q: string) => {
     setSearchQuery(q);
-    if (q.length < 2) { setSearchResults([]); setShowSearch(false); return; }
-    try {
-      const res = await api.globalSearch(q);
-      setSearchResults(res);
-      setShowSearch(res.length > 0);
-    } catch { /* ignore */ }
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (q.length < 2) {
+      setSearchResults([]);
+      setShowSearch(false);
+      setSearchLoading(false);
+      return;
+    }
+    setSearchLoading(true);
+    searchTimerRef.current = setTimeout(async () => {
+      if (searchAbortRef.current) searchAbortRef.current.abort();
+      searchAbortRef.current = new AbortController();
+      try {
+        const res = await api.globalSearch(q);
+        setSearchResults(res);
+        setShowSearch(true);
+      } catch { /* ignore */ } finally {
+        setSearchLoading(false);
+      }
+    }, 300);
   };
 
   const fmtBadge = (n: number) => {
@@ -180,7 +217,7 @@ export function Sidebar({
                     onClick={async () => { await setCatalog(cat); setShowCatalogDropdown(false); }}
                   >
                     <span className={`catalog-row-dot${cat === currentCatalog ? ' active' : ''}`} />
-                    {cat}
+                    <span className="catalog-dropdown-text">{cat}</span>
                   </button>
                   <button
                     className="icon-btn danger"
@@ -217,18 +254,28 @@ export function Sidebar({
       {!collapsed && (
         <div className="sidebar-search-wrap" ref={searchRef}>
           <div className="sidebar-search">
-            <Search size={13} />
+            {searchLoading
+              ? <span style={{ display: 'inline-block', width: 13, height: 13, border: '1.5px solid rgba(255,255,255,0.15)', borderTopColor: 'var(--accent,#7c5cbf)', borderRadius: '50%', animation: 'spin 0.75s linear infinite', flexShrink: 0 }} />
+              : <Search size={13} />
+            }
             <input
               type="text"
               placeholder="Buscar formando..."
               value={searchQuery}
               onChange={e => handleSearch(e.target.value)}
-              onFocus={() => searchResults.length > 0 && setShowSearch(true)}
+              onFocus={() => (searchResults.length > 0 || searchQuery.length >= 2) && setShowSearch(true)}
             />
+            {searchQuery && (
+              <button
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', color: 'var(--text-muted)', lineHeight: 1 }}
+                onClick={() => { setSearchQuery(''); setSearchResults([]); setShowSearch(false); }}
+                title="Limpar busca"
+              >×</button>
+            )}
           </div>
           {showSearch && (
             <div className="sidebar-search-results">
-              {searchResults.map((r, i) => (
+              {searchResults.length > 0 ? searchResults.map((r, i) => (
                 <button
                   key={i}
                   className="sidebar-search-result"
@@ -242,7 +289,11 @@ export function Sidebar({
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
                   <span style={{ fontSize: '0.7rem', opacity: 0.5, flexShrink: 0 }}>{r.catalog}</span>
                 </button>
-              ))}
+              )) : !searchLoading && (
+                <div style={{ padding: '8px 12px', fontSize: '0.78rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                  Nenhum formando encontrado
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -301,15 +352,43 @@ export function Sidebar({
                       <div className="nav-subitem nav-subitem-muted">Nenhuma pasta</div>
                     ) : (
                       catalogSubfolders.map(sub => {
+                        if (!isSubfolderVisible(sub)) return null;
+
                         const subActive = catalogSubfolder === sub && activeView === 'photos';
+                        const segments = sub.split('/');
+                        const depth = segments.length - 1;
+                        const displayName = segments[segments.length - 1];
+                        const isParent = catalogSubfolders.some(other => other.startsWith(sub + '/'));
+                        const isExpanded = expandedPaths[sub] !== false;
+
                         return (
                           <div
                             key={sub}
-                            className={`nav-subitem${subActive ? ' active' : ''}`}
+                            className={`nav-subitem${depth > 0 ? ' nav-subitem-nested' : ''}${subActive ? ' active' : ''}`}
                             onClick={() => { setCatalogSubfolder(sub); navigate('photos'); }}
+                            style={{ paddingLeft: `${12 + depth * 14}px` }}
                           >
+                            {isParent ? (
+                              <div
+                                onClick={(e) => toggleExpand(e, sub)}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  width: '14px',
+                                  height: '14px',
+                                  marginRight: '2px',
+                                  cursor: 'pointer',
+                                  opacity: 0.6,
+                                }}
+                              >
+                                {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                              </div>
+                            ) : (
+                              <div style={{ width: '16px' }} />
+                            )}
                             <FolderOpen size={13} style={{ color: folderColor(subActive), flexShrink: 0 }} />
-                            <span>{sub}</span>
+                            <span style={{ fontWeight: subActive ? '600' : 'normal' }}>{displayName}</span>
                           </div>
                         );
                       })
@@ -403,19 +482,47 @@ export function Sidebar({
           style={{ top: flyout.y }}
         >
           <div className="sidebar-flyout-title">Catálogo</div>
-          {catalogSubfolders.map(sub => {
-            const subActive = catalogSubfolder === sub && activeView === 'photos';
-            return (
-              <div
-                key={sub}
-                className={`sidebar-flyout-item${subActive ? ' active' : ''}`}
-                onClick={() => { setCatalogSubfolder(sub); navigate('photos'); setFlyout(null); }}
-              >
-                <FolderOpen size={13} style={{ color: folderColor(subActive), flexShrink: 0 }} />
-                <span>{sub}</span>
-              </div>
-            );
-          })}
+            {catalogSubfolders.map(sub => {
+             if (!isSubfolderVisible(sub)) return null;
+
+             const subActive = catalogSubfolder === sub && activeView === 'photos';
+             const segments = sub.split('/');
+             const depth = segments.length - 1;
+             const displayName = segments[segments.length - 1];
+             const isParent = catalogSubfolders.some(other => other.startsWith(sub + '/'));
+             const isExpanded = expandedPaths[sub] !== false;
+
+             return (
+               <div
+                 key={sub}
+                 className={`sidebar-flyout-item${subActive ? ' active' : ''}`}
+                 onClick={() => { setCatalogSubfolder(sub); navigate('photos'); setFlyout(null); }}
+                 style={{ paddingLeft: `${12 + depth * 12}px` }}
+               >
+                 {isParent ? (
+                   <div
+                     onClick={(e) => toggleExpand(e, sub)}
+                     style={{
+                       display: 'flex',
+                       alignItems: 'center',
+                       justifyContent: 'center',
+                       width: '14px',
+                       height: '14px',
+                       marginRight: '2px',
+                       cursor: 'pointer',
+                       opacity: 0.6,
+                     }}
+                   >
+                     {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                   </div>
+                 ) : (
+                   <div style={{ width: '16px' }} />
+                 )}
+                 <FolderOpen size={13} style={{ color: folderColor(subActive), flexShrink: 0 }} />
+                 <span style={{ fontWeight: subActive ? '600' : 'normal' }}>{displayName}</span>
+               </div>
+             );
+           })}
           <div
             className={`sidebar-flyout-item${activeView === 'catalog-settings' ? ' active' : ''}`}
             onClick={() => { setCatalogSubfolder(null); navigate('catalog-settings'); setFlyout(null); }}

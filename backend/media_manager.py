@@ -23,17 +23,17 @@ _THUMB_CACHE_DEFAULT_MAX_FILES = 50_000
 # Pool de workers para thumbnail engine
 _THUMB_POOL = None
 _THUMB_POOL_LOCK = threading.Lock()
-_THUMB_POOL_MAX_WORKERS = 2
+_THUMB_POOL_MAX_WORKERS = 12
 
 # Semáforo para limitar fallbacks Pillow simultâneos
 _PILLOW_SEMAPHORE = None
 _PILLOW_SEMAPHORE_LOCK = threading.Lock()
-_PILLOW_MAX_CONCURRENT = 2
+_PILLOW_MAX_CONCURRENT = 8
 
 # Semáforo global para limitar thumbnails simultâneas
 _THUMB_SEMAPHORE = None
 _THUMB_SEMAPHORE_LOCK = threading.Lock()
-_THUMB_MAX_CONCURRENT = 2
+_THUMB_MAX_CONCURRENT = 12
 
 # Lock + Event dict para evitar múltiplas gerações da mesma imagem
 _GENERATING_LOCK = threading.Lock()

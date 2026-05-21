@@ -14,9 +14,10 @@ export const photoApi = {
       { signal }
     );
   },
-  getPhotosPage: (catalog: string, limit = 100, offset = 0) =>
+  getPhotosPage: (catalog: string, limit = 100, offset = 0, subfolder?: string | null) =>
     fetchJSON<PhotosPageResponse>(
-      `${API_BASE}/photos?catalog=${encodeURIComponent(catalog)}&limit=${limit}&offset=${offset}`
+      `${API_BASE}/photos?catalog=${encodeURIComponent(catalog)}&limit=${limit}&offset=${offset}` +
+      `${subfolder ? `&subfolder=${encodeURIComponent(subfolder)}` : ''}`
     ),
   getPersonPhotos: (aluno_id: string, signal?: AbortSignal) =>
     fetchJSON<Photo[]>(`${API_BASE}/photos/${encodeURIComponent(aluno_id)}`, { signal }),

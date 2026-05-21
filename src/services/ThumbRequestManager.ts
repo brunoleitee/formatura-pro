@@ -19,8 +19,8 @@ const ABORT_PROTECT_MS = 300;
 class ThumbRequestManager {
   private active = new Map<string, RequestEntry>();
   private queue: RequestEntry[] = [];
-  private MAX_ACTIVE = 4;
-  private MAX_QUEUE = 40;
+  private MAX_ACTIVE = 12;
+  private MAX_QUEUE = 150;
 
   private log(...args: unknown[]): void {
     if (isPerfLoggingEnabled()) {

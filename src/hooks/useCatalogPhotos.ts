@@ -6,7 +6,7 @@ import { timed } from '../utils/perf';
 const PAGE_SIZE = 100;
 
 export function useCatalogPhotos() {
-  const { currentCatalog, refreshKey } = useApp();
+  const { currentCatalog, catalogSubfolder, refreshKey } = useApp();
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
@@ -32,7 +32,7 @@ export function useCatalogPhotos() {
     nextOffsetRef.current = 0;
     try {
       const result = await timed('catalog photos load', () =>
-        api.getPhotosPage(currentCatalog, PAGE_SIZE, 0), currentCatalog
+        api.getPhotosPage(currentCatalog, PAGE_SIZE, 0, catalogSubfolder), currentCatalog
       );
       if (!controller.signal.aborted) {
         setPhotos(result.photos);
@@ -47,7 +47,7 @@ export function useCatalogPhotos() {
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [currentCatalog, refreshKey]);
+  }, [currentCatalog, catalogSubfolder, refreshKey]);
 
   const loadMore = useCallback(async () => {
     if (!hasMore || loadingMore || loading || !currentCatalog || loadingMoreRef.current) return;
@@ -55,7 +55,7 @@ export function useCatalogPhotos() {
     setLoadingMore(true);
     const offset = nextOffsetRef.current;
     try {
-      const result = await api.getPhotosPage(currentCatalog, PAGE_SIZE, offset);
+      const result = await api.getPhotosPage(currentCatalog, PAGE_SIZE, offset, catalogSubfolder);
       setPhotos(prev => [...prev, ...result.photos]);
       setHasMore(result.hasMore);
       nextOffsetRef.current = offset + PAGE_SIZE;
@@ -65,7 +65,7 @@ export function useCatalogPhotos() {
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [hasMore, loadingMore, loading, currentCatalog]);
+  }, [hasMore, loadingMore, loading, currentCatalog, catalogSubfolder]);
 
   useEffect(() => {
     Promise.resolve().then(loadPhotos);

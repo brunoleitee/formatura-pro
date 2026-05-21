@@ -149,8 +149,8 @@ except ImportError:
 
 app = FastAPI(title="Formatura PRO API")
 
-THUMB_SEMAPHORE_SMALL = threading.Semaphore(6)
-THUMB_SEMAPHORE_LARGE = threading.Semaphore(2)
+THUMB_SEMAPHORE_SMALL = threading.Semaphore(16)
+THUMB_SEMAPHORE_LARGE = threading.Semaphore(4)
 THUMB_SLOT_LOCAL = threading.local()
 THUMB_QUEUE = []
 THUMB_QUEUE_LOCK = threading.Lock()
@@ -1478,7 +1478,35 @@ def _is_junk_path(p: str) -> bool:
         return re.match(r'^[a-zA-Z]:\\?$', parent) if parent else True
     return False
 
+@app.get("/api/catalogs/all-subfolders")
+def get_all_subfolders(catalog: str = ""):
+    try:
+        with get_db(catalog) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT path FROM catalog_folders WHERE catalog_name = ?", (catalog,))
+            folders = [r["path"] for r in cur.fetchall()]
+        
+        all_subdirs = []
+        for folder_path in folders:
+            if not os.path.isdir(folder_path):
+                continue
+            folder_path = os.path.normpath(folder_path).replace("\\", "/")
+            all_subdirs.append(folder_path)
+            for root, dirs, _files in os.walk(folder_path):
+                dirs[:] = [d for d in dirs if not d.startswith('.') and d.lower() not in (
+                    '.git', '.github', 'node_modules', '__pycache__', '.cache', 'thumbs', 'thumbnails', 'dist', 'build'
+                )]
+                for d in dirs:
+                    full_path = os.path.join(root, d)
+                    norm_path = os.path.normpath(full_path).replace("\\", "/")
+                    all_subdirs.append(norm_path)
+        
+        return {"ok": True, "subfolders": sorted(list(set(all_subdirs)))}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/catalogs/folders")
+
 def list_catalog_folders(catalog: str = ""):
     try:
         with get_db(catalog) as conn:
@@ -1954,12 +1982,12 @@ def get_all_photos(limit: int = None):
     return pdm.get_all_photos(limit)
 
 @app.get("/api/photos")
-def get_photos_page(catalog: str = "", limit: int = 100, offset: int = 0):
+def get_photos_page(catalog: str = "", limit: int = 100, offset: int = 0, subfolder: str = None):
     t0 = time.time()
-    result = pdm.get_photos_page(catalog, limit, offset)
+    result = pdm.get_photos_page(catalog, limit, offset, subfolder)
     elapsed_ms = (time.time() - t0) * 1000
     logging.getLogger(__name__).info(
-        f"[photos-page] catalog={catalog or pdm.current_catalog()} offset={offset} limit={limit} total={result['total']} ms={elapsed_ms:.0f}"
+        f"[photos-page] catalog={catalog or pdm.current_catalog()} offset={offset} limit={limit} subfolder={subfolder} total={result['total']} ms={elapsed_ms:.0f}"
     )
     return result
 

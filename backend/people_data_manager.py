@@ -1,4 +1,4 @@
-﻿import os
+import os
 import time
 import threading
 import logging
@@ -644,7 +644,7 @@ def _collect_ref_photos(cat, discarded):
     return ref_photos
 
 
-def get_photos_page(catalog="", limit=100, offset=0):
+def get_photos_page(catalog="", limit=100, offset=0, subfolder=None):
     get_db = _get("get_db")
     get_blur_label = _get("get_blur_label")
     load_quality_settings = _get("load_quality_settings")
@@ -652,11 +652,19 @@ def get_photos_page(catalog="", limit=100, offset=0):
     if not cat:
         return {"photos": [], "total": 0, "limit": limit, "offset": offset, "hasMore": False}
 
-    with get_db() as conn:
+    with get_db(cat) as conn:
         cur = conn.cursor()
 
-        cur.execute("SELECT COUNT(DISTINCT foto_path) FROM ocorrencias")
-        main_total = cur.fetchone()[0]
+        if subfolder:
+            subfolder_clean = subfolder.replace("\\", "/").strip("/")
+            cur.execute(
+                "SELECT COUNT(DISTINCT foto_path) FROM ocorrencias WHERE REPLACE(foto_path, char(92), '/') LIKE '%/' || ? || '/%'",
+                (subfolder_clean,)
+            )
+            main_total = cur.fetchone()[0]
+        else:
+            cur.execute("SELECT COUNT(DISTINCT foto_path) FROM ocorrencias")
+            main_total = cur.fetchone()[0]
 
         cur.execute("SELECT foto_path FROM discarded_photos")
         discarded = {r["foto_path"] for r in cur.fetchall()}
@@ -664,18 +672,34 @@ def get_photos_page(catalog="", limit=100, offset=0):
         cur.execute("SELECT path FROM catalog_folders WHERE catalog_name = ? AND status = 'inactive'", (cat,))
         inactive_folders = [os.path.normpath(r["path"]).lower() for r in cur.fetchall()]
 
-        base_query = """
-            SELECT foto_path,
-                   MAX(blur_score) as blur_score,
-                   MAX(blur_status) as blur_status,
-                   MAX(closed_eyes) as closed_eyes,
-                   COUNT(CASE WHEN x1 IS NOT NULL THEN 1 END) as face_count
-            FROM ocorrencias
-            GROUP BY foto_path
-            ORDER BY foto_path
-            LIMIT ? OFFSET ?
-        """
-        cur.execute(base_query, (limit, offset))
+        if subfolder:
+            subfolder_clean = subfolder.replace("\\", "/").strip("/")
+            base_query = """
+                SELECT foto_path,
+                       MAX(blur_score) as blur_score,
+                       MAX(blur_status) as blur_status,
+                       MAX(closed_eyes) as closed_eyes,
+                       COUNT(CASE WHEN x1 IS NOT NULL THEN 1 END) as face_count
+                FROM ocorrencias
+                WHERE REPLACE(foto_path, char(92), '/') LIKE '%/' || ? || '/%'
+                GROUP BY foto_path
+                ORDER BY foto_path
+                LIMIT ? OFFSET ?
+            """
+            cur.execute(base_query, (subfolder_clean, limit, offset))
+        else:
+            base_query = """
+                SELECT foto_path,
+                       MAX(blur_score) as blur_score,
+                       MAX(blur_status) as blur_status,
+                       MAX(closed_eyes) as closed_eyes,
+                       COUNT(CASE WHEN x1 IS NOT NULL THEN 1 END) as face_count
+                FROM ocorrencias
+                GROUP BY foto_path
+                ORDER BY foto_path
+                LIMIT ? OFFSET ?
+            """
+            cur.execute(base_query, (limit, offset))
         rows = cur.fetchall()
 
         qs = load_quality_settings()
@@ -735,6 +759,11 @@ def get_photos_page(catalog="", limit=100, offset=0):
         ref_photos = _collect_ref_photos(cat, discarded)
         for p, photo in ref_photos.items():
             if p not in unique_photos:
+                if subfolder:
+                    p_norm = p.replace("\\", "/")
+                    sub_clean = subfolder.replace("\\", "/").strip("/")
+                    if f"/{sub_clean}/" not in p_norm:
+                        continue
                 unique_photos[p] = photo
 
     total = main_total

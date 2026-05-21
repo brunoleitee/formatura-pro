@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Image as ImageIcon, RefreshCw } from 'lucide-react';
+import { Image as ImageIcon } from 'lucide-react';
 import type { MouseEvent, PointerEvent } from 'react';
 import { api, type Photo } from '../../services/api';
 import { MemoPhotoCard } from './PhotoCard';
@@ -69,7 +69,7 @@ function getRowStyle(y: number, h: number, cols: number, cw: number): React.CSSP
   return {
     position: 'absolute', top: 0, left: 0, width: '100%',
     transform: `translateY(${y}px)`,
-    height: `${h}px`,
+    height: `${h - GRID_GAP}px`,
     display: 'grid',
     gridTemplateColumns: `repeat(${cols}, ${cw}px)`,
     gap: `${GRID_GAP}px`,
@@ -138,9 +138,9 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
     const rowCount = Math.ceil(photos.length / cols);
     const rh: number[] = [];
     for (let r = 0; r < rowCount; r++) {
-      rh.push(uniformRowHeight);
+      rh.push(uniformRowHeight + GRID_GAP);
     }
-    const totalH = rh.reduce((a, b) => a + b, 0) + Math.max(0, rowCount - 1) * GRID_GAP;
+    const totalH = Math.max(0, rowCount * uniformRowHeight + (rowCount - 1) * GRID_GAP);
     return { w, cols, cw, sz, rows: rowCount, totalH, rh };
   }, [width, zoom, photos.length]);
 
@@ -408,11 +408,31 @@ export const VirtualizedPhotoGrid = memo(function VirtualizedPhotoGrid({
           );
         })}
       </div>
-      {loadingMore && (
-        <div style={{ textAlign: 'center', padding: '20px', color: '#888' }}>
-          <RefreshCw size={20} className="spin" style={{ verticalAlign: 'middle', marginRight: 8 }} />
+      {(loadingMore || hasMore) && loadingMore && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '10px',
+          padding: '20px 0 28px',
+          color: 'var(--text-muted, #888)',
+          fontSize: '0.82rem',
+          letterSpacing: '0.02em',
+        }}>
+          <span style={{
+            display: 'inline-block',
+            width: 18,
+            height: 18,
+            border: '2px solid var(--border, rgba(255,255,255,0.12))',
+            borderTopColor: 'var(--accent, #7c5cbf)',
+            borderRadius: '50%',
+            animation: 'spin 0.75s linear infinite',
+          }} />
           Carregando mais fotos...
         </div>
+      )}
+      {hasMore && !loadingMore && (
+        <div style={{ height: 24 }} aria-hidden />
       )}
     </div>
   );
