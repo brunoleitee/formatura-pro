@@ -8,6 +8,10 @@ type CloudWorkflowPanelProps = {
   draft: CloudEventDraft;
   loading: boolean;
   creating: boolean;
+  progress?: {
+    percent: number;
+    label: string;
+  } | null;
   analyzing: boolean;
   catalogReady: boolean;
   onModeChange: (mode: CloudCatalogModeValue) => void;
@@ -20,6 +24,7 @@ export function CloudWorkflowPanel({
   draft,
   loading,
   creating,
+  progress,
   analyzing,
   catalogReady,
   onModeChange,
@@ -76,9 +81,20 @@ export function CloudWorkflowPanel({
           <span className={styles.stepNumber}>4</span>
           <div className={styles.stepBody}>
             <h3>Criar catálogo cloud</h3>
+            {creating && progress && (
+              <div className={styles.catalogProgress}>
+                <div className={styles.progressRing} style={{ '--progress': `${progress.percent}%` } as React.CSSProperties}>
+                  <span>{progress.percent}%</span>
+                </div>
+                <div className={styles.progressCopy}>
+                  <strong>{progress.label}</strong>
+                  <span>{progress.percent < 100 ? 'Indexando...' : 'Indexado'}</span>
+                </div>
+              </div>
+            )}
             <button type="button" className={styles.primaryButton} onClick={onCreateCatalog} disabled={loading || creating}>
               <Sparkles size={15} />
-              {creating ? 'Criando...' : 'Criar catálogo cloud'}
+              {creating ? 'Indexando...' : 'Criar catálogo cloud'}
             </button>
           </div>
         </article>

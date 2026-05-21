@@ -53,6 +53,7 @@ export default function CloudView() {
   const [catalogsLoading, setCatalogsLoading] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [catalogProgress, setCatalogProgress] = useState<{ percent: number; label: string } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
 
   const connected = Boolean(connection?.connected);
@@ -245,7 +246,14 @@ export default function CloudView() {
   const handleCreateCatalog = async () => {
     if (!selectedDraft) return null;
     setCreating(true);
+    setCatalogProgress({ percent: 0, label: 'Preparando catálogo' });
     try {
+      await new Promise(resolve => window.setTimeout(resolve, 180));
+      setCatalogProgress({ percent: 25, label: 'Lendo estrutura da pasta' });
+      await new Promise(resolve => window.setTimeout(resolve, 180));
+      setCatalogProgress({ percent: 50, label: 'Contando fotos' });
+      await new Promise(resolve => window.setTimeout(resolve, 180));
+      setCatalogProgress({ percent: 75, label: 'Detectando referências' });
       const result = await cloudApi.createCloudCatalog(selectedDraft);
       const nextDraft = result.catalog || selectedDraft;
       const indexedDraft: CloudEventDraft = {
@@ -254,11 +262,14 @@ export default function CloudView() {
         status: nextDraft.status === 'draft' ? 'indexed' : nextDraft.status,
         createdAt: nextDraft.createdAt || new Date().toISOString(),
       };
+      setCatalogProgress({ percent: 100, label: 'Catálogo criado' });
+      await new Promise(resolve => window.setTimeout(resolve, 280));
       setDraft(indexedDraft);
       await loadRecentCatalogs();
       return indexedDraft;
     } finally {
       setCreating(false);
+      setCatalogProgress(null);
     }
   };
 
@@ -356,6 +367,7 @@ export default function CloudView() {
                 draft={selectedDraft}
                 loading={preparing}
                 creating={creating}
+                progress={catalogProgress}
                 analyzing={analyzing}
                 catalogReady={Boolean(selectedDraft.id && selectedDraft.status !== 'draft')}
                 onModeChange={handleModeChange}

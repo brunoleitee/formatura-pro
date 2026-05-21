@@ -278,6 +278,50 @@
   cursor: not-allowed;
 }
 
+.catalogProgress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 10px;
+}
+
+.progressRing {
+  --progress: 0%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at center, #0f172a 58%, transparent 60%),
+    conic-gradient(#3b82f6 var(--progress), rgba(148, 163, 184, 0.16) 0);
+  color: #dbeafe;
+  flex: 0 0 auto;
+}
+
+.progressRing span {
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.progressCopy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.progressCopy strong {
+  color: #f8fafc;
+  font-size: 0.82rem;
+}
+
+.progressCopy span {
+  color: #93c5fd;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
 .recentPanel {
   margin-bottom: 14px;
   padding: 12px;
