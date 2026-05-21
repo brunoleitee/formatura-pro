@@ -3549,6 +3549,47 @@ def cloud_google_status():
         return {"connected": False, "error": str(e)}
 
 
+@app.get("/api/cloud/status")
+def cloud_status():
+    google = cloud_google_status()
+    connected = bool(google.get("connected"))
+    return {
+        "connections": [
+            {
+                "provider": "google_drive",
+                "connected": connected,
+                "accountEmail": google.get("email") if connected else None,
+                "status": "online" if connected else "disconnected",
+            },
+            {
+                "provider": "dropbox",
+                "connected": False,
+                "status": "disconnected",
+            },
+            {
+                "provider": "onedrive",
+                "connected": False,
+                "status": "disconnected",
+            },
+        ],
+        "cache": {
+            "folder": "Cache local da nuvem",
+            "usedBytes": 0,
+        },
+    }
+
+
+@app.get("/api/cloud/providers")
+def cloud_providers():
+    return {
+        "providers": [
+            {"provider": "google_drive", "name": "Google Drive", "enabled": True, "functional": True},
+            {"provider": "dropbox", "name": "Dropbox", "enabled": False, "functional": False},
+            {"provider": "onedrive", "name": "OneDrive", "enabled": False, "functional": False},
+        ]
+    }
+
+
 @app.post("/api/cloud/google/logout")
 def cloud_google_logout():
     try:

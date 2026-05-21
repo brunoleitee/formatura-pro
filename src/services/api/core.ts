@@ -60,6 +60,9 @@ export async function fetchJSON<T = unknown>(url: string, options?: RequestInit)
       if (entry?.promise === fetchPromise) {
         inflightRequests.delete(dedupeKey);
       }
+    }).catch(() => {
+      // A chamada original continua rejeitando para o caller; este catch evita
+      // rejeição órfã do Promise criado pelo finally usado só para limpeza.
     });
   }
 
