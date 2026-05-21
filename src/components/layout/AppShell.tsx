@@ -18,7 +18,7 @@ import { Sidebar } from './Sidebar';
 import { logPerf, perfNow } from '../../utils/perf';
 import { lazy, Suspense } from 'react';
 
-const CloudSyncView = lazy(() => import('../../views/CloudSyncView'));
+const CloudView = lazy(() => import('../../views/CloudView'));
 const ScannerWorkspace = lazy(() => import('../../views/ScannerWorkspace'));
 
 interface ScanSessionMeta {
@@ -385,7 +385,7 @@ function autoCatalogName(): string {
   );
 
   const renderView = () => {
-    if (!currentCatalog && !showScanCenter) {
+    if (!currentCatalog && !showScanCenter && activeView !== 'settings' && activeView !== 'cloud-sync') {
       return renderEmptyCatalog();
     }
     switch (activeView) {
@@ -396,7 +396,7 @@ function autoCatalogName(): string {
       case 'review':        return <ReviewView />;
       case 'export':        return <ExportView />;
       case 'settings':      return <SettingsView />;
-      case 'cloud-sync':     return <Suspense fallback={<div style={{padding:40,color:'#9ca3af'}}>Carregando...</div>}><CloudSyncView /></Suspense>;
+      case 'cloud-sync':     return <Suspense fallback={<div style={{padding:40,color:'#9ca3af'}}>Carregando...</div>}><CloudView /></Suspense>;
       case 'scanner':        return <ScannerWorkspace />;
       case 'catalog-settings': return <CatalogSettingsView onRequestConfirm={requestConfirm} />;
       default:              return <CatalogView />;

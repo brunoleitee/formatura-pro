@@ -120,7 +120,7 @@ export const cloudApi = {
     try {
       return await fetchJSON<CloudStatusResponse>(`${API_BASE}/cloud/status`);
     } catch {
-      const google = await cloudApi.getGoogleStatus().catch(() => ({ connected: false }));
+      const google: Partial<GoogleDriveStatus> = await cloudApi.getGoogleStatus().catch(() => ({ connected: false }));
       return {
         connections: [
           providerConnection('google_drive', Boolean(google.connected), google.email),

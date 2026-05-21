@@ -1,9 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Save, RefreshCw, Trash2, Info, Image, Settings2, Cpu, FolderOpen } from 'lucide-react';
+import { Save, RefreshCw, Trash2, Info, Image, Settings2, Cpu, FolderOpen, Cloud } from 'lucide-react';
 import { api, type QualitySettings, type AppSettings } from '../services/api';
 import { useApp } from '../context/AppContext';
+import { CloudProviderCards } from '../features/cloud/CloudProviderCards';
+import type { CloudConnection, CloudProvider, CloudProviderSummary } from '../features/cloud/types';
+import { cloudApi } from '../services/cloudApi';
+import cloudStyles from './CloudSettings.module.css';
 
-type SettingsTab = 'quality' | 'export' | 'performance' | 'system';
+type SettingsTab = 'quality' | 'export' | 'performance' | 'system' | 'cloud';
 
 export default function SettingsView() {
   const { currentCatalog } = useApp();
@@ -14,6 +18,10 @@ export default function SettingsView() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
   const [clearing, setClearing] = useState(false);
+  const [cloudProviders, setCloudProviders] = useState<CloudProviderSummary[]>([]);
+  const [cloudConnections, setCloudConnections] = useState<CloudConnection[]>([]);
+  const [cloudCache, setCloudCache] = useState<{ folder?: string; usedBytes?: number }>({});
+  const [cloudLoading, setCloudLoading] = useState(false);
 
   const loadAbortRef = useRef<AbortController | null>(null);
 
@@ -51,6 +59,27 @@ export default function SettingsView() {
     };
   }, [load]);
 
+  const loadCloudSettings = useCallback(async () => {
+    setCloudLoading(true);
+    try {
+      const [providers, status] = await Promise.all([
+        cloudApi.getCloudProviders(),
+        cloudApi.getCloudStatus(),
+      ]);
+      setCloudProviders(providers.providers);
+      setCloudConnections(status.connections);
+      setCloudCache(status.cache || {});
+    } catch (e) {
+      console.error('Erro ao carregar configurações cloud:', e);
+    } finally {
+      setCloudLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadCloudSettings();
+  }, [loadCloudSettings]);
+
   const saveQuality = async () => {
     if (!quality) return;
     setSaving(true); setMsg('');
@@ -69,6 +98,56 @@ export default function SettingsView() {
       setMsg('Cache limpo com sucesso.');
     } catch { setMsg('Erro ao limpar cache.'); }
     setClearing(false);
+  };
+
+  const handleCloudConnect = async (provider: CloudProvider) => {
+    if (provider !== 'google_drive') return;
+    setCloudLoading(true);
+    try {
+      const result = await cloudApi.getGoogleAuthUrl();
+      if (result.auth_url) {
+        window.open(result.auth_url, '_blank', 'width=600,height=700');
+        setMsg('Autenticação do Google Drive aberta em nova janela.');
+      } else if (result.error) {
+        setMsg(result.error);
+      }
+    } catch {
+      setMsg('Erro ao conectar Google Drive.');
+    } finally {
+      setCloudLoading(false);
+    }
+  };
+
+  const handleCloudDisconnect = async (provider: CloudProvider) => {
+    if (provider !== 'google_drive') return;
+    setCloudLoading(true);
+    try {
+      await cloudApi.googleLogout();
+      await loadCloudSettings();
+      setMsg('Google Drive desconectado.');
+    } catch {
+      setMsg('Erro ao desconectar Google Drive.');
+    } finally {
+      setCloudLoading(false);
+    }
+  };
+
+  const handleSwitchAccount = async (provider: CloudProvider) => {
+    if (provider !== 'google_drive') return;
+    await handleCloudDisconnect(provider);
+    await handleCloudConnect(provider);
+  };
+
+  const handleClearCloudCache = () => {
+    setCloudCache(prev => ({ ...prev, usedBytes: 0 }));
+    setMsg('Cache cloud limpo localmente.');
+  };
+
+  const formatBytes = (value?: number) => {
+    if (!value) return '0 MB';
+    const mb = value / 1024 / 1024;
+    if (mb < 1024) return `${mb.toFixed(1)} MB`;
+    return `${(mb / 1024).toFixed(2)} GB`;
   };
 
   const qField = (
@@ -105,6 +184,7 @@ export default function SettingsView() {
     { key: 'export', label: 'Exportação', icon: <FolderOpen size={15} /> },
     { key: 'performance', label: 'Performance', icon: <Cpu size={15} /> },
     { key: 'system', label: 'Sistema', icon: <Settings2 size={15} /> },
+    { key: 'cloud', label: 'Nuvem', icon: <Cloud size={15} /> },
   ];
 
   return (
@@ -227,6 +307,56 @@ export default function SettingsView() {
                 {clearing ? 'Limpando...' : 'Limpar Cache de Qualidade'}
               </button>
             </div>
+          </div>
+        )}
+
+        {tab === 'cloud' && (
+          <div className={cloudStyles.cloudPanel}>
+            <section className={cloudStyles.section}>
+              <div className={cloudStyles.sectionHeader}>
+                <div>
+                  <h3>Conexões cloud</h3>
+                  <p>Conta, autenticação e provedores disponíveis.</p>
+                </div>
+                <span
+                  className={cloudStyles.statusBadge}
+                  data-status={cloudConnections.find(c => c.provider === 'google_drive')?.status || 'disconnected'}
+                >
+                  {cloudConnections.find(c => c.provider === 'google_drive')?.status || 'disconnected'}
+                </span>
+              </div>
+              <CloudProviderCards
+                providers={cloudProviders}
+                connections={cloudConnections}
+                loading={cloudLoading}
+                onConnect={handleCloudConnect}
+                onDisconnect={handleCloudDisconnect}
+                onSwitchAccount={handleSwitchAccount}
+              />
+            </section>
+
+            <section className={cloudStyles.section}>
+              <div className={cloudStyles.sectionHeader}>
+                <div>
+                  <h3>Cache cloud</h3>
+                  <p>Metadados e miniaturas temporárias usados pelo explorador.</p>
+                </div>
+              </div>
+              <div className={cloudStyles.cacheGrid}>
+                <div className={cloudStyles.cacheMetric}>
+                  <span>Pasta</span>
+                  <strong>{cloudCache.folder || 'Cache local da nuvem'}</strong>
+                </div>
+                <div className={cloudStyles.cacheMetric}>
+                  <span>Tamanho usado</span>
+                  <strong>{formatBytes(cloudCache.usedBytes)}</strong>
+                </div>
+              </div>
+              <button className={cloudStyles.dangerButton} type="button" onClick={handleClearCloudCache}>
+                <Trash2 size={15} />
+                Limpar cache cloud
+              </button>
+            </section>
           </div>
         )}
       </div>
