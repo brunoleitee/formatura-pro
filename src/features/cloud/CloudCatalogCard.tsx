@@ -25,28 +25,35 @@ export function CloudCatalogCard({ catalog, onOpen }: CloudCatalogCardProps) {
   const isCloud = catalog.source === 'cloud' || catalog.provider === 'google_drive';
 
   return (
-    <button type="button" className={styles.catalogCard} onClick={() => onOpen(catalog)}>
+    <button
+      type="button"
+      className={styles.catalogCard}
+      onClick={() => onOpen(catalog)}
+      title={catalog.name}
+    >
       <div className={styles.catalogCardHeader}>
         <strong>{catalog.name}</strong>
         <CloudCatalogStatusBadge status={catalog.status} />
       </div>
-      {isCloud && (
-        <span className={styles.cloudBadge}>
-          <Cloud size={12} />
-          Cloud
-        </span>
-      )}
       <div className={styles.catalogCardMeta}>
-        <span>Google Drive</span>
-        <span>
+        {isCloud && (
+          <span className={styles.cloudBadge}>
+            <Cloud size={12} />
+            Cloud
+          </span>
+        )}
+        <span title="Google Drive">Google Drive</span>
+        <span title={`${catalog.totalFiles} fotos`}>
           <Images size={13} />
-          {catalog.totalFiles} fotos
+          {catalog.totalFiles}
         </span>
-        <span>{modeLabel[catalog.mode]}</span>
+        <span title={modeLabel[catalog.mode]}>{modeLabel[catalog.mode]}</span>
       </div>
       <div className={styles.catalogCardFooter}>
         <CalendarClock size={13} />
-        {formatDate(catalog.updatedAt || catalog.lastSync)}
+        <span title={formatDate(catalog.updatedAt || catalog.lastSync)}>
+          {formatDate(catalog.updatedAt || catalog.lastSync)}
+        </span>
       </div>
     </button>
   );

@@ -5,6 +5,7 @@ import { CloudExplorer } from '../features/cloud/CloudExplorer';
 import { CloudNavigationBar } from '../features/cloud/CloudNavigationBar';
 import { CloudRecentCatalogs } from '../features/cloud/CloudRecentCatalogs';
 import { CloudWorkflowPanel } from '../features/cloud/CloudWorkflowPanel';
+import { CloudCatalogCreateModal } from '../features/cloud/CloudCatalogCreateModal';
 import { catalogToDraft, draftToCatalog } from '../features/cloud/cloudCatalogStore';
 import {
   canGoUp,
@@ -58,6 +59,7 @@ export default function CloudView() {
   const [creating, setCreating] = useState(false);
   const [catalogProgress, setCatalogProgress] = useState<{ percent: number; label: string } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   const connected = Boolean(connection?.connected);
   const currentFolderId = breadcrumb[breadcrumb.length - 1]?.id || 'root';
@@ -247,11 +249,21 @@ export default function CloudView() {
     setDraft({ ...selectedDraft, mode });
   };
 
-  const handleCreateCatalog = async () => {
+  const parentFolderName = useMemo(() => {
+    if (breadcrumb.length <= 2) return null;
+    return breadcrumb[breadcrumb.length - 2]?.name;
+  }, [breadcrumb]);
+
+  const handleOpenCreateModal = useCallback(() => {
+    setShowCreateModal(true);
+  }, []);
+
+  const handleCreateCatalog = async (name?: string) => {
     if (!selectedDraft?.sourceFolderId) {
       setCatalogError('Selecione uma pasta do Google Drive antes de criar o catálogo.');
       return null;
     }
+    setShowCreateModal(false);
     setCreating(true);
     setCatalogError('');
     setCatalogProgress({ percent: 0, label: 'Preparando catálogo' });
@@ -262,26 +274,28 @@ export default function CloudView() {
       setCatalogProgress({ percent: 50, label: 'Contando fotos' });
       await new Promise(resolve => window.setTimeout(resolve, 180));
       setCatalogProgress({ percent: 75, label: 'Detectando referências' });
+      const catalogName = name || selectedDraft.name;
+      const catalogDraft = name ? { ...selectedDraft, name: catalogName } : selectedDraft;
       const payload = {
-        provider: selectedDraft.provider,
-        folderId: selectedDraft.sourceFolderId,
-        eventName: selectedDraft.name,
-        references: selectedDraft.references,
-        totalFiles: selectedDraft.totalFiles,
-        mode: selectedDraft.mode,
+        provider: catalogDraft.provider,
+        folderId: catalogDraft.sourceFolderId,
+        eventName: catalogDraft.name,
+        references: catalogDraft.references,
+        totalFiles: catalogDraft.totalFiles,
+        mode: catalogDraft.mode,
       };
       console.log('[cloud-catalog] criando', payload);
-      const result = await cloudApi.createCloudCatalog(selectedDraft);
+      const result = await cloudApi.createCloudCatalog(catalogDraft);
       console.log('[cloud-catalog] criado', result);
       if (result.error && result.status !== 'draft') {
         throw new Error(result.error);
       }
       const isFallback = result.status === 'draft' && Boolean(result.error);
-      const nextDraft = result.catalog || selectedDraft;
+      const nextDraft = result.catalog || catalogDraft;
       const indexedDraft: CloudEventDraft = {
         ...nextDraft,
         source: 'cloud',
-        id: nextDraft.id || result.catalogId || selectedDraft.sourceFolderId,
+        id: nextDraft.id || result.catalogId || catalogDraft.sourceFolderId,
         status: nextDraft.status,
         createdAt: nextDraft.createdAt || new Date().toISOString(),
       };
@@ -427,7 +441,7 @@ export default function CloudView() {
                 analyzing={analyzing}
                 catalogReady={Boolean(selectedDraft.id && selectedDraft.status !== 'draft')}
                 onModeChange={handleModeChange}
-                onCreateCatalog={handleCreateCatalog}
+                onCreateCatalog={handleOpenCreateModal}
                 onChangeReferences={handleChangeReferences}
                 onAnalyze={handleAnalyze}
               />
@@ -438,6 +452,16 @@ export default function CloudView() {
             )}
           </aside>
         </div>
+
+        {showCreateModal && selectedDraft && (
+          <CloudCatalogCreateModal
+            draft={selectedDraft}
+            parentFolderName={parentFolderName || undefined}
+            creating={creating}
+            onConfirm={handleCreateCatalog}
+            onCancel={() => setShowCreateModal(false)}
+          />
+        )}
         </>
       )}
     </div>
