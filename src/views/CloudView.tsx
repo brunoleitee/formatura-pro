@@ -59,6 +59,7 @@ export default function CloudView() {
   const connected = Boolean(connection?.connected);
   const currentFolderId = breadcrumb[breadcrumb.length - 1]?.id || 'root';
   const currentFolderName = breadcrumb[breadcrumb.length - 1]?.name || 'Meu Drive';
+  const showFolderMetadata = breadcrumb.length > 1;
 
   const loadStatus = useCallback(async () => {
     const status = await cloudApi.getCloudStatus();
@@ -354,6 +355,7 @@ export default function CloudView() {
             loading={loading}
             selectedFolderId={selectedFolder?.id}
             folderInsights={folderInsights}
+            showFolderMetadata={showFolderMetadata}
             onOpenFolder={handleOpenFolder}
             onSelectFolder={handleSelectFolder}
             onGoToBreadcrumb={handleGoToBreadcrumb}

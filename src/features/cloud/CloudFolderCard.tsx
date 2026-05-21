@@ -7,6 +7,7 @@ type CloudFolderCardProps = {
   folder: CloudItem;
   insight?: CloudFolderInsight;
   selected: boolean;
+  showMetadata: boolean;
   onOpenFolder: (folder: CloudItem) => void;
   onSelectFolder: (folder: CloudItem) => void;
 };
@@ -15,10 +16,14 @@ export function CloudFolderCard({
   folder,
   insight,
   selected,
+  showMetadata,
   onOpenFolder,
   onSelectFolder,
 }: CloudFolderCardProps) {
   const isReference = insight?.referenceDetected || detectReferenceFolders([folder]).length > 0;
+  const hasPhotoCount = typeof insight?.photoCount === 'number';
+  const hasSubfolderCount = typeof insight?.subfolderCount === 'number';
+  const shouldShowMetadata = showMetadata && (hasPhotoCount || hasSubfolderCount || isReference);
 
   return (
     <article className={styles.folderCard} data-selected={selected}>
@@ -32,11 +37,15 @@ export function CloudFolderCard({
         <span>{folder.name}</span>
         {selected && <Check size={15} />}
       </button>
-      <div className={styles.folderMeta}>
-        <span>{typeof insight?.photoCount === 'number' ? `${insight.photoCount} fotos` : 'fotos pendentes'}</span>
-        <span>{typeof insight?.subfolderCount === 'number' ? `${insight.subfolderCount} subpastas` : 'subpastas'}</span>
-        {isReference && <strong>Referência detectada</strong>}
-      </div>
+
+      {shouldShowMetadata && (
+        <div className={styles.folderMeta}>
+          {hasPhotoCount && <span>{insight.photoCount} fotos</span>}
+          {hasSubfolderCount && <span>{insight.subfolderCount} subpastas</span>}
+          {isReference && <strong>Referência detectada</strong>}
+        </div>
+      )}
+
       <button
         type="button"
         className={styles.openFolderButton}

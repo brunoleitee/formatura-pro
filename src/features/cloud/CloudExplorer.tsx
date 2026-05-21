@@ -14,6 +14,7 @@ type CloudExplorerProps = {
   loading: boolean;
   selectedFolderId?: string;
   folderInsights?: Record<string, CloudFolderInsight>;
+  showFolderMetadata: boolean;
   onOpenFolder: (item: CloudItem) => void;
   onSelectFolder: (item: CloudItem) => void;
   onGoToBreadcrumb: (index: number) => void;
@@ -25,6 +26,7 @@ export function CloudExplorer({
   loading,
   selectedFolderId,
   folderInsights = {},
+  showFolderMetadata,
   onOpenFolder,
   onSelectFolder,
   onGoToBreadcrumb,
@@ -61,6 +63,7 @@ export function CloudExplorer({
               folder={folder}
               insight={folderInsights[folder.id]}
               selected={selectedFolderId === folder.id}
+              showMetadata={showFolderMetadata}
               onOpenFolder={onOpenFolder}
               onSelectFolder={onSelectFolder}
             />
