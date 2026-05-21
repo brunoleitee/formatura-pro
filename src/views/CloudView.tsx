@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CloudOff } from 'lucide-react';
 import { CloudEventDashboard } from '../features/cloud/CloudEventDashboard';
 import { CloudExplorer } from '../features/cloud/CloudExplorer';
+import { CloudRecentCatalogs } from '../features/cloud/CloudRecentCatalogs';
 import { CloudWorkflowPanel } from '../features/cloud/CloudWorkflowPanel';
+import { catalogToDraft } from '../features/cloud/cloudCatalogStore';
 import { detectReferenceFolders } from '../features/cloud/detectReferenceFolders';
-import type { CloudCatalogMode, CloudConnection, CloudEventDraft, CloudFolderInsight, CloudItem } from '../features/cloud/types';
+import type { CloudCatalog, CloudCatalogMode, CloudConnection, CloudEventDraft, CloudFolderInsight, CloudItem } from '../features/cloud/types';
 import { cloudApi } from '../services/cloudApi';
 import styles from './CloudView.module.css';
 
@@ -40,8 +42,10 @@ export default function CloudView() {
   const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>(rootBreadcrumb);
   const [selectedFolder, setSelectedFolder] = useState<CloudItem | null>(null);
   const [draft, setDraft] = useState<CloudEventDraft | null>(null);
+  const [recentCatalogs, setRecentCatalogs] = useState<CloudCatalog[]>([]);
   const [folderInsights, setFolderInsights] = useState<Record<string, CloudFolderInsight>>({});
   const [loading, setLoading] = useState(true);
+  const [catalogsLoading, setCatalogsLoading] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -54,6 +58,16 @@ export default function CloudView() {
     const google = status.connections.find(item => item.provider === 'google_drive') || null;
     setConnection(google);
     return google;
+  }, []);
+
+  const loadRecentCatalogs = useCallback(async () => {
+    setCatalogsLoading(true);
+    try {
+      const result = await cloudApi.listCloudCatalogs();
+      setRecentCatalogs(result.catalogs || []);
+    } finally {
+      setCatalogsLoading(false);
+    }
   }, []);
 
   const loadFolder = useCallback(async (folderId: string) => {
@@ -83,6 +97,7 @@ export default function CloudView() {
     async function boot() {
       const google = await loadStatus();
       if (!active) return;
+      await loadRecentCatalogs();
       if (google?.connected) {
         await loadFolder('root');
       } else {
@@ -93,7 +108,7 @@ export default function CloudView() {
     return () => {
       active = false;
     };
-  }, [loadFolder, loadStatus]);
+  }, [loadFolder, loadRecentCatalogs, loadStatus]);
 
   const selectedDraft = useMemo(() => {
     if (draft) return draft;
@@ -190,6 +205,7 @@ export default function CloudView() {
         createdAt: nextDraft.createdAt || new Date().toISOString(),
       };
       setDraft(indexedDraft);
+      await loadRecentCatalogs();
       return indexedDraft;
     } finally {
       setCreating(false);
@@ -197,15 +213,26 @@ export default function CloudView() {
   };
 
   const handleAnalyze = async () => {
-    if (!selectedDraft) return;
+    if (!selectedDraft?.id || !selectedDraft.status) return;
     setAnalyzing(true);
     try {
-      const catalog = selectedDraft.id ? selectedDraft : await handleCreateCatalog();
-      const catalogId = catalog?.id || selectedDraft.sourceFolderId;
-      await cloudApi.analyzeCloudCatalog(catalogId);
-      setDraft(prev => prev ? { ...prev, id: catalogId, status: 'processing' } : prev);
+      await cloudApi.analyzeCloudCatalog(selectedDraft.id);
+      setDraft(prev => prev ? { ...prev, status: 'processing' } : prev);
+      await loadRecentCatalogs();
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const handleOpenRecentCatalog = async (catalog: CloudCatalog) => {
+    try {
+      const result = await cloudApi.getCloudCatalog(catalog.id);
+      const nextCatalog = result.catalog || catalog;
+      setSelectedFolder(null);
+      setDraft(catalogToDraft(nextCatalog));
+      await loadRecentCatalogs();
+    } catch {
+      setDraft(catalogToDraft(catalog));
     }
   };
 
@@ -228,6 +255,13 @@ export default function CloudView() {
           <p>Esta aba fica focada no uso diário: navegar, escolher evento, referências e fotos.</p>
         </section>
       ) : (
+        <>
+        <CloudRecentCatalogs
+          catalogs={recentCatalogs}
+          loading={catalogsLoading}
+          onOpenCatalog={handleOpenRecentCatalog}
+        />
+
         <div className={styles.mainGrid}>
           <CloudExplorer
             items={items}
@@ -250,6 +284,7 @@ export default function CloudView() {
                 loading={preparing}
                 creating={creating}
                 analyzing={analyzing}
+                catalogReady={Boolean(selectedDraft.id && selectedDraft.status !== 'draft')}
                 onModeChange={handleModeChange}
                 onCreateCatalog={handleCreateCatalog}
                 onChangeReferences={handleChangeReferences}
@@ -262,6 +297,7 @@ export default function CloudView() {
             )}
           </aside>
         </div>
+        </>
       )}
     </div>
   );

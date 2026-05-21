@@ -9,6 +9,7 @@ type CloudWorkflowPanelProps = {
   loading: boolean;
   creating: boolean;
   analyzing: boolean;
+  catalogReady: boolean;
   onModeChange: (mode: CloudCatalogModeValue) => void;
   onCreateCatalog: () => void;
   onChangeReferences: () => void;
@@ -20,6 +21,7 @@ export function CloudWorkflowPanel({
   loading,
   creating,
   analyzing,
+  catalogReady,
   onModeChange,
   onCreateCatalog,
   onChangeReferences,
@@ -85,7 +87,7 @@ export function CloudWorkflowPanel({
           <span className={styles.stepNumber}>5</span>
           <div className={styles.stepBody}>
             <h3>Analisar com IA</h3>
-            <button type="button" className={styles.secondaryButton} onClick={onAnalyze} disabled={loading || creating || analyzing}>
+            <button type="button" className={styles.secondaryButton} onClick={onAnalyze} disabled={!catalogReady || loading || creating || analyzing}>
               <Bot size={15} />
               {analyzing ? 'Preparando...' : 'Analisar com IA'}
             </button>

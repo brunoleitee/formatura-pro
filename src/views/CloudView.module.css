@@ -108,17 +108,17 @@
 
 .folderGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 8px;
-  padding: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 7px;
+  padding: 9px;
 }
 
 .folderCard {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  padding: 10px;
+  padding: 8px;
   border: 1px solid rgba(148, 163, 184, 0.14);
   border-radius: 8px;
   background: rgba(2, 6, 23, 0.32);
@@ -132,7 +132,7 @@
 .folderSelect {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
   min-width: 0;
   width: 100%;
   border: 0;
@@ -140,6 +140,11 @@
   color: #e5e7eb;
   cursor: pointer;
   text-align: left;
+}
+
+.folderSelect svg {
+  width: 18px;
+  height: 18px;
 }
 
 .folderSelect svg {
@@ -163,8 +168,8 @@
 
 .openFolderButton {
   align-self: flex-start;
-  min-height: 28px;
-  padding: 5px 9px;
+  min-height: 26px;
+  padding: 4px 8px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   color: #cbd5e1;
   background: rgba(15, 23, 42, 0.78);

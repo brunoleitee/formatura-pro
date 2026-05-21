@@ -42,6 +42,45 @@
   font-weight: 700;
 }
 
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 7px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.statusBadge span {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.statusBadge[data-status='draft'] {
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.statusBadge[data-status='indexed'] {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.statusBadge[data-status='processing'] {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.statusBadge[data-status='ready'] {
+  color: #bbf7d0;
+  background: rgba(22, 163, 74, 0.16);
+}
+
 .stepList {
   display: flex;
   flex-direction: column;
@@ -237,6 +276,96 @@
 .ghostButton:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.recentPanel {
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.54);
+}
+
+.recentHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.recentHeader span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #f8fafc;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.recentHeader small {
+  color: #94a3b8;
+  font-size: 0.72rem;
+}
+
+.recentGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 8px;
+}
+
+.catalogCard {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.13);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.32);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.catalogCard:hover {
+  border-color: rgba(59, 130, 246, 0.42);
+  background: rgba(37, 99, 235, 0.09);
+}
+
+.catalogCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.catalogCardHeader strong {
+  overflow: hidden;
+  color: #f8fafc;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalogCardMeta,
+.catalogCardFooter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #94a3b8;
+  font-size: 0.72rem;
+}
+
+.catalogCardMeta span,
+.catalogCardFooter {
+  min-width: 0;
+}
+
+.catalogCardMeta span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .dashboardGrid {

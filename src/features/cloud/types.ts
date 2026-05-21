@@ -36,6 +36,19 @@ export type CloudEventDraft = {
   mode: CloudCatalogMode;
   status: 'draft' | 'indexed' | 'processing' | 'ready';
   createdAt?: string;
+  updatedAt?: string;
+  cacheEnabled?: boolean;
+  cacheSize?: number;
+  lastSync?: string;
+};
+
+export type CloudCatalog = CloudEventDraft & {
+  id: string;
+  cacheEnabled: boolean;
+  cacheSize: number;
+  lastSync?: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type CloudProviderSummary = {

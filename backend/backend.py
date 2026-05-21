@@ -25,6 +25,7 @@ import json
 import time
 import csv
 import signal
+import uuid
 try:
     import psutil
 except ImportError:
@@ -3794,57 +3795,174 @@ def cloud_google_files(folder_id: str = "root"):
 
 class CloudCatalogCreateRequest(BaseModel):
     provider: str
-    folderId: str
-    eventName: str
+    folderId: str = ""
+    eventName: str = ""
+    source_folder_id: str = ""
+    source_folder_name: str = ""
+    name: str = ""
     references: List[str] = []
     totalFiles: int = 0
+    total_files: int = 0
     mode: str = "face"
+
+
+def _cloud_events_db_path() -> Path:
+    base_dir = Path(__file__).resolve().parents[1]
+    data_dir = base_dir / "data" / "cloud"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir / "cloud_events.db"
+
+
+def _ensure_cloud_events_table(conn: sqlite3.Connection) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS cloud_events (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            provider TEXT,
+            source_folder_id TEXT,
+            source_folder_name TEXT,
+            references_json TEXT,
+            mode TEXT,
+            total_files INTEGER,
+            status TEXT,
+            cache_enabled INTEGER,
+            created_at TEXT,
+            updated_at TEXT
+        )
+    """)
+
+
+def _cloud_event_row_to_dict(row) -> Dict[str, Any]:
+    references = []
+    try:
+        references = json.loads(row["references_json"] or "[]")
+    except Exception:
+        references = []
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "provider": row["provider"],
+        "sourceFolderId": row["source_folder_id"],
+        "sourceFolderName": row["source_folder_name"],
+        "references": references,
+        "mode": row["mode"],
+        "totalFiles": int(row["total_files"] or 0),
+        "status": row["status"],
+        "cacheEnabled": bool(row["cache_enabled"]),
+        "cacheSize": 0,
+        "lastSync": row["updated_at"],
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
 
 
 @app.post("/api/cloud/catalogs")
 def cloud_create_catalog(req: CloudCatalogCreateRequest):
     try:
+        folder_id = req.source_folder_id or req.folderId
+        event_name = (req.name or req.eventName).strip()
+        source_folder_name = (req.source_folder_name or event_name).strip()
+        total_files = req.total_files or req.totalFiles
+
         if req.provider != "google_drive":
             return {"error": "Provedor cloud ainda não suportado", "status": "draft"}
-        if not req.folderId:
+        if not folder_id:
             return {"error": "folderId é obrigatório", "status": "draft"}
-        if not req.eventName.strip():
+        if not event_name:
             return {"error": "eventName é obrigatório", "status": "draft"}
         if req.mode not in {"catalog", "face", "full"}:
             return {"error": "Modo de catálogo inválido", "status": "draft"}
 
         result = cloud_google_create_catalog(
-            folder_id=req.folderId,
-            catalog_name=req.eventName,
+            folder_id=folder_id,
+            catalog_name=event_name,
             mode="metadata_only",
         )
         if result.get("error"):
             return {"error": result.get("error"), "status": "draft"}
 
-        catalog_id = result.get("catalog") or req.eventName.strip()
-        BASE_DIR = Path(__file__).resolve().parents[1]
-        catalog_meta_dir = BASE_DIR / "data" / "cloud_catalogs"
-        catalog_meta_dir.mkdir(parents=True, exist_ok=True)
-        metadata_path = catalog_meta_dir / f"{catalog_id}.json"
-        metadata = {
-            "catalogId": catalog_id,
-            "provider": req.provider,
-            "folderId": req.folderId,
-            "eventName": req.eventName,
-            "references": req.references,
-            "totalFiles": req.totalFiles,
-            "mode": req.mode,
-            "status": "indexed",
-            "createdAt": datetime.now().isoformat(),
-        }
-        metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+        catalog_id = result.get("catalog") or str(uuid.uuid4())
+        now = datetime.now().isoformat()
+        conn = sqlite3.connect(str(_cloud_events_db_path()))
+        try:
+            _ensure_cloud_events_table(conn)
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO cloud_events (
+                    id, name, provider, source_folder_id, source_folder_name,
+                    references_json, mode, total_files, status, cache_enabled,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    catalog_id,
+                    event_name,
+                    req.provider,
+                    folder_id,
+                    source_folder_name,
+                    json.dumps(req.references, ensure_ascii=False),
+                    req.mode,
+                    int(total_files or 0),
+                    "indexed",
+                    1,
+                    now,
+                    now,
+                )
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
         return {
+            "success": True,
             "catalogId": catalog_id,
             "status": "indexed",
         }
     except Exception as e:
-        return {"error": str(e), "status": "draft"}
+        return {"success": False, "error": str(e), "status": "draft"}
+
+
+@app.get("/api/cloud/catalogs")
+def cloud_list_catalogs():
+    conn = sqlite3.connect(str(_cloud_events_db_path()))
+    conn.row_factory = sqlite3.Row
+    try:
+      _ensure_cloud_events_table(conn)
+      rows = conn.execute(
+          "SELECT * FROM cloud_events ORDER BY updated_at DESC, created_at DESC LIMIT 12"
+      ).fetchall()
+      return {"success": True, "catalogs": [_cloud_event_row_to_dict(row) for row in rows]}
+    finally:
+      conn.close()
+
+
+@app.get("/api/cloud/catalogs/{catalog_id}")
+def cloud_get_catalog(catalog_id: str):
+    conn = sqlite3.connect(str(_cloud_events_db_path()))
+    conn.row_factory = sqlite3.Row
+    try:
+        _ensure_cloud_events_table(conn)
+        now = datetime.now().isoformat()
+        conn.execute("UPDATE cloud_events SET updated_at = ? WHERE id = ?", (now, catalog_id))
+        conn.commit()
+        row = conn.execute("SELECT * FROM cloud_events WHERE id = ?", (catalog_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Catálogo cloud não encontrado")
+        return {"success": True, "catalog": _cloud_event_row_to_dict(row)}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/cloud/catalogs/{catalog_id}")
+def cloud_delete_catalog(catalog_id: str):
+    conn = sqlite3.connect(str(_cloud_events_db_path()))
+    try:
+        _ensure_cloud_events_table(conn)
+        cur = conn.execute("DELETE FROM cloud_events WHERE id = ?", (catalog_id,))
+        conn.commit()
+        return {"success": cur.rowcount > 0}
+    finally:
+        conn.close()
 
 
 @app.post("/api/cloud/google/create-catalog")

@@ -1,4 +1,5 @@
-import { Bot, Download, Play, ShieldCheck } from 'lucide-react';
+import { Bot, Download, FolderOpen, Play, ShieldCheck } from 'lucide-react';
+import { CloudCatalogStatusBadge } from './CloudCatalogStatusBadge';
 import type { CloudEventDraft } from './types';
 import styles from './CloudWorkflowPanel.module.css';
 
@@ -14,7 +15,8 @@ export function CloudEventDashboard({ draft, onAnalyze }: CloudEventDashboardPro
     { label: 'Processadas', value: draft.status === 'ready' ? draft.totalFiles : 0 },
     { label: 'Reconhecidas', value: 0 },
     { label: 'Revisão', value: 0 },
-    { label: 'Cache cloud', value: draft.status === 'indexed' ? 'metadata' : 'pronto' },
+    { label: 'Cache cloud', value: draft.cacheEnabled === false ? 'desligado' : `${draft.cacheSize ?? 0} MB` },
+    { label: 'Última sincronização', value: draft.lastSync ? new Date(draft.lastSync).toLocaleDateString('pt-BR') : 'pendente' },
   ];
 
   return (
@@ -24,7 +26,7 @@ export function CloudEventDashboard({ draft, onAnalyze }: CloudEventDashboardPro
           <span className={styles.kicker}>Catálogo cloud criado</span>
           <h2>{draft.name}</h2>
         </div>
-        <span className={styles.statusPill}>{draft.status}</span>
+        <CloudCatalogStatusBadge status={draft.status} />
       </div>
 
       <div className={styles.dashboardGrid}>
@@ -44,6 +46,10 @@ export function CloudEventDashboard({ draft, onAnalyze }: CloudEventDashboardPro
         <button type="button" className={styles.secondaryButton} onClick={onAnalyze}>
           <Play size={15} />
           Processar agora
+        </button>
+        <button type="button" className={styles.secondaryButton}>
+          <FolderOpen size={15} />
+          Abrir catálogo
         </button>
         <button type="button" className={styles.secondaryButton}>
           <Download size={15} />

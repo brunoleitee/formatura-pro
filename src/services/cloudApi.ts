@@ -1,6 +1,7 @@
 import { API_BASE, fetchJSON, post } from './api/core';
 import type {
   CloudConnection,
+  CloudCatalog,
   CloudEventDraft,
   CloudItem,
   CloudProvider,
@@ -37,6 +38,11 @@ type CloudStatusResponse = {
     folder?: string;
     usedBytes?: number;
   };
+};
+
+type CloudCatalogsResponse = {
+  success: boolean;
+  catalogs: CloudCatalog[];
 };
 
 const providerFallbacks: CloudProviderSummary[] = [
@@ -156,14 +162,18 @@ export const cloudApi = {
 
   createCloudCatalog: async (draft: CloudEventDraft) => {
     try {
-      const result = await post<{ catalogId: string; status: CloudEventDraft['status']; error?: string }>(
+      const result = await post<{ success?: boolean; catalogId: string; status: CloudEventDraft['status']; error?: string }>(
         `${API_BASE}/cloud/catalogs`,
         {
           provider: draft.provider,
           folderId: draft.sourceFolderId,
+          source_folder_id: draft.sourceFolderId,
+          source_folder_name: draft.sourceFolderName,
           eventName: draft.name,
+          name: draft.name,
           references: draft.references,
           totalFiles: draft.totalFiles,
+          total_files: draft.totalFiles,
           mode: draft.mode,
         }
       );
@@ -193,6 +203,25 @@ export const cloudApi = {
       };
     }
   },
+
+  listCloudCatalogs: async () => {
+    try {
+      return await fetchJSON<CloudCatalogsResponse>(`${API_BASE}/cloud/catalogs`);
+    } catch {
+      return { success: false, catalogs: [] };
+    }
+  },
+
+  getCloudCatalog: async (catalogId: string) =>
+    fetchJSON<{ success: boolean; catalog: CloudCatalog }>(
+      `${API_BASE}/cloud/catalogs/${encodeURIComponent(catalogId)}`
+    ),
+
+  deleteCloudCatalog: async (catalogId: string) =>
+    fetchJSON<{ success: boolean }>(
+      `${API_BASE}/cloud/catalogs/${encodeURIComponent(catalogId)}`,
+      { method: 'DELETE' }
+    ),
 
   analyzeCloudCatalog: async (catalogId: string) => {
     try {
