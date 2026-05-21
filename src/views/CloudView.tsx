@@ -13,6 +13,21 @@ type BreadcrumbItem = {
 };
 
 const rootBreadcrumb: BreadcrumbItem[] = [{ id: 'root', name: 'Meu Drive' }];
+const referenceFolderTokens = ['REFERENCIA', 'REFERENCIAS', 'BASE', '#BASE'];
+
+function normalizeCloudFolderName(name: string) {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
+}
+
+function isReferenceCloudFolderName(name: string) {
+  const normalized = normalizeCloudFolderName(name);
+  return referenceFolderTokens.some(token => normalized.includes(token));
+}
 
 function buildDraft(folder: CloudItem, totalFiles?: number): CloudEventDraft {
   return {
@@ -49,7 +64,18 @@ export default function CloudView() {
     setLoading(true);
     try {
       const result = await cloudApi.listGoogleFolder(folderId);
-      setItems(result.items || []);
+      const nextItems = result.items || [];
+      setItems(nextItems);
+      setDraft(prev => {
+        if (!prev || prev.referencesFolderId) return prev;
+        const referenceFolder = nextItems.find(item => item.isFolder && isReferenceCloudFolderName(item.name));
+        if (!referenceFolder) return prev;
+        return {
+          ...prev,
+          referencesFolderId: referenceFolder.id,
+          referencesFolderName: referenceFolder.name,
+        };
+      });
     } catch (e) {
       console.error('Erro ao carregar pasta cloud:', e);
       setItems([]);
