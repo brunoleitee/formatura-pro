@@ -94,6 +94,57 @@ class DriveManager:
             logger.error(f"Erro ao listar arquivos: {e}")
             return []
 
+    def summarize_folder(self, folder_id: str = "root", max_depth: int = 3) -> Dict[str, int]:
+        try:
+            service = self._get_service()
+            visited = set()
+
+            def count_level(current_id: str, depth: int) -> Dict[str, int]:
+                if current_id in visited:
+                    return {"photos": 0, "subfolders": 0}
+                visited.add(current_id)
+
+                image_count = 0
+                folder_count = 0
+                page_token = None
+
+                while True:
+                    results = (
+                        service.files()
+                        .list(
+                            q=f"'{current_id}' in parents and trashed=false and (mimeType='application/vnd.google-apps.folder' or mimeType contains 'image/')",
+                            fields="nextPageToken, files(id, mimeType)",
+                            pageSize=1000,
+                            pageToken=page_token,
+                        )
+                        .execute()
+                    )
+
+                    child_folders = []
+                    for item in results.get("files", []):
+                        if item.get("mimeType") == "application/vnd.google-apps.folder":
+                            folder_count += 1
+                            child_folders.append(item["id"])
+                        elif str(item.get("mimeType", "")).startswith("image/"):
+                            image_count += 1
+
+                    if depth < max_depth:
+                        for child_id in child_folders:
+                            child_counts = count_level(child_id, depth + 1)
+                            image_count += child_counts["photos"]
+                            folder_count += child_counts["subfolders"]
+
+                    page_token = results.get("nextPageToken")
+                    if not page_token:
+                        break
+
+                return {"photos": image_count, "subfolders": folder_count}
+
+            return count_level(folder_id, 0)
+        except Exception as e:
+            logger.error(f"Erro ao resumir pasta: {e}")
+            return {"photos": 0, "subfolders": 0}
+
     def get_file_metadata(self, file_id: str) -> Optional[DriveFile]:
         try:
             service = self._get_service()

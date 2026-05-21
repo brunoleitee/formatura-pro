@@ -1,5 +1,6 @@
 import { Check, ChevronRight, Folder, FolderOpen, RefreshCw } from 'lucide-react';
-import type { CloudItem } from './types';
+import { detectReferenceFolders } from './detectReferenceFolders';
+import type { CloudFolderInsight, CloudItem } from './types';
 import styles from '../../views/CloudView.module.css';
 
 type BreadcrumbItem = {
@@ -12,6 +13,7 @@ type CloudExplorerProps = {
   breadcrumb: BreadcrumbItem[];
   loading: boolean;
   selectedFolderId?: string;
+  folderInsights?: Record<string, CloudFolderInsight>;
   onOpenFolder: (item: CloudItem) => void;
   onSelectFolder: (item: CloudItem) => void;
   onGoToBreadcrumb: (index: number) => void;
@@ -23,6 +25,7 @@ export function CloudExplorer({
   breadcrumb,
   loading,
   selectedFolderId,
+  folderInsights = {},
   onOpenFolder,
   onSelectFolder,
   onGoToBreadcrumb,
@@ -60,6 +63,8 @@ export function CloudExplorer({
         <div className={styles.folderGrid}>
           {folders.map(folder => {
             const selected = selectedFolderId === folder.id;
+            const insight = folderInsights[folder.id];
+            const isReference = insight?.referenceDetected || detectReferenceFolders([folder]).length > 0;
             return (
               <article className={styles.folderCard} key={folder.id} data-selected={selected}>
                 <button
@@ -72,6 +77,12 @@ export function CloudExplorer({
                   <span>{folder.name}</span>
                   {selected && <Check size={16} />}
                 </button>
+                <div className={styles.folderMeta}>
+                  {typeof insight?.photoCount === 'number' && <span>{insight.photoCount} fotos</span>}
+                  {typeof insight?.subfolderCount === 'number' && <span>{insight.subfolderCount} subpastas</span>}
+                  {isReference && <strong>Referência detectada</strong>}
+                  {!insight && !isReference && <span>Pasta</span>}
+                </div>
                 <button
                   type="button"
                   className={styles.openFolderButton}

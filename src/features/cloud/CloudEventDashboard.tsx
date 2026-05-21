@@ -1,36 +1,35 @@
 import { Bot, Download, Play, ShieldCheck } from 'lucide-react';
 import type { CloudEventDraft } from './types';
-import styles from '../../views/CloudView.module.css';
+import styles from './CloudWorkflowPanel.module.css';
 
-type CloudCatalogDashboardProps = {
+type CloudEventDashboardProps = {
   draft: CloudEventDraft;
   onAnalyze: () => void;
 };
 
-export function CloudCatalogDashboard({ draft, onAnalyze }: CloudCatalogDashboardProps) {
-  const total = draft.totalFiles;
+export function CloudEventDashboard({ draft, onAnalyze }: CloudEventDashboardProps) {
   const stats = [
-    { label: 'Total de fotos', value: total },
+    { label: 'Total fotos', value: draft.totalFiles },
     { label: 'Referências', value: draft.references.length },
-    { label: 'Processadas', value: draft.status === 'ready' ? total : 0 },
+    { label: 'Processadas', value: draft.status === 'ready' ? draft.totalFiles : 0 },
     { label: 'Reconhecidas', value: 0 },
     { label: 'Revisão', value: 0 },
-    { label: 'Cache', value: draft.status === 'indexed' ? 'metadata' : 'pronto' },
+    { label: 'Cache cloud', value: draft.status === 'indexed' ? 'metadata' : 'pronto' },
   ];
 
   return (
-    <section className={styles.dashboardPanel}>
-      <div className={styles.dashboardHeader}>
+    <section className={styles.panel}>
+      <div className={styles.panelHeader}>
         <div>
-          <span className={styles.kicker}>Catálogo criado</span>
+          <span className={styles.kicker}>Catálogo cloud criado</span>
           <h2>{draft.name}</h2>
         </div>
         <span className={styles.statusPill}>{draft.status}</span>
       </div>
 
-      <div className={styles.statsGrid}>
+      <div className={styles.dashboardGrid}>
         {stats.map(stat => (
-          <div className={styles.statCard} key={stat.label}>
+          <div className={styles.statTile} key={stat.label}>
             <span>{stat.label}</span>
             <strong>{stat.value}</strong>
           </div>
@@ -39,22 +38,22 @@ export function CloudCatalogDashboard({ draft, onAnalyze }: CloudCatalogDashboar
 
       <div className={styles.actionRow}>
         <button type="button" className={styles.primaryButton}>
-          <ShieldCheck size={16} />
+          <ShieldCheck size={15} />
           Abrir revisão IA
         </button>
         <button type="button" className={styles.secondaryButton} onClick={onAnalyze}>
-          <Play size={16} />
+          <Play size={15} />
           Processar agora
         </button>
         <button type="button" className={styles.secondaryButton}>
-          <Download size={16} />
+          <Download size={15} />
           Exportar/Organizar
         </button>
       </div>
 
-      <p className={styles.dashboardNote}>
+      <p className={styles.mutedFooter}>
         <Bot size={14} />
-        Reconhecimento facial e organização no Drive ficam para a próxima etapa.
+        Pronto para ligar a IA cloud em uma próxima etapa.
       </p>
     </section>
   );

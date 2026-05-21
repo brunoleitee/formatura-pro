@@ -41,13 +41,13 @@ export function CloudEventSetup({
         </div>
         <div>
           <span>Arquivos encontrados</span>
-          <strong>{draft.totalFiles ?? 'Aguardando leitura'}</strong>
+          <strong>{draft.totalFiles || 'Aguardando leitura'}</strong>
         </div>
       </div>
 
-      {draft.referencesFolderName && (
+      {draft.references.length > 0 && (
         <div className={styles.referenceLine}>
-          Referências: <strong>{draft.referencesFolderName}</strong>
+          Referências: <strong>{draft.references.join(', ')}</strong>
         </div>
       )}
 

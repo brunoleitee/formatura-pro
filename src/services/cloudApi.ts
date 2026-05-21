@@ -97,6 +97,11 @@ export const cloudApi = {
       `${API_BASE}/cloud/google/files?folder_id=${folderId}`
     ),
 
+  getGoogleFolderSummary: (folderId: string = "root") =>
+    fetchJSON<{ photos: number; subfolders: number; error?: string }>(
+      `${API_BASE}/cloud/google/summary?folder_id=${folderId}`
+    ),
+
   createCatalog: (folderId: string, catalogName: string, mode: string = "metadata_only") =>
     post<{ status: string; catalog?: string; photos_count?: number; error?: string }>(
       `${API_BASE}/cloud/google/create-catalog?folder_id=${folderId}&catalog_name=${encodeURIComponent(catalogName)}&mode=${mode}`,
@@ -151,10 +156,28 @@ export const cloudApi = {
 
   createCloudCatalog: async (draft: CloudEventDraft) => {
     try {
-      return await post<{ catalog: CloudEventDraft; status?: string; error?: string }>(
+      const result = await post<{ catalogId: string; status: CloudEventDraft['status']; error?: string }>(
         `${API_BASE}/cloud/catalogs`,
-        draft
+        {
+          provider: draft.provider,
+          folderId: draft.sourceFolderId,
+          eventName: draft.name,
+          references: draft.references,
+          totalFiles: draft.totalFiles,
+          mode: draft.mode,
+        }
       );
+      return {
+        catalog: {
+          ...draft,
+          id: result.catalogId,
+          status: result.status,
+          createdAt: new Date().toISOString(),
+        },
+        catalogId: result.catalogId,
+        status: result.status,
+        error: result.error,
+      };
     } catch {
       const result = await cloudApi.createCatalog(draft.sourceFolderId, draft.name);
       return {
@@ -164,6 +187,7 @@ export const cloudApi = {
           totalFiles: result.photos_count ?? draft.totalFiles,
           status: result.status === 'ok' ? 'indexed' : draft.status,
         },
+        catalogId: result.catalog || draft.id || draft.sourceFolderId,
         status: result.status,
         error: result.error,
       };

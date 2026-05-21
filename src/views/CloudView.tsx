@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CloudOff } from 'lucide-react';
-import { CloudCatalogDashboard } from '../features/cloud/CloudCatalogDashboard';
-import { CloudEventSetup } from '../features/cloud/CloudEventSetup';
+import { CloudEventDashboard } from '../features/cloud/CloudEventDashboard';
 import { CloudExplorer } from '../features/cloud/CloudExplorer';
-import type { CloudConnection, CloudEventDraft, CloudItem } from '../features/cloud/types';
+import { CloudWorkflowPanel } from '../features/cloud/CloudWorkflowPanel';
+import { detectReferenceFolders } from '../features/cloud/detectReferenceFolders';
+import type { CloudCatalogMode, CloudConnection, CloudEventDraft, CloudFolderInsight, CloudItem } from '../features/cloud/types';
 import { cloudApi } from '../services/cloudApi';
 import styles from './CloudView.module.css';
 
@@ -13,29 +14,22 @@ type BreadcrumbItem = {
 };
 
 const rootBreadcrumb: BreadcrumbItem[] = [{ id: 'root', name: 'Meu Drive' }];
-const referenceFolderTokens = ['REFERENCIA', 'REFERENCIAS', 'BASE', '#BASE'];
 
-function normalizeCloudFolderName(name: string) {
-  return name
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .toUpperCase();
-}
-
-function isReferenceCloudFolderName(name: string) {
-  const normalized = normalizeCloudFolderName(name);
-  return referenceFolderTokens.some(token => normalized.includes(token));
-}
-
-function buildDraft(folder: CloudItem, totalFiles?: number): CloudEventDraft {
+function buildDraft(
+  folder: CloudItem,
+  references: string[] = [],
+  totalFiles = 0,
+  subfolderCount = 0,
+): CloudEventDraft {
   return {
     name: folder.name,
     provider: 'google_drive',
     sourceFolderId: folder.id,
     sourceFolderName: folder.name,
+    references,
     totalFiles,
+    subfolderCount,
+    mode: 'face',
     status: 'draft',
   };
 }
@@ -46,7 +40,9 @@ export default function CloudView() {
   const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>(rootBreadcrumb);
   const [selectedFolder, setSelectedFolder] = useState<CloudItem | null>(null);
   const [draft, setDraft] = useState<CloudEventDraft | null>(null);
+  const [folderInsights, setFolderInsights] = useState<Record<string, CloudFolderInsight>>({});
   const [loading, setLoading] = useState(true);
+  const [preparing, setPreparing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
 
@@ -66,16 +62,14 @@ export default function CloudView() {
       const result = await cloudApi.listGoogleFolder(folderId);
       const nextItems = result.items || [];
       setItems(nextItems);
-      setDraft(prev => {
-        if (!prev || prev.referencesFolderId) return prev;
-        const referenceFolder = nextItems.find(item => item.isFolder && isReferenceCloudFolderName(item.name));
-        if (!referenceFolder) return prev;
-        return {
-          ...prev,
-          referencesFolderId: referenceFolder.id,
-          referencesFolderName: referenceFolder.name,
-        };
-      });
+      setFolderInsights(prev => ({
+        ...prev,
+        ...Object.fromEntries(
+          nextItems
+            .filter(item => item.isFolder)
+            .map(item => [item.id, { ...prev[item.id], referenceDetected: detectReferenceFolders([item]).length > 0 }])
+        ),
+      }));
     } catch (e) {
       console.error('Erro ao carregar pasta cloud:', e);
       setItems([]);
@@ -117,11 +111,38 @@ export default function CloudView() {
   const handleSelectFolder = async (folder: CloudItem) => {
     setSelectedFolder(folder);
     setDraft(buildDraft(folder));
+    setPreparing(true);
     try {
-      const files = await cloudApi.getFiles(folder.id);
-      setDraft(buildDraft(folder, files.count ?? files.files?.length ?? 0));
+      const [subfoldersResult, indexedResult] = await Promise.all([
+        cloudApi.listGoogleFolder(folder.id),
+        cloudApi.getGoogleFolderSummary(folder.id)
+          .catch(async () => {
+            const indexed = await cloudApi.indexFolder(folder.id);
+            return { photos: indexed.count ?? indexed.files?.length ?? 0, subfolders: 0 };
+          }),
+      ]);
+      const subfolders = subfoldersResult.items || [];
+      const references = detectReferenceFolders(subfolders).map(item => item.name);
+      const totalFiles = indexedResult.photos ?? 0;
+      const subfolderCount = indexedResult.subfolders ?? subfolders.length;
+      setFolderInsights(prev => ({
+        ...prev,
+        [folder.id]: {
+          photoCount: totalFiles,
+          subfolderCount,
+          referenceDetected: references.length > 0,
+        },
+        ...Object.fromEntries(
+          subfolders
+            .filter(item => item.isFolder)
+            .map(item => [item.id, { ...prev[item.id], referenceDetected: detectReferenceFolders([item]).length > 0 }])
+        ),
+      }));
+      setDraft(buildDraft(folder, references, totalFiles, subfolderCount));
     } catch {
       setDraft(buildDraft(folder));
+    } finally {
+      setPreparing(false);
     }
   };
 
@@ -140,13 +161,20 @@ export default function CloudView() {
     }
   };
 
-  const handleSelectReferences = () => {
-    if (!selectedFolder || !selectedDraft) return;
-    setDraft({
-      ...selectedDraft,
-      referencesFolderId: selectedFolder.id,
-      referencesFolderName: selectedFolder.name,
-    });
+  const handleChangeReferences = () => {
+    if (!selectedDraft) return;
+    const typed = window.prompt(
+      'Informe as pastas de referência separadas por vírgula',
+      selectedDraft.references.join(', '),
+    );
+    if (typed === null) return;
+    const references = typed.split(',').map(item => item.trim()).filter(Boolean);
+    setDraft({ ...selectedDraft, references });
+  };
+
+  const handleModeChange = (mode: CloudCatalogMode) => {
+    if (!selectedDraft) return;
+    setDraft({ ...selectedDraft, mode });
   };
 
   const handleCreateCatalog = async () => {
@@ -155,8 +183,14 @@ export default function CloudView() {
     try {
       const result = await cloudApi.createCloudCatalog(selectedDraft);
       const nextDraft = result.catalog || selectedDraft;
-      setDraft({ ...nextDraft, status: nextDraft.status === 'draft' ? 'indexed' : nextDraft.status });
-      return nextDraft;
+      const indexedDraft: CloudEventDraft = {
+        ...nextDraft,
+        id: nextDraft.id || result.catalogId || selectedDraft.sourceFolderId,
+        status: nextDraft.status === 'draft' ? 'indexed' : nextDraft.status,
+        createdAt: nextDraft.createdAt || new Date().toISOString(),
+      };
+      setDraft(indexedDraft);
+      return indexedDraft;
     } finally {
       setCreating(false);
     }
@@ -200,6 +234,7 @@ export default function CloudView() {
             breadcrumb={breadcrumb}
             loading={loading}
             selectedFolderId={selectedFolder?.id}
+            folderInsights={folderInsights}
             onOpenFolder={handleOpenFolder}
             onSelectFolder={handleSelectFolder}
             onGoToBreadcrumb={handleGoToBreadcrumb}
@@ -208,14 +243,16 @@ export default function CloudView() {
 
           <aside className={styles.sideStack}>
             {selectedDraft?.id || selectedDraft?.status === 'indexed' || selectedDraft?.status === 'processing' ? (
-              <CloudCatalogDashboard draft={selectedDraft} onAnalyze={handleAnalyze} />
+              <CloudEventDashboard draft={selectedDraft} onAnalyze={handleAnalyze} />
             ) : selectedDraft ? (
-              <CloudEventSetup
+              <CloudWorkflowPanel
                 draft={selectedDraft}
+                loading={preparing}
                 creating={creating}
                 analyzing={analyzing}
+                onModeChange={handleModeChange}
                 onCreateCatalog={handleCreateCatalog}
-                onSelectReferences={handleSelectReferences}
+                onChangeReferences={handleChangeReferences}
                 onAnalyze={handleAnalyze}
               />
             ) : (

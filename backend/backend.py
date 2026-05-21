@@ -3570,6 +3570,21 @@ def cloud_google_folders(parent_id: str = "root"):
         return {"error": str(e), "folders": []}
 
 
+@app.get("/api/cloud/google/summary")
+def cloud_google_summary(folder_id: str = "root"):
+    try:
+        from cloud import is_authenticated, drive_manager
+        if not is_authenticated():
+            return {"error": "Não conectado ao Google Drive", "photos": 0, "subfolders": 0}
+        summary = drive_manager.summarize_folder(folder_id)
+        return {
+            "photos": summary.get("photos", 0),
+            "subfolders": summary.get("subfolders", 0),
+        }
+    except Exception as e:
+        return {"error": str(e), "photos": 0, "subfolders": 0}
+
+
 @app.get("/api/cloud/google/index")
 def cloud_google_index(folder_id: str = "root"):
     try:
@@ -3775,6 +3790,61 @@ def cloud_google_files(folder_id: str = "root"):
         return {"files": files, "count": len(files)}
     except Exception as e:
         return {"error": str(e), "files": []}
+
+
+class CloudCatalogCreateRequest(BaseModel):
+    provider: str
+    folderId: str
+    eventName: str
+    references: List[str] = []
+    totalFiles: int = 0
+    mode: str = "face"
+
+
+@app.post("/api/cloud/catalogs")
+def cloud_create_catalog(req: CloudCatalogCreateRequest):
+    try:
+        if req.provider != "google_drive":
+            return {"error": "Provedor cloud ainda não suportado", "status": "draft"}
+        if not req.folderId:
+            return {"error": "folderId é obrigatório", "status": "draft"}
+        if not req.eventName.strip():
+            return {"error": "eventName é obrigatório", "status": "draft"}
+        if req.mode not in {"catalog", "face", "full"}:
+            return {"error": "Modo de catálogo inválido", "status": "draft"}
+
+        result = cloud_google_create_catalog(
+            folder_id=req.folderId,
+            catalog_name=req.eventName,
+            mode="metadata_only",
+        )
+        if result.get("error"):
+            return {"error": result.get("error"), "status": "draft"}
+
+        catalog_id = result.get("catalog") or req.eventName.strip()
+        BASE_DIR = Path(__file__).resolve().parents[1]
+        catalog_meta_dir = BASE_DIR / "data" / "cloud_catalogs"
+        catalog_meta_dir.mkdir(parents=True, exist_ok=True)
+        metadata_path = catalog_meta_dir / f"{catalog_id}.json"
+        metadata = {
+            "catalogId": catalog_id,
+            "provider": req.provider,
+            "folderId": req.folderId,
+            "eventName": req.eventName,
+            "references": req.references,
+            "totalFiles": req.totalFiles,
+            "mode": req.mode,
+            "status": "indexed",
+            "createdAt": datetime.now().isoformat(),
+        }
+        metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        return {
+            "catalogId": catalog_id,
+            "status": "indexed",
+        }
+    except Exception as e:
+        return {"error": str(e), "status": "draft"}
 
 
 @app.post("/api/cloud/google/create-catalog")

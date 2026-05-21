@@ -16,16 +16,26 @@ export type CloudItem = {
   parentId?: string;
 };
 
+export type CloudFolderInsight = {
+  photoCount?: number;
+  subfolderCount?: number;
+  referenceDetected?: boolean;
+};
+
+export type CloudCatalogMode = 'catalog' | 'face' | 'full';
+
 export type CloudEventDraft = {
   id?: string;
   name: string;
-  provider: CloudProvider;
+  provider: 'google_drive';
   sourceFolderId: string;
   sourceFolderName: string;
-  referencesFolderId?: string;
-  referencesFolderName?: string;
-  totalFiles?: number;
+  references: string[];
+  totalFiles: number;
+  subfolderCount?: number;
+  mode: CloudCatalogMode;
   status: 'draft' | 'indexed' | 'processing' | 'ready';
+  createdAt?: string;
 };
 
 export type CloudProviderSummary = {
