@@ -1,21 +1,24 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { CloudOff } from 'lucide-react';
 import { CloudEventDashboard } from '../features/cloud/CloudEventDashboard';
 import { CloudExplorer } from '../features/cloud/CloudExplorer';
+import { CloudNavigationBar } from '../features/cloud/CloudNavigationBar';
 import { CloudRecentCatalogs } from '../features/cloud/CloudRecentCatalogs';
 import { CloudWorkflowPanel } from '../features/cloud/CloudWorkflowPanel';
 import { catalogToDraft } from '../features/cloud/cloudCatalogStore';
+import {
+  canGoUp,
+  createNavigationSnapshot,
+  parentBreadcrumb,
+  type CloudBreadcrumbItem,
+  type CloudNavigationSnapshot,
+} from '../features/cloud/cloudNavigationStore';
 import { detectReferenceFolders } from '../features/cloud/detectReferenceFolders';
 import type { CloudCatalog, CloudCatalogMode, CloudConnection, CloudEventDraft, CloudFolderInsight, CloudItem } from '../features/cloud/types';
 import { cloudApi } from '../services/cloudApi';
 import styles from './CloudView.module.css';
 
-type BreadcrumbItem = {
-  id: string;
-  name: string;
-};
-
-const rootBreadcrumb: BreadcrumbItem[] = [{ id: 'root', name: 'Meu Drive' }];
+const rootBreadcrumb: CloudBreadcrumbItem[] = [{ id: 'root', name: 'Meu Drive' }];
 
 function buildDraft(
   folder: CloudItem,
@@ -39,7 +42,9 @@ function buildDraft(
 export default function CloudView() {
   const [connection, setConnection] = useState<CloudConnection | null>(null);
   const [items, setItems] = useState<CloudItem[]>([]);
-  const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>(rootBreadcrumb);
+  const [breadcrumb, setBreadcrumb] = useState<CloudBreadcrumbItem[]>(rootBreadcrumb);
+  const [backStack, setBackStack] = useState<CloudNavigationSnapshot[]>([]);
+  const [forwardStack, setForwardStack] = useState<CloudNavigationSnapshot[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<CloudItem | null>(null);
   const [draft, setDraft] = useState<CloudEventDraft | null>(null);
   const [recentCatalogs, setRecentCatalogs] = useState<CloudCatalog[]>([]);
@@ -52,6 +57,7 @@ export default function CloudView() {
 
   const connected = Boolean(connection?.connected);
   const currentFolderId = breadcrumb[breadcrumb.length - 1]?.id || 'root';
+  const currentFolderName = breadcrumb[breadcrumb.length - 1]?.name || 'Meu Drive';
 
   const loadStatus = useCallback(async () => {
     const status = await cloudApi.getCloudStatus();
@@ -116,12 +122,54 @@ export default function CloudView() {
     return buildDraft(selectedFolder);
   }, [draft, selectedFolder]);
 
+  const restoreNavigation = useCallback((snapshot: CloudNavigationSnapshot) => {
+    setBreadcrumb(snapshot.breadcrumb);
+    setSelectedFolder(null);
+    setDraft(null);
+    void loadFolder(snapshot.currentFolderId);
+  }, [loadFolder]);
+
   const handleOpenFolder = (folder: CloudItem) => {
+    setBackStack(prev => [...prev, createNavigationSnapshot(breadcrumb)]);
+    setForwardStack([]);
     setBreadcrumb(prev => [...prev, { id: folder.id, name: folder.name }]);
     setSelectedFolder(null);
     setDraft(null);
     void loadFolder(folder.id);
   };
+
+  const handleBack = useCallback(() => {
+    setBackStack(prev => {
+      if (prev.length === 0) return prev;
+      const nextBack = prev.slice(0, -1);
+      const target = prev[prev.length - 1];
+      setForwardStack(current => [...current, createNavigationSnapshot(breadcrumb)]);
+      restoreNavigation(target);
+      return nextBack;
+    });
+  }, [breadcrumb, restoreNavigation]);
+
+  const handleForward = useCallback(() => {
+    setForwardStack(prev => {
+      if (prev.length === 0) return prev;
+      const nextForward = prev.slice(0, -1);
+      const target = prev[prev.length - 1];
+      setBackStack(current => [...current, createNavigationSnapshot(breadcrumb)]);
+      restoreNavigation(target);
+      return nextForward;
+    });
+  }, [breadcrumb, restoreNavigation]);
+
+  const handleUp = useCallback(() => {
+    if (!canGoUp(breadcrumb)) return;
+    const next = parentBreadcrumb(breadcrumb);
+    setBackStack(prev => [...prev, createNavigationSnapshot(breadcrumb)]);
+    setForwardStack([]);
+    setBreadcrumb(next);
+    setSelectedFolder(null);
+    setDraft(null);
+    void loadFolder(next[next.length - 1]?.id || 'root');
+  }, [breadcrumb, loadFolder]);
 
   const handleSelectFolder = async (folder: CloudItem) => {
     setSelectedFolder(folder);
@@ -163,6 +211,8 @@ export default function CloudView() {
 
   const handleGoToBreadcrumb = (index: number) => {
     const next = breadcrumb.slice(0, index + 1);
+    setBackStack(prev => [...prev, createNavigationSnapshot(breadcrumb)]);
+    setForwardStack([]);
     setBreadcrumb(next);
     setSelectedFolder(null);
     setDraft(null);
@@ -236,8 +286,19 @@ export default function CloudView() {
     }
   };
 
+  const handleCloudMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.button === 3) {
+      event.preventDefault();
+      handleBack();
+    }
+    if (event.button === 4) {
+      event.preventDefault();
+      handleForward();
+    }
+  };
+
   return (
-    <div className={styles.page}>
+    <div className={styles.page} onMouseDown={handleCloudMouseDown}>
       <header className={styles.header}>
         <div>
           <h1>Nuvem</h1>
@@ -262,6 +323,19 @@ export default function CloudView() {
           onOpenCatalog={handleOpenRecentCatalog}
         />
 
+        <CloudNavigationBar
+          currentFolderName={currentFolderName}
+          cacheSize={selectedDraft?.cacheSize}
+          loading={loading}
+          canGoBack={backStack.length > 0}
+          canGoForward={forwardStack.length > 0}
+          canGoUp={canGoUp(breadcrumb)}
+          onBack={handleBack}
+          onForward={handleForward}
+          onUp={handleUp}
+          onRefresh={handleRefresh}
+        />
+
         <div className={styles.mainGrid}>
           <CloudExplorer
             items={items}
@@ -272,7 +346,6 @@ export default function CloudView() {
             onOpenFolder={handleOpenFolder}
             onSelectFolder={handleSelectFolder}
             onGoToBreadcrumb={handleGoToBreadcrumb}
-            onRefresh={handleRefresh}
           />
 
           <aside className={styles.sideStack}>

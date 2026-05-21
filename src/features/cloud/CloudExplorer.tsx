@@ -1,5 +1,5 @@
-import { Check, ChevronRight, Folder, FolderOpen, RefreshCw } from 'lucide-react';
-import { detectReferenceFolders } from './detectReferenceFolders';
+import { ChevronRight } from 'lucide-react';
+import { CloudFolderCard } from './CloudFolderCard';
 import type { CloudFolderInsight, CloudItem } from './types';
 import styles from '../../views/CloudView.module.css';
 
@@ -17,7 +17,6 @@ type CloudExplorerProps = {
   onOpenFolder: (item: CloudItem) => void;
   onSelectFolder: (item: CloudItem) => void;
   onGoToBreadcrumb: (index: number) => void;
-  onRefresh: () => void;
 };
 
 export function CloudExplorer({
@@ -29,7 +28,6 @@ export function CloudExplorer({
   onOpenFolder,
   onSelectFolder,
   onGoToBreadcrumb,
-  onRefresh,
 }: CloudExplorerProps) {
   const folders = items.filter(item => item.isFolder);
 
@@ -49,10 +47,6 @@ export function CloudExplorer({
             </button>
           ))}
         </nav>
-        <button type="button" className={styles.secondaryButton} onClick={onRefresh} disabled={loading}>
-          <RefreshCw size={15} className={loading ? styles.spin : undefined} />
-          Atualizar
-        </button>
       </div>
 
       {loading ? (
@@ -61,40 +55,16 @@ export function CloudExplorer({
         <div className={styles.emptyPanel}>Nenhuma pasta encontrada neste nível.</div>
       ) : (
         <div className={styles.folderGrid}>
-          {folders.map(folder => {
-            const selected = selectedFolderId === folder.id;
-            const insight = folderInsights[folder.id];
-            const isReference = insight?.referenceDetected || detectReferenceFolders([folder]).length > 0;
-            return (
-              <article className={styles.folderCard} key={folder.id} data-selected={selected}>
-                <button
-                  type="button"
-                  className={styles.folderSelect}
-                  onClick={() => onSelectFolder(folder)}
-                  title={`Selecionar ${folder.name}`}
-                >
-                  <Folder size={22} />
-                  <span>{folder.name}</span>
-                  {selected && <Check size={16} />}
-                </button>
-                <div className={styles.folderMeta}>
-                  {typeof insight?.photoCount === 'number' && <span>{insight.photoCount} fotos</span>}
-                  {typeof insight?.subfolderCount === 'number' && <span>{insight.subfolderCount} subpastas</span>}
-                  {isReference && <strong>Referência detectada</strong>}
-                  {!insight && !isReference && <span>Pasta</span>}
-                </div>
-                <button
-                  type="button"
-                  className={styles.openFolderButton}
-                  onClick={() => onOpenFolder(folder)}
-                  title={`Abrir ${folder.name}`}
-                >
-                  <FolderOpen size={15} />
-                  Abrir
-                </button>
-              </article>
-            );
-          })}
+          {folders.map(folder => (
+            <CloudFolderCard
+              key={folder.id}
+              folder={folder}
+              insight={folderInsights[folder.id]}
+              selected={selectedFolderId === folder.id}
+              onOpenFolder={onOpenFolder}
+              onSelectFolder={onSelectFolder}
+            />
+          ))}
         </div>
       )}
     </section>

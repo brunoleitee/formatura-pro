@@ -1,5 +1,5 @@
 import { Bot, Download, FolderOpen, Play, ShieldCheck } from 'lucide-react';
-import { CloudCatalogStatusBadge } from './CloudCatalogStatusBadge';
+import { CloudStatusBadge } from './CloudStatusBadge';
 import type { CloudEventDraft } from './types';
 import styles from './CloudWorkflowPanel.module.css';
 
@@ -8,13 +8,21 @@ type CloudEventDashboardProps = {
   onAnalyze: () => void;
 };
 
+const modeLabel: Record<CloudEventDraft['mode'], string> = {
+  catalog: 'Catálogo',
+  face: 'Reconhecimento',
+  full: 'Scanner completo',
+};
+
 export function CloudEventDashboard({ draft, onAnalyze }: CloudEventDashboardProps) {
   const stats = [
     { label: 'Total fotos', value: draft.totalFiles },
     { label: 'Referências', value: draft.references.length },
     { label: 'Processadas', value: draft.status === 'ready' ? draft.totalFiles : 0 },
     { label: 'Reconhecidas', value: 0 },
-    { label: 'Revisão', value: 0 },
+    { label: 'Em revisão', value: 0 },
+    { label: 'Provider', value: 'Google Drive' },
+    { label: 'Modo', value: modeLabel[draft.mode] },
     { label: 'Cache cloud', value: draft.cacheEnabled === false ? 'desligado' : `${draft.cacheSize ?? 0} MB` },
     { label: 'Última sincronização', value: draft.lastSync ? new Date(draft.lastSync).toLocaleDateString('pt-BR') : 'pendente' },
   ];
@@ -26,7 +34,7 @@ export function CloudEventDashboard({ draft, onAnalyze }: CloudEventDashboardPro
           <span className={styles.kicker}>Catálogo cloud criado</span>
           <h2>{draft.name}</h2>
         </div>
-        <CloudCatalogStatusBadge status={draft.status} />
+        <CloudStatusBadge status={draft.status} />
       </div>
 
       <div className={styles.dashboardGrid}>
