@@ -6,6 +6,7 @@ import { CloudNavigationBar } from '../features/cloud/CloudNavigationBar';
 import { CloudRecentCatalogs } from '../features/cloud/CloudRecentCatalogs';
 import { CloudWorkflowPanel } from '../features/cloud/CloudWorkflowPanel';
 import { CloudCatalogCreateModal } from '../features/cloud/CloudCatalogCreateModal';
+import { CloudCatalogDeleteModal } from '../features/cloud/CloudCatalogDeleteModal';
 import { catalogToDraft, draftToCatalog } from '../features/cloud/cloudCatalogStore';
 import {
   canGoUp,
@@ -21,6 +22,18 @@ import { api } from '../services/api';
 import styles from './CloudView.module.css';
 
 const rootBreadcrumb: CloudBreadcrumbItem[] = [{ id: 'root', name: 'Meu Drive' }];
+
+type CloudMode = 'home' | 'explorer' | 'workspace';
+type CloudDeleteScope = 'recent' | 'catalog_cache' | 'all';
+type ExplorerSessionSnapshot = {
+  currentFolderId: string;
+  breadcrumb: CloudBreadcrumbItem[];
+  backStack: CloudNavigationSnapshot[];
+  forwardStack: CloudNavigationSnapshot[];
+  selectedFolderId: string | null;
+};
+
+const EXPLORER_SESSION_KEY = 'formatura-pro-cloud-explorer-session';
 
 function buildDefaultBreadcrumb(catalog: CloudCatalog): CloudBreadcrumbItem[] {
   return [
@@ -64,8 +77,39 @@ function buildDraft(
   };
 }
 
+function readExplorerSession(): ExplorerSessionSnapshot | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(EXPLORER_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<ExplorerSessionSnapshot>;
+    if (!parsed || typeof parsed.currentFolderId !== 'string') return null;
+    return {
+      currentFolderId: parsed.currentFolderId || 'root',
+      breadcrumb: Array.isArray(parsed.breadcrumb) && parsed.breadcrumb.length
+        ? parsed.breadcrumb.filter((item): item is CloudBreadcrumbItem => Boolean(item && item.id && item.name))
+        : rootBreadcrumb,
+      backStack: Array.isArray(parsed.backStack) ? parsed.backStack : [],
+      forwardStack: Array.isArray(parsed.forwardStack) ? parsed.forwardStack : [],
+      selectedFolderId: typeof parsed.selectedFolderId === 'string' ? parsed.selectedFolderId : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveExplorerSession(snapshot: ExplorerSessionSnapshot) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(EXPLORER_SESSION_KEY, JSON.stringify(snapshot));
+  } catch {
+    // Ignora falhas locais.
+  }
+}
+
 export default function CloudView() {
   const [connection, setConnection] = useState<CloudConnection | null>(null);
+  const [cloudMode, setCloudMode] = useState<CloudMode>('home');
   const [items, setItems] = useState<CloudItem[]>([]);
   const [breadcrumb, setBreadcrumb] = useState<CloudBreadcrumbItem[]>(rootBreadcrumb);
   const [backStack, setBackStack] = useState<CloudNavigationSnapshot[]>([]);
@@ -73,6 +117,9 @@ export default function CloudView() {
   const [selectedFolder, setSelectedFolder] = useState<CloudItem | null>(null);
   const [draft, setDraft] = useState<CloudEventDraft | null>(null);
   const [recentCatalogs, setRecentCatalogs] = useState<CloudCatalog[]>([]);
+  const [restorePromptCatalog, setRestorePromptCatalog] = useState<CloudCatalog | null>(null);
+  const [workspaceCatalog, setWorkspaceCatalog] = useState<CloudCatalog | null>(null);
+  const [workspaceSession, setWorkspaceSession] = useState<CloudCatalogSession | null>(null);
   const [folderInsights, setFolderInsights] = useState<Record<string, CloudFolderInsight>>({});
   const [loading, setLoading] = useState(true);
   const [catalogsLoading, setCatalogsLoading] = useState(false);
@@ -82,7 +129,10 @@ export default function CloudView() {
   const [creating, setCreating] = useState(false);
   const [catalogProgress, setCatalogProgress] = useState<{ percent: number; label: string } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [explorerError, setExplorerError] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [deleteCatalogOpen, setDeleteCatalogOpen] = useState(false);
+  const [deleteCatalogScope, setDeleteCatalogScope] = useState<CloudDeleteScope>('recent');
   const [restoringCatalogId, setRestoringCatalogId] = useState<string | null>(null);
   const [catalogAiStatus, setCatalogAiStatus] = useState<CloudCatalog['aiStatus'] | null>(null);
   const saveSessionTimerRef = useRef<number | null>(null);
@@ -92,6 +142,13 @@ export default function CloudView() {
   const connected = Boolean(connection?.connected);
   const currentFolderId = breadcrumb[breadcrumb.length - 1]?.id || 'root';
   const currentFolderName = breadcrumb[breadcrumb.length - 1]?.name || 'Meu Drive';
+  const explorerHasItems = items.length > 0;
+  const workspaceBreadcrumb = workspaceSession?.currentPathJson?.length
+    ? workspaceSession.currentPathJson
+    : workspaceCatalog
+      ? buildDefaultBreadcrumb(workspaceCatalog)
+      : [];
+  const workspaceTitle = workspaceCatalog?.name || 'Catálogo';
 
   const loadStatus = useCallback(async () => {
     const status = await cloudApi.getCloudStatus();
@@ -114,6 +171,7 @@ export default function CloudView() {
 
   const loadFolder = useCallback(async (folderId: string) => {
     setLoading(true);
+    setExplorerError('');
     try {
       const result = await cloudApi.listGoogleFolder(folderId);
       const nextItems = result.items || [];
@@ -126,15 +184,36 @@ export default function CloudView() {
             .map(item => [item.id, { ...prev[item.id], referenceDetected: detectReferenceFolders([item]).length > 0 }])
         ),
       }));
+      if (result.error) {
+        setExplorerError(result.error);
+      }
       return nextItems;
     } catch (e) {
       console.error('Erro ao carregar pasta cloud:', e);
       setItems([]);
+      setExplorerError('Não foi possível carregar o Google Drive. Tente novamente.');
       return [];
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const loadExplorerFolder = useCallback(async (folderId: string, allowFallbackToRoot = true) => {
+    const nextItems = await loadFolder(folderId);
+    if (allowFallbackToRoot && folderId !== 'root' && nextItems.length === 0) {
+      setBackStack([]);
+      setForwardStack([]);
+      setBreadcrumb(rootBreadcrumb);
+      setSelectedFolder(null);
+      setDraft(null);
+      const rootItems = await loadFolder('root');
+      if (!rootItems.some(item => item.isFolder)) {
+        setCatalogError('Não foi possível carregar o Google Drive. Tente recarregar.');
+      }
+      return rootItems;
+    }
+    return nextItems;
+  }, [loadFolder]);
 
   const selectedDraft = useMemo(() => {
     if (draft) return draft;
@@ -181,32 +260,19 @@ export default function CloudView() {
     restoreGuardRef.current = true;
     setRestoringCatalogId(catalog.id);
     try {
-      const nextDraft = catalogToDraft(catalog);
-      setDraft(nextDraft);
-      setSelectedFolder(null);
-      const nextBreadcrumb = sessionToBreadcrumb(session, catalog);
-      setBreadcrumb(nextBreadcrumb);
-      setBackStack(session?.backStack || []);
-      setForwardStack(session?.forwardStack || []);
-      const targetFolderId = session?.currentFolderId || catalog.sourceFolderId || 'root';
-      const nextItems = await loadFolder(targetFolderId);
-      if (session?.selectedFolderId) {
-        const nextSelected = nextItems.find(item => item.id === session.selectedFolderId) || null;
-        setSelectedFolder(nextSelected);
-      }
-      if (typeof window !== 'undefined') {
-        window.setTimeout(() => window.scrollTo({ top: session?.scrollPosition || 0, behavior: 'auto' }), 0);
-      }
+      setWorkspaceCatalog(catalog);
+      setWorkspaceSession(session || null);
+      setCatalogAiStatus(catalog.aiStatus || null);
       await api.updateSettings({
         cloud_last_catalog_id: catalog.id,
         cloud_restore_last_catalog: true,
       }).catch(() => {});
-      await loadCatalogAiStatus(catalog.id);
+      setCloudMode('workspace');
     } finally {
       restoreGuardRef.current = false;
       setRestoringCatalogId(null);
     }
-  }, [loadCatalogAiStatus, loadFolder]);
+  }, []);
 
   const openCatalogProject = useCallback(async (catalogId: string) => {
     const result = await cloudApi.getCloudCatalog(catalogId);
@@ -214,6 +280,7 @@ export default function CloudView() {
     if (!catalog) {
       throw new Error('Catálogo cloud não encontrado');
     }
+    setRestorePromptCatalog(null);
     await applyCatalogSession(catalog, result.session || null);
     if (catalog.status === 'draft') {
       setCatalogSuccess(`Catálogo "${catalog.name}" aberto em modo draft`);
@@ -223,6 +290,42 @@ export default function CloudView() {
     window.setTimeout(() => setCatalogSuccess(''), 3000);
     return catalog;
   }, [applyCatalogSession]);
+
+  const enterExplorer = useCallback(async () => {
+    setRestorePromptCatalog(null);
+    setCloudMode('explorer');
+    await loadExplorerFolder('root');
+    const session = readExplorerSession();
+    if (session) {
+      setBreadcrumb(session.breadcrumb?.length ? session.breadcrumb : rootBreadcrumb);
+      setBackStack(session.backStack || []);
+      setForwardStack(session.forwardStack || []);
+      setSelectedFolder(null);
+      setDraft(null);
+      if (session.currentFolderId !== 'root') {
+        await loadExplorerFolder(session.currentFolderId || 'root');
+      }
+      return;
+    }
+    setBreadcrumb(rootBreadcrumb);
+    setBackStack([]);
+    setForwardStack([]);
+    setSelectedFolder(null);
+    setDraft(null);
+    await loadExplorerFolder('root');
+  }, [loadExplorerFolder]);
+
+  const closeWorkspace = useCallback(() => {
+    setWorkspaceCatalog(null);
+    setWorkspaceSession(null);
+    setCatalogAiStatus(null);
+    setCloudMode('home');
+  }, []);
+
+  const backToDrive = useCallback(async () => {
+    setCloudMode('explorer');
+    await loadExplorerFolder(currentFolderId || 'root');
+  }, [currentFolderId, loadExplorerFolder]);
 
   useEffect(() => {
     if (saveSessionTimerRef.current) {
@@ -253,6 +356,17 @@ export default function CloudView() {
   }, [backStack, breadcrumb, forwardStack, persistSession, selectedDraft?.id, selectedDraft?.sourceFolderId, selectedFolder?.id]);
 
   useEffect(() => {
+    if (cloudMode !== 'explorer') return;
+    saveExplorerSession({
+      currentFolderId,
+      breadcrumb,
+      backStack,
+      forwardStack,
+      selectedFolderId: selectedFolder?.id || null,
+    });
+  }, [backStack, breadcrumb, cloudMode, currentFolderId, forwardStack, selectedFolder?.id]);
+
+  useEffect(() => {
     let active = true;
     async function boot() {
       const google = await loadStatus();
@@ -266,16 +380,36 @@ export default function CloudView() {
         : '';
       if (google?.connected && shouldRestoreLast && lastCatalogId) {
         try {
-          await openCatalogProject(lastCatalogId);
-          setLoading(false);
-          return;
+          const result = await cloudApi.getCloudCatalog(lastCatalogId);
+          if (!active) return;
+          const promptCatalog = result.catalog || recentCatalogsRef.current.find(item => item.id === lastCatalogId);
+          if (promptCatalog) {
+            setRestorePromptCatalog(promptCatalog);
+          }
         } catch (error) {
-          console.warn('Falha ao restaurar último catálogo cloud:', error);
+          console.warn('Falha ao carregar último catálogo cloud:', error);
         }
       }
       if (google?.connected) {
-        await loadFolder('root');
+        await loadExplorerFolder('root');
+        const explorerSession = readExplorerSession();
+        if (explorerSession?.currentFolderId) {
+          setBreadcrumb(explorerSession.breadcrumb?.length ? explorerSession.breadcrumb : rootBreadcrumb);
+          setBackStack(explorerSession.backStack || []);
+          setForwardStack(explorerSession.forwardStack || []);
+          setSelectedFolder(null);
+          setDraft(null);
+          if (explorerSession.currentFolderId !== 'root') {
+            await loadExplorerFolder(explorerSession.currentFolderId || 'root');
+          }
+        }
+        if (active) {
+          setCloudMode('home');
+        }
       } else {
+        setLoading(false);
+      }
+      if (active) {
         setLoading(false);
       }
     }
@@ -283,14 +417,14 @@ export default function CloudView() {
     return () => {
       active = false;
     };
-  }, [loadFolder, loadRecentCatalogs, loadStatus, openCatalogProject]);
+  }, [loadExplorerFolder, loadRecentCatalogs, loadStatus]);
 
   const restoreNavigation = useCallback((snapshot: CloudNavigationSnapshot) => {
     setBreadcrumb(snapshot.breadcrumb);
     setSelectedFolder(null);
     setDraft(null);
-    void loadFolder(snapshot.currentFolderId);
-  }, [loadFolder]);
+    void loadExplorerFolder(snapshot.currentFolderId);
+  }, [loadExplorerFolder]);
 
   const handleOpenFolder = (folder: CloudItem) => {
     setBackStack(prev => [...prev, createNavigationSnapshot(breadcrumb)]);
@@ -298,7 +432,7 @@ export default function CloudView() {
     setBreadcrumb(prev => [...prev, { id: folder.id, name: folder.name }]);
     setSelectedFolder(null);
     setDraft(null);
-    void loadFolder(folder.id);
+    void loadExplorerFolder(folder.id);
   };
 
   const handleBack = useCallback(() => {
@@ -331,8 +465,8 @@ export default function CloudView() {
     setBreadcrumb(next);
     setSelectedFolder(null);
     setDraft(null);
-    void loadFolder(next[next.length - 1]?.id || 'root');
-  }, [breadcrumb, loadFolder]);
+    void loadExplorerFolder(next[next.length - 1]?.id || 'root');
+  }, [breadcrumb, loadExplorerFolder]);
 
   const handleSelectFolder = async (folder: CloudItem) => {
     setSelectedFolder(folder);
@@ -380,13 +514,14 @@ export default function CloudView() {
     setBreadcrumb(next);
     setSelectedFolder(null);
     setDraft(null);
-    void loadFolder(next[next.length - 1]?.id || 'root');
+    void loadExplorerFolder(next[next.length - 1]?.id || 'root');
   };
 
   const handleRefresh = async () => {
+    setExplorerError('');
     await loadStatus();
     if (connected) {
-      await loadFolder(currentFolderId);
+      await loadExplorerFolder(currentFolderId);
     }
   };
 
@@ -461,6 +596,7 @@ export default function CloudView() {
       setCatalogProgress({ percent: 100, label: 'Catálogo criado' });
       await new Promise(resolve => window.setTimeout(resolve, 280));
       setDraft(indexedDraft);
+      setRestorePromptCatalog(null);
       const optimisticCatalog = draftToCatalog(indexedDraft);
       if (optimisticCatalog) {
         setRecentCatalogs(prev => [
@@ -473,6 +609,10 @@ export default function CloudView() {
         cloud_restore_last_catalog: true,
       }).catch(() => {});
       await loadCatalogAiStatus(catalogId);
+      const workspaceCatalog = (result.catalog as CloudCatalog | null) || draftToCatalog(indexedDraft);
+      setWorkspaceCatalog(workspaceCatalog);
+      setWorkspaceSession(null);
+      setCloudMode('workspace');
       setCatalogSuccess(isFallback ? 'Catálogo cloud criado localmente em modo draft' : 'Catálogo criado com sucesso');
       window.setTimeout(() => setCatalogSuccess(''), 3200);
       if (!isFallback) {
@@ -505,6 +645,7 @@ export default function CloudView() {
       await openCatalogProject(catalog.id);
       await loadRecentCatalogs();
     } catch {
+      setRestorePromptCatalog(null);
       await applyCatalogSession(catalog, null);
     }
   };
@@ -514,6 +655,7 @@ export default function CloudView() {
     const picked = useFolder ? await api.selectFolder().catch(() => null) : await api.selectFile().catch(() => null);
     if (!picked?.path) return;
     setCatalogError('');
+    setRestorePromptCatalog(null);
     try {
       const result = await cloudApi.openExistingCloudCatalog(picked.path);
       await applyCatalogSession(result.catalog, result.session || null);
@@ -534,14 +676,14 @@ export default function CloudView() {
   }, [applyCatalogSession, loadRecentCatalogs]);
 
   const handleProcessCatalogAi = useCallback(async () => {
-    if (!selectedDraft?.id) {
+    if (!workspaceCatalog?.id) {
       setCatalogError('Abra um catálogo cloud antes de processar a IA.');
       return;
     }
     setCatalogError('');
     try {
-      const result = await cloudApi.processCloudCatalogAi(selectedDraft.id, { limit: 12, recursive: true, force: false });
-      await loadCatalogAiStatus(selectedDraft.id);
+      const result = await cloudApi.processCloudCatalogAi(workspaceCatalog.id, { limit: 12, recursive: true, force: false });
+      await loadCatalogAiStatus(workspaceCatalog.id);
       setCatalogSuccess(
         result.processed
           ? `IA processada no catálogo (${result.processed} face(s) novas)`
@@ -551,7 +693,7 @@ export default function CloudView() {
     } catch (error: any) {
       setCatalogError(error?.message || 'Falha ao processar a IA do catálogo.');
     }
-  }, [loadCatalogAiStatus, selectedDraft?.id]);
+  }, [loadCatalogAiStatus, workspaceCatalog?.id]);
 
   const handleCloudMouseDown = (event: MouseEvent<HTMLDivElement>) => {
     if (event.button === 3) {
@@ -584,106 +726,280 @@ export default function CloudView() {
         </section>
       ) : (
         <>
-        <CloudRecentCatalogs
-          catalogs={recentCatalogs}
-          loading={catalogsLoading || restoringCatalogId !== null}
-          onOpenCatalog={handleOpenRecentCatalog}
-          onOpenExistingCatalog={handleOpenExistingCatalog}
-        />
+        {cloudMode === 'home' && (
+          <>
+            {restorePromptCatalog && (
+              <section className={styles.restorePrompt}>
+                <div>
+                  <span>Reabrir último catálogo?</span>
+                  <strong>{restorePromptCatalog.name}</strong>
+                  <small>{restorePromptCatalog.sourceFolderName || restorePromptCatalog.sourceFolderId}</small>
+                </div>
+                <div className={styles.restoreActions}>
+                  <button type="button" className={styles.primaryButton} onClick={() => void openCatalogProject(restorePromptCatalog.id)}>
+                    Reabrir
+                  </button>
+                  <button type="button" className={styles.secondaryButton} onClick={() => {
+                    setRestorePromptCatalog(null);
+                    setCloudMode('explorer');
+                  }}>
+                    Ir para Explorer
+                  </button>
+                </div>
+              </section>
+            )}
 
-        {catalogSuccess && (
-          <div className={styles.successNotice}>
-            <CheckCircle2 size={15} />
-            {catalogSuccess}
-          </div>
+            <section className={styles.homeActions}>
+              <button type="button" className={styles.primaryButton} onClick={() => {
+                setRestorePromptCatalog(null);
+                void enterExplorer();
+              }}>
+                Navegar no Google Drive
+              </button>
+              <button type="button" className={styles.secondaryButton} onClick={() => setCloudMode('home')}>
+                Catálogos
+              </button>
+            </section>
+
+            <CloudRecentCatalogs
+              catalogs={recentCatalogs}
+              loading={catalogsLoading || restoringCatalogId !== null}
+              onOpenCatalog={handleOpenRecentCatalog}
+              onOpenExistingCatalog={handleOpenExistingCatalog}
+            />
+          </>
         )}
 
-        {catalogError && (
-          <div className={styles.errorNotice}>
-            {catalogError}
-          </div>
-        )}
-
-        <div className={styles.importHeader}>
-          <span>Entrada/importação</span>
-          <small>Use o explorer apenas para escolher novas pastas do Google Drive.</small>
-        </div>
-
-        <CloudNavigationBar
-          currentFolderName={currentFolderName}
-          cacheSize={selectedDraft?.cacheSize}
-          loading={loading}
-          canGoBack={backStack.length > 0}
-          canGoForward={forwardStack.length > 0}
-          canGoUp={canGoUp(breadcrumb)}
-          onBack={handleBack}
-          onForward={handleForward}
-          onUp={handleUp}
-          onRefresh={handleRefresh}
-        />
-
-        <div className={styles.mainGrid}>
-          <CloudExplorer
-            items={items}
-            breadcrumb={breadcrumb}
-            loading={loading}
-            selectedFolderId={selectedFolder?.id}
-            folderInsights={folderInsights}
-            onOpenFolder={handleOpenFolder}
-            onSelectFolder={handleSelectFolder}
-            onGoToBreadcrumb={handleGoToBreadcrumb}
-          />
-
-          <aside className={styles.sideStack}>
-            {selectedDraft?.id || selectedDraft?.status === 'indexed' || selectedDraft?.status === 'processing' ? (
-              <CloudEventDashboard
-                draft={selectedDraft}
-                aiStatus={catalogAiStatus}
-                onProcessAi={handleProcessCatalogAi}
-                onOpenCatalogRoot={async path => {
-                  if (!path) return;
-                  await api.openFolder(path);
-                }}
-                onOpenCatalogFolder={async path => {
-                  if (!path) return;
-                  await api.openFolder(path);
-                }}
-                onReopenLastState={async () => {
-                  if (!selectedDraft?.id) return;
-                  const session = await cloudApi.getCloudCatalogSession(selectedDraft.id).catch(() => null);
-                  const currentCatalog = draftToCatalog(selectedDraft);
-                  if (!currentCatalog) return;
-                  await applyCatalogSession(currentCatalog, session?.session || null);
-                }}
-              />
-            ) : selectedDraft ? (
-              <CloudWorkflowPanel
-                draft={selectedDraft}
-                loading={preparing}
-                creating={creating}
-                progress={catalogProgress}
-                analyzing={analyzing}
-                catalogReady={Boolean(selectedDraft.id && selectedDraft.status !== 'draft')}
-                onModeChange={handleModeChange}
-                onCreateCatalog={handleOpenCreateModal}
-                onChangeReferences={handleChangeReferences}
-                onAnalyze={handleAnalyze}
-              />
-            ) : (
-              <div className={styles.emptyPanel}>
-                Selecione uma pasta de evento para preparar o catálogo cloud.
+        {cloudMode === 'explorer' && (
+          <>
+            {catalogSuccess && (
+              <div className={styles.successNotice}>
+                <CheckCircle2 size={15} />
+                {catalogSuccess}
               </div>
             )}
-          </aside>
-        </div>
 
-        {showCreateModal && selectedDraft && (
-          <CloudCatalogCreateModal
-            draft={selectedDraft}
-            parentFolderName={parentFolderName || undefined}
-            creating={creating}
-            onConfirm={handleCreateCatalog}
-            onCancel={() => setShowCreateModal(false)}
+            {catalogError && (
+              <div className={styles.errorNotice}>
+                {catalogError}
+              </div>
+            )}
+
+            <div className={styles.explorerModeBar}>
+              <button type="button" className={styles.ghostButton} onClick={() => setCloudMode('explorer')}>
+                ☁ Explorer
+              </button>
+              <button type="button" className={styles.ghostButton} onClick={() => setCloudMode('home')}>
+                📂 Catálogos
+              </button>
+              <button type="button" className={styles.primaryButton} onClick={() => void backToDrive()}>
+                ↩ Voltar ao Drive
+              </button>
+            </div>
+
+            {!loading && !explorerHasItems && (
+              <div className={styles.reloadNotice}>
+                <span>Não foi possível carregar itens deste nível.</span>
+                <button type="button" className={styles.secondaryButton} onClick={() => void loadExplorerFolder('root')}>
+                  Recarregar Google Drive
+                </button>
+              </div>
+            )}
+
+            {explorerError && (
+              <div className={styles.reloadNotice}>
+                <span>{explorerError}</span>
+                <button type="button" className={styles.secondaryButton} onClick={() => void loadExplorerFolder(currentFolderId || 'root')}>
+                  Tentar novamente
+                </button>
+              </div>
+            )}
+
+            <div className={styles.importHeader}>
+              <span>Entrada/importação</span>
+              <small>Use o explorer apenas para escolher novas pastas do Google Drive.</small>
+            </div>
+
+            <CloudNavigationBar
+              currentFolderName={currentFolderName}
+              cacheSize={selectedDraft?.cacheSize}
+              loading={loading}
+              canGoBack={backStack.length > 0}
+              canGoForward={forwardStack.length > 0}
+              canGoUp={canGoUp(breadcrumb)}
+              onBack={handleBack}
+              onForward={handleForward}
+              onUp={handleUp}
+              onRefresh={handleRefresh}
+            />
+
+            <div className={styles.mainGrid}>
+              <CloudExplorer
+                items={items}
+                breadcrumb={breadcrumb}
+                loading={loading}
+                selectedFolderId={selectedFolder?.id}
+                folderInsights={folderInsights}
+                onOpenFolder={handleOpenFolder}
+                onSelectFolder={handleSelectFolder}
+                onGoToBreadcrumb={handleGoToBreadcrumb}
+              />
+
+              <aside className={styles.sideStack}>
+                {selectedDraft?.id || selectedDraft?.status === 'indexed' || selectedDraft?.status === 'processing' ? (
+                  <CloudEventDashboard
+                    draft={selectedDraft}
+                    aiStatus={catalogAiStatus}
+                    onProcessAi={handleProcessCatalogAi}
+                    onOpenCatalogRoot={async path => {
+                      if (!path) return;
+                      await api.openFolder(path);
+                    }}
+                    onOpenCatalogFolder={async path => {
+                      if (!path) return;
+                      await api.openFolder(path);
+                    }}
+                    onReopenLastState={async () => {
+                      if (!selectedDraft?.id) return;
+                      const session = await cloudApi.getCloudCatalogSession(selectedDraft.id).catch(() => null);
+                      const currentCatalog = draftToCatalog(selectedDraft);
+                      if (!currentCatalog) return;
+                      setWorkspaceCatalog(currentCatalog);
+                      setWorkspaceSession(session?.session || null);
+                      setCloudMode('workspace');
+                      await loadCatalogAiStatus(selectedDraft.id);
+                    }}
+                  />
+                ) : selectedDraft ? (
+                  <CloudWorkflowPanel
+                    draft={selectedDraft}
+                    loading={preparing}
+                    creating={creating}
+                    progress={catalogProgress}
+                    analyzing={analyzing}
+                    catalogReady={Boolean(selectedDraft.id && selectedDraft.status !== 'draft')}
+                    onModeChange={handleModeChange}
+                    onCreateCatalog={handleOpenCreateModal}
+                    onChangeReferences={handleChangeReferences}
+                    onAnalyze={handleAnalyze}
+                  />
+                ) : (
+                  <div className={styles.emptyPanel}>
+                    Selecione uma pasta de evento para preparar o catálogo cloud.
+                  </div>
+                )}
+              </aside>
+            </div>
+
+            {showCreateModal && selectedDraft && (
+              <CloudCatalogCreateModal
+                draft={selectedDraft}
+                parentFolderName={parentFolderName || undefined}
+                creating={creating}
+                onConfirm={handleCreateCatalog}
+                onCancel={() => setShowCreateModal(false)}
+              />
+            )}
+          </>
+        )}
+
+        {cloudMode === 'workspace' && workspaceCatalog && (
+          <>
+            <div className={styles.workspaceToolbar}>
+              <button type="button" className={styles.ghostButton} onClick={() => void backToDrive()}>
+                ← Voltar ao Drive
+              </button>
+              <button type="button" className={styles.ghostButton} onClick={() => setCloudMode('explorer')}>
+                📂 Explorer
+              </button>
+              <button type="button" className={styles.ghostButton} onClick={() => setCloudMode('home')}>
+                ☁ Catálogos
+              </button>
+              <button type="button" className={styles.secondaryButton} onClick={() => closeWorkspace()}>
+                ✕ Fechar catálogo
+              </button>
+              <button type="button" className={styles.dangerButton} onClick={() => {
+                setDeleteCatalogScope('recent');
+                setDeleteCatalogOpen(true);
+              }}>
+                🗑 Excluir catálogo
+              </button>
+            </div>
+
+            <div className={styles.workspaceBreadcrumb}>
+              <span>☁ Nuvem</span>
+              <span>›</span>
+              <button type="button" onClick={() => setCloudMode('home')}>Catálogos</button>
+              <span>›</span>
+              <strong title={workspaceCatalog.name}>{workspaceCatalog.name}</strong>
+            </div>
+
+            <div className={styles.mainGrid}>
+              <div className={styles.workspacePanel}>
+                <div className={styles.importHeader}>
+                  <span>Workspace do catálogo</span>
+                  <small>Persistência, IA e revisão por evento.</small>
+                </div>
+                <div className={styles.pathStack}>
+                  <div className={styles.pathBlock}>
+                    <span>Pasta atual</span>
+                    <strong title={workspaceSession?.currentPathJson?.map(i => i.name).join(' > ') || workspaceCatalog.sourceFolderName || workspaceCatalog.name}>
+                      {workspaceSession?.currentPathJson?.map(i => i.name).join(' > ') || workspaceCatalog.sourceFolderName || workspaceCatalog.name}
+                    </strong>
+                  </div>
+                  <div className={styles.pathBlock}>
+                    <span>Status</span>
+                    <strong>{workspaceCatalog.status === 'indexed' ? 'Indexado' : workspaceCatalog.status}</strong>
+                  </div>
+                </div>
+                <p className={styles.mutedLine}>
+                  Catálogo salvo em: {workspaceCatalog.catalogPath || 'indisponível'}
+                </p>
+              </div>
+
+              <aside className={styles.sideStack}>
+                <CloudEventDashboard
+                  draft={catalogToDraft(workspaceCatalog)}
+                  aiStatus={catalogAiStatus}
+                  onProcessAi={handleProcessCatalogAi}
+                  onOpenCatalogRoot={async path => {
+                    if (!path) return;
+                    await api.openFolder(path);
+                  }}
+                  onOpenCatalogFolder={async path => {
+                    if (!path) return;
+                    await api.openFolder(path);
+                  }}
+                  onReopenLastState={async () => {
+                    const session = await cloudApi.getCloudCatalogSession(workspaceCatalog.id).catch(() => null);
+                    setWorkspaceSession(session?.session || null);
+                    await loadCatalogAiStatus(workspaceCatalog.id);
+                  }}
+                />
+              </aside>
+            </div>
+          </>
+        )}
+
+        {deleteCatalogOpen && workspaceCatalog && (
+          <CloudCatalogDeleteModal
+            catalogName={workspaceCatalog.name}
+            scope={deleteCatalogScope}
+            onScopeChange={setDeleteCatalogScope}
+            onCancel={() => setDeleteCatalogOpen(false)}
+            onConfirm={async () => {
+              const scope = deleteCatalogScope;
+              setDeleteCatalogOpen(false);
+              try {
+                await cloudApi.deleteCloudCatalog(workspaceCatalog.id, scope);
+                setRecentCatalogs(prev => prev.filter(item => item.id !== workspaceCatalog.id));
+                recentCatalogsRef.current = recentCatalogsRef.current.filter(item => item.id !== workspaceCatalog.id);
+                closeWorkspace();
+                await loadRecentCatalogs();
+              } catch (error: any) {
+                setCatalogError(error?.message || 'Não foi possível excluir o catálogo.');
+              }
+            }}
           />
         )}
         </>

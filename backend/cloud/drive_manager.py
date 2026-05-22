@@ -5,6 +5,18 @@ from .drive_models import DriveFile, DriveFolder
 
 logger = logging.getLogger(__name__)
 
+IMAGE_MIME_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+    "image/tiff",
+    "image/bmp",
+}
+
+FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
+
 
 class DriveManager:
     def __init__(self):
@@ -36,28 +48,86 @@ class DriveManager:
     def list_folders(self, folder_id: str = "root") -> List[DriveFolder]:
         try:
             service = self._get_service()
-            results = (
-                service.files()
-                .list(
-                    q=f"'{folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
-                    fields="files(id, name, parents, modifiedTime)",
-                    orderBy="name",
-                )
-                .execute()
-            )
             folders = []
-            for f in results.get("files", []):
-                folders.append(
-                    DriveFolder(
-                        id=f["id"],
-                        name=f["name"],
-                        parent=f.get("parents", [None])[0],
-                        modifiedTime=f.get("modifiedTime"),
+            page_token = None
+            while True:
+                results = (
+                    service.files()
+                    .list(
+                        q=f"'{folder_id}' in parents and mimeType='{FOLDER_MIME_TYPE}' and trashed=false",
+                        fields="nextPageToken, files(id, name, parents, modifiedTime)",
+                        orderBy="name",
+                        pageToken=page_token,
+                        pageSize=1000,
                     )
+                    .execute()
                 )
+                for f in results.get("files", []):
+                    folders.append(
+                        DriveFolder(
+                            id=f["id"],
+                            name=f["name"],
+                            parent=f.get("parents", [None])[0],
+                            modifiedTime=f.get("modifiedTime"),
+                        )
+                    )
+                page_token = results.get("nextPageToken")
+                if not page_token:
+                    break
             return folders
         except Exception as e:
             logger.error(f"Erro ao listar pastas: {e}")
+            return []
+
+    def list_folder_items(self, folder_id: str = "root") -> List[Dict[str, Any]]:
+        try:
+            service = self._get_service()
+            image_mime_query = " or ".join([f"mimeType='{mime}'" for mime in sorted(IMAGE_MIME_TYPES)])
+            items: List[Dict[str, Any]] = []
+            page_token = None
+            while True:
+                results = (
+                    service.files()
+                    .list(
+                        q=f"'{folder_id}' in parents and trashed=false and (mimeType='{FOLDER_MIME_TYPE}' or {image_mime_query})",
+                        fields=(
+                            "nextPageToken, files("
+                            "id, name, mimeType, size, parents, modifiedTime, "
+                            "thumbnailLink, webViewLink, webContentLink"
+                            ")"
+                        ),
+                        orderBy="folder,name",
+                        pageToken=page_token,
+                        pageSize=1000,
+                    )
+                    .execute()
+                )
+                for f in results.get("files", []):
+                    mime_type = f.get("mimeType", "")
+                    is_folder = mime_type == FOLDER_MIME_TYPE
+                    size_value = f.get("size")
+                    try:
+                        parsed_size = int(size_value) if size_value is not None else None
+                    except (TypeError, ValueError):
+                        parsed_size = None
+                    items.append({
+                        "id": f["id"],
+                        "name": f["name"],
+                        "mimeType": mime_type,
+                        "isFolder": is_folder,
+                        "thumbnailUrl": f.get("thumbnailLink") if not is_folder else None,
+                        "webContentLink": f.get("webContentLink") or f.get("webViewLink"),
+                        "modifiedTime": f.get("modifiedTime"),
+                        "size": parsed_size,
+                        "parentId": f.get("parents", [None])[0],
+                    })
+                page_token = results.get("nextPageToken")
+                if not page_token:
+                    break
+            items.sort(key=lambda item: (0 if item["isFolder"] else 1, str(item["name"]).lower()))
+            return items
+        except Exception as e:
+            logger.error(f"Erro ao listar itens da pasta: {e}")
             return []
 
     def list_files(
@@ -65,36 +135,49 @@ class DriveManager:
     ) -> List[DriveFile]:
         try:
             service = self._get_service()
-            results = (
-                service.files()
-                .list(
-                    q=f"'{folder_id}' in parents and trashed=false and mimeType contains 'image/'",
-                    fields="files(id, name, mimeType, size, parents, modifiedTime, thumbnailLink, webViewLink)",
-                    pageSize=page_size,
-                    orderBy="name",
-                )
-                .execute()
-            )
+            accepted_image_query = " or ".join([f"mimeType='{mime}'" for mime in sorted(IMAGE_MIME_TYPES)])
             files = []
-            for f in results.get("files", []):
-                files.append(
-                    DriveFile(
-                        id=f["id"],
-                        name=f["name"],
-                        mimeType=f["mimeType"],
-                        size=int(f.get("size", 0)),
-                        parent=f.get("parents", [None])[0],
-                        modifiedTime=f.get("modifiedTime"),
-                        thumbnailLink=f.get("thumbnailLink"),
-                        webViewLink=f.get("webViewLink"),
+            page_token = None
+            while True:
+                results = (
+                    service.files()
+                    .list(
+                        q=f"'{folder_id}' in parents and trashed=false and ({accepted_image_query})",
+                        fields="nextPageToken, files(id, name, mimeType, size, parents, modifiedTime, thumbnailLink, webViewLink, webContentLink)",
+                        pageSize=page_size,
+                        pageToken=page_token,
+                        orderBy="name",
                     )
+                    .execute()
                 )
+                for f in results.get("files", []):
+                    size_value = f.get("size")
+                    try:
+                        parsed_size = int(size_value) if size_value is not None else None
+                    except (TypeError, ValueError):
+                        parsed_size = None
+                    files.append(
+                        DriveFile(
+                            id=f["id"],
+                            name=f["name"],
+                            mimeType=f["mimeType"],
+                            size=parsed_size,
+                            parent=f.get("parents", [None])[0],
+                            modifiedTime=f.get("modifiedTime"),
+                            thumbnailLink=f.get("thumbnailLink"),
+                            webViewLink=f.get("webViewLink"),
+                            webContentLink=f.get("webContentLink"),
+                        )
+                    )
+                page_token = results.get("nextPageToken")
+                if not page_token:
+                    break
             return files
         except Exception as e:
             logger.error(f"Erro ao listar arquivos: {e}")
             return []
 
-    def summarize_folder(self, folder_id: str = "root", max_depth: int = 3) -> Dict[str, int]:
+    def summarize_folder(self, folder_id: str = "root", max_depth: int = 8) -> Dict[str, int]:
         try:
             service = self._get_service()
             visited = set()
@@ -106,37 +189,19 @@ class DriveManager:
 
                 image_count = 0
                 folder_count = 0
-                page_token = None
+                child_folders = []
+                for item in self.list_folder_items(current_id):
+                    if item.get("isFolder"):
+                        folder_count += 1
+                        child_folders.append(item["id"])
+                    elif item.get("mimeType") in IMAGE_MIME_TYPES:
+                        image_count += 1
 
-                while True:
-                    results = (
-                        service.files()
-                        .list(
-                            q=f"'{current_id}' in parents and trashed=false and (mimeType='application/vnd.google-apps.folder' or mimeType contains 'image/')",
-                            fields="nextPageToken, files(id, mimeType)",
-                            pageSize=1000,
-                            pageToken=page_token,
-                        )
-                        .execute()
-                    )
-
-                    child_folders = []
-                    for item in results.get("files", []):
-                        if item.get("mimeType") == "application/vnd.google-apps.folder":
-                            folder_count += 1
-                            child_folders.append(item["id"])
-                        elif str(item.get("mimeType", "")).startswith("image/"):
-                            image_count += 1
-
-                    if depth < max_depth:
-                        for child_id in child_folders:
-                            child_counts = count_level(child_id, depth + 1)
-                            image_count += child_counts["photos"]
-                            folder_count += child_counts["subfolders"]
-
-                    page_token = results.get("nextPageToken")
-                    if not page_token:
-                        break
+                if depth < max_depth:
+                    for child_id in child_folders:
+                        child_counts = count_level(child_id, depth + 1)
+                        image_count += child_counts["photos"]
+                        folder_count += child_counts["subfolders"]
 
                 return {"photos": image_count, "subfolders": folder_count}
 
@@ -148,15 +213,25 @@ class DriveManager:
     def get_file_metadata(self, file_id: str) -> Optional[DriveFile]:
         try:
             service = self._get_service()
-            f = service.files().get(fileId=file_id, fields="id, name, mimeType, size, parents, modifiedTime, thumbnailLink").execute()
+            f = service.files().get(
+                fileId=file_id,
+                fields="id, name, mimeType, size, parents, modifiedTime, thumbnailLink, webViewLink, webContentLink",
+            ).execute()
+            size_value = f.get("size")
+            try:
+                parsed_size = int(size_value) if size_value is not None else None
+            except (TypeError, ValueError):
+                parsed_size = None
             return DriveFile(
                 id=f["id"],
                 name=f["name"],
                 mimeType=f["mimeType"],
-                size=int(f.get("size", 0)),
+                size=parsed_size,
                 parent=f.get("parents", [None])[0],
                 modifiedTime=f.get("modifiedTime"),
                 thumbnailLink=f.get("thumbnailLink"),
+                webViewLink=f.get("webViewLink"),
+                webContentLink=f.get("webContentLink"),
             )
         except Exception as e:
             logger.error(f"Erro ao buscar metadata: {e}")

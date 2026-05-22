@@ -13,7 +13,10 @@ export type CloudItem = {
   mimeType: string;
   isFolder: boolean;
   thumbnailUrl?: string;
+  webContentLink?: string;
   parentId?: string;
+  modifiedTime?: string | null;
+  size?: number | null;
 };
 
 export type CloudFolderInsight = {

@@ -3616,6 +3616,41 @@ def cloud_google_folders(parent_id: str = "root"):
         return {"error": str(e), "folders": []}
 
 
+@app.get("/api/cloud/google/list")
+def cloud_google_list(folderId: str = "root"):
+    try:
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError
+        from cloud import is_authenticated, drive_manager
+
+        if not is_authenticated():
+            return {"error": "Não conectado ao Google Drive", "items": [], "folders": [], "photos": 0, "subfolders": 0}
+
+        def _load():
+            folders = [f.model_dump() for f in drive_manager.list_folders(folderId)]
+            return folders
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_load)
+            try:
+                folders = future.result(timeout=12)
+            except TimeoutError:
+                print(f"[cloud/google/list] timeout ao listar folderId={folderId}")
+                return {"error": "Timeout ao listar pastas do Google Drive", "items": [], "folders": [], "photos": 0, "subfolders": 0}
+
+        return {
+            "items": folders,
+            "folders": folders,
+            "photos": 0,
+            "subfolders": len(folders),
+            "count": len(folders),
+            "photosCount": 0,
+            "subfoldersCount": len(folders),
+        }
+    except Exception as e:
+        print(f"[cloud/google/list] erro folderId={folderId}: {e}")
+        return {"error": str(e), "items": [], "folders": [], "photos": 0, "subfolders": 0}
+
+
 @app.get("/api/cloud/google/summary")
 def cloud_google_summary(folder_id: str = "root"):
     try:
@@ -3743,6 +3778,16 @@ IMAGE_MAGIC_BYTES = {
     b'\x89PNG': 'image/png',
     b'GIF8': 'image/gif',
     b'RIFF': 'image/webp',
+}
+
+GOOGLE_DRIVE_IMAGE_MIME_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+    "image/tiff",
+    "image/bmp",
 }
 
 def _is_valid_image_file(path: str) -> bool:
@@ -3973,6 +4018,23 @@ def _ensure_cloud_event_sqlite(fpdb_path: Path, metadata: Dict[str, Any]) -> Non
                 created_at TEXT,
                 updated_at TEXT,
                 last_opened_at TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS cloud_photos (
+                id TEXT PRIMARY KEY,
+                catalog_id TEXT,
+                provider TEXT,
+                cloud_file_id TEXT,
+                name TEXT,
+                mime_type TEXT,
+                thumbnail_url TEXT,
+                web_content_link TEXT,
+                size INTEGER,
+                parent_folder_id TEXT,
+                status TEXT,
+                created_at TEXT,
+                updated_at TEXT
             )
         """)
         conn.execute("""
@@ -4519,24 +4581,64 @@ def _cloud_ai_list_drive_files_recursive(folder_id: str, max_depth: int = 8) -> 
             return
         visited.add(current_id)
         try:
-            for item in drive_manager.list_files(current_id):
+            for item in drive_manager.list_folder_items(current_id):
+                if item.get("isFolder"):
+                    walk(str(item.get("id", "")), depth + 1)
+                    continue
                 files.append({
-                    "id": item.id,
-                    "name": item.name,
-                    "parent": item.parent,
-                    "modifiedTime": item.modifiedTime,
-                    "mimeType": item.mimeType,
+                    "id": item.get("id"),
+                    "name": item.get("name"),
+                    "parent": item.get("parentId"),
+                    "modifiedTime": item.get("modifiedTime"),
+                    "mimeType": item.get("mimeType"),
+                    "thumbnailUrl": item.get("thumbnailUrl"),
+                    "webContentLink": item.get("webContentLink"),
+                    "size": item.get("size"),
                 })
-        except Exception:
-            pass
-        try:
-            for folder in drive_manager.list_folders(current_id):
-                walk(folder.id, depth + 1)
         except Exception:
             pass
 
     walk(folder_id, 0)
     return files
+
+
+def _cloud_store_photo_rows(conn: sqlite3.Connection, *, catalog_id: str, provider: str, files: List[Dict[str, Any]], now: str) -> int:
+    if not files:
+        return 0
+    inserted = 0
+    rows = []
+    for file_info in files:
+        file_id = str(file_info.get("id") or "").strip()
+        if not file_id:
+            continue
+        rows.append((
+            file_id,
+            catalog_id,
+            provider,
+            file_id,
+            str(file_info.get("name") or ""),
+            str(file_info.get("mimeType") or ""),
+            str(file_info.get("thumbnailUrl") or ""),
+            str(file_info.get("webContentLink") or ""),
+            int(file_info.get("size") or 0),
+            str(file_info.get("parent") or file_info.get("parentId") or ""),
+            "indexed",
+            now,
+            now,
+        ))
+    if not rows:
+        return 0
+    conn.executemany(
+        """
+        INSERT OR REPLACE INTO cloud_photos (
+            id, catalog_id, provider, cloud_file_id, name, mime_type, thumbnail_url,
+            web_content_link, size, parent_folder_id, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    inserted = len(rows)
+    return inserted
 
 
 def _prepare_cloud_catalog_structure(
@@ -5110,6 +5212,24 @@ def cloud_create_catalog(req: CloudCatalogCreateRequest):
             mode=req.mode,
             now=now,
         )
+        photo_files = _cloud_ai_list_drive_files_recursive(folder_id)
+        if not photo_files:
+            try:
+                from cloud import drive_manager
+                photo_files = [
+                    {
+                        "id": item.id,
+                        "name": item.name,
+                        "mimeType": item.mimeType,
+                        "thumbnailUrl": item.thumbnailLink,
+                        "webContentLink": item.webContentLink or item.webViewLink,
+                        "size": item.size,
+                        "parent": item.parent,
+                    }
+                    for item in drive_manager.list_files(folder_id)
+                ]
+            except Exception:
+                photo_files = []
         conn = sqlite3.connect(str(_cloud_events_db_path()))
         try:
             _ensure_cloud_events_table(conn)
@@ -5150,6 +5270,20 @@ def cloud_create_catalog(req: CloudCatalogCreateRequest):
         finally:
             conn.close()
 
+        fpdb_conn = sqlite3.connect(str(structure["fpdb_path"]))
+        try:
+            _ensure_cloud_event_sqlite(structure["fpdb_path"], structure["metadata"])
+            _cloud_store_photo_rows(
+                fpdb_conn,
+                catalog_id=catalog_id,
+                provider=req.provider,
+                files=photo_files,
+                now=now,
+            )
+            fpdb_conn.commit()
+        finally:
+            fpdb_conn.close()
+
         return {
             "success": True,
             "catalogId": catalog_id,
@@ -5183,6 +5317,8 @@ def cloud_create_catalog(req: CloudCatalogCreateRequest):
                 "createdAt": now,
                 "updatedAt": now,
             },
+            "photosCount": len(photo_files),
+            "photosInserted": len(photo_files),
         }
     except Exception as e:
         return {"success": False, "error": str(e), "status": "draft"}
@@ -5406,13 +5542,42 @@ def cloud_ai_reject_review_item(catalog_id: str, review_id: str):
 
 
 @app.delete("/api/cloud/catalogs/{catalog_id}")
-def cloud_delete_catalog(catalog_id: str):
+def cloud_delete_catalog(catalog_id: str, scope: str = "recent"):
+    scope = (scope or "recent").strip().lower()
     conn = sqlite3.connect(str(_cloud_events_db_path()))
+    conn.row_factory = sqlite3.Row
     try:
         _ensure_cloud_events_table(conn)
+        row = conn.execute("SELECT * FROM cloud_events WHERE id = ?", (catalog_id,)).fetchone()
+        if not row:
+            return {"success": False, "error": "Catálogo cloud não encontrado"}
+        if scope in {"catalog_cache", "all"}:
+            catalog_path = Path(row["catalog_path"] or "")
+            if catalog_path.exists():
+                try:
+                    if scope == "all":
+                        shutil.rmtree(catalog_path, ignore_errors=True)
+                    else:
+                        for subpath in [
+                            catalog_path / "Cache",
+                            catalog_path / "Embeddings",
+                            catalog_path / "Cloud",
+                            catalog_path / "Exports",
+                            catalog_path / "Logs",
+                            catalog_path / "Catalogo" / "review_state.db",
+                        ]:
+                            if subpath.is_dir():
+                                shutil.rmtree(subpath, ignore_errors=True)
+                            elif subpath.exists():
+                                try:
+                                    subpath.unlink()
+                                except Exception:
+                                    pass
+                except Exception as exc:
+                    raise HTTPException(status_code=500, detail=f"Falha ao apagar arquivos do catálogo: {exc}")
         cur = conn.execute("DELETE FROM cloud_events WHERE id = ?", (catalog_id,))
         conn.commit()
-        return {"success": cur.rowcount > 0}
+        return {"success": cur.rowcount > 0, "scope": scope}
     finally:
         conn.close()
 
@@ -5421,6 +5586,7 @@ def cloud_delete_catalog(catalog_id: str):
 def cloud_google_create_catalog(folder_id: str = "root", catalog_name: str = "", mode: str = "metadata_only"):
     try:
         from cloud.drive_cache import cache
+        from cloud import is_authenticated, drive_manager
         import sqlite3
 
         if not catalog_name:
@@ -5496,19 +5662,79 @@ def cloud_google_create_catalog(folder_id: str = "root", catalog_name: str = "",
             )
         """)
 
-        indexed_files = []
-        for filename in os.listdir(cache.metadata_dir):
-            if filename.endswith('.json'):
-                file_id = filename[:-5]
-                metadata = cache.load_metadata(file_id)
-                if metadata and metadata.get('parent_folder') == folder_id:
-                    indexed_files.append(metadata)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS cloud_photos (
+                id TEXT PRIMARY KEY,
+                catalog_id TEXT,
+                provider TEXT,
+                cloud_file_id TEXT,
+                name TEXT,
+                mime_type TEXT,
+                thumbnail_url TEXT,
+                web_content_link TEXT,
+                size INTEGER,
+                parent_folder_id TEXT,
+                status TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            )
+        """)
 
+        indexed_files = []
+        if is_authenticated():
+            try:
+                indexed_files = _cloud_ai_list_drive_files_recursive(folder_id)
+            except Exception:
+                indexed_files = []
+
+        if not indexed_files:
+            for filename in os.listdir(cache.metadata_dir):
+                if filename.endswith('.json'):
+                    file_id = filename[:-5]
+                    metadata = cache.load_metadata(file_id)
+                    if metadata and metadata.get('parent_folder') == folder_id:
+                        indexed_files.append({
+                            "id": metadata.get("drive_file_id", file_id),
+                            "name": metadata.get("name") or file_id,
+                            "mimeType": metadata.get("mime_type") or "image/jpeg",
+                            "thumbnailUrl": metadata.get("thumbnail_url") or "",
+                            "webContentLink": metadata.get("web_content_link") or "",
+                            "size": metadata.get("size"),
+                            "parent": metadata.get("parent_folder") or folder_id,
+                        })
+
+        now = datetime.now().isoformat()
         for f in indexed_files:
-            foto_path = f"cloud://{f['drive_file_id']}"
+            drive_file_id = f.get("id") or f.get("drive_file_id")
+            if not drive_file_id:
+                continue
+            foto_path = f"cloud://{drive_file_id}"
             cur.execute(
                 "INSERT OR IGNORE INTO ocorrencias (foto_path, aluno_id, source_type, drive_file_id, blur_status) VALUES (?, ?, ?, ?, ?)",
-                (foto_path, "Pessoa 1", "google_drive", f['drive_file_id'], "unknown")
+                (foto_path, "Pessoa 1", "google_drive", drive_file_id, "unknown")
+            )
+            cur.execute(
+                """
+                INSERT OR REPLACE INTO cloud_photos (
+                    id, catalog_id, provider, cloud_file_id, name, mime_type, thumbnail_url,
+                    web_content_link, size, parent_folder_id, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    drive_file_id,
+                    catalog_name_safe,
+                    "google_drive",
+                    drive_file_id,
+                    f.get('name') or drive_file_id,
+                    f.get('mimeType') or 'image/jpeg',
+                    f.get('thumbnailUrl') or '',
+                    f.get('webContentLink') or '',
+                    int(f.get('size') or 0),
+                    f.get('parent') or folder_id,
+                    'indexed',
+                    now,
+                    now,
+                )
             )
 
         conn.commit()

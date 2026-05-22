@@ -1,5 +1,7 @@
 import { ChevronRight } from 'lucide-react';
 import { CloudFolderCard } from './CloudFolderCard';
+import { CloudPhotoCard } from './CloudPhotoCard';
+import { detectReferenceFolders } from './detectReferenceFolders';
 import type { CloudFolderInsight, CloudItem } from './types';
 import styles from '../../views/CloudView.module.css';
 
@@ -30,6 +32,10 @@ export function CloudExplorer({
   onGoToBreadcrumb,
 }: CloudExplorerProps) {
   const folders = items.filter(item => item.isFolder);
+  const photos = items.filter(item => !item.isFolder);
+  const referenceCount = folders.filter(folder => folderInsights[folder.id]?.referenceDetected || detectReferenceFolders([folder]).length > 0).length;
+  const photoCount = photos.length;
+  const folderCount = folders.length;
 
   return (
     <section className={styles.explorerPanel}>
@@ -47,25 +53,42 @@ export function CloudExplorer({
             </button>
           ))}
         </nav>
+        <div className={styles.explorerStats}>
+          <span><strong>{folderCount}</strong> pastas</span>
+          <span><strong>{photoCount}</strong> fotos</span>
+          <span><strong>{referenceCount}</strong> referências</span>
+        </div>
       </div>
 
       {loading ? (
         <div className={styles.emptyPanel}>Carregando pastas do Google Drive...</div>
-      ) : folders.length === 0 ? (
-        <div className={styles.emptyPanel}>Nenhuma pasta encontrada neste nível.</div>
+      ) : items.length === 0 ? (
+        <div className={styles.emptyPanel}>Nenhum item encontrado neste nível.</div>
       ) : (
-        <div className={styles.folderGrid}>
-          {folders.map(folder => (
-            <CloudFolderCard
-              key={folder.id}
-              folder={folder}
-              insight={folderInsights[folder.id]}
-              selected={selectedFolderId === folder.id}
-              onOpenFolder={onOpenFolder}
-              onSelectFolder={onSelectFolder}
-            />
-          ))}
-        </div>
+        <>
+          {folders.length > 0 && (
+            <div className={styles.folderGrid}>
+              {folders.map(folder => (
+                <CloudFolderCard
+                  key={folder.id}
+                  folder={folder}
+                  insight={folderInsights[folder.id]}
+                  selected={selectedFolderId === folder.id}
+                  onOpenFolder={onOpenFolder}
+                  onSelectFolder={onSelectFolder}
+                />
+              ))}
+            </div>
+          )}
+
+          {photos.length > 0 && (
+            <div className={styles.photoGrid}>
+              {photos.map(photo => (
+                <CloudPhotoCard key={photo.id} photo={photo} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </section>
   );

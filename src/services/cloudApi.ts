@@ -25,8 +25,32 @@ interface Folder {
   modifiedTime?: string;
 }
 
+type GoogleDriveListItem = {
+  id: string;
+  name: string;
+  mimeType: string;
+  isFolder: boolean;
+  thumbnailUrl?: string | null;
+  webContentLink?: string | null;
+  modifiedTime?: string | null;
+  size?: number | null;
+  parentId?: string | null;
+};
+
 interface FoldersResponse {
   folders: Folder[];
+  error?: string;
+}
+
+interface GoogleDriveListResponse {
+  items?: GoogleDriveListItem[];
+  folders?: GoogleDriveListItem[];
+  photosList?: GoogleDriveListItem[];
+  photos?: number;
+  subfolders?: number;
+  photosCount?: number;
+  subfoldersCount?: number;
+  count?: number;
   error?: string;
 }
 
@@ -115,6 +139,20 @@ function mapFoldersToCloudItems(folders: Folder[], parentId: string): CloudItem[
   }));
 }
 
+function mapGoogleDriveItems(items: GoogleDriveListItem[], parentId: string): CloudItem[] {
+  return items.map(item => ({
+    id: item.id,
+    name: item.name,
+    mimeType: item.mimeType,
+    isFolder: Boolean(item.isFolder),
+    thumbnailUrl: item.thumbnailUrl || undefined,
+    webContentLink: item.webContentLink || undefined,
+    modifiedTime: item.modifiedTime || undefined,
+    size: item.size ?? undefined,
+    parentId: item.parentId || parentId,
+  }));
+}
+
 export const cloudApi = {
   getGoogleAuthUrl: () =>
     fetchJSON<{ auth_url: string; error?: string }>(`${API_BASE}/cloud/google/auth/start`),
@@ -189,13 +227,21 @@ export const cloudApi = {
 
   listGoogleFolder: async (folderId: string = 'root') => {
     try {
-      return await fetchJSON<{ items: CloudItem[]; error?: string }>(
-        `${API_BASE}/cloud/google/list?folderId=${encodeURIComponent(folderId)}`
+      const result = await fetchJSON<FoldersResponse>(
+        `${API_BASE}/cloud/google/folders?parent_id=${encodeURIComponent(folderId)}`
       );
+      return {
+        items: mapFoldersToCloudItems(result.folders || [], folderId),
+        photos: 0,
+        subfolders: result.folders?.length ?? 0,
+        error: result.error,
+      };
     } catch {
       const result = await cloudApi.getGoogleFolders(folderId);
       return {
         items: mapFoldersToCloudItems(result.folders || [], folderId),
+        photos: 0,
+        subfolders: result.folders?.length ?? 0,
         error: result.error,
       };
     }
@@ -357,9 +403,9 @@ export const cloudApi = {
       { path }
     ),
 
-  deleteCloudCatalog: async (catalogId: string) =>
-    fetchJSON<{ success: boolean }>(
-      `${API_BASE}/cloud/catalogs/${encodeURIComponent(catalogId)}`,
+  deleteCloudCatalog: async (catalogId: string, scope: 'recent' | 'catalog_cache' | 'all' = 'recent') =>
+    fetchJSON<{ success: boolean; scope?: string }>(
+      `${API_BASE}/cloud/catalogs/${encodeURIComponent(catalogId)}?scope=${encodeURIComponent(scope)}`,
       { method: 'DELETE' }
     ),
 
