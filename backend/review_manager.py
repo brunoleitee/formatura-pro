@@ -4411,7 +4411,7 @@ def detect_faces_for_search(image_path):
     img = imread_unicode(image_path)
     if img is None:
         raise HTTPException(status_code=400, detail="Nao foi possivel ler a imagem.")
-    from scanner_engine import FACE_INFERENCE_LOCK
+    from services.face_engine import FACE_INFERENCE_LOCK
     with FACE_INFERENCE_LOCK:
         with quiet_external_output():
             faces = se.get_app_face().get(img) or []
@@ -4463,7 +4463,7 @@ def get_cached_occurrence_embedding(conn, occ):
         img = imread_unicode(path)
         if img is None:
             return None
-        from scanner_engine import FACE_INFERENCE_LOCK
+        from services.face_engine import FACE_INFERENCE_LOCK
         with FACE_INFERENCE_LOCK:
             with quiet_external_output():
                 faces = se.get_app_face().get(img) or []
@@ -4697,7 +4697,7 @@ def get_suggestions(aluno_id: str):
                     "box": box,
                 }
 
-        from scanner_engine import FACE_INFERENCE_LOCK
+        from services.face_engine import FACE_INFERENCE_LOCK
         for r in rows:
             img = imread_unicode(r["foto_path"])
             if img is None:

@@ -683,9 +683,11 @@ def get_quality_audit_status():
 
 
 def exit_app():
-    scan_state = _get("scan_state")
-    export_state = _get("export_state")
-    scan_state["is_scanning"] = False
-    export_state["is_exporting"] = False
+    scan_state = _value("scan_state", {})
+    export_state = _value("export_state", {})
+    if isinstance(scan_state, dict):
+        scan_state["is_scanning"] = False
+    if isinstance(export_state, dict):
+        export_state["is_exporting"] = False
     threading.Timer(0.4, lambda: os._exit(0)).start()
     return {"status": "closing"}

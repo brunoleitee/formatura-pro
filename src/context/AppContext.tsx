@@ -11,6 +11,7 @@ export type ViewName =
   | 'settings'
   | 'cloud-sync'
   | 'catalog-settings'
+  | 'scanner'
   ;
 
 interface AppContextValue {
