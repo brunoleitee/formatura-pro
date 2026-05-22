@@ -27,15 +27,26 @@ export function CloudFolderCard({
 
   return (
     <article className={styles.folderCard} data-selected={selected}>
+      <div className={styles.checkboxRow}>
+        <button
+          type="button"
+          className={`${styles.checkbox} ${selected ? styles.checkboxSelected : ''}`}
+          onClick={() => onSelectFolder(folder)}
+          title={`Selecionar ${folder.name}`}
+          aria-label={`Selecionar ${folder.name}`}
+        >
+          {selected && <Check size={11} />}
+        </button>
+      </div>
+
       <button
         type="button"
         className={styles.folderSelect}
-        onClick={() => onSelectFolder(folder)}
-        title={`Selecionar ${folder.name}`}
+        onClick={() => onOpenFolder(folder)}
+        title={`Abrir ${folder.name}`}
       >
-        <Folder size={18} />
-        <span>{folder.name}</span>
-        {selected && <Check size={15} />}
+        <Folder size={20} />
+        <span className={styles.folderName}>{folder.name}</span>
       </button>
 
       {shouldShowMetadata && (

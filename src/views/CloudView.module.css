@@ -269,6 +269,10 @@
   background: rgba(148, 163, 184, 0.04);
   flex-shrink: 0;
   transition: border-color 0.15s, background 0.15s;
+  cursor: pointer;
+  padding: 0;
+  font-size: 11px;
+  color: #fff;
 }
 
 .folderCard:hover .checkbox {
