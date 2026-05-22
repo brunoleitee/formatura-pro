@@ -142,7 +142,6 @@ export default function CloudView() {
   const connected = Boolean(connection?.connected);
   const currentFolderId = breadcrumb[breadcrumb.length - 1]?.id || 'root';
   const currentFolderName = breadcrumb[breadcrumb.length - 1]?.name || 'Meu Drive';
-  const explorerHasItems = items.length > 0;
   const workspaceBreadcrumb = workspaceSession?.currentPathJson?.length
     ? workspaceSession.currentPathJson
     : workspaceCatalog
@@ -784,15 +783,6 @@ export default function CloudView() {
                 ↩ Voltar ao Drive
               </button>
             </div>
-
-            {!loading && !explorerHasItems && (
-              <div className={styles.reloadNotice}>
-                <span>Não foi possível carregar itens deste nível.</span>
-                <button type="button" className={styles.secondaryButton} onClick={() => void loadExplorerFolder('root')}>
-                  Recarregar Google Drive
-                </button>
-              </div>
-            )}
 
             {explorerError && (
               <div className={styles.reloadNotice}>

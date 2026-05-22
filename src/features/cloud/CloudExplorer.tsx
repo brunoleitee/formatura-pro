@@ -1,7 +1,6 @@
 import { ChevronRight } from 'lucide-react';
 import { CloudFolderCard } from './CloudFolderCard';
 import { CloudPhotoCard } from './CloudPhotoCard';
-import { detectReferenceFolders } from './detectReferenceFolders';
 import type { CloudFolderInsight, CloudItem } from './types';
 import styles from '../../views/CloudView.module.css';
 
@@ -31,9 +30,8 @@ export function CloudExplorer({
   onSelectFolder,
   onGoToBreadcrumb,
 }: CloudExplorerProps) {
-  const folders = items.filter(item => item.isFolder);
-  const photos = items.filter(item => !item.isFolder);
-  const referenceCount = folders.filter(folder => folderInsights[folder.id]?.referenceDetected || detectReferenceFolders([folder]).length > 0).length;
+  const folders = items.filter(item => item.mimeType === 'application/vnd.google-apps.folder' || item.isFolder);
+  const photos = items.filter(item => item.isImage || /^image\//.test(item.mimeType));
   const photoCount = photos.length;
   const folderCount = folders.length;
 
@@ -56,17 +54,18 @@ export function CloudExplorer({
         <div className={styles.explorerStats}>
           <span><strong>{folderCount}</strong> pastas</span>
           <span><strong>{photoCount}</strong> fotos</span>
-          <span><strong>{referenceCount}</strong> referências</span>
         </div>
       </div>
 
       {loading ? (
         <div className={styles.emptyPanel}>Carregando pastas do Google Drive...</div>
       ) : items.length === 0 ? (
-        <div className={styles.emptyPanel}>Nenhuma subpasta encontrada nesta pasta. Esta pasta pode conter fotos.</div>
+        <div className={styles.emptyPanel}>Nenhum item encontrado nesta pasta.</div>
       ) : (
         <>
           {folders.length > 0 && (
+            <>
+              <div className={styles.sectionLabel}>Subpastas</div>
             <div className={styles.folderGrid}>
               {folders.map(folder => (
                 <CloudFolderCard
@@ -79,14 +78,18 @@ export function CloudExplorer({
                 />
               ))}
             </div>
+            </>
           )}
 
           {photos.length > 0 && (
+            <>
+              <div className={styles.sectionLabel}>Fotos</div>
             <div className={styles.photoGrid}>
               {photos.map(photo => (
                 <CloudPhotoCard key={photo.id} photo={photo} />
               ))}
             </div>
+            </>
           )}
         </>
       )}

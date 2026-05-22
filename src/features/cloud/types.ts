@@ -12,6 +12,7 @@ export type CloudItem = {
   name: string;
   mimeType: string;
   isFolder: boolean;
+  isImage?: boolean;
   thumbnailUrl?: string;
   webContentLink?: string;
   parentId?: string;

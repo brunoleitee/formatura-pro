@@ -3626,24 +3626,27 @@ def cloud_google_list(folderId: str = "root"):
             return {"error": "Não conectado ao Google Drive", "items": [], "folders": [], "photos": 0, "subfolders": 0}
 
         def _load():
-            folders = [f.model_dump() for f in drive_manager.list_folders(folderId)]
-            return folders
+            return drive_manager.list_folder_items(folderId)
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(_load)
             try:
-                folders = future.result(timeout=12)
+                items = future.result(timeout=12)
             except TimeoutError:
                 print(f"[cloud/google/list] timeout ao listar folderId={folderId}")
                 return {"error": "Timeout ao listar pastas do Google Drive", "items": [], "folders": [], "photos": 0, "subfolders": 0}
 
+        folders = [item for item in items if item.get("isFolder")]
+        photos = [item for item in items if not item.get("isFolder")]
+
         return {
-            "items": folders,
+            "items": items,
             "folders": folders,
-            "photos": 0,
+            "photosList": photos,
+            "photos": len(photos),
             "subfolders": len(folders),
-            "count": len(folders),
-            "photosCount": 0,
+            "count": len(items),
+            "photosCount": len(photos),
             "subfoldersCount": len(folders),
         }
     except Exception as e:

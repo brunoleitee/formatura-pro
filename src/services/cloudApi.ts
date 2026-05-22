@@ -116,6 +116,17 @@ const providerFallbacks: CloudProviderSummary[] = [
   { provider: 'onedrive', name: 'OneDrive', enabled: false, functional: false },
 ];
 
+const DRIVE_FOLDER_MIME = 'application/vnd.google-apps.folder';
+const DRIVE_IMAGE_MIMES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+  'image/tiff',
+  'image/bmp',
+]);
+
 function providerConnection(
   provider: CloudProvider,
   connected = false,
@@ -144,7 +155,8 @@ function mapGoogleDriveItems(items: GoogleDriveListItem[], parentId: string): Cl
     id: item.id,
     name: item.name,
     mimeType: item.mimeType,
-    isFolder: Boolean(item.isFolder),
+    isFolder: item.mimeType === DRIVE_FOLDER_MIME,
+    isImage: DRIVE_IMAGE_MIMES.has(item.mimeType),
     thumbnailUrl: item.thumbnailUrl || undefined,
     webContentLink: item.webContentLink || undefined,
     modifiedTime: item.modifiedTime || undefined,
@@ -230,20 +242,23 @@ export const cloudApi = {
       const result = await fetchJSON<GoogleDriveListResponse>(
         `${API_BASE}/cloud/google/list?folderId=${encodeURIComponent(folderId)}`
       );
+      const sourceItems = Array.isArray(result.items) && result.items.length > 0
+        ? result.items
+        : (result.folders || []);
+      const items = mapGoogleDriveItems(sourceItems, folderId);
       return {
-        items: Array.isArray(result.items) && result.items.length > 0
-          ? mapGoogleDriveItems(result.items, folderId)
-          : mapGoogleDriveItems(result.folders || [], folderId),
-        photos: 0,
-        subfolders: result.subfolders ?? result.subfoldersCount ?? result.folders?.length ?? 0,
+        items,
+        photos: result.photos ?? result.photosCount ?? items.filter(item => item.isImage).length,
+        subfolders: result.subfolders ?? result.subfoldersCount ?? items.filter(item => item.isFolder).length,
         error: result.error,
       };
     } catch {
       const result = await cloudApi.getGoogleFolders(folderId);
+      const items = mapFoldersToCloudItems(result.folders || [], folderId);
       return {
-        items: mapFoldersToCloudItems(result.folders || [], folderId),
+        items,
         photos: 0,
-        subfolders: result.folders?.length ?? 0,
+        subfolders: items.filter(item => item.isFolder).length,
         error: result.error,
       };
     }
