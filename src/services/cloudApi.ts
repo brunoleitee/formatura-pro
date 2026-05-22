@@ -2,6 +2,7 @@ import { API_BASE, fetchJSON, post } from './api/core';
 import type {
   CloudConnection,
   CloudCatalog,
+  CloudCatalogAIStatus,
   CloudCatalogSession,
   CloudEventDraft,
   CloudItem,
@@ -56,6 +57,33 @@ type CloudCatalogOpenExistingResponse = {
   catalogId: string;
   catalog: CloudCatalog;
   session?: CloudCatalogSession;
+};
+
+type CloudCatalogAIProcessResponse = CloudCatalogAIStatus & {
+  success: boolean;
+  processed?: number;
+  skipped?: number;
+  errors?: number;
+};
+
+type CloudCatalogAIReviewItemsResponse = {
+  success: boolean;
+  catalogId: string;
+  items: Array<{
+    id: string;
+    faceId: string;
+    suggestedPersonId?: string | null;
+    confidence?: number | null;
+    status?: string;
+    decision?: string | null;
+    updatedAt?: string | null;
+    cloudFileId?: string | null;
+    localCachePath?: string | null;
+    bbox?: number[];
+    embeddingPath?: string | null;
+    personId?: string | null;
+    faceStatus?: string | null;
+  }>;
 };
 
 const providerFallbacks: CloudProviderSummary[] = [
@@ -272,6 +300,41 @@ export const cloudApi = {
   getCloudCatalog: async (catalogId: string) =>
     fetchJSON<{ success: boolean; catalog: CloudCatalog; session?: CloudCatalogSession }>(
       `${API_BASE}/cloud/catalogs/${encodeURIComponent(catalogId)}`
+    ),
+
+  getCloudCatalogAiStatus: async (catalogId: string) =>
+    fetchJSON<CloudCatalogAIStatus>(
+      `${API_BASE}/cloud/catalogs/${encodeURIComponent(catalogId)}/ai/status`
+    ),
+
+  processCloudCatalogAi: async (
+    catalogId: string,
+    payload: { limit?: number; force?: boolean; recursive?: boolean } = {},
+  ) =>
+    post<CloudCatalogAIProcessResponse>(
+      `${API_BASE}/cloud/catalogs/${encodeURIComponent(catalogId)}/ai/process`,
+      {
+        limit: payload.limit ?? 12,
+        force: payload.force ?? false,
+        recursive: payload.recursive ?? true,
+      }
+    ),
+
+  getCloudCatalogAiReviewItems: async (catalogId: string) =>
+    fetchJSON<CloudCatalogAIReviewItemsResponse>(
+      `${API_BASE}/cloud/catalogs/${encodeURIComponent(catalogId)}/ai/review-items`
+    ),
+
+  confirmCloudCatalogAiReviewItem: async (catalogId: string, reviewId: string) =>
+    post<{ success: boolean }>(
+      `${API_BASE}/cloud/catalogs/${encodeURIComponent(catalogId)}/ai/review-items/${encodeURIComponent(reviewId)}/confirm`,
+      {}
+    ),
+
+  rejectCloudCatalogAiReviewItem: async (catalogId: string, reviewId: string) =>
+    post<{ success: boolean }>(
+      `${API_BASE}/cloud/catalogs/${encodeURIComponent(catalogId)}/ai/review-items/${encodeURIComponent(reviewId)}/reject`,
+      {}
     ),
 
   getCloudCatalogSession: async (catalogId: string) =>

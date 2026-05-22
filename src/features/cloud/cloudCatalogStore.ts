@@ -25,6 +25,7 @@ export function catalogToDraft(catalog: CloudCatalog): CloudEventDraft {
     cacheSize: catalog.cacheSize,
     lastSync: catalog.lastSync,
     lastOpenedAt: catalog.lastOpenedAt,
+    aiStatus: catalog.aiStatus,
   };
 }
 
@@ -47,5 +48,6 @@ export function draftToCatalog(draft: CloudEventDraft): CloudCatalog | null {
     totalSubfolders: draft.totalSubfolders ?? draft.subfolderCount,
     referencesCount: draft.referencesCount ?? draft.references.length,
     lastOpenedAt: draft.lastOpenedAt,
+    aiStatus: draft.aiStatus,
   };
 }

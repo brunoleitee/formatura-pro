@@ -1,11 +1,12 @@
 import { Bot, Download, FolderOpen, Play, ShieldCheck } from 'lucide-react';
 import { CloudStatusBadge } from './CloudStatusBadge';
-import type { CloudEventDraft } from './types';
+import type { CloudCatalogAIStatus, CloudEventDraft } from './types';
 import styles from './CloudWorkflowPanel.module.css';
 
 type CloudEventDashboardProps = {
   draft: CloudEventDraft;
-  onAnalyze: () => void;
+  aiStatus?: CloudCatalogAIStatus | null;
+  onProcessAi: () => void | Promise<void>;
   onOpenCatalogRoot: (path?: string) => void | Promise<void>;
   onOpenCatalogFolder: (path?: string) => void | Promise<void>;
   onReopenLastState: () => void | Promise<void>;
@@ -19,7 +20,8 @@ const modeLabel: Record<CloudEventDraft['mode'], string> = {
 
 export function CloudEventDashboard({
   draft,
-  onAnalyze,
+  aiStatus,
+  onProcessAi,
   onOpenCatalogRoot,
   onOpenCatalogFolder,
   onReopenLastState,
@@ -28,13 +30,14 @@ export function CloudEventDashboard({
     { label: 'Total fotos', value: draft.totalFiles },
     { label: 'Referências', value: draft.references.length },
     { label: 'Subpastas', value: draft.totalSubfolders ?? draft.subfolderCount ?? 0 },
-    { label: 'Processadas', value: draft.status === 'ready' ? draft.totalFiles : 0 },
-    { label: 'Reconhecidas', value: 0 },
-    { label: 'Em revisão', value: 0 },
+    { label: 'Faces detectadas', value: aiStatus?.facesCount ?? 0 },
+    { label: 'Embeddings gerados', value: aiStatus?.embeddingsCount ?? 0 },
+    { label: 'Clusters', value: aiStatus?.clustersCount ?? 0 },
+    { label: 'Revisão pendente', value: aiStatus?.reviewPendingCount ?? 0 },
     { label: 'Provider', value: 'Google Drive' },
     { label: 'Modo', value: modeLabel[draft.mode] },
     { label: 'Cache cloud', value: draft.cacheEnabled === false ? 'desligado' : `${draft.cacheSize ?? 0} MB` },
-    { label: 'Última sincronização', value: draft.lastSync ? new Date(draft.lastSync).toLocaleDateString('pt-BR') : 'pendente' },
+    { label: 'Último processamento IA', value: aiStatus?.lastProcessedAt ? new Date(aiStatus.lastProcessedAt).toLocaleDateString('pt-BR') : 'pendente' },
   ];
 
   const handleOpenCatalogFolder = () => {
@@ -81,14 +84,19 @@ export function CloudEventDashboard({
         </div>
       </div>
 
+      <p className={styles.mutedLine}>
+        IA do catálogo: {aiStatus?.status === 'ready' ? 'pronta' : aiStatus?.status === 'processing' ? 'processando' : 'aguardando'}
+        {aiStatus?.message ? ` · ${aiStatus.message}` : ''}
+      </p>
+
       <div className={styles.actionRow}>
         <button type="button" className={styles.primaryButton} onClick={handleOpenCatalogRoot} disabled={!draft.catalogPath}>
           <ShieldCheck size={15} />
           Abrir catálogo
         </button>
-        <button type="button" className={styles.secondaryButton} onClick={onAnalyze}>
+        <button type="button" className={styles.secondaryButton} onClick={onProcessAi}>
           <Play size={15} />
-          Processar agora
+          Processar IA do catálogo
         </button>
         <button type="button" className={styles.secondaryButton} onClick={handleOpenCatalogRoot} disabled={!draft.catalogPath}>
           <FolderOpen size={15} />

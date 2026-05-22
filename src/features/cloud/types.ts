@@ -42,6 +42,20 @@ export type CloudCatalogSession = {
   updatedAt?: string | null;
 };
 
+export type CloudCatalogAIStatus = {
+  success?: boolean;
+  catalogId?: string;
+  catalogPath?: string;
+  cachePath?: string;
+  facesCount?: number;
+  embeddingsCount?: number;
+  clustersCount?: number;
+  reviewPendingCount?: number;
+  lastProcessedAt?: string | null;
+  status?: 'idle' | 'processing' | 'ready' | 'error';
+  message?: string;
+};
+
 export type CloudCatalogMode = 'catalog' | 'face' | 'full';
 
 export type CloudEventDraft = {
@@ -64,11 +78,15 @@ export type CloudEventDraft = {
   updatedAt?: string;
   catalogPath?: string;
   cachePath?: string;
+  embeddingsPath?: string;
+  facesDbPath?: string;
+  reviewStatePath?: string;
   cacheEnabled?: boolean;
   cacheSize?: number;
   lastSync?: string;
   lastOpenedAt?: string;
   session?: CloudCatalogSession;
+  aiStatus?: CloudCatalogAIStatus;
 };
 
 export type CloudCatalog = CloudEventDraft & {
@@ -82,10 +100,14 @@ export type CloudCatalog = CloudEventDraft & {
   updatedAt: string;
   catalogPath?: string;
   cachePath?: string;
+  embeddingsPath?: string;
+  facesDbPath?: string;
+  reviewStatePath?: string;
   sourceBreadcrumb?: string[];
   totalSubfolders?: number;
   referencesCount?: number;
   lastOpenedAt?: string;
+  aiStatus?: CloudCatalogAIStatus;
 };
 
 export type CloudProviderSummary = {

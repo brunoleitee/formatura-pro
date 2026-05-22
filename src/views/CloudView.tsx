@@ -84,8 +84,10 @@ export default function CloudView() {
   const [analyzing, setAnalyzing] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [restoringCatalogId, setRestoringCatalogId] = useState<string | null>(null);
+  const [catalogAiStatus, setCatalogAiStatus] = useState<CloudCatalog['aiStatus'] | null>(null);
   const saveSessionTimerRef = useRef<number | null>(null);
   const restoreGuardRef = useRef(false);
+  const recentCatalogsRef = useRef<CloudCatalog[]>([]);
 
   const connected = Boolean(connection?.connected);
   const currentFolderId = breadcrumb[breadcrumb.length - 1]?.id || 'root';
@@ -102,7 +104,9 @@ export default function CloudView() {
     setCatalogsLoading(true);
     try {
       const result = await cloudApi.listCloudCatalogs();
-      setRecentCatalogs(result.catalogs || []);
+      const nextCatalogs = result.catalogs || [];
+      recentCatalogsRef.current = nextCatalogs;
+      setRecentCatalogs(nextCatalogs);
     } finally {
       setCatalogsLoading(false);
     }
@@ -161,6 +165,18 @@ export default function CloudView() {
     }, 350);
   }, [backStack, breadcrumb, forwardStack, selectedDraft?.id, selectedDraft?.sourceFolderId, selectedFolder?.id]);
 
+  const loadCatalogAiStatus = useCallback(async (catalogId: string) => {
+    try {
+      const status = await cloudApi.getCloudCatalogAiStatus(catalogId);
+      setCatalogAiStatus(status);
+      return status;
+    } catch (error) {
+      console.warn('Falha ao carregar status da IA do catálogo:', error);
+      setCatalogAiStatus(null);
+      return null;
+    }
+  }, []);
+
   const applyCatalogSession = useCallback(async (catalog: CloudCatalog, session?: CloudCatalogSession | null) => {
     restoreGuardRef.current = true;
     setRestoringCatalogId(catalog.id);
@@ -185,15 +201,16 @@ export default function CloudView() {
         cloud_last_catalog_id: catalog.id,
         cloud_restore_last_catalog: true,
       }).catch(() => {});
+      await loadCatalogAiStatus(catalog.id);
     } finally {
       restoreGuardRef.current = false;
       setRestoringCatalogId(null);
     }
-  }, [loadFolder]);
+  }, [loadCatalogAiStatus, loadFolder]);
 
   const openCatalogProject = useCallback(async (catalogId: string) => {
     const result = await cloudApi.getCloudCatalog(catalogId);
-    const catalog = result.catalog || recentCatalogs.find(item => item.id === catalogId);
+    const catalog = result.catalog || recentCatalogsRef.current.find(item => item.id === catalogId);
     if (!catalog) {
       throw new Error('Catálogo cloud não encontrado');
     }
@@ -205,7 +222,7 @@ export default function CloudView() {
     }
     window.setTimeout(() => setCatalogSuccess(''), 3000);
     return catalog;
-  }, [applyCatalogSession, recentCatalogs]);
+  }, [applyCatalogSession]);
 
   useEffect(() => {
     if (saveSessionTimerRef.current) {
@@ -440,6 +457,7 @@ export default function CloudView() {
         status: nextDraft.status,
         createdAt: nextDraft.createdAt || new Date().toISOString(),
       };
+      const catalogId = indexedDraft.id || result.catalogId || catalogDraft.sourceFolderId;
       setCatalogProgress({ percent: 100, label: 'Catálogo criado' });
       await new Promise(resolve => window.setTimeout(resolve, 280));
       setDraft(indexedDraft);
@@ -451,9 +469,10 @@ export default function CloudView() {
         ].slice(0, 12));
       }
       await api.updateSettings({
-        cloud_last_catalog_id: indexedDraft.id,
+        cloud_last_catalog_id: catalogId,
         cloud_restore_last_catalog: true,
       }).catch(() => {});
+      await loadCatalogAiStatus(catalogId);
       setCatalogSuccess(isFallback ? 'Catálogo cloud criado localmente em modo draft' : 'Catálogo criado com sucesso');
       window.setTimeout(() => setCatalogSuccess(''), 3200);
       if (!isFallback) {
@@ -513,6 +532,26 @@ export default function CloudView() {
       setCatalogError(error?.message || 'Não foi possível abrir o catálogo existente.');
     }
   }, [applyCatalogSession, loadRecentCatalogs]);
+
+  const handleProcessCatalogAi = useCallback(async () => {
+    if (!selectedDraft?.id) {
+      setCatalogError('Abra um catálogo cloud antes de processar a IA.');
+      return;
+    }
+    setCatalogError('');
+    try {
+      const result = await cloudApi.processCloudCatalogAi(selectedDraft.id, { limit: 12, recursive: true, force: false });
+      await loadCatalogAiStatus(selectedDraft.id);
+      setCatalogSuccess(
+        result.processed
+          ? `IA processada no catálogo (${result.processed} face(s) novas)`
+          : 'Nenhuma face nova encontrada para processar'
+      );
+      window.setTimeout(() => setCatalogSuccess(''), 3000);
+    } catch (error: any) {
+      setCatalogError(error?.message || 'Falha ao processar a IA do catálogo.');
+    }
+  }, [loadCatalogAiStatus, selectedDraft?.id]);
 
   const handleCloudMouseDown = (event: MouseEvent<HTMLDivElement>) => {
     if (event.button === 3) {
@@ -599,7 +638,8 @@ export default function CloudView() {
             {selectedDraft?.id || selectedDraft?.status === 'indexed' || selectedDraft?.status === 'processing' ? (
               <CloudEventDashboard
                 draft={selectedDraft}
-                onAnalyze={handleAnalyze}
+                aiStatus={catalogAiStatus}
+                onProcessAi={handleProcessCatalogAi}
                 onOpenCatalogRoot={async path => {
                   if (!path) return;
                   await api.openFolder(path);
