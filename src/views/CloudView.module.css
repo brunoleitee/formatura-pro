@@ -233,7 +233,6 @@
   background: rgba(2, 6, 23, 0.32);
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
-  aspect-ratio: 1;
 }
 
 .folderCard:hover {
