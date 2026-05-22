@@ -6,7 +6,9 @@ import styles from './CloudWorkflowPanel.module.css';
 type CloudEventDashboardProps = {
   draft: CloudEventDraft;
   onAnalyze: () => void;
+  onOpenCatalogRoot: (path?: string) => void | Promise<void>;
   onOpenCatalogFolder: (path?: string) => void | Promise<void>;
+  onReopenLastState: () => void | Promise<void>;
 };
 
 const modeLabel: Record<CloudEventDraft['mode'], string> = {
@@ -15,7 +17,13 @@ const modeLabel: Record<CloudEventDraft['mode'], string> = {
   full: 'Scanner completo',
 };
 
-export function CloudEventDashboard({ draft, onAnalyze, onOpenCatalogFolder }: CloudEventDashboardProps) {
+export function CloudEventDashboard({
+  draft,
+  onAnalyze,
+  onOpenCatalogRoot,
+  onOpenCatalogFolder,
+  onReopenLastState,
+}: CloudEventDashboardProps) {
   const stats = [
     { label: 'Total fotos', value: draft.totalFiles },
     { label: 'Referências', value: draft.references.length },
@@ -31,7 +39,12 @@ export function CloudEventDashboard({ draft, onAnalyze, onOpenCatalogFolder }: C
 
   const handleOpenCatalogFolder = () => {
     if (!draft.catalogPath) return;
-    void onOpenCatalogFolder(draft.catalogPath);
+    void onOpenCatalogFolder(`${draft.catalogPath}/Catalogo`);
+  };
+
+  const handleOpenCatalogRoot = () => {
+    if (!draft.catalogPath) return;
+    void onOpenCatalogRoot(draft.catalogPath);
   };
 
   return (
@@ -69,21 +82,25 @@ export function CloudEventDashboard({ draft, onAnalyze, onOpenCatalogFolder }: C
       </div>
 
       <div className={styles.actionRow}>
-        <button type="button" className={styles.primaryButton}>
+        <button type="button" className={styles.primaryButton} onClick={handleOpenCatalogRoot} disabled={!draft.catalogPath}>
           <ShieldCheck size={15} />
-          Abrir revisão IA
+          Abrir catálogo
         </button>
         <button type="button" className={styles.secondaryButton} onClick={onAnalyze}>
           <Play size={15} />
           Processar agora
         </button>
-        <button type="button" className={styles.secondaryButton} onClick={handleOpenCatalogFolder} disabled={!draft.catalogPath}>
+        <button type="button" className={styles.secondaryButton} onClick={handleOpenCatalogRoot} disabled={!draft.catalogPath}>
           <FolderOpen size={15} />
-          Abrir pasta do catálogo
+          Abrir pasta
         </button>
-        <button type="button" className={styles.secondaryButton}>
+        <button type="button" className={styles.secondaryButton} onClick={handleOpenCatalogFolder} disabled={!draft.catalogPath}>
           <Download size={15} />
-          Exportar/Organizar
+          Abrir catálogo interno
+        </button>
+        <button type="button" className={styles.secondaryButton} onClick={onReopenLastState} disabled={!draft.id}>
+          <ShieldCheck size={15} />
+          Reabrir último estado
         </button>
       </div>
 

@@ -7,7 +7,7 @@ type CloudCatalogStatusBadgeProps = {
 
 const statusLabels: Record<CloudEventDraft['status'], string> = {
   draft: 'Draft',
-  indexed: 'Indexado',
+  indexed: 'Pronto',
   processing: 'Processando',
   ready: 'Pronto',
 };

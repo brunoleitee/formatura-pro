@@ -2,6 +2,7 @@ import { API_BASE, fetchJSON, post } from './api/core';
 import type {
   CloudConnection,
   CloudCatalog,
+  CloudCatalogSession,
   CloudEventDraft,
   CloudItem,
   CloudProvider,
@@ -43,6 +44,18 @@ type CloudStatusResponse = {
 type CloudCatalogsResponse = {
   success: boolean;
   catalogs: CloudCatalog[];
+};
+
+type CloudCatalogSessionResponse = {
+  success: boolean;
+  session: CloudCatalogSession;
+};
+
+type CloudCatalogOpenExistingResponse = {
+  success: boolean;
+  catalogId: string;
+  catalog: CloudCatalog;
+  session?: CloudCatalogSession;
 };
 
 const providerFallbacks: CloudProviderSummary[] = [
@@ -257,8 +270,28 @@ export const cloudApi = {
   },
 
   getCloudCatalog: async (catalogId: string) =>
-    fetchJSON<{ success: boolean; catalog: CloudCatalog }>(
+    fetchJSON<{ success: boolean; catalog: CloudCatalog; session?: CloudCatalogSession }>(
       `${API_BASE}/cloud/catalogs/${encodeURIComponent(catalogId)}`
+    ),
+
+  getCloudCatalogSession: async (catalogId: string) =>
+    fetchJSON<CloudCatalogSessionResponse>(
+      `${API_BASE}/cloud/catalogs/${encodeURIComponent(catalogId)}/session`
+    ),
+
+  saveCloudCatalogSession: async (
+    catalogId: string,
+    session: CloudCatalogSession,
+  ) =>
+    post<{ success: boolean; updatedAt: string }>(
+      `${API_BASE}/cloud/catalogs/${encodeURIComponent(catalogId)}/session`,
+      session
+    ),
+
+  openExistingCloudCatalog: async (path: string) =>
+    post<CloudCatalogOpenExistingResponse>(
+      `${API_BASE}/cloud/catalogs/open-existing`,
+      { path }
     ),
 
   deleteCloudCatalog: async (catalogId: string) =>

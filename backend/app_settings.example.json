@@ -15,6 +15,8 @@
   "ai_embedding_image_size": 224,
   "ai_embedding_max_text_tokens": 77,
   "cloud_catalogs_root_dir": null,
+  "cloud_restore_last_catalog": true,
+  "cloud_last_catalog_id": null,
   "thumb_cache_max_bytes": 1500000000,
   "thumb_cache_max_files": 50000
 }

@@ -22,6 +22,26 @@ export type CloudFolderInsight = {
   referenceDetected?: boolean;
 };
 
+export type CloudCatalogSession = {
+  currentFolderId: string;
+  currentPathJson: Array<{ id: string; name: string }>;
+  selectedFolderId: string;
+  selectedCatalogId: string;
+  scrollPosition: number;
+  viewMode: string;
+  backStack: Array<{
+    currentFolderId: string;
+    currentPath: string[];
+    breadcrumb: Array<{ id: string; name: string }>;
+  }>;
+  forwardStack: Array<{
+    currentFolderId: string;
+    currentPath: string[];
+    breadcrumb: Array<{ id: string; name: string }>;
+  }>;
+  updatedAt?: string | null;
+};
+
 export type CloudCatalogMode = 'catalog' | 'face' | 'full';
 
 export type CloudEventDraft = {
@@ -48,6 +68,7 @@ export type CloudEventDraft = {
   cacheSize?: number;
   lastSync?: string;
   lastOpenedAt?: string;
+  session?: CloudCatalogSession;
 };
 
 export type CloudCatalog = CloudEventDraft & {

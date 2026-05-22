@@ -23,6 +23,7 @@ const modeLabel: Record<CloudCatalog['mode'], string> = {
 
 export function CloudCatalogCard({ catalog, onOpen }: CloudCatalogCardProps) {
   const isCloud = catalog.source === 'cloud' || catalog.provider === 'google_drive';
+  const statusDate = catalog.lastOpenedAt || catalog.updatedAt || catalog.lastSync;
 
   return (
     <button
@@ -51,8 +52,8 @@ export function CloudCatalogCard({ catalog, onOpen }: CloudCatalogCardProps) {
       </div>
       <div className={styles.catalogCardFooter}>
         <CalendarClock size={13} />
-        <span title={formatDate(catalog.updatedAt || catalog.lastSync)}>
-          {formatDate(catalog.updatedAt || catalog.lastSync)}
+        <span title={formatDate(statusDate)}>
+          {formatDate(statusDate)}
         </span>
       </div>
     </button>

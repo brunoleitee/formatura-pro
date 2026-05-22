@@ -175,3 +175,20 @@ def select_image():
     ])
     root.destroy()
     return {"path": path}
+
+
+def select_file():
+    import tkinter as tk
+    from tkinter import filedialog
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    path = filedialog.askopenfilename(filetypes=[
+        ("Arquivos do catálogo cloud", "metadata.json evento.fpdb *.json *.fpdb"),
+        ("JSON", "*.json"),
+        ("SQLite", "*.fpdb *.db"),
+        ("Todos os arquivos", "*.*"),
+    ])
+    root.destroy()
+    return {"path": path}

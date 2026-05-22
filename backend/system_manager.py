@@ -259,6 +259,8 @@ class SettingsUpdate(BaseModel):
     ai_embedding_image_size: int = None
     ai_embedding_max_text_tokens: int = None
     cloud_catalogs_root_dir: str = None
+    cloud_restore_last_catalog: bool = None
+    cloud_last_catalog_id: str = None
     thumb_cache_max_bytes: int = None
     thumb_cache_max_files: int = None
 

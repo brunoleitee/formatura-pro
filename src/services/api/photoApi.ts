@@ -47,6 +47,7 @@ export const photoApi = {
 
   // Scan
   selectFolder: () => fetchJSON<{ path: string }>(`${API_BASE}/select-folder`),
+  selectFile: () => fetchJSON<{ path: string }>(`${API_BASE}/select-file`),
   scanFolder: (event_path: string, ref_path = '', project_name = '', options?: {
     selected_folders?: string[];
   }) =>

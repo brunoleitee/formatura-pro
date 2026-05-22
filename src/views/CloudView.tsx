@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { CheckCircle2, CloudOff } from 'lucide-react';
 import { CloudEventDashboard } from '../features/cloud/CloudEventDashboard';
 import { CloudExplorer } from '../features/cloud/CloudExplorer';
@@ -15,12 +15,29 @@ import {
   type CloudNavigationSnapshot,
 } from '../features/cloud/cloudNavigationStore';
 import { detectReferenceFolders } from '../features/cloud/detectReferenceFolders';
-import type { CloudCatalog, CloudCatalogMode, CloudConnection, CloudEventDraft, CloudFolderInsight, CloudItem } from '../features/cloud/types';
+import type { CloudCatalog, CloudCatalogMode, CloudCatalogSession, CloudConnection, CloudEventDraft, CloudFolderInsight, CloudItem } from '../features/cloud/types';
 import { cloudApi } from '../services/cloudApi';
 import { api } from '../services/api';
 import styles from './CloudView.module.css';
 
 const rootBreadcrumb: CloudBreadcrumbItem[] = [{ id: 'root', name: 'Meu Drive' }];
+
+function buildDefaultBreadcrumb(catalog: CloudCatalog): CloudBreadcrumbItem[] {
+  return [
+    rootBreadcrumb[0],
+    { id: catalog.sourceFolderId, name: catalog.sourceFolderName || catalog.name },
+  ];
+}
+
+function sessionToBreadcrumb(session?: CloudCatalogSession | null, fallback?: CloudCatalog | null): CloudBreadcrumbItem[] {
+  if (session?.currentPathJson?.length) {
+    return session.currentPathJson;
+  }
+  if (fallback) {
+    return buildDefaultBreadcrumb(fallback);
+  }
+  return rootBreadcrumb;
+}
 
 function buildDraft(
   folder: CloudItem,
@@ -66,6 +83,9 @@ export default function CloudView() {
   const [catalogProgress, setCatalogProgress] = useState<{ percent: number; label: string } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [restoringCatalogId, setRestoringCatalogId] = useState<string | null>(null);
+  const saveSessionTimerRef = useRef<number | null>(null);
+  const restoreGuardRef = useRef(false);
 
   const connected = Boolean(connection?.connected);
   const currentFolderId = breadcrumb[breadcrumb.length - 1]?.id || 'root';
@@ -102,13 +122,118 @@ export default function CloudView() {
             .map(item => [item.id, { ...prev[item.id], referenceDetected: detectReferenceFolders([item]).length > 0 }])
         ),
       }));
+      return nextItems;
     } catch (e) {
       console.error('Erro ao carregar pasta cloud:', e);
       setItems([]);
+      return [];
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const selectedDraft = useMemo(() => {
+    if (draft) return draft;
+    if (!selectedFolder) return null;
+    return buildDraft(selectedFolder, [...breadcrumb.map(item => item.name), selectedFolder.name]);
+  }, [breadcrumb, draft, selectedFolder]);
+
+  const persistSession = useCallback(async () => {
+    if (restoreGuardRef.current) return;
+    if (!selectedDraft?.id) return;
+    const session: CloudCatalogSession = {
+      currentFolderId: breadcrumb[breadcrumb.length - 1]?.id || selectedDraft.sourceFolderId || 'root',
+      currentPathJson: breadcrumb,
+      selectedFolderId: selectedFolder?.id || '',
+      selectedCatalogId: selectedDraft.id,
+      scrollPosition: typeof window !== 'undefined' ? window.scrollY || 0 : 0,
+      viewMode: 'cloud',
+      backStack,
+      forwardStack,
+    };
+    if (saveSessionTimerRef.current) {
+      window.clearTimeout(saveSessionTimerRef.current);
+    }
+    saveSessionTimerRef.current = window.setTimeout(() => {
+      void cloudApi.saveCloudCatalogSession(selectedDraft.id as string, session).catch(err => {
+        console.error('Falha ao salvar sessão do catálogo cloud:', err);
+      });
+    }, 350);
+  }, [backStack, breadcrumb, forwardStack, selectedDraft?.id, selectedDraft?.sourceFolderId, selectedFolder?.id]);
+
+  const applyCatalogSession = useCallback(async (catalog: CloudCatalog, session?: CloudCatalogSession | null) => {
+    restoreGuardRef.current = true;
+    setRestoringCatalogId(catalog.id);
+    try {
+      const nextDraft = catalogToDraft(catalog);
+      setDraft(nextDraft);
+      setSelectedFolder(null);
+      const nextBreadcrumb = sessionToBreadcrumb(session, catalog);
+      setBreadcrumb(nextBreadcrumb);
+      setBackStack(session?.backStack || []);
+      setForwardStack(session?.forwardStack || []);
+      const targetFolderId = session?.currentFolderId || catalog.sourceFolderId || 'root';
+      const nextItems = await loadFolder(targetFolderId);
+      if (session?.selectedFolderId) {
+        const nextSelected = nextItems.find(item => item.id === session.selectedFolderId) || null;
+        setSelectedFolder(nextSelected);
+      }
+      if (typeof window !== 'undefined') {
+        window.setTimeout(() => window.scrollTo({ top: session?.scrollPosition || 0, behavior: 'auto' }), 0);
+      }
+      await api.updateSettings({
+        cloud_last_catalog_id: catalog.id,
+        cloud_restore_last_catalog: true,
+      }).catch(() => {});
+    } finally {
+      restoreGuardRef.current = false;
+      setRestoringCatalogId(null);
+    }
+  }, [loadFolder]);
+
+  const openCatalogProject = useCallback(async (catalogId: string) => {
+    const result = await cloudApi.getCloudCatalog(catalogId);
+    const catalog = result.catalog || recentCatalogs.find(item => item.id === catalogId);
+    if (!catalog) {
+      throw new Error('Catálogo cloud não encontrado');
+    }
+    await applyCatalogSession(catalog, result.session || null);
+    if (catalog.status === 'draft') {
+      setCatalogSuccess(`Catálogo "${catalog.name}" aberto em modo draft`);
+    } else {
+      setCatalogSuccess(`Catálogo "${catalog.name}" reaberto`);
+    }
+    window.setTimeout(() => setCatalogSuccess(''), 3000);
+    return catalog;
+  }, [applyCatalogSession, recentCatalogs]);
+
+  useEffect(() => {
+    if (saveSessionTimerRef.current) {
+      window.clearTimeout(saveSessionTimerRef.current);
+      saveSessionTimerRef.current = null;
+    }
+    if (selectedDraft?.id) {
+      persistSession();
+    }
+    return () => {
+      if (saveSessionTimerRef.current) {
+        window.clearTimeout(saveSessionTimerRef.current);
+        saveSessionTimerRef.current = null;
+      }
+      if (selectedDraft?.id && !restoreGuardRef.current) {
+        void cloudApi.saveCloudCatalogSession(selectedDraft.id, {
+          currentFolderId: breadcrumb[breadcrumb.length - 1]?.id || selectedDraft.sourceFolderId || 'root',
+          currentPathJson: breadcrumb,
+          selectedFolderId: selectedFolder?.id || '',
+          selectedCatalogId: selectedDraft.id,
+          scrollPosition: typeof window !== 'undefined' ? window.scrollY || 0 : 0,
+          viewMode: 'cloud',
+          backStack,
+          forwardStack,
+        }).catch(() => {});
+      }
+    };
+  }, [backStack, breadcrumb, forwardStack, persistSession, selectedDraft?.id, selectedDraft?.sourceFolderId, selectedFolder?.id]);
 
   useEffect(() => {
     let active = true;
@@ -116,6 +241,21 @@ export default function CloudView() {
       const google = await loadStatus();
       if (!active) return;
       await loadRecentCatalogs();
+      const settings = await api.getSettings().catch(() => null);
+      if (!active) return;
+      const shouldRestoreLast = Boolean(settings && (settings as any).cloud_restore_last_catalog !== false);
+      const lastCatalogId = settings && typeof (settings as any).cloud_last_catalog_id === 'string'
+        ? (settings as any).cloud_last_catalog_id as string
+        : '';
+      if (google?.connected && shouldRestoreLast && lastCatalogId) {
+        try {
+          await openCatalogProject(lastCatalogId);
+          setLoading(false);
+          return;
+        } catch (error) {
+          console.warn('Falha ao restaurar último catálogo cloud:', error);
+        }
+      }
       if (google?.connected) {
         await loadFolder('root');
       } else {
@@ -126,13 +266,7 @@ export default function CloudView() {
     return () => {
       active = false;
     };
-  }, [loadFolder, loadRecentCatalogs, loadStatus]);
-
-  const selectedDraft = useMemo(() => {
-    if (draft) return draft;
-    if (!selectedFolder) return null;
-    return buildDraft(selectedFolder, [...breadcrumb.map(item => item.name), selectedFolder.name]);
-  }, [breadcrumb, draft, selectedFolder]);
+  }, [loadFolder, loadRecentCatalogs, loadStatus, openCatalogProject]);
 
   const restoreNavigation = useCallback((snapshot: CloudNavigationSnapshot) => {
     setBreadcrumb(snapshot.breadcrumb);
@@ -316,6 +450,10 @@ export default function CloudView() {
           ...prev.filter(catalog => catalog.id !== optimisticCatalog.id),
         ].slice(0, 12));
       }
+      await api.updateSettings({
+        cloud_last_catalog_id: indexedDraft.id,
+        cloud_restore_last_catalog: true,
+      }).catch(() => {});
       setCatalogSuccess(isFallback ? 'Catálogo cloud criado localmente em modo draft' : 'Catálogo criado com sucesso');
       window.setTimeout(() => setCatalogSuccess(''), 3200);
       if (!isFallback) {
@@ -345,15 +483,36 @@ export default function CloudView() {
 
   const handleOpenRecentCatalog = async (catalog: CloudCatalog) => {
     try {
-      const result = await cloudApi.getCloudCatalog(catalog.id);
-      const nextCatalog = result.catalog || catalog;
-      setSelectedFolder(null);
-      setDraft(catalogToDraft(nextCatalog));
+      await openCatalogProject(catalog.id);
       await loadRecentCatalogs();
     } catch {
-      setDraft(catalogToDraft(catalog));
+      await applyCatalogSession(catalog, null);
     }
   };
+
+  const handleOpenExistingCatalog = useCallback(async () => {
+    const useFolder = window.confirm('Clique em OK para selecionar a pasta do evento. Cancelar para escolher metadata.json ou evento.fpdb.');
+    const picked = useFolder ? await api.selectFolder().catch(() => null) : await api.selectFile().catch(() => null);
+    if (!picked?.path) return;
+    setCatalogError('');
+    try {
+      const result = await cloudApi.openExistingCloudCatalog(picked.path);
+      await applyCatalogSession(result.catalog, result.session || null);
+      setRecentCatalogs(prev => [
+        result.catalog,
+        ...prev.filter(item => item.id !== result.catalog.id),
+      ].slice(0, 12));
+      await loadRecentCatalogs();
+      await api.updateSettings({
+        cloud_last_catalog_id: result.catalog.id,
+        cloud_restore_last_catalog: true,
+      }).catch(() => {});
+      setCatalogSuccess(`Catálogo "${result.catalog.name}" aberto com sucesso`);
+      window.setTimeout(() => setCatalogSuccess(''), 3000);
+    } catch (error: any) {
+      setCatalogError(error?.message || 'Não foi possível abrir o catálogo existente.');
+    }
+  }, [applyCatalogSession, loadRecentCatalogs]);
 
   const handleCloudMouseDown = (event: MouseEvent<HTMLDivElement>) => {
     if (event.button === 3) {
@@ -388,8 +547,9 @@ export default function CloudView() {
         <>
         <CloudRecentCatalogs
           catalogs={recentCatalogs}
-          loading={catalogsLoading}
+          loading={catalogsLoading || restoringCatalogId !== null}
           onOpenCatalog={handleOpenRecentCatalog}
+          onOpenExistingCatalog={handleOpenExistingCatalog}
         />
 
         {catalogSuccess && (
@@ -440,9 +600,20 @@ export default function CloudView() {
               <CloudEventDashboard
                 draft={selectedDraft}
                 onAnalyze={handleAnalyze}
+                onOpenCatalogRoot={async path => {
+                  if (!path) return;
+                  await api.openFolder(path);
+                }}
                 onOpenCatalogFolder={async path => {
                   if (!path) return;
                   await api.openFolder(path);
+                }}
+                onReopenLastState={async () => {
+                  if (!selectedDraft?.id) return;
+                  const session = await cloudApi.getCloudCatalogSession(selectedDraft.id).catch(() => null);
+                  const currentCatalog = draftToCatalog(selectedDraft);
+                  if (!currentCatalog) return;
+                  await applyCatalogSession(currentCatalog, session?.session || null);
                 }}
               />
             ) : selectedDraft ? (

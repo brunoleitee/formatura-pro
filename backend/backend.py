@@ -2501,6 +2501,10 @@ def select_folder():
 def select_image():
     return im.select_image()
 
+@app.get("/api/select-file")
+def select_file():
+    return im.select_file()
+
 @app.get("/api/folder-stats")
 def folder_stats(path: str = Query(...)):
     return rm.folder_stats(path)
@@ -3851,6 +3855,21 @@ class CloudCatalogCreateRequest(BaseModel):
     mode: str = "face"
 
 
+class CloudCatalogStateUpsertRequest(BaseModel):
+    currentFolderId: str = "root"
+    currentPathJson: List[Any] = []
+    selectedFolderId: str = ""
+    selectedCatalogId: str = ""
+    scrollPosition: float = 0.0
+    viewMode: str = "catalog"
+    backStack: List[Any] = []
+    forwardStack: List[Any] = []
+
+
+class CloudCatalogOpenExistingRequest(BaseModel):
+    path: str
+
+
 def _cloud_events_db_path() -> Path:
     base_dir = Path(__file__).resolve().parents[1]
     data_dir = base_dir / "data" / "cloud"
@@ -3930,17 +3949,74 @@ def _ensure_cloud_event_sqlite(fpdb_path: Path, metadata: Dict[str, Any]) -> Non
     conn = sqlite3.connect(str(fpdb_path))
     try:
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS cloud_events (
+            CREATE TABLE IF NOT EXISTS cloud_catalogs (
                 id TEXT PRIMARY KEY,
                 name TEXT,
+                type TEXT,
+                provider TEXT,
+                source_folder_id TEXT,
+                source_folder_name TEXT,
+                source_breadcrumb TEXT,
+                catalog_path TEXT,
+                cache_path TEXT,
+                mode TEXT,
+                status TEXT,
+                total_files INTEGER,
+                total_subfolders INTEGER,
+                references_count INTEGER,
                 created_at TEXT,
+                updated_at TEXT,
+                last_opened_at TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS cloud_catalog_state (
+                catalog_id TEXT PRIMARY KEY,
+                current_folder_id TEXT,
+                current_path_json TEXT,
+                selected_folder_id TEXT,
+                selected_catalog_id TEXT,
+                scroll_position REAL,
+                view_mode TEXT,
                 updated_at TEXT
             )
         """)
         conn.execute("""
-            INSERT OR REPLACE INTO cloud_events (id, name, created_at, updated_at)
-            VALUES (?, ?, ?, ?)
-        """, (metadata["id"], metadata["name"], metadata["createdAt"], metadata["updatedAt"]))
+            CREATE TABLE IF NOT EXISTS cloud_navigation_history (
+                catalog_id TEXT,
+                history_type TEXT,
+                position INTEGER,
+                folder_id TEXT,
+                path_json TEXT,
+                created_at TEXT
+            )
+        """)
+        conn.execute("""
+            INSERT OR REPLACE INTO cloud_catalogs (
+                id, name, type, provider, source_folder_id, source_folder_name,
+                source_breadcrumb, catalog_path, cache_path, mode, status,
+                total_files, total_subfolders, references_count, created_at,
+                updated_at, last_opened_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            metadata["id"],
+            metadata["name"],
+            metadata.get("type", "cloud"),
+            metadata["provider"],
+            metadata["sourceFolderId"],
+            metadata["sourceFolderName"],
+            json.dumps(metadata.get("sourceBreadcrumb", []), ensure_ascii=False),
+            metadata["catalogPath"],
+            metadata["cachePath"],
+            metadata.get("mode", "face"),
+            metadata.get("status", "indexed"),
+            int(metadata.get("totalFiles", 0) or 0),
+            int(metadata.get("totalSubfolders", 0) or 0),
+            int(metadata.get("referencesCount", len(metadata.get("references", []))) or 0),
+            metadata["createdAt"],
+            metadata["updatedAt"],
+            metadata.get("lastOpenedAt") or metadata["updatedAt"],
+        ))
         conn.commit()
     finally:
         conn.close()
@@ -3949,6 +4025,228 @@ def _ensure_cloud_event_sqlite(fpdb_path: Path, metadata: Dict[str, Any]) -> Non
 def _write_catalog_metadata(metadata_path: Path, metadata: Dict[str, Any]) -> None:
     with metadata_path.open("w", encoding="utf-8") as f:
         json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+
+def _cloud_catalog_paths_from_any(path: str) -> Optional[Dict[str, Path]]:
+    if not path:
+        return None
+    resolved = Path(os.path.abspath(os.path.expanduser(os.path.expandvars(path))))
+    candidates: List[Path] = []
+    if resolved.is_file():
+        name = resolved.name.lower()
+        if name in {"metadata.json", "evento.fpdb"}:
+            candidates.append(resolved.parent.parent)
+        else:
+            candidates.append(resolved.parent)
+    elif resolved.is_dir():
+        name = resolved.name.lower()
+        if name == "catalogo":
+            candidates.append(resolved.parent)
+        elif name in {"metadata", "sync", "cloud", "cache", "embeddings", "exports", "logs"}:
+            candidates.append(resolved.parent)
+        else:
+            candidates.append(resolved)
+            candidates.append(resolved.parent)
+    for candidate in candidates:
+        if not candidate:
+            continue
+        metadata_path = candidate / "Catalogo" / "metadata.json"
+        fpdb_path = candidate / "Catalogo" / "evento.fpdb"
+        if metadata_path.exists() and fpdb_path.exists():
+            return {
+                "root_dir": candidate,
+                "catalog_dir": candidate / "Catalogo",
+                "cache_dir": candidate / "Cache",
+                "metadata_path": metadata_path,
+                "fpdb_path": fpdb_path,
+            }
+    return None
+
+
+def _load_cloud_catalog_metadata(path: str) -> Dict[str, Any]:
+    paths = _cloud_catalog_paths_from_any(path)
+    if not paths:
+        raise HTTPException(status_code=404, detail="Estrutura do catálogo cloud não encontrada")
+    try:
+        with paths["metadata_path"].open("r", encoding="utf-8") as f:
+            metadata = json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"metadata.json inválido: {e}")
+    if not isinstance(metadata, dict):
+        raise HTTPException(status_code=400, detail="metadata.json inválido")
+    if metadata.get("provider") != "google_drive":
+        raise HTTPException(status_code=400, detail="Catálogo cloud incompatível: provider inválido")
+    schema_version = int(metadata.get("schemaVersion", 1) or 1)
+    if schema_version < 1:
+        raise HTTPException(status_code=400, detail="Catálogo cloud incompatível: versão inválida")
+    metadata.setdefault("schemaVersion", schema_version)
+    metadata.setdefault("type", "cloud")
+    metadata.setdefault("status", "indexed")
+    metadata.setdefault("sourceBreadcrumb", [])
+    metadata.setdefault("references", [])
+    metadata.setdefault("totalFiles", 0)
+    metadata.setdefault("totalSubfolders", 0)
+    metadata.setdefault("referencesCount", len(metadata.get("references", [])))
+    metadata.setdefault("catalogPath", str(paths["root_dir"]))
+    metadata.setdefault("cachePath", str(paths["cache_dir"]))
+    metadata.setdefault("metadataPath", str(paths["metadata_path"]))
+    metadata.setdefault("fpdbPath", str(paths["fpdb_path"]))
+    return metadata
+
+
+def _ensure_cloud_catalog_state_tables(conn: sqlite3.Connection) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS cloud_catalogs (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            type TEXT,
+            provider TEXT,
+            source_folder_id TEXT,
+            source_folder_name TEXT,
+            source_breadcrumb TEXT,
+            catalog_path TEXT,
+            cache_path TEXT,
+            mode TEXT,
+            status TEXT,
+            total_files INTEGER,
+            total_subfolders INTEGER,
+            references_count INTEGER,
+            created_at TEXT,
+            updated_at TEXT,
+            last_opened_at TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS cloud_catalog_state (
+            catalog_id TEXT PRIMARY KEY,
+            current_folder_id TEXT,
+            current_path_json TEXT,
+            selected_folder_id TEXT,
+            selected_catalog_id TEXT,
+            scroll_position REAL,
+            view_mode TEXT,
+            updated_at TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS cloud_navigation_history (
+            catalog_id TEXT,
+            history_type TEXT,
+            position INTEGER,
+            folder_id TEXT,
+            path_json TEXT,
+            created_at TEXT
+        )
+    """)
+
+
+def _normalize_history_entry(entry: Any) -> Dict[str, Any]:
+    if isinstance(entry, dict):
+        return entry
+    return {}
+
+
+def _save_cloud_catalog_session(
+    fpdb_path: Path,
+    catalog_id: str,
+    state: Dict[str, Any],
+    back_stack: List[Any],
+    forward_stack: List[Any],
+) -> None:
+    conn = sqlite3.connect(str(fpdb_path))
+    try:
+        _ensure_cloud_catalog_state_tables(conn)
+        now = datetime.now().isoformat()
+        current_path_json = json.dumps(state.get("currentPathJson") or [], ensure_ascii=False)
+        conn.execute("""
+            INSERT OR REPLACE INTO cloud_catalog_state (
+                catalog_id, current_folder_id, current_path_json, selected_folder_id,
+                selected_catalog_id, scroll_position, view_mode, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            catalog_id,
+            state.get("currentFolderId") or "root",
+            current_path_json,
+            state.get("selectedFolderId") or "",
+            state.get("selectedCatalogId") or "",
+            float(state.get("scrollPosition") or 0.0),
+            state.get("viewMode") or "catalog",
+            now,
+        ))
+        conn.execute("DELETE FROM cloud_navigation_history WHERE catalog_id = ?", (catalog_id,))
+        for history_type, stack in (("back", back_stack), ("forward", forward_stack)):
+            for position, entry in enumerate(stack):
+                snapshot = _normalize_history_entry(entry)
+                conn.execute("""
+                    INSERT INTO cloud_navigation_history (
+                        catalog_id, history_type, position, folder_id, path_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    catalog_id,
+                    history_type,
+                    position,
+                    snapshot.get("currentFolderId") or snapshot.get("folder_id") or "root",
+                    json.dumps(snapshot, ensure_ascii=False),
+                    now,
+                ))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _load_cloud_catalog_session(fpdb_path: Path, catalog_id: str) -> Dict[str, Any]:
+    conn = sqlite3.connect(str(fpdb_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        _ensure_cloud_catalog_state_tables(conn)
+        state_row = conn.execute(
+            "SELECT * FROM cloud_catalog_state WHERE catalog_id = ?",
+            (catalog_id,),
+        ).fetchone()
+        history_rows = conn.execute(
+            "SELECT * FROM cloud_navigation_history WHERE catalog_id = ? ORDER BY history_type, position ASC",
+            (catalog_id,),
+        ).fetchall()
+        back_stack: List[Any] = []
+        forward_stack: List[Any] = []
+        for row in history_rows:
+            try:
+                payload = json.loads(row["path_json"] or "{}")
+            except Exception:
+                payload = {}
+            if row["history_type"] == "back":
+                back_stack.append(payload)
+            else:
+                forward_stack.append(payload)
+        if state_row:
+            try:
+                current_path_json = json.loads(state_row["current_path_json"] or "[]")
+            except Exception:
+                current_path_json = []
+            return {
+                "currentFolderId": state_row["current_folder_id"] or "root",
+                "currentPathJson": current_path_json,
+                "selectedFolderId": state_row["selected_folder_id"] or "",
+                "selectedCatalogId": state_row["selected_catalog_id"] or "",
+                "scrollPosition": float(state_row["scroll_position"] or 0.0),
+                "viewMode": state_row["view_mode"] or "catalog",
+                "backStack": back_stack,
+                "forwardStack": forward_stack,
+                "updatedAt": state_row["updated_at"],
+            }
+        return {
+            "currentFolderId": "root",
+            "currentPathJson": [],
+            "selectedFolderId": "",
+            "selectedCatalogId": "",
+            "scrollPosition": 0.0,
+            "viewMode": "catalog",
+            "backStack": [],
+            "forwardStack": [],
+            "updatedAt": None,
+        }
+    finally:
+        conn.close()
 
 
 def _prepare_cloud_catalog_structure(
@@ -3999,7 +4297,9 @@ def _prepare_cloud_catalog_structure(
 
     metadata = {
         "id": catalog_id,
+        "schemaVersion": 1,
         "name": name,
+        "type": "cloud",
         "provider": provider,
         "sourceFolderId": source_folder_id,
         "sourceFolderName": source_folder_name,
@@ -4007,6 +4307,7 @@ def _prepare_cloud_catalog_structure(
         "references": references,
         "totalFiles": int(total_files or 0),
         "totalSubfolders": int(total_subfolders or 0),
+        "referencesCount": len(references),
         "mode": mode,
         "status": "indexed",
         "createdAt": now,
@@ -4181,7 +4482,7 @@ def cloud_list_catalogs():
     try:
       _ensure_cloud_events_table(conn)
       rows = conn.execute(
-          "SELECT * FROM cloud_events ORDER BY updated_at DESC, created_at DESC LIMIT 12"
+          "SELECT * FROM cloud_events ORDER BY COALESCE(last_opened_at, updated_at, created_at) DESC, updated_at DESC, created_at DESC LIMIT 12"
       ).fetchall()
       return {"success": True, "catalogs": [_cloud_event_row_to_dict(row) for row in rows]}
     finally:
@@ -4203,9 +4504,162 @@ def cloud_get_catalog(catalog_id: str):
         row = conn.execute("SELECT * FROM cloud_events WHERE id = ?", (catalog_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Catálogo cloud não encontrado")
-        return {"success": True, "catalog": _cloud_event_row_to_dict(row)}
+        catalog = _cloud_event_row_to_dict(row)
+        session = {}
+        try:
+            fpdb_path = Path(catalog.get("fpdbPath") or "")
+            if fpdb_path.exists():
+                session = _load_cloud_catalog_session(fpdb_path, catalog_id)
+        except Exception:
+            session = {}
+        return {"success": True, "catalog": catalog, "session": session}
     finally:
         conn.close()
+
+
+@app.get("/api/cloud/catalogs/{catalog_id}/session")
+def cloud_get_catalog_session(catalog_id: str):
+    conn = sqlite3.connect(str(_cloud_events_db_path()))
+    conn.row_factory = sqlite3.Row
+    try:
+        _ensure_cloud_events_table(conn)
+        row = conn.execute("SELECT * FROM cloud_events WHERE id = ?", (catalog_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Catálogo cloud não encontrado")
+        catalog = _cloud_event_row_to_dict(row)
+        fpdb_path = Path(catalog.get("fpdbPath") or "")
+        if not fpdb_path.exists():
+            raise HTTPException(status_code=404, detail="Arquivo fpdb do catálogo não encontrado")
+        return {"success": True, "session": _load_cloud_catalog_session(fpdb_path, catalog_id)}
+    finally:
+        conn.close()
+
+
+@app.post("/api/cloud/catalogs/{catalog_id}/session")
+def cloud_save_catalog_session(catalog_id: str, req: CloudCatalogStateUpsertRequest):
+    conn = sqlite3.connect(str(_cloud_events_db_path()))
+    conn.row_factory = sqlite3.Row
+    try:
+        _ensure_cloud_events_table(conn)
+        row = conn.execute("SELECT * FROM cloud_events WHERE id = ?", (catalog_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Catálogo cloud não encontrado")
+        catalog = _cloud_event_row_to_dict(row)
+        fpdb_path = Path(catalog.get("fpdbPath") or "")
+        if not fpdb_path.exists():
+            raise HTTPException(status_code=404, detail="Arquivo fpdb do catálogo não encontrado")
+        _save_cloud_catalog_session(
+            fpdb_path,
+            catalog_id,
+            req.dict(),
+            req.backStack,
+            req.forwardStack,
+        )
+        now = datetime.now().isoformat()
+        conn.execute(
+            "UPDATE cloud_events SET last_opened_at = ?, updated_at = ? WHERE id = ?",
+            (now, now, catalog_id),
+        )
+        conn.commit()
+        return {"success": True, "updatedAt": now}
+    finally:
+        conn.close()
+
+
+@app.post("/api/cloud/catalogs/open-existing")
+def cloud_open_existing_catalog(req: CloudCatalogOpenExistingRequest):
+    metadata = _load_cloud_catalog_metadata(req.path)
+    paths = _cloud_catalog_paths_from_any(req.path)
+    if not paths:
+        raise HTTPException(status_code=404, detail="Estrutura do catálogo cloud não encontrada")
+
+    catalog_id = str(metadata.get("id") or uuid.uuid4())
+    now = datetime.now().isoformat()
+    metadata.update({
+        "id": catalog_id,
+        "updatedAt": now,
+        "lastOpenedAt": now,
+        "type": metadata.get("type", "cloud"),
+        "referencesCount": int(metadata.get("referencesCount", len(metadata.get("references", []))) or 0),
+        "catalogPath": str(paths["root_dir"]),
+        "cachePath": str(paths["cache_dir"]),
+        "metadataPath": str(paths["metadata_path"]),
+        "fpdbPath": str(paths["fpdb_path"]),
+    })
+    _ensure_cloud_event_sqlite(paths["fpdb_path"], metadata)
+    conn = sqlite3.connect(str(_cloud_events_db_path()))
+    try:
+        _ensure_cloud_events_table(conn)
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO cloud_events (
+                id, name, type, provider, source_folder_id, source_folder_name,
+                source_breadcrumb_json, references_json, mode, total_files, total_subfolders,
+                references_count, status, catalog_path, cache_path, metadata_path, fpdb_path,
+                last_opened_at, cache_enabled, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                catalog_id,
+                metadata.get("name", ""),
+                metadata.get("type", "cloud"),
+                metadata.get("provider", "google_drive"),
+                metadata.get("sourceFolderId", ""),
+                metadata.get("sourceFolderName", ""),
+                json.dumps(metadata.get("sourceBreadcrumb", []), ensure_ascii=False),
+                json.dumps(metadata.get("references", []), ensure_ascii=False),
+                metadata.get("mode", "face"),
+                int(metadata.get("totalFiles", 0) or 0),
+                int(metadata.get("totalSubfolders", 0) or 0),
+                int(metadata.get("referencesCount", len(metadata.get("references", []))) or 0),
+                metadata.get("status", "indexed"),
+                str(paths["root_dir"]),
+                str(paths["cache_dir"]),
+                str(paths["metadata_path"]),
+                str(paths["fpdb_path"]),
+                now,
+                1,
+                metadata.get("createdAt", now),
+                now,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    catalog_dict = {
+        "id": catalog_id,
+        "source": "cloud",
+        "type": metadata.get("type", "cloud"),
+        "name": metadata.get("name", ""),
+        "provider": metadata.get("provider", "google_drive"),
+        "sourceFolderId": metadata.get("sourceFolderId", ""),
+        "sourceFolderName": metadata.get("sourceFolderName", ""),
+        "sourceBreadcrumb": metadata.get("sourceBreadcrumb", []),
+        "references": metadata.get("references", []),
+        "mode": metadata.get("mode", "face"),
+        "totalFiles": int(metadata.get("totalFiles", 0) or 0),
+        "totalSubfolders": int(metadata.get("totalSubfolders", 0) or 0),
+        "referencesCount": int(metadata.get("referencesCount", len(metadata.get("references", []))) or 0),
+        "status": metadata.get("status", "indexed"),
+        "catalogPath": str(paths["root_dir"]),
+        "cachePath": str(paths["cache_dir"]),
+        "metadataPath": str(paths["metadata_path"]),
+        "fpdbPath": str(paths["fpdb_path"]),
+        "lastOpenedAt": now,
+        "cacheEnabled": True,
+        "cacheSize": 0,
+        "lastSync": now,
+        "createdAt": metadata.get("createdAt", now),
+        "updatedAt": now,
+    }
+
+    return {
+        "success": True,
+        "catalogId": catalog_id,
+        "catalog": catalog_dict,
+        "session": _load_cloud_catalog_session(paths["fpdb_path"], catalog_id),
+    }
 
 
 @app.delete("/api/cloud/catalogs/{catalog_id}")
