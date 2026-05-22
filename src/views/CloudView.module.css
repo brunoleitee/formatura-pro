@@ -217,22 +217,23 @@
 
 .folderGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
-  gap: 9px;
-  padding: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  padding: 12px;
 }
 
 .folderCard {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
-  padding: 12px 10px;
+  padding: 14px 12px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 8px;
   background: rgba(2, 6, 23, 0.32);
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+  aspect-ratio: 1;
 }
 
 .folderCard:hover {
