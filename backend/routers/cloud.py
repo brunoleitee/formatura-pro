@@ -238,6 +238,95 @@ def _ensure_cloud_event_sqlite(fpdb_path: Path, metadata: Dict[str, Any]) -> Non
             )
         """)
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS ocorrencias (
+                aluno_id TEXT,
+                foto_path TEXT,
+                x1 INTEGER,
+                y1 INTEGER,
+                x2 INTEGER,
+                y2 INTEGER,
+                blur_score REAL,
+                blur_status TEXT,
+                closed_eyes INTEGER,
+                has_gown INTEGER,
+                has_diploma INTEGER,
+                has_sash INTEGER,
+                has_cap INTEGER,
+                face_front_score REAL,
+                graduation_score REAL,
+                graduation_tags TEXT DEFAULT '[]',
+                graduation_analyzed_at TEXT,
+                foreground_score REAL,
+                is_foreground INTEGER DEFAULT 1,
+                face_area_ratio REAL,
+                center_score REAL,
+                background_penalty_reason TEXT,
+                person_key TEXT DEFAULT '',
+                reference_folder TEXT DEFAULT '',
+                source_type TEXT DEFAULT 'local',
+                drive_file_id TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ocor_aluno ON ocorrencias(aluno_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ocor_foto ON ocorrencias(foto_path)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ocor_foto_path ON ocorrencias(foto_path)")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS alunos (
+                person_key TEXT PRIMARY KEY,
+                aluno_id TEXT,
+                face_cache_path TEXT,
+                class_name TEXT DEFAULT 'Sem turma',
+                reference_folder TEXT DEFAULT ''
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_alunos_aluno_id ON alunos(aluno_id)")
+        conn.execute("""
+            INSERT OR IGNORE INTO alunos (person_key, aluno_id, face_cache_path, class_name, reference_folder)
+            VALUES (?, ?, ?, ?, ?)
+        """, ("__SYSTEM_CATALOG__", "system_catalog", "ABSENT", "Sem turma", ""))
+
+        # Popular formandos reais detectados nas referências
+        references = metadata.get("references", [])
+        event_name = metadata.get("name", "")
+        if references and event_name:
+            try:
+                from backend.scanner_engine import make_person_key
+            except ImportError:
+                from scanner_engine import make_person_key
+                
+            import unicodedata
+            import re
+            
+            def clean_reference_name(folder_name: str) -> str:
+                name = folder_name.strip()
+                def remove_accents(s: str) -> str:
+                    normalized = unicodedata.normalize('NFD', s)
+                    return "".join(c for c in normalized if unicodedata.category(c) != 'Mn')
+                upper_no_accents = remove_accents(name.upper())
+                match = re.match(r'^#?\s*(BASE|REFERENCIA|REFERENCIAS)\b\s*', upper_no_accents)
+                if match:
+                    prefix_len = match.end()
+                    cleaned_name = name[prefix_len:].strip()
+                    if cleaned_name:
+                        return cleaned_name
+                return name
+
+            for ref in references:
+                if not ref or not ref.strip():
+                    continue
+                clean_student_name = clean_reference_name(ref)
+                pk = make_person_key(
+                    catalog=event_name,
+                    class_name="Sem turma",
+                    reference_folder=ref,
+                    student_id=clean_student_name
+                )
+                conn.execute("""
+                    INSERT OR IGNORE INTO alunos (person_key, aluno_id, face_cache_path, class_name, reference_folder)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (pk, clean_student_name, "ABSENT", "Sem turma", ref))
+        conn.execute("""
             INSERT OR REPLACE INTO cloud_catalogs (
                 id, name, type, provider, source_folder_id, source_folder_name,
                 source_breadcrumb, catalog_path, cache_path, mode, status,
@@ -503,6 +592,7 @@ def _cloud_store_photo_rows(conn: sqlite3.Connection, *, catalog_id: str, provid
         return 0
     inserted = 0
     rows = []
+    ocorrencias_rows = []
     for file_info in files:
         file_id = str(file_info.get("id") or "").strip()
         if not file_id:
@@ -522,6 +612,13 @@ def _cloud_store_photo_rows(conn: sqlite3.Connection, *, catalog_id: str, provid
             now,
             now,
         ))
+        ocorrencias_rows.append((
+            "system_catalog",
+            f"cloud://{file_id}",
+            "unknown",
+            "google_drive",
+            file_id
+        ))
     if not rows:
         return 0
     conn.executemany(
@@ -532,6 +629,14 @@ def _cloud_store_photo_rows(conn: sqlite3.Connection, *, catalog_id: str, provid
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows,
+    )
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO ocorrencias (
+            aluno_id, foto_path, blur_status, source_type, drive_file_id
+        ) VALUES (?, ?, ?, ?, ?)
+        """,
+        ocorrencias_rows,
     )
     inserted = len(rows)
     return inserted
@@ -805,8 +910,49 @@ def cloud_google_folders(parent_id: str = "root"):
         return {"error": str(e), "folders": []}
 
 
+def _enrich_folders_with_catalog_stats(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    # Get all folder IDs
+    folder_ids = [item["id"] for item in items if item.get("isFolder")]
+    if not folder_ids:
+        return items
+
+    try:
+        conn = sqlite3.connect(str(_cloud_events_db_path()))
+        conn.row_factory = sqlite3.Row
+        _ensure_cloud_events_table(conn)
+
+        placeholders = ",".join(["?"] * len(folder_ids))
+        cursor = conn.cursor()
+        cursor.execute(
+            f"SELECT source_folder_id, total_files, total_subfolders, references_json, references_count "
+            f"FROM cloud_events WHERE source_folder_id IN ({placeholders})",
+            folder_ids
+        )
+
+        db_metadata = {}
+        for row in cursor.fetchall():
+            db_metadata[row["source_folder_id"]] = {
+                "photoCount": row["total_files"],
+                "subfolderCount": row["total_subfolders"],
+                "referencesCount": row["references_count"],
+                "references": json.loads(row["references_json"] or "[]"),
+            }
+
+        for item in items:
+            if item.get("isFolder") and item["id"] in db_metadata:
+                meta = db_metadata[item["id"]]
+                item["photoCount"] = meta["photoCount"]
+                item["subfolderCount"] = meta["subfolderCount"]
+                item["referencesCount"] = meta["referencesCount"]
+                item["referenceDetected"] = (meta["referencesCount"] or 0) > 0 or len(meta["references"]) > 0
+    except Exception as e:
+        print(f"[_enrich_folders_with_catalog_stats] erro: {e}")
+
+    return items
+
+
 @router.get("/api/cloud/google/list")
-def cloud_google_list(folderId: str = "root"):
+def cloud_google_list(folderId: str = "root", pageToken: Optional[str] = None, pageSize: Optional[int] = None):
     try:
         from concurrent.futures import ThreadPoolExecutor, TimeoutError
         from cloud import is_authenticated, drive_manager
@@ -814,17 +960,52 @@ def cloud_google_list(folderId: str = "root"):
         if not is_authenticated():
             return {"error": "Não conectado ao Google Drive", "items": [], "folders": [], "photos": 0, "subfolders": 0}
 
+        # If paginated request params are supplied:
+        if pageToken is not None or pageSize is not None:
+            size = pageSize if pageSize is not None else 200
+
+            def _load_page():
+                return drive_manager.list_folder_items_page(folderId, page_size=size, page_token=pageToken)
+
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_load_page)
+                try:
+                    res = future.result(timeout=12)
+                except TimeoutError:
+                    print(f"[cloud/google/list] timeout paginado folderId={folderId}")
+                    return {"error": "Timeout ao listar pasta do Google Drive", "items": [], "nextPageToken": None}
+
+            items = res.get("items", [])
+            items = _enrich_folders_with_catalog_stats(items)
+            next_page_token = res.get("nextPageToken")
+            folders = [item for item in items if item.get("isFolder")]
+            photos = [item for item in items if not item.get("isFolder")]
+
+            return {
+                "items": items,
+                "folders": folders,
+                "photosList": photos,
+                "photos": len(photos),
+                "subfolders": len(folders),
+                "count": len(items),
+                "photosCount": len(photos),
+                "subfoldersCount": len(folders),
+                "nextPageToken": next_page_token,
+            }
+
+        # Legacy behavior (fetch all):
         def _load():
             return drive_manager.list_folder_items(folderId)
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(_load)
             try:
-                items = future.result(timeout=12)
+                items = future.result(timeout=15)
             except TimeoutError:
                 print(f"[cloud/google/list] timeout ao listar folderId={folderId}")
                 return {"error": "Timeout ao listar pastas do Google Drive", "items": [], "folders": [], "photos": 0, "subfolders": 0}
 
+        items = _enrich_folders_with_catalog_stats(items)
         folders = [item for item in items if item.get("isFolder")]
         photos = [item for item in items if not item.get("isFolder")]
 
@@ -841,6 +1022,24 @@ def cloud_google_list(folderId: str = "root"):
     except Exception as e:
         print(f"[cloud/google/list] erro folderId={folderId}: {e}")
         return {"error": str(e), "items": [], "folders": [], "photos": 0, "subfolders": 0}
+
+
+@router.get("/api/cloud/google/thumbnail-proxy")
+def cloud_thumbnail_proxy(url: str):
+    import requests
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        }
+        res = requests.get(url, headers=headers, timeout=10)
+        if res.status_code == 200:
+            return Response(content=res.content, media_type=res.headers.get("Content-Type", "image/jpeg"))
+        else:
+            print(f"[thumbnail-proxy] status_code={res.status_code} para url={url}")
+    except Exception as e:
+        print(f"[thumbnail-proxy] erro ao buscar thumb: {e}")
+
+    return Response(content=PLACEHOLDER_SVG, media_type="image/svg+xml")
 
 
 @router.get("/api/cloud/google/summary")

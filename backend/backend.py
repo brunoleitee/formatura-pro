@@ -95,12 +95,12 @@ def setup_logging():
     console.setFormatter(logging.Formatter('%(message)s'))
     root_logger.addHandler(console)
 
-def log_debug(msg):
+def log_debug(msg, *args, **kwargs):
     if VERBOSE_LOGGING:
-        logging.debug(msg)
+        logging.debug(msg, *args, **kwargs)
 
-def log_info(msg):
-    logging.info(msg)
+def log_info(msg, *args, **kwargs):
+    logging.info(msg, *args, **kwargs)
 
 @contextlib.contextmanager
 def quiet_external_output():
@@ -572,10 +572,13 @@ def graceful_shutdown(signum=None, frame=None):
     if signum is not None:
         sys.exit(0)
 
-if hasattr(signal, 'SIGTERM'):
-    signal.signal(signal.SIGTERM, graceful_shutdown)
-if hasattr(signal, 'SIGINT'):
-    signal.signal(signal.SIGINT, graceful_shutdown)
+try:
+    if hasattr(signal, 'SIGTERM'):
+        signal.signal(signal.SIGTERM, graceful_shutdown)
+    if hasattr(signal, 'SIGINT'):
+        signal.signal(signal.SIGINT, graceful_shutdown)
+except ValueError:
+    pass
 atexit.register(graceful_shutdown)
 
 bm.configure(
@@ -1132,9 +1135,31 @@ class DbConnection:
     def __enter__(self):
         use_cat = sanitize_catalog_name(self.cat if self.cat else AppState.current_catalog)
         if not use_cat: raise HTTPException(400, "Nenhum catálogo/evento selecionado! Crie um novo primeiro!")
-        db_path = os.path.join(CATALOG_DIR, f"{use_cat}.db")
-        if os.path.commonpath([CATALOG_DIR, os.path.abspath(db_path)]) != CATALOG_DIR:
-            raise HTTPException(400, "Nome de catalogo invalido")
+        
+        # Detect and redirect cloud catalogs
+        db_path = None
+        try:
+            base_dir = Path(__file__).resolve().parents[1]
+            cloud_db_path = base_dir / "data" / "cloud" / "cloud_events.db"
+            if cloud_db_path.exists():
+                with sqlite3.connect(str(cloud_db_path)) as cloud_conn:
+                    cloud_conn.row_factory = sqlite3.Row
+                    row = cloud_conn.execute(
+                        "SELECT fpdb_path FROM cloud_events WHERE name = ? OR id = ?",
+                        (use_cat, use_cat)
+                    ).fetchone()
+                    if row and row["fpdb_path"]:
+                        candidate_path = Path(row["fpdb_path"])
+                        if candidate_path.exists():
+                            db_path = str(candidate_path)
+                            logging.getLogger(__name__).info(f"[get_db] Redirecting cloud catalog '{use_cat}' to: {db_path}")
+        except Exception as e:
+            logging.getLogger(__name__).error(f"[get_db] Error checking cloud catalog redirect for '{use_cat}': {e}")
+
+        if not db_path:
+            db_path = os.path.join(CATALOG_DIR, f"{use_cat}.db")
+            if os.path.commonpath([CATALOG_DIR, os.path.abspath(db_path)]) != CATALOG_DIR:
+                raise HTTPException(400, "Nome de catalogo invalido")
         try:
             self.conn = sqlite3.connect(db_path, timeout=30)
             self.conn.row_factory = sqlite3.Row
@@ -1334,6 +1359,27 @@ def get_db(cat=None) -> DbConnection:
 
 def catalog_db_path(cat=None):
     use_cat = sanitize_catalog_name(cat if cat else AppState.current_catalog)
+    if not use_cat:
+        return ""
+        
+    # Detect and redirect cloud catalogs
+    try:
+        base_dir = Path(__file__).resolve().parents[1]
+        cloud_db_path = base_dir / "data" / "cloud" / "cloud_events.db"
+        if cloud_db_path.exists():
+            with sqlite3.connect(str(cloud_db_path)) as cloud_conn:
+                cloud_conn.row_factory = sqlite3.Row
+                row = cloud_conn.execute(
+                    "SELECT fpdb_path FROM cloud_events WHERE name = ? OR id = ?",
+                    (use_cat, use_cat)
+                ).fetchone()
+                if row and row["fpdb_path"]:
+                    candidate_path = Path(row["fpdb_path"])
+                    if candidate_path.exists():
+                        return str(candidate_path)
+    except Exception:
+        pass
+        
     return os.path.join(CATALOG_DIR, f"{use_cat}.db")
 
 def backup_catalog_db(cat=None, reason="backup"):

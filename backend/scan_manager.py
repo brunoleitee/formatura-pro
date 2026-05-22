@@ -11,7 +11,7 @@ from pydantic import BaseModel
 _cfg = {}
 
 def _log_memory(label=""):
-    log_info = _cfg.get("log_info", lambda msg: None)
+    log_info = _cfg.get("log_info", lambda msg, *args, **kwargs: None)
     try:
         import psutil
         proc = psutil.Process(os.getpid())
@@ -402,7 +402,7 @@ def clear_scan_summary():
 
 def _memory_cleanup_global(log_info=None):
     if log_info is None:
-        log_info = _get("log_info", lambda msg: None)
+        log_info = _get("log_info", lambda msg, *args, **kwargs: None)
     log_info("[Scanner] cleanup start")
 
     # 1. scan_state accumulators - never store PIL/numpy/cv2/base64/bytes
@@ -553,13 +553,13 @@ def stop_scan():
 
 
 def force_cleanup():
-    log_info = _get("log_info", lambda msg: None)
+    log_info = _get("log_info", lambda msg, *args, **kwargs: None)
     _memory_cleanup_global(log_info)
     return {"success": True, "message": "Cleanup forcado concluido."}
 
 
 def unload_models():
-    log_info = _get("log_info", lambda msg: None)
+    log_info = _get("log_info", lambda msg, *args, **kwargs: None)
     log_info("[Scanner] Unload models requested")
 
     _memory_cleanup_global(log_info)

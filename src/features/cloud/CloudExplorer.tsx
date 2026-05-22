@@ -21,6 +21,9 @@ type CloudExplorerProps = {
   onOpenFolder: (item: CloudItem) => void;
   onSelectFolder: (item: CloudItem) => void;
   onGoToBreadcrumb: (index: number) => void;
+  hasMoreBackend?: boolean;
+  loadingMoreBackend?: boolean;
+  onLoadMoreBackend?: () => void;
 };
 
 const DRIVE_FOLDER_MIME = 'application/vnd.google-apps.folder';
@@ -70,6 +73,9 @@ export function CloudExplorer({
   onOpenFolder,
   onSelectFolder,
   onGoToBreadcrumb,
+  hasMoreBackend = false,
+  loadingMoreBackend = false,
+  onLoadMoreBackend,
 }: CloudExplorerProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const loadTimerRef = useRef<number | null>(null);
@@ -139,25 +145,33 @@ export function CloudExplorer({
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || !hasMorePhotos) return;
+    if (!el || (!hasMorePhotos && !hasMoreBackend)) return;
 
     const onScroll = () => {
       if (el.scrollHeight - el.scrollTop - el.clientHeight < 900) {
-        loadMorePhotos();
+        if (hasMorePhotos) {
+          loadMorePhotos();
+        } else if (hasMoreBackend && onLoadMoreBackend && !loadingMoreBackend) {
+          onLoadMoreBackend();
+        }
       }
     };
 
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
-  }, [hasMorePhotos, loadMorePhotos]);
+  }, [hasMorePhotos, loadMorePhotos, hasMoreBackend, loadingMoreBackend, onLoadMoreBackend]);
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || loading || loadingMore || !hasMorePhotos) return;
+    if (!el || loading || loadingMore || loadingMoreBackend || (!hasMorePhotos && !hasMoreBackend)) return;
     if (el.scrollHeight <= el.clientHeight + 80) {
-      loadMorePhotos();
+      if (hasMorePhotos) {
+        loadMorePhotos();
+      } else if (hasMoreBackend && onLoadMoreBackend) {
+        onLoadMoreBackend();
+      }
     }
-  }, [hasMorePhotos, loadMorePhotos, loading, loadingMore, visiblePhotos.length, totalHeight]);
+  }, [hasMorePhotos, loadMorePhotos, loading, loadingMore, loadingMoreBackend, hasMoreBackend, onLoadMoreBackend, visiblePhotos.length, totalHeight]);
 
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
@@ -259,7 +273,7 @@ export function CloudExplorer({
                   })}
                 </div>
 
-                {loadingMore && (
+                {(loadingMore || loadingMoreBackend) && (
                   <div className={styles.loadingMore}>
                     <Loader2 size={16} className={styles.spin} />
                     Carregando mais fotos...

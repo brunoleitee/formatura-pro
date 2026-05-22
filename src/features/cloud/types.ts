@@ -18,12 +18,17 @@ export type CloudItem = {
   parentId?: string;
   modifiedTime?: string | null;
   size?: number | null;
+  photoCount?: number;
+  subfolderCount?: number;
+  referencesCount?: number;
+  referenceDetected?: boolean;
 };
 
 export type CloudFolderInsight = {
   photoCount?: number;
   subfolderCount?: number;
   referenceDetected?: boolean;
+  referencesCount?: number;
 };
 
 export type CloudCatalogSession = {

@@ -92,57 +92,71 @@ def ensure_face_engine():
 
         model_root = runtime_dir if os.path.isdir(os.path.join(runtime_dir, "models", "buffalo_l")) else "~/.insightface"
 
-        from insightface.app import FaceAnalysis
-
-        try:
-            with quiet_external_output():
-                app_face_instance = FaceAnalysis(
-                    name="buffalo_l",
-                    root=model_root,
-                    providers=selected_providers,
-                    provider_options=provider_options,
-                    allowed_modules=["detection", "recognition"],
-                )
-                app_face_instance.prepare(ctx_id=ctx_id, det_size=det_size)
-
-            real_providers = get_session_providers(app_face_instance)
-            real_provider = real_providers[0] if real_providers else selected_provider
-            log_info(f"[AI] Sessao ONNX providers reais: {real_providers}")
-            face_engine_device = "GPU" if real_provider in {"CUDAExecutionProvider", "DmlExecutionProvider"} else "CPU"
-            face_engine_provider = real_provider
-            face_engine_label = _provider_label(real_provider)
-            face_engine_gpu_error = provider_info.get("provider_error", "")
-            if face_engine_device == "GPU":
-                log_info(f"[AI] {face_engine_label} ativo")
-            else:
-                log_info(f"[AI] GPU indisponivel, usando CPU (solicitado={selected_provider})")
-            log_info(f"[AI] Provider ativo: {real_provider}")
-        except Exception as e:
-            log_info(f"[AI] Falha ao carregar engine de IA: {e}")
-            log_info(f"[AI] Traceback completo:\n{traceback.format_exc()}")
-            if selected_provider == "CPUExecutionProvider":
+        import signal
+        _orig_signal = signal.signal
+        def _safe_signal(sig, handler):
+            try:
+                return _orig_signal(sig, handler)
+            except ValueError as e:
+                if "signal only works in main thread" in str(e):
+                    return None
                 raise
 
-            log_info(f"[AI] {selected_provider} falhou, fallback para CPU")
-            with quiet_external_output():
-                app_face_instance = FaceAnalysis(
-                    name="buffalo_l",
-                    root=model_root,
-                    providers=["CPUExecutionProvider"],
-                    provider_options=None,
-                    allowed_modules=["detection", "recognition"],
-                )
-                app_face_instance.prepare(ctx_id=-1, det_size=det_size)
-            real_providers = get_session_providers(app_face_instance)
-            real_provider = real_providers[0] if real_providers else "CPUExecutionProvider"
-            face_engine_device = "CPU"
-            face_engine_provider = real_provider
-            face_engine_label = _provider_label(real_provider)
-            face_engine_gpu_error = str(e)
-            log_info(f"[AI] Provider ativo: {real_provider}")
+        signal.signal = _safe_signal
+        try:
+            from insightface.app import FaceAnalysis
 
-        app_face = app_face_instance
-        log_info(f"[Face] model loaded device={face_engine_device} provider={face_engine_provider} label={face_engine_label}")
+            try:
+                with quiet_external_output():
+                    app_face_instance = FaceAnalysis(
+                        name="buffalo_l",
+                        root=model_root,
+                        providers=selected_providers,
+                        provider_options=provider_options,
+                        allowed_modules=["detection", "recognition"],
+                    )
+                    app_face_instance.prepare(ctx_id=ctx_id, det_size=det_size)
+
+                real_providers = get_session_providers(app_face_instance)
+                real_provider = real_providers[0] if real_providers else selected_provider
+                log_info(f"[AI] Sessao ONNX providers reais: {real_providers}")
+                face_engine_device = "GPU" if real_provider in {"CUDAExecutionProvider", "DmlExecutionProvider"} else "CPU"
+                face_engine_provider = real_provider
+                face_engine_label = _provider_label(real_provider)
+                face_engine_gpu_error = provider_info.get("provider_error", "")
+                if face_engine_device == "GPU":
+                    log_info(f"[AI] {face_engine_label} ativo")
+                else:
+                    log_info(f"[AI] GPU indisponivel, usando CPU (solicitado={selected_provider})")
+                log_info(f"[AI] Provider ativo: {real_provider}")
+            except Exception as e:
+                log_info(f"[AI] Falha ao carregar engine de IA: {e}")
+                log_info(f"[AI] Traceback completo:\n{traceback.format_exc()}")
+                if selected_provider == "CPUExecutionProvider":
+                    raise
+
+                log_info(f"[AI] {selected_provider} falhou, fallback para CPU")
+                with quiet_external_output():
+                    app_face_instance = FaceAnalysis(
+                        name="buffalo_l",
+                        root=model_root,
+                        providers=["CPUExecutionProvider"],
+                        provider_options=None,
+                        allowed_modules=["detection", "recognition"],
+                    )
+                    app_face_instance.prepare(ctx_id=-1, det_size=det_size)
+                real_providers = get_session_providers(app_face_instance)
+                real_provider = real_providers[0] if real_providers else "CPUExecutionProvider"
+                face_engine_device = "CPU"
+                face_engine_provider = real_provider
+                face_engine_label = _provider_label(real_provider)
+                face_engine_gpu_error = str(e)
+                log_info(f"[AI] Provider ativo: {real_provider}")
+
+            app_face = app_face_instance
+            log_info(f"[Face] model loaded device={face_engine_device} provider={face_engine_provider} label={face_engine_label}")
+        finally:
+            signal.signal = _orig_signal
 
 def get_app_face():
     return app_face

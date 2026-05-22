@@ -32,8 +32,8 @@ def _default_quiet_external_output():
         yield
 
 _cfg = {
-    "log_debug": lambda msg: None,
-    "log_info": lambda msg: None,
+    "log_debug": lambda msg, *args, **kwargs: None,
+    "log_info": lambda msg, *args, **kwargs: None,
     "quiet_external_output": _default_quiet_external_output,
     "get_memory_info": lambda: {},
     "get_db": None,
@@ -708,7 +708,7 @@ def _load_single_image(path):
 
 
 def _log_memory(label=""):
-    log_info = _cfg.get("log_info", lambda msg: None)
+    log_info = _cfg.get("log_info", lambda msg, *args, **kwargs: None)
     try:
         import psutil
         import os as _os

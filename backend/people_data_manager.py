@@ -200,8 +200,44 @@ def get_people(unknown: bool = False):
                     LEFT JOIN covers cov ON cov.identity_key = s.identity_key
                     ORDER BY s.aluno_id ASC
                 """)
-                rows = cur.fetchall()
+                rows = [dict(r) for r in cur.fetchall()]
                 _sql_logger.info("[sql-perf] endpoint=/api/people query=people_stats rows=%d ms=%.0f", len(rows), (time.perf_counter() - _t) * 1000)
+
+                # Buscar alunos cadastrados na tabela alunos para incluir quem tem 0 fotos/ocorrências
+                try:
+                    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+                    _has_alunos_table = cur.fetchone() is not None
+                    if _has_alunos_table:
+                        # Obter chaves já presentes
+                        seen_identities = set()
+                        for r in rows:
+                            identity_key = str(r["identity_key"] or "")
+                            seen_identities.add(identity_key)
+
+                        cur.execute("SELECT aluno_id, face_cache_path, class_name, person_key, reference_folder FROM alunos")
+                        all_alunos = cur.fetchall()
+                        for ar in all_alunos:
+                            pk = str(ar["person_key"] or "")
+                            aid = ar["aluno_id"]
+                            identity = pk if pk else aid
+                            
+                            if identity not in seen_identities and aid != "system_catalog":
+                                seen_identities.add(identity)
+                                rows.append({
+                                    "aluno_id": aid,
+                                    "identity_key": identity,
+                                    "total": 0,
+                                    "avg_quality": 0.0,
+                                    "favorites_count": 0,
+                                    "discarded_count": 0,
+                                    "cover_path": None,
+                                    "x1": None,
+                                    "y1": None,
+                                    "x2": None,
+                                    "y2": None
+                                })
+                except Exception as _alunos_err:
+                    print(f"Erro ao mesclar alunos sem fotos: {_alunos_err}")
                 
                 _t = time.perf_counter()
                 cur.execute("""

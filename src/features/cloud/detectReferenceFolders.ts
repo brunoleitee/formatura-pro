@@ -5,6 +5,6 @@ export function detectReferenceFolders(items: CloudItem[]) {
   return items.filter(item => {
     if (!item.isFolder) return false;
     const normalized = normalizeFolderName(item.name);
-    return /(^|\s)#?BASE(\s|$)/.test(normalized) || /(^|\s)REFERENCIA(\s|$)/.test(normalized);
+    return normalized.includes('BASE') || normalized.includes('REFERENCIA');
   });
 }

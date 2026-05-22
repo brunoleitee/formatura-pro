@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { CheckCircle2, CloudOff } from 'lucide-react';
+import { CheckCircle2, CloudOff, RefreshCw, FolderOpen, FolderTree } from 'lucide-react';
 import { CloudEventDashboard } from '../features/cloud/CloudEventDashboard';
 import { CloudExplorer } from '../features/cloud/CloudExplorer';
 import { CloudNavigationBar } from '../features/cloud/CloudNavigationBar';
@@ -18,7 +18,18 @@ import {
 import { detectReferenceFolders } from '../features/cloud/detectReferenceFolders';
 import type { CloudCatalog, CloudCatalogMode, CloudCatalogSession, CloudConnection, CloudEventDraft, CloudFolderInsight, CloudItem } from '../features/cloud/types';
 import { cloudApi } from '../services/cloudApi';
-import { api } from '../services/api';
+import { api, type Photo } from '../services/api';
+import { useCatalogPhotos } from '../hooks/useCatalogPhotos';
+import { usePhotoFilters } from '../hooks/usePhotoFilters';
+import { usePhotoSelection } from '../hooks/usePhotoSelection';
+import { usePhotoViewer } from '../hooks/usePhotoViewer';
+import { VirtualizedPhotoGrid } from '../components/photos/VirtualizedPhotoGrid';
+import { ZoomControl } from '../components/photos/ZoomControl';
+import { PhotoFilters } from '../components/photos/PhotoFilters';
+import PhotoBulkActionsBar from '../components/photos/PhotoBulkActionsBar';
+import { PhotoViewerModal } from '../components/photos/PhotoViewerModal';
+import { PhotoDetailPanel } from '../components/photos/PhotoDetailPanel';
+import { useApp } from '../context/AppContext';
 import styles from './CloudView.module.css';
 
 const rootBreadcrumb: CloudBreadcrumbItem[] = [{ id: 'root', name: 'Meu Drive' }];
@@ -116,6 +127,8 @@ export default function CloudView() {
   const [connection, setConnection] = useState<CloudConnection | null>(null);
   const [cloudMode, setCloudMode] = useState<CloudMode>('home');
   const [items, setItems] = useState<CloudItem[]>([]);
+  const [nextPageToken, setNextPageToken] = useState<string | undefined>(undefined);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [breadcrumb, setBreadcrumb] = useState<CloudBreadcrumbItem[]>(rootBreadcrumb);
   const [backStack, setBackStack] = useState<CloudNavigationSnapshot[]>([]);
   const [forwardStack, setForwardStack] = useState<CloudNavigationSnapshot[]>([]);
@@ -126,6 +139,92 @@ export default function CloudView() {
   const [workspaceCatalog, setWorkspaceCatalog] = useState<CloudCatalog | null>(null);
   const [workspaceSession, setWorkspaceSession] = useState<CloudCatalogSession | null>(null);
   const [folderInsights, setFolderInsights] = useState<Record<string, CloudFolderInsight>>({});
+  const fetchedSummariesRef = useRef<Set<string>>(new Set());
+  
+  const { setCatalog, currentCatalog, catalogSubfolder } = useApp();
+  
+  // Workspace hooks & states
+  const [hideDiscarded, setHideDiscarded] = useState(false);
+  const [zoom, setZoom] = useState(60);
+  const size = useMemo(() => 100 + (zoom / 100) * (300 - 100), [zoom]);
+  const {
+    photos,
+    loading: photosLoading,
+    loadingMore: photosLoadingMore,
+    hasMore: photosHasMore,
+    loadPhotos,
+    loadMore: loadMorePhotos,
+    discardPhoto,
+    restorePhoto,
+  } = useCatalogPhotos();
+  
+  const { filteredPhotos, filter, setFilter } = usePhotoFilters(
+    photos,
+    currentCatalog,
+    catalogSubfolder,
+    hideDiscarded
+  );
+  
+  const { selectedPaths, toggleSelection, clearSelection } = usePhotoSelection(filteredPhotos);
+  const { viewerPhoto, setViewerPhoto } = usePhotoViewer(filteredPhotos);
+  const [detailsPhoto, setDetailsPhoto] = useState<Photo | null>(null);
+  
+  const selectionCountRef = useRef(0);
+  useEffect(() => {
+    selectionCountRef.current = selectedPaths.size;
+  }, [selectedPaths.size]);
+  
+  const getSelectionCount = useCallback(() => selectionCountRef.current, []);
+  const gridScrollRef = useRef<HTMLDivElement | null>(null);
+
+  const handleDiscardSelected = useCallback(async () => {
+    if (selectedPaths.size === 0) return;
+    const paths = Array.from(selectedPaths);
+    paths.forEach(p => discardPhoto(p));
+    clearSelection();
+    try {
+      await api.bulkDiscardPhotos(currentCatalog, paths);
+      loadPhotos();
+    } catch (e) {
+      console.error(e);
+      loadPhotos();
+    }
+  }, [selectedPaths, currentCatalog, discardPhoto, clearSelection, loadPhotos]);
+
+  const handleRestoreSelected = useCallback(async () => {
+    if (selectedPaths.size === 0) return;
+    const paths = Array.from(selectedPaths);
+    paths.forEach(p => restorePhoto(p));
+    clearSelection();
+    try {
+      await api.bulkRestorePhotos(currentCatalog, paths);
+      loadPhotos();
+    } catch (e) {
+      console.error(e);
+      loadPhotos();
+    }
+  }, [selectedPaths, currentCatalog, restorePhoto, clearSelection, loadPhotos]);
+
+  const handleRemoveIdentificationSelected = useCallback(async () => {
+    if (selectedPaths.size === 0) return;
+    const paths = Array.from(selectedPaths);
+    clearSelection();
+    try {
+      await api.bulkRemoveIdentification(currentCatalog, paths);
+      loadPhotos();
+    } catch (e) {
+      console.error(e);
+      loadPhotos();
+    }
+  }, [selectedPaths, currentCatalog, clearSelection, loadPhotos]);
+
+  useEffect(() => {
+    if (cloudMode === 'workspace' && workspaceCatalog) {
+      if (currentCatalog !== workspaceCatalog.name) {
+        void setCatalog(workspaceCatalog.name);
+      }
+    }
+  }, [cloudMode, workspaceCatalog, currentCatalog, setCatalog]);
   const [loading, setLoading] = useState(true);
   const [catalogsLoading, setCatalogsLoading] = useState(false);
   const [catalogSuccess, setCatalogSuccess] = useState('');
@@ -168,6 +267,21 @@ export default function CloudView() {
       const nextCatalogs = result.catalogs || [];
       recentCatalogsRef.current = nextCatalogs;
       setRecentCatalogs(nextCatalogs);
+      setFolderInsights(prev => {
+        const nextInsights = { ...prev };
+        for (const catalog of nextCatalogs) {
+          if (catalog.sourceFolderId) {
+            nextInsights[catalog.sourceFolderId] = {
+              ...prev[catalog.sourceFolderId],
+              photoCount: catalog.totalFiles,
+              subfolderCount: catalog.totalSubfolders ?? catalog.subfolderCount ?? 0,
+              referenceDetected: (catalog.referencesCount ?? 0) > 0 || (catalog.references && catalog.references.length > 0) || false,
+              referencesCount: catalog.referencesCount ?? catalog.references?.length ?? 0,
+            };
+          }
+        }
+        return nextInsights;
+      });
     } finally {
       setCatalogsLoading(false);
     }
@@ -177,17 +291,30 @@ export default function CloudView() {
     setLoading(true);
     setExplorerError('');
     try {
-      const result = await cloudApi.listGoogleFolder(folderId);
+      const result = await cloudApi.listGoogleFolder(folderId, undefined, 200);
       const nextItems = result.items || [];
       setItems(nextItems);
-      setFolderInsights(prev => ({
-        ...prev,
-        ...Object.fromEntries(
-          nextItems
-            .filter(item => item.isFolder)
-            .map(item => [item.id, { ...prev[item.id], referenceDetected: detectReferenceFolders([item]).length > 0 }])
-        ),
-      }));
+      setNextPageToken(result.nextPageToken);
+      setFolderInsights(prev => {
+        const nextInsights = { ...prev };
+        nextInsights[folderId] = {
+          ...prev[folderId],
+          photoCount: result.photos,
+          subfolderCount: result.subfolders,
+        };
+        for (const item of nextItems) {
+          if (item.isFolder) {
+            nextInsights[item.id] = {
+              ...prev[item.id],
+              photoCount: item.photoCount ?? prev[item.id]?.photoCount,
+              subfolderCount: item.subfolderCount ?? prev[item.id]?.subfolderCount,
+              referencesCount: item.referencesCount ?? prev[item.id]?.referencesCount,
+              referenceDetected: item.referenceDetected ?? detectReferenceFolders([item]).length > 0 ?? prev[item.id]?.referenceDetected,
+            };
+          }
+        }
+        return nextInsights;
+      });
       if (result.error) {
         setExplorerError(result.error);
       }
@@ -195,6 +322,7 @@ export default function CloudView() {
     } catch (e) {
       console.error('Erro ao carregar pasta cloud:', e);
       setItems([]);
+      setNextPageToken(undefined);
       setExplorerError('Não foi possível carregar o Google Drive. Tente novamente.');
       return [];
     } finally {
@@ -206,6 +334,48 @@ export default function CloudView() {
     const nextItems = await loadFolder(folderId);
     return nextItems;
   }, [loadFolder]);
+
+  const handleLoadMoreBackend = useCallback(async () => {
+    if (loadingMore || !nextPageToken) return;
+    setLoadingMore(true);
+    try {
+      const result = await cloudApi.listGoogleFolder(currentFolderId, nextPageToken, 200);
+      const nextItems = result.items || [];
+      setItems(prev => {
+        const existingIds = new Set(prev.map(item => item.id));
+        const filteredNew = nextItems.filter(item => !existingIds.has(item.id));
+        return [...prev, ...filteredNew];
+      });
+      setNextPageToken(result.nextPageToken);
+      setFolderInsights(prev => {
+        const nextInsights = { ...prev };
+        nextInsights[currentFolderId] = {
+          ...prev[currentFolderId],
+          photoCount: (prev[currentFolderId]?.photoCount ?? 0) + (result.photos ?? 0),
+          subfolderCount: (prev[currentFolderId]?.subfolderCount ?? 0) + (result.subfolders ?? 0),
+        };
+        for (const item of nextItems) {
+          if (item.isFolder) {
+            nextInsights[item.id] = {
+              ...prev[item.id],
+              photoCount: item.photoCount ?? prev[item.id]?.photoCount,
+              subfolderCount: item.subfolderCount ?? prev[item.id]?.subfolderCount,
+              referencesCount: item.referencesCount ?? prev[item.id]?.referencesCount,
+              referenceDetected: item.referenceDetected ?? detectReferenceFolders([item]).length > 0 ?? prev[item.id]?.referenceDetected,
+            };
+          }
+        }
+        return nextInsights;
+      });
+      if (result.error) {
+        setExplorerError(result.error);
+      }
+    } catch (e) {
+      console.error('Erro ao carregar mais itens do Drive:', e);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [currentFolderId, nextPageToken, loadingMore]);
 
   const prepareFolderDraft = useCallback(async (
     folder: CloudItem,
@@ -239,18 +409,31 @@ export default function CloudView() {
       }
     }
 
-    const fallbackEventRoot = eventRoot || folderBreadcrumb[Math.max(1, folderBreadcrumb.length - 2)] || folderBreadcrumb[folderBreadcrumb.length - 1];
+    let recursivePhotos = folderInsights[folder.id]?.photoCount;
+    let recursiveSubfolders = folderInsights[folder.id]?.subfolderCount;
+
+    if (recursivePhotos === undefined || recursiveSubfolders === undefined) {
+      try {
+        const summary = await cloudApi.getGoogleFolderSummary(folder.id);
+        recursivePhotos = summary.photos;
+        recursiveSubfolders = summary.subfolders;
+      } catch (e) {
+        console.warn('Erro ao carregar resumo de pasta no draft:', folder.name, e);
+      }
+    }
+
+    const fallbackEventRoot = eventRoot || folderBreadcrumb[1] || folderBreadcrumb[folderBreadcrumb.length - 1];
     const references = Array.from(referenceMap.values());
     return buildDraft(
       folder,
       sourceBreadcrumb,
       references.map(item => item.name),
-      directPhotos.length,
-      directFolders.length,
+      recursivePhotos !== undefined ? recursivePhotos : directPhotos.length,
+      recursiveSubfolders !== undefined ? recursiveSubfolders : directFolders.length,
       fallbackEventRoot ? { id: fallbackEventRoot.id, name: fallbackEventRoot.name } : undefined,
       references.map(item => item.id),
     );
-  }, []);
+  }, [folderInsights]);
 
   const selectedDraft = useMemo(() => {
     if (draft) return draft;
@@ -402,6 +585,52 @@ export default function CloudView() {
       selectedFolderId: selectedFolder?.id || null,
     });
   }, [backStack, breadcrumb, cloudMode, currentFolderId, forwardStack, selectedFolder?.id]);
+
+  useEffect(() => {
+    if (cloudMode !== 'explorer' || loading || items.length === 0) return;
+
+    let active = true;
+    const foldersToSummarize = items.filter(item => {
+      const isFolder = item.isFolder || item.mimeType === 'application/vnd.google-apps.folder';
+      if (!isFolder) return false;
+      
+      if (fetchedSummariesRef.current.has(item.id)) return false;
+      
+      const insight = folderInsights[item.id];
+      return !insight || insight.photoCount === undefined || insight.subfolderCount === undefined;
+    });
+
+    if (foldersToSummarize.length === 0) return;
+
+    foldersToSummarize.forEach(f => fetchedSummariesRef.current.add(f.id));
+
+    const fetchSummaries = async () => {
+      for (const folder of foldersToSummarize) {
+        if (!active) break;
+        try {
+          const summary = await cloudApi.getGoogleFolderSummary(folder.id);
+          if (!active) break;
+          setFolderInsights(prev => ({
+            ...prev,
+            [folder.id]: {
+              ...prev[folder.id],
+              photoCount: summary.photos,
+              subfolderCount: summary.subfolders,
+            }
+          }));
+        } catch (e) {
+          console.warn('Erro ao carregar resumo de pasta:', folder.name, e);
+          fetchedSummariesRef.current.delete(folder.id);
+        }
+      }
+    };
+
+    void fetchSummaries();
+
+    return () => {
+      active = false;
+    };
+  }, [items, cloudMode, loading]);
 
   useEffect(() => {
     if (cloudMode !== 'explorer' || loading || breadcrumb.length === 0) return;
@@ -557,6 +786,7 @@ export default function CloudView() {
       setFolderInsights(prev => ({
         ...prev,
         [folder.id]: {
+          ...prev[folder.id],
           photoCount: nextDraft.totalFiles,
           subfolderCount: nextDraft.totalSubfolders ?? subfolders.length,
           referenceDetected: nextDraft.references.length > 0,
@@ -587,6 +817,7 @@ export default function CloudView() {
 
   const handleRefresh = async () => {
     setExplorerError('');
+    fetchedSummariesRef.current.clear();
     await loadStatus();
     if (connected) {
       await loadExplorerFolder(currentFolderId);
@@ -627,14 +858,48 @@ export default function CloudView() {
     setShowCreateModal(false);
     setCreating(true);
     setCatalogError('');
-    setCatalogProgress({ percent: 0, label: 'Preparando catálogo' });
+
+    const formatNumberPtBR = (num: number) => {
+      return new Intl.NumberFormat('pt-BR').format(num);
+    };
+
+    const totalFiles = selectedDraft.totalFiles || 0;
+    let currentFiles = 0;
+    let progressInterval: number | undefined;
+
+    if (totalFiles > 0) {
+      setCatalogProgress({
+        percent: 10,
+        label: `Processando fotos: 0 de ${formatNumberPtBR(totalFiles)}`
+      });
+      progressInterval = window.setInterval(() => {
+        const targetLimit = Math.floor(totalFiles * 0.95);
+        if (currentFiles < targetLimit) {
+          const remaining = targetLimit - currentFiles;
+          const increment = Math.max(1, Math.floor(remaining * 0.05));
+          currentFiles = Math.min(targetLimit, currentFiles + increment);
+          const percent = Math.min(95, Math.max(10, Math.floor((currentFiles / totalFiles) * 100)));
+          setCatalogProgress({
+            percent,
+            label: `Processando fotos: ${formatNumberPtBR(currentFiles)} de ${formatNumberPtBR(totalFiles)}`
+          });
+        }
+      }, 120);
+    } else {
+      let currentPercent = 10;
+      setCatalogProgress({ percent: 10, label: 'Preparando catálogo...' });
+      progressInterval = window.setInterval(() => {
+        if (currentPercent < 95) {
+          currentPercent = Math.min(95, currentPercent + Math.max(1, Math.floor((95 - currentPercent) * 0.05)));
+          setCatalogProgress({
+            percent: currentPercent,
+            label: 'Processando fotos...'
+          });
+        }
+      }, 120);
+    }
+
     try {
-      await new Promise(resolve => window.setTimeout(resolve, 180));
-      setCatalogProgress({ percent: 25, label: 'Lendo estrutura da pasta' });
-      await new Promise(resolve => window.setTimeout(resolve, 180));
-      setCatalogProgress({ percent: 50, label: 'Contando fotos' });
-      await new Promise(resolve => window.setTimeout(resolve, 180));
-      setCatalogProgress({ percent: 75, label: 'Detectando referências' });
       const catalogName = name || selectedDraft.name;
       const catalogDraft = name ? { ...selectedDraft, name: catalogName } : selectedDraft;
       const payload = {
@@ -648,6 +913,12 @@ export default function CloudView() {
       console.log('[cloud-catalog] criando', payload);
       const result = await cloudApi.createCloudCatalog(catalogDraft);
       console.log('[cloud-catalog] criado', result);
+
+      if (progressInterval) {
+        window.clearInterval(progressInterval);
+        progressInterval = undefined;
+      }
+
       if (result.error && result.status !== 'draft') {
         throw new Error(result.error);
       }
@@ -661,8 +932,16 @@ export default function CloudView() {
         createdAt: nextDraft.createdAt || new Date().toISOString(),
       };
       const catalogId = indexedDraft.id || result.catalogId || catalogDraft.sourceFolderId;
-      setCatalogProgress({ percent: 100, label: 'Catálogo criado' });
-      await new Promise(resolve => window.setTimeout(resolve, 280));
+
+      const finalCount = indexedDraft.totalFiles || totalFiles;
+      setCatalogProgress({
+        percent: 100,
+        label: finalCount > 0
+          ? `Catálogo criado! ${formatNumberPtBR(finalCount)} fotos processadas`
+          : 'Catálogo criado!'
+      });
+      await new Promise(resolve => window.setTimeout(resolve, 800));
+
       setDraft(indexedDraft);
       setRestorePromptCatalog(null);
       const optimisticCatalog = draftToCatalog(indexedDraft);
@@ -688,9 +967,16 @@ export default function CloudView() {
       }
       return indexedDraft;
     } catch (error: any) {
+      if (progressInterval) {
+        window.clearInterval(progressInterval);
+        progressInterval = undefined;
+      }
       setCatalogError(error?.message || 'Erro ao criar catálogo cloud. Tente novamente.');
       return null;
     } finally {
+      if (progressInterval) {
+        window.clearInterval(progressInterval);
+      }
       setCreating(false);
       setCatalogProgress(null);
     }
@@ -902,6 +1188,9 @@ export default function CloudView() {
                 onOpenFolder={handleOpenFolder}
                 onSelectFolder={handleSelectFolder}
                 onGoToBreadcrumb={handleGoToBreadcrumb}
+                hasMoreBackend={!!nextPageToken}
+                loadingMoreBackend={loadingMore}
+                onLoadMoreBackend={handleLoadMoreBackend}
               />
 
               <aside className={styles.sideStack}>
@@ -929,7 +1218,12 @@ export default function CloudView() {
                       await loadCatalogAiStatus(selectedDraft.id);
                     }}
                   />
-                ) : selectedDraft && (preparing || selectedDraft.totalFiles > 0) ? (
+                ) : selectedDraft && (
+                  preparing || 
+                  selectedDraft.totalFiles > 0 || 
+                  (selectedDraft.totalSubfolders ?? selectedDraft.subfolderCount ?? 0) > 0 || 
+                  selectedDraft.references.length > 0
+                ) ? (
                   <CloudWorkflowPanel
                     draft={selectedDraft}
                     loading={preparing}
@@ -995,25 +1289,59 @@ export default function CloudView() {
 
             <div className={styles.mainGrid}>
               <div className={styles.workspacePanel}>
-                <div className={styles.importHeader}>
-                  <span>Workspace do catálogo</span>
-                  <small>Persistência, IA e revisão por evento.</small>
-                </div>
-                <div className={styles.pathStack}>
-                  <div className={styles.pathBlock}>
-                    <span>Pasta atual</span>
-                    <strong title={workspaceSession?.currentPathJson?.map(i => i.name).join(' > ') || workspaceCatalog.sourceFolderName || workspaceCatalog.name}>
-                      {workspaceSession?.currentPathJson?.map(i => i.name).join(' > ') || workspaceCatalog.sourceFolderName || workspaceCatalog.name}
-                    </strong>
+                <div className={styles.workspaceHeader}>
+                  <div className={styles.workspaceHeaderTitle}>
+                    <span title={workspaceSession?.currentPathJson?.map(i => i.name).join(' > ') || workspaceCatalog.sourceFolderName || workspaceCatalog.name}>
+                      {workspaceCatalog.name}
+                    </span>
+                    <small>Status: {workspaceCatalog.status === 'indexed' ? 'Indexado' : workspaceCatalog.status}</small>
                   </div>
-                  <div className={styles.pathBlock}>
-                    <span>Status</span>
-                    <strong>{workspaceCatalog.status === 'indexed' ? 'Indexado' : workspaceCatalog.status}</strong>
+                  <div className={styles.workspaceHeaderControls}>
+                    <span className={styles.workspaceHeaderCounter}>
+                      <strong>{filteredPhotos.length}</strong> fotos
+                    </span>
+                    <PhotoFilters
+                      filter={filter}
+                      onFilterChange={setFilter}
+                      hideDiscarded={hideDiscarded}
+                      onHideDiscardedChange={setHideDiscarded}
+                    />
+                    <ZoomControl zoom={zoom} onZoom={setZoom} min={0} max={100} step={5} />
                   </div>
                 </div>
-                <p className={styles.mutedLine}>
-                  Catálogo salvo em: {workspaceCatalog.catalogPath || 'indisponível'}
-                </p>
+
+                <div className={styles.gridContent}>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
+                    {photosLoading && photos.length === 0 ? (
+                      <div className={styles.loadingMore}>
+                        <RefreshCw size={24} className={styles.spin} />
+                        <p>Carregando fotos do catálogo...</p>
+                      </div>
+                    ) : (
+                      <VirtualizedPhotoGrid
+                        photos={filteredPhotos}
+                        selectedPaths={selectedPaths}
+                        onPhotoClick={toggleSelection}
+                        onDoubleClick={setViewerPhoto}
+                        onOpenDetails={setDetailsPhoto}
+                        onLoadMore={loadMorePhotos}
+                        hasMore={photosHasMore}
+                        loadingMore={photosLoadingMore}
+                        zoom={size}
+                        getSelectionCount={getSelectionCount}
+                        resetScrollKey={`${workspaceCatalog.name}|${filter}|${hideDiscarded ? '1' : '0'}`}
+                        scrollRef={gridScrollRef}
+                      />
+                    )}
+                  </div>
+
+                  {detailsPhoto && (
+                    <PhotoDetailPanel
+                      photo={detailsPhoto}
+                      onClose={() => setDetailsPhoto(null)}
+                    />
+                  )}
+                </div>
               </div>
 
               <aside className={styles.sideStack}>
@@ -1059,6 +1387,27 @@ export default function CloudView() {
                 setCatalogError(error?.message || 'Não foi possível excluir o catálogo.');
               }
             }}
+          />
+        )}
+
+        {viewerPhoto && (
+          <PhotoViewerModal
+            photo={viewerPhoto}
+            allPhotos={filteredPhotos}
+            onClose={() => setViewerPhoto(null)}
+            onNavigate={setViewerPhoto}
+            onDiscard={discardPhoto}
+            onRestore={restorePhoto}
+          />
+        )}
+
+        {selectedPaths.size > 0 && !viewerPhoto && (
+          <PhotoBulkActionsBar
+            selectedCount={selectedPaths.size}
+            onDiscard={handleDiscardSelected}
+            onRestore={handleRestoreSelected}
+            onRemoveIdentification={handleRemoveIdentificationSelected}
+            onClearSelection={clearSelection}
           />
         )}
         </>

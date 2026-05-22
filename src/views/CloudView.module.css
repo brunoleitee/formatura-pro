@@ -418,21 +418,26 @@
 .breadcrumb {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
-  overflow: hidden;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+.breadcrumb::-webkit-scrollbar { display: none; }
 
 .breadcrumb button {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  min-width: 0;
+  gap: 4px;
   border: 0;
   background: transparent;
   color: #93c5fd;
   cursor: pointer;
   font-size: 0.82rem;
+  white-space: nowrap;
 }
 
 .breadcrumb button span,
@@ -619,9 +624,97 @@
   gap: 6px;
 }
 
+.folderSelectArea {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0;
+  color: inherit;
+}
+
+.folderHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
 .folderSelectedMark {
-  flex: 0 0 auto;
-  color: #93c5fd;
+  color: #34d399;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.statItem {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.statCount {
+  color: #f1f5f9;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.statLabel {
+  color: #94a3b8;
+  font-size: 0.76rem;
+  font-weight: 500;
+}
+
+.referenceBadgeContainer {
+  margin-top: 4px;
+}
+
+.referenceBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #34d399;
+  font-size: 0.72rem;
+  font-weight: 700;
+  animation: pulseBadge 2s infinite ease-in-out;
+}
+
+@keyframes pulseBadge {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.openFolderButtonCentered {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 6px 12px;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 8px;
+  color: #dbeafe;
+  background: rgba(59, 130, 246, 0.12);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.openFolderButtonCentered:hover {
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.25);
+  color: #ffffff;
+  transform: translateY(-1px);
 }
 
 .photoCard {
@@ -789,13 +882,88 @@
 }
 
 .workspacePanel {
-  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 265px);
+  min-height: 460px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.64);
 }
 
 .workspacePanel .mutedLine {
   margin: 10px 0 0;
   color: #94a3b8;
   font-size: 0.8rem;
+}
+
+.workspaceHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  flex: 0 0 auto;
+}
+
+.workspaceHeaderTitle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.workspaceHeaderTitle span {
+  color: #f8fafc;
+  font-size: 1rem;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspaceHeaderTitle small {
+  color: #94a3b8;
+  font-size: 0.74rem;
+}
+
+.workspaceHeaderControls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.workspaceHeaderCounter {
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.hideDiscardedToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.hideDiscardedToggle input {
+  cursor: pointer;
+}
+
+.gridContent {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 16px;
+  overflow: hidden;
+  padding: 12px;
 }
 
 .eventSetup,

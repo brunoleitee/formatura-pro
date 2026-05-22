@@ -1,5 +1,6 @@
-import { Check, Folder, FolderOpen, FolderTree } from 'lucide-react';
+import { Check, Folder, FolderOpen } from 'lucide-react';
 import type { CloudFolderInsight, CloudItem } from './types';
+import { detectReferenceFolders } from './detectReferenceFolders';
 import styles from '../../views/CloudView.module.css';
 
 type CloudFolderCardProps = {
@@ -22,35 +23,56 @@ export function CloudFolderCard({
   onOpenFolder,
   onSelectFolder,
 }: CloudFolderCardProps) {
-  const photoLabel = formatCount(insight?.photoCount);
-  const subfolderLabel = formatCount(insight?.subfolderCount);
+  const photoLabel = formatCount(insight?.photoCount ?? folder.photoCount);
+  const subfolderLabel = formatCount(insight?.subfolderCount ?? folder.subfolderCount);
+  
+  const isReferenceFolder = detectReferenceFolders([folder]).length > 0;
+  const isReferenceDetected = isReferenceFolder;
+  const referencesCount = isReferenceFolder ? 1 : 0;
 
   return (
     <article className={styles.folderCard} data-selected={selected}>
       <button
         type="button"
-        className={styles.folderSelect}
+        className={styles.folderSelectArea}
         onClick={() => onSelectFolder(folder)}
         title={`Selecionar ${folder.name}`}
       >
-        <span className={styles.folderIconWrap} aria-hidden="true">
-          <Folder size={20} />
-        </span>
-        <span className={styles.folderText}>
-          <span className={styles.folderName}>{folder.name}</span>
-          <span className={styles.folderStats}>
-            {photoLabel ? <span><FolderTree size={12} />{photoLabel} fotos</span> : null}
-            {subfolderLabel ? <span><FolderTree size={12} />{subfolderLabel} subpastas</span> : null}
-            {!photoLabel && !subfolderLabel ? <span><FolderTree size={12} />Sem contagem disponível</span> : null}
+        <div className={styles.folderHeader}>
+          <span className={styles.folderIconWrap} aria-hidden="true">
+            <Folder size={20} />
           </span>
-        </span>
-        {selected && <Check size={12} className={styles.folderSelectedMark} />}
+          <span className={styles.folderName} title={folder.name}>{folder.name}</span>
+          {selected && <Check size={16} className={styles.folderSelectedMark} />}
+        </div>
+
+        <div className={styles.folderStats}>
+          <div className={styles.statItem}>
+            <span className={styles.statCount}>{photoLabel ?? '0'}</span>
+            <span className={styles.statLabel}>fotos</span>
+          </div>
+          <div className={styles.statItem}>
+            <span className={styles.statCount}>{subfolderLabel ?? '0'}</span>
+            <span className={styles.statLabel}>subpastas</span>
+          </div>
+        </div>
+
+        {isReferenceDetected && (
+          <div className={styles.referenceBadgeContainer}>
+            <span className={styles.referenceBadge}>
+              {referencesCount && referencesCount > 1 ? `${referencesCount} referências` : 'Referência detectada'}
+            </span>
+          </div>
+        )}
       </button>
 
       <button
         type="button"
-        className={styles.openFolderButton}
-        onClick={() => onOpenFolder(folder)}
+        className={styles.openFolderButtonCentered}
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpenFolder(folder);
+        }}
         title={`Abrir ${folder.name}`}
       >
         <FolderOpen size={14} />

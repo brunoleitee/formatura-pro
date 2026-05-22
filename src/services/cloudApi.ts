@@ -35,6 +35,10 @@ type GoogleDriveListItem = {
   modifiedTime?: string | null;
   size?: number | null;
   parentId?: string | null;
+  photoCount?: number;
+  subfolderCount?: number;
+  referencesCount?: number;
+  referenceDetected?: boolean;
 };
 
 interface FoldersResponse {
@@ -52,6 +56,7 @@ interface GoogleDriveListResponse {
   subfoldersCount?: number;
   count?: number;
   error?: string;
+  nextPageToken?: string;
 }
 
 type CloudProvidersResponse = {
@@ -157,11 +162,17 @@ function mapGoogleDriveItems(items: GoogleDriveListItem[], parentId: string): Cl
     mimeType: item.mimeType,
     isFolder: item.mimeType === DRIVE_FOLDER_MIME,
     isImage: DRIVE_IMAGE_MIMES.has(item.mimeType),
-    thumbnailUrl: item.thumbnailUrl || undefined,
+    thumbnailUrl: item.thumbnailUrl
+      ? `${API_BASE}/cloud/google/thumbnail-proxy?url=${encodeURIComponent(item.thumbnailUrl)}`
+      : undefined,
     webContentLink: item.webContentLink || undefined,
     modifiedTime: item.modifiedTime || undefined,
     size: item.size ?? undefined,
     parentId: item.parentId || parentId,
+    photoCount: item.photoCount,
+    subfolderCount: item.subfolderCount,
+    referencesCount: item.referencesCount,
+    referenceDetected: item.referenceDetected,
   }));
 }
 
@@ -237,17 +248,23 @@ export const cloudApi = {
     }
   },
 
-  listGoogleFolder: async (folderId: string = 'root') => {
+  listGoogleFolder: async (folderId: string = 'root', pageToken?: string, pageSize?: number) => {
     try {
-      const result = await fetchJSON<GoogleDriveListResponse>(
-        `${API_BASE}/cloud/google/list?folderId=${encodeURIComponent(folderId)}`
-      );
+      let url = `${API_BASE}/cloud/google/list?folderId=${encodeURIComponent(folderId)}`;
+      if (pageToken) {
+        url += `&pageToken=${encodeURIComponent(pageToken)}`;
+      }
+      if (pageSize) {
+        url += `&pageSize=${pageSize}`;
+      }
+      const result = await fetchJSON<GoogleDriveListResponse>(url);
       const sourceItems = Array.isArray(result.items) && result.items.length > 0
         ? result.items
         : (result.folders || []);
       const items = mapGoogleDriveItems(sourceItems, folderId);
       return {
         items,
+        nextPageToken: result.nextPageToken,
         photos: result.photos ?? result.photosCount ?? items.filter(item => item.isImage).length,
         subfolders: result.subfolders ?? result.subfoldersCount ?? items.filter(item => item.isFolder).length,
         error: result.error,
@@ -257,6 +274,7 @@ export const cloudApi = {
       const items = mapFoldersToCloudItems(result.folders || [], folderId);
       return {
         items,
+        nextPageToken: undefined,
         photos: 0,
         subfolders: items.filter(item => item.isFolder).length,
         error: result.error,
