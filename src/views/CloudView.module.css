@@ -205,7 +205,7 @@
 }
 
 .breadcrumb button span,
-.folderSelect span {
+.folderName {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -217,31 +217,74 @@
 
 .folderGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: 7px;
-  padding: 9px;
+  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+  gap: 9px;
+  padding: 10px;
 }
 
 .folderCard {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
   min-width: 0;
-  padding: 7px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  padding: 12px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 8px;
   background: rgba(2, 6, 23, 0.32);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+.folderCard:hover {
+  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(2, 6, 23, 0.52);
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.09);
 }
 
 .folderCard[data-selected='true'] {
-  border-color: rgba(59, 130, 246, 0.65);
+  border-color: rgba(59, 130, 246, 0.6);
   background: rgba(37, 99, 235, 0.13);
+}
+
+.folderCard[data-selected='true']:hover {
+  border-color: rgba(59, 130, 246, 0.7);
+  background: rgba(37, 99, 235, 0.17);
+}
+
+.checkboxRow {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 20px;
+  flex-shrink: 0;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: 1.5px solid rgba(148, 163, 184, 0.3);
+  background: rgba(148, 163, 184, 0.04);
+  flex-shrink: 0;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.folderCard:hover .checkbox {
+  border-color: rgba(59, 130, 246, 0.4);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.checkboxSelected {
+  border-color: #3b82f6;
+  background: #3b82f6;
 }
 
 .folderSelect {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 10px;
   min-width: 0;
   width: 100%;
   border: 0;
@@ -249,48 +292,55 @@
   color: #e5e7eb;
   cursor: pointer;
   text-align: left;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: 700;
+  padding: 0;
 }
 
-.folderSelect svg {
-  width: 18px;
-  height: 18px;
-}
-
-.folderSelect svg {
+.folderSelect svg:first-child {
   flex: 0 0 auto;
   color: #fbbf24;
+  width: 20px;
+  height: 20px;
 }
 
-.openFolderButton,
-.primaryButton,
-.secondaryButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 34px;
-  border-radius: 7px;
-  font-size: 0.83rem;
-  font-weight: 600;
-  cursor: pointer;
+.folderName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .openFolderButton {
-  align-self: flex-start;
-  min-height: 26px;
-  padding: 4px 8px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  color: #cbd5e1;
-  background: rgba(15, 23, 42, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 6px 16px;
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  border-radius: 6px;
+  color: #dbeafe;
+  background: rgba(59, 130, 246, 0.12);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: auto;
+  align-self: center;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.openFolderButton:hover {
+  border-color: rgba(59, 130, 246, 0.4);
+  background: rgba(59, 130, 246, 0.2);
 }
 
 .folderMeta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 7px;
+  gap: 6px 10px;
   min-height: 20px;
+  padding-top: 4px;
 }
 
 .folderMeta span,
@@ -308,7 +358,7 @@
 
 .folderMeta strong {
   min-height: 17px;
-  padding: 1px 5px;
+  padding: 1px 6px;
   border-radius: 999px;
   background: rgba(34, 197, 94, 0.1);
   color: #86efac;
