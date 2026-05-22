@@ -20,6 +20,7 @@ DEFAULT_APP_SETTINGS = {
     "ai_embedding_dimension": 512,
     "ai_embedding_image_size": 224,
     "ai_embedding_max_text_tokens": 77,
+    "cloud_catalogs_root_dir": None,
 }
 
 APP_SETTINGS_PATH = None

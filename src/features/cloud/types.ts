@@ -27,30 +27,44 @@ export type CloudCatalogMode = 'catalog' | 'face' | 'full';
 export type CloudEventDraft = {
   id?: string;
   source?: 'cloud' | 'local';
+  type?: 'cloud';
   name: string;
   provider: 'google_drive';
   sourceFolderId: string;
   sourceFolderName: string;
+  sourceBreadcrumb?: string[];
   references: string[];
   totalFiles: number;
   subfolderCount?: number;
+  totalSubfolders?: number;
+  referencesCount?: number;
   mode: CloudCatalogMode;
   status: 'draft' | 'indexed' | 'processing' | 'ready';
   createdAt?: string;
   updatedAt?: string;
+  catalogPath?: string;
+  cachePath?: string;
   cacheEnabled?: boolean;
   cacheSize?: number;
   lastSync?: string;
+  lastOpenedAt?: string;
 };
 
 export type CloudCatalog = CloudEventDraft & {
   id: string;
   source: 'cloud' | 'local';
+  type?: 'cloud';
   cacheEnabled: boolean;
   cacheSize: number;
   lastSync?: string;
   createdAt: string;
   updatedAt: string;
+  catalogPath?: string;
+  cachePath?: string;
+  sourceBreadcrumb?: string[];
+  totalSubfolders?: number;
+  referencesCount?: number;
+  lastOpenedAt?: string;
 };
 
 export type CloudProviderSummary = {

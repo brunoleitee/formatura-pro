@@ -17,25 +17,31 @@ import {
 import { detectReferenceFolders } from '../features/cloud/detectReferenceFolders';
 import type { CloudCatalog, CloudCatalogMode, CloudConnection, CloudEventDraft, CloudFolderInsight, CloudItem } from '../features/cloud/types';
 import { cloudApi } from '../services/cloudApi';
+import { api } from '../services/api';
 import styles from './CloudView.module.css';
 
 const rootBreadcrumb: CloudBreadcrumbItem[] = [{ id: 'root', name: 'Meu Drive' }];
 
 function buildDraft(
   folder: CloudItem,
+  sourceBreadcrumb: string[] = [],
   references: string[] = [],
   totalFiles = 0,
-  subfolderCount = 0,
+  totalSubfolders = 0,
 ): CloudEventDraft {
   return {
     name: folder.name,
     source: 'cloud',
+    type: 'cloud',
     provider: 'google_drive',
     sourceFolderId: folder.id,
     sourceFolderName: folder.name,
+    sourceBreadcrumb,
     references,
     totalFiles,
-    subfolderCount,
+    subfolderCount: totalSubfolders,
+    totalSubfolders,
+    referencesCount: references.length,
     mode: 'face',
     status: 'draft',
   };
@@ -64,7 +70,6 @@ export default function CloudView() {
   const connected = Boolean(connection?.connected);
   const currentFolderId = breadcrumb[breadcrumb.length - 1]?.id || 'root';
   const currentFolderName = breadcrumb[breadcrumb.length - 1]?.name || 'Meu Drive';
-  const showFolderMetadata = breadcrumb.length > 1;
 
   const loadStatus = useCallback(async () => {
     const status = await cloudApi.getCloudStatus();
@@ -126,8 +131,8 @@ export default function CloudView() {
   const selectedDraft = useMemo(() => {
     if (draft) return draft;
     if (!selectedFolder) return null;
-    return buildDraft(selectedFolder);
-  }, [draft, selectedFolder]);
+    return buildDraft(selectedFolder, [...breadcrumb.map(item => item.name), selectedFolder.name]);
+  }, [breadcrumb, draft, selectedFolder]);
 
   const restoreNavigation = useCallback((snapshot: CloudNavigationSnapshot) => {
     setBreadcrumb(snapshot.breadcrumb);
@@ -180,7 +185,8 @@ export default function CloudView() {
 
   const handleSelectFolder = async (folder: CloudItem) => {
     setSelectedFolder(folder);
-    setDraft(buildDraft(folder));
+    const sourceBreadcrumb = [...breadcrumb.map(item => item.name), folder.name];
+    setDraft(buildDraft(folder, sourceBreadcrumb));
     setPreparing(true);
     try {
       const [subfoldersResult, indexedResult] = await Promise.all([
@@ -208,9 +214,9 @@ export default function CloudView() {
             .map(item => [item.id, { ...prev[item.id], referenceDetected: detectReferenceFolders([item]).length > 0 }])
         ),
       }));
-      setDraft(buildDraft(folder, references, totalFiles, subfolderCount));
+      setDraft(buildDraft(folder, sourceBreadcrumb, references, totalFiles, subfolderCount));
     } catch {
-      setDraft(buildDraft(folder));
+      setDraft(buildDraft(folder, sourceBreadcrumb));
     } finally {
       setPreparing(false);
     }
@@ -250,8 +256,9 @@ export default function CloudView() {
   };
 
   const parentFolderName = useMemo(() => {
-    if (breadcrumb.length <= 2) return null;
-    return breadcrumb[breadcrumb.length - 2]?.name;
+    if (breadcrumb.length <= 1) return null;
+    const current = breadcrumb[breadcrumb.length - 1]?.name;
+    return current && current !== 'Meu Drive' ? current : null;
   }, [breadcrumb]);
 
   const handleOpenCreateModal = useCallback(() => {
@@ -423,7 +430,6 @@ export default function CloudView() {
             loading={loading}
             selectedFolderId={selectedFolder?.id}
             folderInsights={folderInsights}
-            showFolderMetadata={showFolderMetadata}
             onOpenFolder={handleOpenFolder}
             onSelectFolder={handleSelectFolder}
             onGoToBreadcrumb={handleGoToBreadcrumb}
@@ -431,7 +437,14 @@ export default function CloudView() {
 
           <aside className={styles.sideStack}>
             {selectedDraft?.id || selectedDraft?.status === 'indexed' || selectedDraft?.status === 'processing' ? (
-              <CloudEventDashboard draft={selectedDraft} onAnalyze={handleAnalyze} />
+              <CloudEventDashboard
+                draft={selectedDraft}
+                onAnalyze={handleAnalyze}
+                onOpenCatalogFolder={async path => {
+                  if (!path) return;
+                  await api.openFolder(path);
+                }}
+              />
             ) : selectedDraft ? (
               <CloudWorkflowPanel
                 draft={selectedDraft}

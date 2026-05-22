@@ -3840,10 +3840,14 @@ class CloudCatalogCreateRequest(BaseModel):
     eventName: str = ""
     source_folder_id: str = ""
     source_folder_name: str = ""
+    sourceBreadcrumb: List[str] = []
+    source_breadcrumb: List[str] = []
     name: str = ""
     references: List[str] = []
     totalFiles: int = 0
     total_files: int = 0
+    totalSubfolders: int = 0
+    total_subfolders: int = 0
     mode: str = "face"
 
 
@@ -3859,18 +3863,167 @@ def _ensure_cloud_events_table(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS cloud_events (
             id TEXT PRIMARY KEY,
             name TEXT,
+            type TEXT,
             provider TEXT,
             source_folder_id TEXT,
             source_folder_name TEXT,
+            source_breadcrumb_json TEXT,
             references_json TEXT,
             mode TEXT,
             total_files INTEGER,
+            total_subfolders INTEGER,
+            references_count INTEGER,
             status TEXT,
+            catalog_path TEXT,
+            cache_path TEXT,
+            metadata_path TEXT,
+            fpdb_path TEXT,
+            last_opened_at TEXT,
             cache_enabled INTEGER,
             created_at TEXT,
             updated_at TEXT
         )
     """)
+    columns = {
+        "type": "TEXT",
+        "source_breadcrumb_json": "TEXT",
+        "total_subfolders": "INTEGER",
+        "references_count": "INTEGER",
+        "catalog_path": "TEXT",
+        "cache_path": "TEXT",
+        "metadata_path": "TEXT",
+        "fpdb_path": "TEXT",
+        "last_opened_at": "TEXT",
+    }
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(cloud_events)")
+    existing = {row[1] for row in cur.fetchall()}
+    for column, ddl in columns.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE cloud_events ADD COLUMN {column} {ddl}")
+
+
+def _cloud_catalogs_root_dir() -> Path:
+    settings = app_settings if isinstance(app_settings, dict) else {}
+    configured = settings.get("cloud_catalogs_root_dir") or settings.get("cloud_catalog_root_dir")
+    if configured:
+        root = Path(str(configured)).expanduser()
+        if not root.is_absolute():
+            root = Path(os.path.abspath(str(root)))
+    else:
+        documents = Path.home() / "Documents"
+        root = (documents if documents.exists() else Path.home()) / "FormaturaPRO_Catalogs"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _make_unique_catalog_root(base_dir: Path, desired_name: str) -> Path:
+    candidate = base_dir / desired_name
+    counter = 2
+    while candidate.exists():
+        candidate = base_dir / f"{desired_name}_{counter}"
+        counter += 1
+    return candidate
+
+
+def _ensure_cloud_event_sqlite(fpdb_path: Path, metadata: Dict[str, Any]) -> None:
+    conn = sqlite3.connect(str(fpdb_path))
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS cloud_events (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            )
+        """)
+        conn.execute("""
+            INSERT OR REPLACE INTO cloud_events (id, name, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+        """, (metadata["id"], metadata["name"], metadata["createdAt"], metadata["updatedAt"]))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _write_catalog_metadata(metadata_path: Path, metadata: Dict[str, Any]) -> None:
+    with metadata_path.open("w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+
+def _prepare_cloud_catalog_structure(
+    *,
+    catalog_id: str,
+    name: str,
+    provider: str,
+    source_folder_id: str,
+    source_folder_name: str,
+    source_breadcrumb: List[str],
+    references: List[str],
+    total_files: int,
+    total_subfolders: int,
+    mode: str,
+    now: str,
+) -> Dict[str, Any]:
+    root_dir = _make_unique_catalog_root(_cloud_catalogs_root_dir(), sanitize_catalog_name(name))
+    catalogo_dir = root_dir / "Catalogo"
+    cache_dir = root_dir / "Cache"
+    thumbs_dir = cache_dir / "thumbs"
+    previews_dir = cache_dir / "previews"
+    temp_dir = cache_dir / "temp"
+    cache_cloud_dir = cache_dir / "cloud"
+    embeddings_dir = root_dir / "Embeddings"
+    cloud_dir = root_dir / "Cloud"
+    cloud_metadata_dir = cloud_dir / "metadata"
+    cloud_sync_dir = cloud_dir / "sync"
+    exports_dir = root_dir / "Exports"
+    logs_dir = root_dir / "Logs"
+
+    for path in (
+        catalogo_dir,
+        thumbs_dir,
+        previews_dir,
+        temp_dir,
+        cache_cloud_dir,
+        embeddings_dir,
+        cloud_metadata_dir,
+        cloud_sync_dir,
+        exports_dir,
+        logs_dir,
+    ):
+        path.mkdir(parents=True, exist_ok=True)
+
+    metadata_path = catalogo_dir / "metadata.json"
+    fpdb_path = catalogo_dir / "evento.fpdb"
+    fpdb_path.touch(exist_ok=True)
+
+    metadata = {
+        "id": catalog_id,
+        "name": name,
+        "provider": provider,
+        "sourceFolderId": source_folder_id,
+        "sourceFolderName": source_folder_name,
+        "sourceBreadcrumb": source_breadcrumb,
+        "references": references,
+        "totalFiles": int(total_files or 0),
+        "totalSubfolders": int(total_subfolders or 0),
+        "mode": mode,
+        "status": "indexed",
+        "createdAt": now,
+        "updatedAt": now,
+        "catalogPath": str(root_dir),
+        "cachePath": str(cache_dir),
+    }
+    _write_catalog_metadata(metadata_path, metadata)
+    _ensure_cloud_event_sqlite(fpdb_path, metadata)
+    return {
+        "root_dir": root_dir,
+        "catalogo_dir": catalogo_dir,
+        "cache_dir": cache_dir,
+        "metadata_path": metadata_path,
+        "fpdb_path": fpdb_path,
+        "metadata": metadata,
+    }
 
 
 def _cloud_event_row_to_dict(row) -> Dict[str, Any]:
@@ -3879,17 +4032,31 @@ def _cloud_event_row_to_dict(row) -> Dict[str, Any]:
         references = json.loads(row["references_json"] or "[]")
     except Exception:
         references = []
+    source_breadcrumb = []
+    try:
+        source_breadcrumb = json.loads(row["source_breadcrumb_json"] or "[]")
+    except Exception:
+        source_breadcrumb = []
     return {
         "id": row["id"],
         "source": "cloud",
+        "type": row["type"] or "cloud",
         "name": row["name"],
         "provider": row["provider"],
         "sourceFolderId": row["source_folder_id"],
         "sourceFolderName": row["source_folder_name"],
+        "sourceBreadcrumb": source_breadcrumb,
         "references": references,
         "mode": row["mode"],
         "totalFiles": int(row["total_files"] or 0),
+        "totalSubfolders": int(row["total_subfolders"] or 0),
+        "referencesCount": int(row["references_count"] or len(references)),
         "status": row["status"],
+        "catalogPath": row["catalog_path"],
+        "cachePath": row["cache_path"],
+        "metadataPath": row["metadata_path"],
+        "fpdbPath": row["fpdb_path"],
+        "lastOpenedAt": row["last_opened_at"],
         "cacheEnabled": bool(row["cache_enabled"]),
         "cacheSize": 0,
         "lastSync": row["updated_at"],
@@ -3905,6 +4072,8 @@ def cloud_create_catalog(req: CloudCatalogCreateRequest):
         event_name = (req.name or req.eventName).strip()
         source_folder_name = (req.source_folder_name or event_name).strip()
         total_files = req.total_files or req.totalFiles
+        total_subfolders = req.total_subfolders or req.totalSubfolders
+        source_breadcrumb = req.source_breadcrumb or req.sourceBreadcrumb or []
 
         if req.provider != "google_drive":
             return {"error": "Provedor cloud ainda não suportado", "status": "draft"}
@@ -3917,27 +4086,50 @@ def cloud_create_catalog(req: CloudCatalogCreateRequest):
 
         catalog_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
+        structure = _prepare_cloud_catalog_structure(
+            catalog_id=catalog_id,
+            name=event_name,
+            provider=req.provider,
+            source_folder_id=folder_id,
+            source_folder_name=source_folder_name,
+            source_breadcrumb=source_breadcrumb,
+            references=req.references,
+            total_files=int(total_files or 0),
+            total_subfolders=int(total_subfolders or 0),
+            mode=req.mode,
+            now=now,
+        )
         conn = sqlite3.connect(str(_cloud_events_db_path()))
         try:
             _ensure_cloud_events_table(conn)
             conn.execute(
                 """
                 INSERT OR REPLACE INTO cloud_events (
-                    id, name, provider, source_folder_id, source_folder_name,
-                    references_json, mode, total_files, status, cache_enabled,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    id, name, type, provider, source_folder_id, source_folder_name,
+                    source_breadcrumb_json, references_json, mode, total_files, total_subfolders,
+                    references_count, status, catalog_path, cache_path, metadata_path, fpdb_path,
+                    last_opened_at, cache_enabled, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     catalog_id,
                     event_name,
+                    "cloud",
                     req.provider,
                     folder_id,
                     source_folder_name,
+                    json.dumps(source_breadcrumb, ensure_ascii=False),
                     json.dumps(req.references, ensure_ascii=False),
                     req.mode,
                     int(total_files or 0),
+                    int(total_subfolders or 0),
+                    len(req.references or []),
                     "indexed",
+                    str(structure["root_dir"]),
+                    str(structure["cache_dir"]),
+                    str(structure["metadata_path"]),
+                    str(structure["fpdb_path"]),
+                    now,
                     1,
                     now,
                     now,
@@ -3954,14 +4146,23 @@ def cloud_create_catalog(req: CloudCatalogCreateRequest):
             "catalog": {
                 "id": catalog_id,
                 "source": "cloud",
+                "type": "cloud",
                 "name": event_name,
                 "provider": req.provider,
                 "sourceFolderId": folder_id,
                 "sourceFolderName": source_folder_name,
+                "sourceBreadcrumb": source_breadcrumb,
                 "references": req.references,
                 "mode": req.mode,
                 "totalFiles": int(total_files or 0),
+                "totalSubfolders": int(total_subfolders or 0),
+                "referencesCount": len(req.references or []),
                 "status": "indexed",
+                "catalogPath": str(structure["root_dir"]),
+                "cachePath": str(structure["cache_dir"]),
+                "metadataPath": str(structure["metadata_path"]),
+                "fpdbPath": str(structure["fpdb_path"]),
+                "lastOpenedAt": now,
                 "cacheEnabled": True,
                 "cacheSize": 0,
                 "lastSync": now,
@@ -3994,7 +4195,10 @@ def cloud_get_catalog(catalog_id: str):
     try:
         _ensure_cloud_events_table(conn)
         now = datetime.now().isoformat()
-        conn.execute("UPDATE cloud_events SET updated_at = ? WHERE id = ?", (now, catalog_id))
+        conn.execute(
+            "UPDATE cloud_events SET updated_at = ?, last_opened_at = ? WHERE id = ?",
+            (now, now, catalog_id),
+        )
         conn.commit()
         row = conn.execute("SELECT * FROM cloud_events WHERE id = ?", (catalog_id,)).fetchone()
         if not row:

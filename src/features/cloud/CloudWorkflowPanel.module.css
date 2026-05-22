@@ -458,6 +458,39 @@
   margin-bottom: 12px;
 }
 
+.pathStack {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.pathBlock {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.11);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.pathBlock span {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.pathBlock strong {
+  overflow: hidden;
+  color: #dbeafe;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .statTile {
   min-width: 0;
   padding: 10px;

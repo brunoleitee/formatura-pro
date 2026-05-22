@@ -21,7 +21,10 @@ export function CloudCatalogCreateModal({
   const [name, setName] = useState('');
 
   useEffect(() => {
-    setName(parentFolderName || draft.sourceFolderName || draft.name);
+    const suggestedFromParent = parentFolderName && parentFolderName !== 'Meu Drive'
+      ? `${parentFolderName}_${draft.sourceFolderName}`
+      : draft.sourceFolderName || draft.name;
+    setName(suggestedFromParent);
   }, [parentFolderName, draft.sourceFolderName, draft.name]);
 
   const modeLabel: Record<CloudCatalogMode, string> = {
@@ -67,6 +70,7 @@ export function CloudCatalogCreateModal({
               className={styles.formInput}
             />
             <small>Será exibido na lista de catálogos recentes</small>
+            <small>Sugestão baseada na pasta pai quando houver um nome mais descritivo.</small>
           </div>
 
           <div className={styles.formGrid}>
