@@ -44,19 +44,19 @@ type ViewerPhoto = Photo & {
   original_path?: string | null;
 };
 
-function getViewerImageUrl(photo: Photo, maxSize = 1920) {
+function getViewerImageUrl(photo: Photo, maxSize = 2048) {
   const extended = photo as ViewerPhoto;
   const sourcePath = extended.preview_path || extended.original_path || photo.path;
   if (extended.preview_path) return extended.preview_path;
-  const photoSrcUrl = buildPhotoSourceUrl(sourcePath);
-  console.log("[Viewer] usando PhotoSource:", photoSrcUrl);
-  return photoSrcUrl;
+  const previewUrl = getViewerPreviewUrl(sourcePath, maxSize);
+  console.log("[Viewer] usando Preview de alta resolução:", previewUrl);
+  return previewUrl || '';
 }
 
 function getViewerFallbackUrl(photo: Photo) {
   const extended = photo as ViewerPhoto;
   const sourcePath = extended.thumb_path || extended.original_path || photo.path;
-  return extended.thumb_path || getGridHighThumbUrl(sourcePath, 1200) || '';
+  return extended.thumb_path || getGridThumbUrl(sourcePath, 400) || '';
 }
 
 export function PhotoViewerModal({
@@ -97,7 +97,7 @@ export function PhotoViewerModal({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
   const [isWheelZooming, setIsWheelZooming] = useState(false);
-  const VIEWER_PREVIEW_SIZE = 1920;
+  const VIEWER_PREVIEW_SIZE = 2048;
   const [displayedSrc, setDisplayedSrc] = useState(() => getViewerFallbackUrl(photo));
   const [displayedPhoto, setDisplayedPhoto] = useState<Photo>(photo);
   const navigationPhotos = (contextPhotos?.length ? contextPhotos : allPhotos);
@@ -284,6 +284,12 @@ export function PhotoViewerModal({
       console.error("Erro ao restaurar:", err);
     }
   };
+
+  const handleOpenPhotoshop = useCallback(() => {
+    showActionOverlay("Ps Abrindo...");
+    showFeedbackMsg("Enviando para o Photoshop...");
+    api.openPhotoshop(visiblePhoto.path);
+  }, [visiblePhoto.path, showActionOverlay, showFeedbackMsg]);
 
   const handleRename = async (faceIdx: number) => {
     const face = visiblePhoto.faces?.[faceIdx];
@@ -677,7 +683,7 @@ export function PhotoViewerModal({
       }
 
       if (e.key === 'p' || e.key === 'P') {
-        api.openPhotoshop(visiblePhoto.path);
+        handleOpenPhotoshop();
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         handleRestore();
@@ -1032,7 +1038,7 @@ export function PhotoViewerModal({
           </button>
           <button
             className={`${styles.headerBtn} ${styles.headerBtnPhotoshop}`}
-            onClick={() => api.openPhotoshop(visiblePhoto.path)}
+            onClick={handleOpenPhotoshop}
             title="Abrir no Photoshop (P)"
           >
             Photoshop (P)
@@ -1097,7 +1103,7 @@ export function PhotoViewerModal({
               style={{
                 transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
                 transformOrigin: '0 0',
-                transition: isDragging || isWheelZooming ? 'none' : 'transform 80ms ease-out',
+                transition: isDragging || isWheelZooming ? 'none' : 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1)',
                 width: viewSize.w || 'auto',
                 height: viewSize.h || 'auto',
               }}

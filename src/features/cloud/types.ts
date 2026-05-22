@@ -70,6 +70,9 @@ export type CloudEventDraft = {
   provider: 'google_drive';
   sourceFolderId: string;
   sourceFolderName: string;
+  eventRootFolderId?: string;
+  eventRootFolderName?: string;
+  referencesFolderIds?: string[];
   sourceBreadcrumb?: string[];
   references: string[];
   totalFiles: number;

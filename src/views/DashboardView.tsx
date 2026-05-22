@@ -328,7 +328,8 @@ export default function DashboardView() {
       .slice()
       .sort((a, b) => b.total_photos - a.total_photos || a.name.localeCompare(b.name))
       .slice(0, 12)
-      .map((p) => ({
+      .map((p, index) => ({
+        key: `${p.person_key || p.name}-${index}`,
         name: p.name,
         photos: p.total_photos,
         goal: DEFAULT_PHOTOS_GOAL,
@@ -491,7 +492,7 @@ export default function DashboardView() {
                 <div className={styles.emptyRow}>Nenhum formando identificado ainda.</div>
               ) : d.topStudents.map((s) => (
                 <ProgressRow
-                  key={s.name}
+                  key={s.key}
                   label={s.name}
                   value={fmt(s.photos)}
                   total={fmt(s.goal)}

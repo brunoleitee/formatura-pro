@@ -87,6 +87,59 @@
   gap: 9px;
 }
 
+.readyList {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.readyRow {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 8px 9px;
+  border: 1px solid rgba(148, 163, 184, 0.11);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.3);
+}
+
+.readyRow svg {
+  color: #93c5fd;
+}
+
+.readyRow span {
+  min-width: 0;
+  overflow: hidden;
+  color: #94a3b8;
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.readyRow strong {
+  max-width: 150px;
+  overflow: hidden;
+  color: #f8fafc;
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inlineProgress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  color: #bfdbfe;
+  background: rgba(59, 130, 246, 0.12);
+  font-size: 0.78rem;
+}
+
 .step {
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr);
@@ -262,6 +315,22 @@
   background: rgba(15, 23, 42, 0.82);
 }
 
+.dangerButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 8px 11px;
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 7px;
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.22);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .ghostButton {
   min-height: 28px;
   padding: 5px 8px;
@@ -276,6 +345,51 @@
 .ghostButton:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.dangerButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.modalOptionList {
+  display: grid;
+  gap: 8px;
+}
+
+.modalOption {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.13);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.3);
+  cursor: pointer;
+}
+
+.modalOption[data-selected='true'] {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.modalOption input {
+  margin-top: 2px;
+}
+
+.modalOption strong {
+  display: block;
+  color: #f8fafc;
+  font-size: 0.82rem;
+}
+
+.modalOption small {
+  display: block;
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  line-height: 1.35;
 }
 
 .catalogProgress {

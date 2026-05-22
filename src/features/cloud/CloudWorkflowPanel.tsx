@@ -1,6 +1,4 @@
-import { Bot, CheckCircle2, Cloud, FolderOpen, Sparkles } from 'lucide-react';
-import { CloudCatalogMode } from './CloudCatalogMode';
-import { CloudReferenceDetection } from './CloudReferenceDetection';
+import { FolderOpen, Images, Library, ListChecks, Plus } from 'lucide-react';
 import type { CloudCatalogMode as CloudCatalogModeValue, CloudEventDraft } from './types';
 import styles from './CloudWorkflowPanel.module.css';
 
@@ -20,102 +18,68 @@ type CloudWorkflowPanelProps = {
   onAnalyze: () => void;
 };
 
+function formatCount(value: number) {
+  return new Intl.NumberFormat('pt-BR').format(value || 0);
+}
+
 export function CloudWorkflowPanel({
   draft,
   loading,
   creating,
   progress,
-  analyzing,
-  catalogReady,
-  onModeChange,
   onCreateCatalog,
-  onChangeReferences,
-  onAnalyze,
 }: CloudWorkflowPanelProps) {
   return (
     <section className={styles.panel}>
       <div className={styles.panelHeader}>
         <div>
-          <span className={styles.kicker}>Preparação guiada</span>
-          <h2>Preparar evento cloud</h2>
+          <span className={styles.kicker}>Pasta pronta para catálogo</span>
+          <h2>{draft.sourceFolderName}</h2>
         </div>
       </div>
 
-      <div className={styles.stepList}>
-        <article className={styles.step}>
-          <span className={styles.stepNumber}>1</span>
-          <div className={styles.stepBody}>
-            <h3>Evento selecionado</h3>
-            <div className={styles.eventSummary}>
-              <span>
-                <FolderOpen size={14} />
-                {draft.sourceFolderName}
-              </span>
-              <strong>{loading ? 'Contando fotos...' : `${draft.totalFiles} fotos`}</strong>
-              <small>{draft.subfolderCount ?? 0} subpastas</small>
-            </div>
-          </div>
-        </article>
-
-        <article className={styles.step}>
-          <span className={styles.stepNumber}>2</span>
-          <div className={styles.stepBody}>
-            <h3>Referências detectadas</h3>
-            <CloudReferenceDetection
-              references={draft.references}
-              loading={loading}
-              onChangeReferences={onChangeReferences}
-            />
-          </div>
-        </article>
-
-        <article className={styles.step}>
-          <span className={styles.stepNumber}>3</span>
-          <div className={styles.stepBody}>
-            <h3>Modo do catálogo</h3>
-            <CloudCatalogMode value={draft.mode} onChange={onModeChange} disabled={creating || analyzing} />
-          </div>
-        </article>
-
-        <article className={styles.step}>
-          <span className={styles.stepNumber}>4</span>
-          <div className={styles.stepBody}>
-            <h3>Criar catálogo cloud</h3>
-            {creating && progress && (
-              <div className={styles.catalogProgress}>
-                <div className={styles.progressRing} style={{ '--progress': `${progress.percent}%` } as React.CSSProperties}>
-                  <span>{progress.percent}%</span>
-                </div>
-                <div className={styles.progressCopy}>
-                  <strong>{progress.label}</strong>
-                  <span>{progress.percent < 100 ? 'Indexando...' : 'Indexado'}</span>
-                </div>
-              </div>
-            )}
-            <button type="button" className={styles.primaryButton} onClick={onCreateCatalog} disabled={loading || creating}>
-              <Sparkles size={15} />
-              {creating ? 'Indexando...' : 'Criar catálogo cloud'}
-            </button>
-          </div>
-        </article>
-
-        <article className={styles.step}>
-          <span className={styles.stepNumber}>5</span>
-          <div className={styles.stepBody}>
-            <h3>Analisar com IA</h3>
-            <button type="button" className={styles.secondaryButton} onClick={onAnalyze} disabled={!catalogReady || loading || creating || analyzing}>
-              <Bot size={15} />
-              {analyzing ? 'Preparando...' : 'Analisar com IA'}
-            </button>
-          </div>
-        </article>
+      <div className={styles.readyList}>
+        <div className={styles.readyRow}>
+          <FolderOpen size={15} />
+          <span>Pasta atual</span>
+          <strong>{draft.sourceFolderName}</strong>
+        </div>
+        <div className={styles.readyRow}>
+          <Library size={15} />
+          <span>Evento base sugerido</span>
+          <strong>{draft.eventRootFolderName || draft.sourceFolderName}</strong>
+        </div>
+        <div className={styles.readyRow}>
+          <Images size={15} />
+          <span>Fotos encontradas</span>
+          <strong>{loading ? 'Contando...' : formatCount(draft.totalFiles)}</strong>
+        </div>
+        <div className={styles.readyRow}>
+          <ListChecks size={15} />
+          <span>Referências detectadas</span>
+          <strong>{formatCount(draft.references.length)}</strong>
+        </div>
       </div>
 
-      <p className={styles.mutedFooter}>
-        <CheckCircle2 size={14} />
-        <Cloud size={14} />
-        Estrutura preparada sem baixar fotos originais.
-      </p>
+      {draft.references.length > 0 && (
+        <ul className={styles.referenceList}>
+          {draft.references.map(reference => (
+            <li key={reference}>{reference}</li>
+          ))}
+        </ul>
+      )}
+
+      {creating && progress && (
+        <div className={styles.inlineProgress}>
+          <strong>{progress.label}</strong>
+          <span>{progress.percent}%</span>
+        </div>
+      )}
+
+      <button type="button" className={styles.primaryButton} onClick={onCreateCatalog} disabled={loading || creating}>
+        <Plus size={15} />
+        {creating ? 'Criando...' : 'Criar catálogo cloud'}
+      </button>
     </section>
   );
 }

@@ -58,6 +58,8 @@ function buildDraft(
   references: string[] = [],
   totalFiles = 0,
   totalSubfolders = 0,
+  eventRoot?: { id: string; name: string },
+  referencesFolderIds: string[] = [],
 ): CloudEventDraft {
   return {
     name: folder.name,
@@ -66,6 +68,9 @@ function buildDraft(
     provider: 'google_drive',
     sourceFolderId: folder.id,
     sourceFolderName: folder.name,
+    eventRootFolderId: eventRoot?.id,
+    eventRootFolderName: eventRoot?.name,
+    referencesFolderIds,
     sourceBreadcrumb,
     references,
     totalFiles,
@@ -201,6 +206,51 @@ export default function CloudView() {
     const nextItems = await loadFolder(folderId);
     return nextItems;
   }, [loadFolder]);
+
+  const prepareFolderDraft = useCallback(async (
+    folder: CloudItem,
+    folderBreadcrumb: CloudBreadcrumbItem[],
+    folderItems: CloudItem[] = [],
+  ) => {
+    const directPhotos = folderItems.filter(item => item.isImage || /^image\//.test(item.mimeType));
+    const directFolders = folderItems.filter(item => item.isFolder || item.mimeType === 'application/vnd.google-apps.folder');
+    const sourceBreadcrumb = folderBreadcrumb.map(item => item.name);
+    const referenceMap = new Map<string, CloudItem>();
+    let eventRoot: CloudBreadcrumbItem | null = null;
+
+    const collectReferences = (scopeItems: CloudItem[], owner?: CloudBreadcrumbItem) => {
+      const refs = detectReferenceFolders(scopeItems);
+      refs.forEach(ref => referenceMap.set(ref.id, ref));
+      if (refs.length > 0 && owner && !eventRoot) {
+        eventRoot = owner;
+      }
+    };
+
+    collectReferences(folderItems, folderBreadcrumb[folderBreadcrumb.length - 1]);
+
+    for (let index = folderBreadcrumb.length - 2; index >= 1; index -= 1) {
+      const ancestor = folderBreadcrumb[index];
+      try {
+        const result = await cloudApi.listGoogleFolder(ancestor.id);
+        collectReferences(result.items || [], ancestor);
+        if (eventRoot) break;
+      } catch (error) {
+        console.warn('Falha ao buscar referências no nível cloud:', ancestor.name, error);
+      }
+    }
+
+    const fallbackEventRoot = eventRoot || folderBreadcrumb[Math.max(1, folderBreadcrumb.length - 2)] || folderBreadcrumb[folderBreadcrumb.length - 1];
+    const references = Array.from(referenceMap.values());
+    return buildDraft(
+      folder,
+      sourceBreadcrumb,
+      references.map(item => item.name),
+      directPhotos.length,
+      directFolders.length,
+      fallbackEventRoot ? { id: fallbackEventRoot.id, name: fallbackEventRoot.name } : undefined,
+      references.map(item => item.id),
+    );
+  }, []);
 
   const selectedDraft = useMemo(() => {
     if (draft) return draft;
@@ -354,6 +404,46 @@ export default function CloudView() {
   }, [backStack, breadcrumb, cloudMode, currentFolderId, forwardStack, selectedFolder?.id]);
 
   useEffect(() => {
+    if (cloudMode !== 'explorer' || loading || breadcrumb.length === 0) return;
+    const directPhotos = items.filter(item => item.isImage || /^image\//.test(item.mimeType));
+    if (directPhotos.length === 0) return;
+
+    let active = true;
+    const current = breadcrumb[breadcrumb.length - 1];
+    const currentFolder: CloudItem = {
+      id: current.id,
+      name: current.name,
+      mimeType: 'application/vnd.google-apps.folder',
+      isFolder: true,
+      parentId: breadcrumb[breadcrumb.length - 2]?.id,
+    };
+
+    setSelectedFolder(currentFolder);
+    setPreparing(true);
+    void prepareFolderDraft(currentFolder, breadcrumb, items)
+      .then(nextDraft => {
+        if (!active) return;
+        setDraft(nextDraft);
+        setFolderInsights(prev => ({
+          ...prev,
+          [currentFolder.id]: {
+            ...prev[currentFolder.id],
+            photoCount: nextDraft.totalFiles,
+            subfolderCount: nextDraft.totalSubfolders ?? 0,
+            referenceDetected: nextDraft.references.length > 0,
+          },
+        }));
+      })
+      .finally(() => {
+        if (active) setPreparing(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [breadcrumb, cloudMode, items, loading, prepareFolderDraft]);
+
+  useEffect(() => {
     let active = true;
     async function boot() {
       const google = await loadStatus();
@@ -457,28 +547,19 @@ export default function CloudView() {
 
   const handleSelectFolder = async (folder: CloudItem) => {
     setSelectedFolder(folder);
-    const sourceBreadcrumb = [...breadcrumb.map(item => item.name), folder.name];
-    setDraft(buildDraft(folder, sourceBreadcrumb));
+    const folderBreadcrumb = [...breadcrumb, { id: folder.id, name: folder.name }];
+    setDraft(buildDraft(folder, folderBreadcrumb.map(item => item.name)));
     setPreparing(true);
     try {
-      const [subfoldersResult, indexedResult] = await Promise.all([
-        cloudApi.listGoogleFolder(folder.id),
-        cloudApi.getGoogleFolderSummary(folder.id)
-          .catch(async () => {
-            const indexed = await cloudApi.indexFolder(folder.id);
-            return { photos: indexed.count ?? indexed.files?.length ?? 0, subfolders: 0 };
-          }),
-      ]);
+      const subfoldersResult = await cloudApi.listGoogleFolder(folder.id);
       const subfolders = subfoldersResult.items || [];
-      const references = detectReferenceFolders(subfolders).map(item => item.name);
-      const totalFiles = indexedResult.photos ?? 0;
-      const subfolderCount = indexedResult.subfolders ?? subfolders.length;
+      const nextDraft = await prepareFolderDraft(folder, folderBreadcrumb, subfolders);
       setFolderInsights(prev => ({
         ...prev,
         [folder.id]: {
-          photoCount: totalFiles,
-          subfolderCount,
-          referenceDetected: references.length > 0,
+          photoCount: nextDraft.totalFiles,
+          subfolderCount: nextDraft.totalSubfolders ?? subfolders.length,
+          referenceDetected: nextDraft.references.length > 0,
         },
         ...Object.fromEntries(
           subfolders
@@ -486,9 +567,9 @@ export default function CloudView() {
             .map(item => [item.id, { ...prev[item.id], referenceDetected: detectReferenceFolders([item]).length > 0 }])
         ),
       }));
-      setDraft(buildDraft(folder, sourceBreadcrumb, references, totalFiles, subfolderCount));
+      setDraft(nextDraft);
     } catch {
-      setDraft(buildDraft(folder, sourceBreadcrumb));
+      setDraft(buildDraft(folder, folderBreadcrumb.map(item => item.name)));
     } finally {
       setPreparing(false);
     }
@@ -848,7 +929,7 @@ export default function CloudView() {
                       await loadCatalogAiStatus(selectedDraft.id);
                     }}
                   />
-                ) : selectedDraft ? (
+                ) : selectedDraft && (preparing || selectedDraft.totalFiles > 0) ? (
                   <CloudWorkflowPanel
                     draft={selectedDraft}
                     loading={preparing}

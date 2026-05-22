@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { cloudApi } from '../services/cloudApi';
 import styles from './CloudSyncView.module.css';
 
-const BACKEND_BASE = 'http://127.0.0.1:8000';
+const BACKEND_BASE = '';
 
 interface CloudProvider {
   id: string;
@@ -251,7 +251,7 @@ export default function CloudSyncView() {
   };
 
   function buildPhotoSourceUrl(fileId: string): string {
-    return `http://127.0.0.1:8000/api/photo-source/full?path=cloud://${fileId}&_t=${Date.now()}`;
+    return `/api/photo-source/full?path=cloud://${fileId}&_t=${Date.now()}`;
   }
 
   function absUrl(path: string): string {
