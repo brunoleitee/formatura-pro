@@ -227,13 +227,15 @@ export const cloudApi = {
 
   listGoogleFolder: async (folderId: string = 'root') => {
     try {
-      const result = await fetchJSON<FoldersResponse>(
-        `${API_BASE}/cloud/google/folders?parent_id=${encodeURIComponent(folderId)}`
+      const result = await fetchJSON<GoogleDriveListResponse>(
+        `${API_BASE}/cloud/google/list?folderId=${encodeURIComponent(folderId)}`
       );
       return {
-        items: mapFoldersToCloudItems(result.folders || [], folderId),
+        items: Array.isArray(result.items) && result.items.length > 0
+          ? mapGoogleDriveItems(result.items, folderId)
+          : mapGoogleDriveItems(result.folders || [], folderId),
         photos: 0,
-        subfolders: result.folders?.length ?? 0,
+        subfolders: result.subfolders ?? result.subfoldersCount ?? result.folders?.length ?? 0,
         error: result.error,
       };
     } catch {

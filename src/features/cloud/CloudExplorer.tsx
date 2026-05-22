@@ -63,7 +63,7 @@ export function CloudExplorer({
       {loading ? (
         <div className={styles.emptyPanel}>Carregando pastas do Google Drive...</div>
       ) : items.length === 0 ? (
-        <div className={styles.emptyPanel}>Nenhum item encontrado neste nível.</div>
+        <div className={styles.emptyPanel}>Nenhuma subpasta encontrada nesta pasta. Esta pasta pode conter fotos.</div>
       ) : (
         <>
           {folders.length > 0 && (

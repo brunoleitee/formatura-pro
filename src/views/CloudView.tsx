@@ -198,20 +198,8 @@ export default function CloudView() {
     }
   }, []);
 
-  const loadExplorerFolder = useCallback(async (folderId: string, allowFallbackToRoot = true) => {
+  const loadExplorerFolder = useCallback(async (folderId: string) => {
     const nextItems = await loadFolder(folderId);
-    if (allowFallbackToRoot && folderId !== 'root' && nextItems.length === 0) {
-      setBackStack([]);
-      setForwardStack([]);
-      setBreadcrumb(rootBreadcrumb);
-      setSelectedFolder(null);
-      setDraft(null);
-      const rootItems = await loadFolder('root');
-      if (!rootItems.some(item => item.isFolder)) {
-        setCatalogError('Não foi possível carregar o Google Drive. Tente recarregar.');
-      }
-      return rootItems;
-    }
     return nextItems;
   }, [loadFolder]);
 
