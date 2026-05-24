@@ -526,3 +526,14 @@ export interface ScannerFolderTreeResponse {
   hasChildren: boolean;
   error?: string;
 }
+
+export interface MergePersonResponse {
+  status: string;
+  merged: boolean;
+  source_person_id: string;
+  target_person_id: string;
+  target_name: string;
+  faces_moved: number;
+  source_removed: boolean;
+  reason?: string;
+}

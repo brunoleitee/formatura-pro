@@ -250,7 +250,7 @@ def _cloud_ai_refresh_clusters_json(paths: Dict[str, Path]) -> None:
 
 
 def _cloud_ai_get_catalog_row(catalog_id: str) -> sqlite3.Row:
-    from backend import _cloud_events_db_path, _ensure_cloud_events_table
+    from cloud.utils import _cloud_events_db_path, _ensure_cloud_events_table
     conn = sqlite3.connect(str(_cloud_events_db_path()))
     conn.row_factory = sqlite3.Row
     try:
@@ -338,6 +338,11 @@ def _cloud_ai_get_status_payload(catalog_id: str) -> Dict[str, Any]:
         ).fetchone()
         last_processed_at = last_processed_row["last_processed_at"] if last_processed_row else None
         last_error = last_processed_row["last_error"] if last_processed_row else None
+        # Sync status to evento.fpdb for Formandos/Revisão visibility
+        try:
+            _cloud_ai_sync_to_catalog_fpdb(catalog_id, paths)
+        except Exception:
+            pass
         return {
             "success": True,
             "catalogId": catalog_id,
@@ -399,14 +404,32 @@ def _cloud_ai_find_best_person(
     embedding: np.ndarray,
     threshold: float = 0.78,
 ) -> Tuple[Optional[str], Optional[str], float]:
+    best_person_id = None
+    best_cluster_id = None
+    best_sim = 0.0
+    # Search reference_faces first (higher priority)
+    ref_rows = faces_conn.execute("""
+        SELECT id, person_id, embedding_path
+        FROM reference_faces
+        WHERE embedding_path IS NOT NULL AND embedding_path != ''
+    """).fetchall()
+    for row in ref_rows:
+        other = _cloud_ai_load_vector(row["embedding_path"])
+        if other is None:
+            continue
+        sim = float(np.dot(embedding, other))
+        if sim > best_sim:
+            best_sim = sim
+            best_person_id = row["person_id"]
+            best_cluster_id = row["person_id"]
+    if best_sim >= threshold and best_person_id:
+        return best_person_id, best_cluster_id, best_sim
+    # Fallback: search existing faces
     rows = faces_conn.execute("""
         SELECT id, person_id, embedding_path
         FROM faces
         WHERE id != ? AND embedding_path IS NOT NULL AND embedding_path != ''
     """, (current_face_id,)).fetchall()
-    best_person_id = None
-    best_cluster_id = None
-    best_sim = 0.0
     for row in rows:
         other = _cloud_ai_load_vector(row["embedding_path"])
         if other is None:
@@ -474,6 +497,380 @@ def _cloud_ai_record_reference(
     conn.execute("UPDATE people SET reference_count = COALESCE(reference_count, 0) + 1 WHERE id = ?", (person_id,))
 
 
+def _cloud_ai_sync_to_catalog_fpdb(catalog_id: str, paths: Dict[str, Path]) -> Dict[str, Any]:
+    fpdb_path = paths["root_dir"] / "Catalogo" / "evento.fpdb"
+    faces_db_path = paths["faces_db"]
+    review_db_path = paths["review_state_db"]
+    if not faces_db_path.exists() or not fpdb_path.exists():
+        return {"synced": 0}
+    faces_conn = sqlite3.connect(str(faces_db_path))
+    faces_conn.row_factory = sqlite3.Row
+    review_conn = sqlite3.connect(str(review_db_path)) if review_db_path.exists() else None
+    fpdb_conn = sqlite3.connect(str(fpdb_path))
+    try:
+        people_map = {}
+        for p in faces_conn.execute("SELECT id, name FROM people").fetchall():
+            people_map[p["id"]] = p["name"] or "Desconhecido"
+        faces_rows = faces_conn.execute("""
+            SELECT f.cloud_file_id, f.person_id, f.bbox_json, f.status, f.confidence, p.name as person_name
+            FROM faces f LEFT JOIN people p ON p.id = f.person_id
+        """).fetchall()
+        clusters_count = faces_conn.execute("SELECT COUNT(*) FROM clusters").fetchone()[0]
+        review_pending = 0
+        if review_conn:
+            review_pending = review_conn.execute("SELECT COUNT(*) FROM review_items WHERE status = 'pending'").fetchone()[0]
+        state = faces_conn.execute(
+            "SELECT last_processed_at, last_error, updated_at FROM ai_catalog_state WHERE catalog_id = ?",
+            (catalog_id,),
+        ).fetchone()
+        fpdb_conn.execute("""
+            CREATE TABLE IF NOT EXISTS ai_catalog_state (
+                catalog_id TEXT PRIMARY KEY,
+                faces_count INTEGER DEFAULT 0,
+                embeddings_count INTEGER DEFAULT 0,
+                clusters_count INTEGER DEFAULT 0,
+                review_pending_count INTEGER DEFAULT 0,
+                people_count INTEGER DEFAULT 0,
+                last_processed_at TEXT,
+                last_error TEXT,
+                status TEXT DEFAULT 'idle',
+                updated_at TEXT
+            )
+        """)
+        fpdb_conn.execute("""
+            INSERT OR REPLACE INTO ai_catalog_state
+            (catalog_id, faces_count, embeddings_count, clusters_count, review_pending_count, people_count, last_processed_at, last_error, status, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            catalog_id,
+            len(faces_rows),
+            sum(1 for f in faces_rows if f["person_id"]),
+            clusters_count,
+            review_pending,
+            len(people_map),
+            state["last_processed_at"] if state else None,
+            state["last_error"] if state else None,
+            "ready",
+            state["updated_at"] if state else None,
+        ))
+        synced_ocorrencias = 0
+        try:
+            from scanner_engine import make_person_key
+        except ImportError:
+            from backend.scanner_engine import make_person_key
+
+        for f in faces_rows:
+            person_name = people_map.get(f["person_id"], f["person_name"] or "Desconhecido")
+            cloud_file_id = f["cloud_file_id"]
+            if not cloud_file_id:
+                continue
+            x1 = y1 = x2 = y2 = None
+            if f["bbox_json"]:
+                try:
+                    bbox = json.loads(f["bbox_json"])
+                    if len(bbox) >= 4:
+                        x1, y1, x2, y2 = map(int, bbox[:4])
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    pass
+            pk = make_person_key(catalog=catalog_id, class_name="Sem turma", student_id=f["person_id"] or "")
+            fpdb_conn.execute("""
+                INSERT OR IGNORE INTO ocorrencias
+                (aluno_id, foto_path, x1, y1, x2, y2, blur_status, source_type, drive_file_id, person_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (person_name, f"cloud://{cloud_file_id}", x1, y1, x2, y2, "unknown", "google_drive", cloud_file_id, pk))
+            synced_ocorrencias += 1
+
+        # ── Sync reference_faces: criar ocorrências + alunos para fotos de referência ──
+        ref_rows = faces_conn.execute("""
+            SELECT rf.id, rf.person_id, rf.cloud_file_id, rf.bbox_json, rf.embedding_path,
+                   p.name as person_name
+            FROM reference_faces rf
+            LEFT JOIN people p ON p.id = rf.person_id
+            WHERE rf.cloud_file_id IS NOT NULL AND rf.cloud_file_id != ''
+        """).fetchall()
+
+        for ref in ref_rows:
+            ref_person_id = ref["person_id"]
+            ref_person_name = people_map.get(ref_person_id, ref["person_name"] or "Desconhecido")
+            ref_file_id = ref["cloud_file_id"]
+            x1 = y1 = x2 = y2 = None
+            if ref["bbox_json"]:
+                try:
+                    bbox = json.loads(ref["bbox_json"])
+                    if len(bbox) >= 4:
+                        x1, y1, x2, y2 = map(int, bbox[:4])
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    pass
+            ref_pk = make_person_key(catalog=catalog_id, class_name="Sem turma", student_id=ref_person_id)
+            fpdb_conn.execute("""
+                INSERT OR IGNORE INTO ocorrencias
+                (aluno_id, foto_path, x1, y1, x2, y2, blur_status, source_type, drive_file_id, person_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (ref_person_name, f"cloud://{ref_file_id}", x1, y1, x2, y2, "unknown", "google_drive", ref_file_id, ref_pk))
+            synced_ocorrencias += 1
+
+        for pid, pname in people_map.items():
+            pk = make_person_key(catalog=catalog_id, class_name="Sem turma", student_id=pid)
+            fpdb_conn.execute("""
+                INSERT OR REPLACE INTO alunos (person_key, aluno_id, face_cache_path, class_name, reference_folder)
+                VALUES (?, ?, ?, ?, ?)
+            """, (pk, pname, "CLOUD_AI", "Sem turma", ""))
+
+        # ── Sync embeddings to face_embeddings table ──
+        fpdb_conn.execute("""
+            CREATE TABLE IF NOT EXISTS face_embeddings (
+                occurrence_rowid INTEGER PRIMARY KEY,
+                foto_path TEXT,
+                x1 INTEGER, y1 INTEGER, x2 INTEGER, y2 INTEGER,
+                mtime_ns INTEGER DEFAULT 0,
+                size INTEGER DEFAULT 0,
+                embedding BLOB,
+                updated_at REAL DEFAULT (strftime('%s','now'))
+            )
+        """)
+
+        # Collect all embedding sources (faces + reference_faces with person_id)
+        all_embed_rows = faces_conn.execute("""
+            SELECT id, cloud_file_id, bbox_json, embedding_path, person_id
+            FROM faces
+            WHERE embedding_path IS NOT NULL AND embedding_path != ''
+              AND person_id IS NOT NULL
+        """).fetchall()
+        ref_embed_rows = faces_conn.execute("""
+            SELECT id, cloud_file_id, bbox_json, embedding_path, person_id
+            FROM reference_faces
+            WHERE embedding_path IS NOT NULL AND embedding_path != ''
+              AND person_id IS NOT NULL
+        """).fetchall()
+        seen_ids = set()
+        for row in all_embed_rows:
+            seen_ids.add(row["id"])
+        for row in ref_embed_rows:
+            if row["id"] not in seen_ids:
+                all_embed_rows.append(row)
+                seen_ids.add(row["id"])
+
+        synced_embeddings = 0
+        for emb_row in all_embed_rows:
+            emb_path = emb_row["embedding_path"]
+            if not emb_path or not os.path.exists(emb_path):
+                continue
+            emb = _cloud_ai_load_vector(emb_path)
+            if emb is None:
+                continue
+            emb_blob = emb.astype("float32").tobytes()
+            cid = emb_row["cloud_file_id"]
+            if not cid:
+                continue
+            fpath = f"cloud://{cid}"
+            x1 = y1 = x2 = y2 = None
+            if emb_row["bbox_json"]:
+                try:
+                    bbox = json.loads(emb_row["bbox_json"])
+                    if len(bbox) >= 4:
+                        x1, y1, x2, y2 = map(int, bbox[:4])
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    pass
+            if x1 is not None:
+                row = fpdb_conn.execute(
+                    "SELECT rowid FROM ocorrencias WHERE foto_path = ? AND x1 = ? AND y1 = ? AND x2 = ? AND y2 = ?",
+                    (fpath, x1, y1, x2, y2)
+                ).fetchone()
+            else:
+                row = fpdb_conn.execute(
+                    "SELECT rowid FROM ocorrencias WHERE foto_path = ? LIMIT 1",
+                    (fpath,)
+                ).fetchone()
+            if row:
+                fpdb_conn.execute(
+                    "INSERT OR REPLACE INTO face_embeddings (occurrence_rowid, foto_path, x1, y1, x2, y2, embedding) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (row["rowid"], fpath, x1, y1, x2, y2, emb_blob)
+                )
+                synced_embeddings += 1
+
+        logging.getLogger(__name__).info(
+            "[cloud-ai-sync] catalog=%s ocorrencias=%d embeddings=%d ref_faces=%d",
+            catalog_id, synced_ocorrencias, synced_embeddings, len(ref_rows),
+        )
+        fpdb_conn.commit()
+        return {"synced": synced_ocorrencias, "embeddings": synced_embeddings, "people": len(people_map)}
+    except Exception:
+        fpdb_conn.rollback()
+        raise
+    finally:
+        faces_conn.close()
+        if review_conn:
+            review_conn.close()
+        fpdb_conn.close()
+
+
+def _cloud_ai_process_references(faces_conn: sqlite3.Connection, catalog_id: str, paths: Dict[str, Path]) -> int:
+    try:
+        from cloud.drive_manager import drive_manager
+        from services.face_engine import ensure_face_engine, get_app_face, FACE_INFERENCE_LOCK
+    except Exception:
+        return 0
+    fpdb_path = paths["root_dir"] / "Catalogo" / "evento.fpdb"
+    if not fpdb_path.exists():
+        return 0
+    import unicodedata, re
+    def clean_ref_name(name: str) -> str:
+        n = name.strip()
+        def rm_acc(s):
+            return "".join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
+        u = rm_acc(n.upper())
+        m = re.match(r'^#?\s*(BASE|REFERENCIA|REFERENCIAS)\b\s*', u)
+        if m:
+            cleaned = n[m.end():].strip()
+            if cleaned:
+                return cleaned
+        return n
+    TECHNICAL_NAMES = {"#BASE", "BASE", "base", "referencia", "referência", "referencias", "referências"}
+    try:
+        fpdb = sqlite3.connect(str(fpdb_path))
+        meta = fpdb.execute("SELECT source_breadcrumb FROM cloud_catalogs WHERE id = ?", (catalog_id,)).fetchone()
+        try:
+            from cloud.utils import _cloud_events_db_path, _ensure_cloud_events_table
+            ce = sqlite3.connect(str(_cloud_events_db_path()))
+            _ensure_cloud_events_table(ce)
+            row = ce.execute("SELECT references_json, source_folder_id FROM cloud_events WHERE id = ?", (catalog_id,)).fetchone()
+            source_folder_id = None
+            if row:
+                refs_json = row[0]
+                source_folder_id = row[1]
+            ce.close()
+        except Exception:
+            source_folder_id = None
+            pass
+        references = []
+        references_folder_ids = []
+        try:
+            with (paths["root_dir"] / "Catalogo" / "metadata.json").open() as f:
+                meta_data = json.load(f)
+            references = meta_data.get("references", [])
+            references_folder_ids = meta_data.get("referencesFolderIds", [])
+        except Exception:
+            pass
+
+        if not references and not references_folder_ids:
+            logging.getLogger(__name__).info("[cloud-ai-refs] Nenhuma referência encontrada no catálogo")
+            return 0
+        ensure_face_engine()
+        app_face = get_app_face()
+        if app_face is None:
+            return 0
+        processed = 0
+        for i, ref_name in enumerate(references):
+            # Usa IDs se disponíveis, senão busca pelo nome no source_folder_id
+            try:
+                ref_folder_id = None
+                if i < len(references_folder_ids):
+                    ref_folder_id = references_folder_ids[i]
+                
+                if not ref_folder_id and source_folder_id:
+                    for folder in drive_manager.list_folders(source_folder_id):
+                        if folder.name == ref_name:
+                            ref_folder_id = folder.id
+                            break
+                
+                if not ref_folder_id:
+                    logging.getLogger(__name__).warning(f"[cloud-ai-ref] pasta de ref '{ref_name}' nao encontrada")
+                    continue
+
+                ref_items = drive_manager.list_folder_items(ref_folder_id) or []
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"[cloud-ai-refs] Erro listando itens para ref {ref_name}: {e}")
+                ref_items = []
+            if not ref_items:
+                ref_items = [{"id": "", "name": ref_name}]
+            for item in ref_items:
+                fid = item.get("id", "") or ""
+                if not fid:
+                    continue
+                
+                # Cria a pessoa usando o nome do arquivo
+                item_name = item.get("name", "")
+                clean_name = clean_ref_name(os.path.splitext(item_name)[0])
+                if not clean_name or clean_name in TECHNICAL_NAMES:
+                    continue
+                
+                skip = faces_conn.execute(
+                    "SELECT id FROM people WHERE name = ?", (clean_name,)
+                ).fetchone()
+                if skip:
+                    person_id = skip[0]
+                else:
+                    person_id = f"ref_{uuid.uuid4().hex[:12]}"
+                    _cloud_ai_upsert_person(faces_conn, person_id, clean_name)
+                
+                src = _cloud_ai_resolve_source_path(fid)
+                if not src:
+                    try:
+                        from cloud.drive_cache import cache
+                        thumb_url = item.get("thumbnailUrl")
+                        if thumb_url:
+                            import requests
+                            import re
+                            thumb_url = re.sub(r'=[sw]\d+.*$', '=s1024', thumb_url)
+                            resp = requests.get(thumb_url, timeout=10)
+                            if resp.status_code == 200:
+                                thumb_path = cache.get_thumb_path(fid)
+                                with open(thumb_path, "wb") as f:
+                                    f.write(resp.content)
+                                src = thumb_path
+                    except Exception:
+                        pass
+                
+                if not src:
+                    continue
+                img = cv2.imread(src)
+                if img is None:
+                    continue
+                with FACE_INFERENCE_LOCK:
+                    with _suppress_stdout():
+                        ref_faces = app_face.get(img) or []
+                for fi, face in enumerate(ref_faces):
+                    bbox = face.bbox.astype(int).tolist() if hasattr(face, 'bbox') else [0, 0, 100, 100]
+                    emb = face.embedding if hasattr(face, 'embedding') else None
+                    if emb is None:
+                        continue
+                    emb_norm = np.asarray(emb, dtype="float32").reshape(-1)
+                    norm = float(np.linalg.norm(emb_norm))
+                    if norm <= 0:
+                        continue
+                    emb_norm = emb_norm / norm
+                    face_id = f"ref_face_{fid}_{fi}"
+                    vector_path = paths["vectors_dir"] / f"{face_id}.npy"
+                    try:
+                        np.save(str(vector_path), emb_norm.astype("float32"))
+                    except Exception:
+                        continue
+                    bbox_json = json.dumps(bbox)
+                    _cloud_ai_record_reference(
+                        faces_conn, face_id, person_id, fid, bbox_json, str(vector_path), 0.95
+                    )
+                    # Save face crop to cache
+                    try:
+                        crop_dir = paths["faces_dir"]
+                        crop_path = crop_dir / f"{face_id}.jpg"
+                        if not crop_path.exists():
+                            x1, y1, x2, y2 = bbox[:4]
+                            crop = img[y1:y2, x1:x2]
+                            if crop.size > 0:
+                                cv2.imwrite(str(crop_path), crop)
+                    except Exception:
+                        pass
+                    processed += 1
+        faces_conn.commit()
+        logging.getLogger(__name__).info(f"[cloud-ai-refs] Processadas {processed} faces de referência para {len(references)} pastas")
+        return processed
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"[cloud-ai-refs] Erro ao processar referências: {e}")
+        return 0
+    finally:
+        fpdb.close()
+
+
 def _cloud_ai_process_catalog_impl(
     catalog_id: str,
     limit: int = 12,
@@ -510,6 +907,13 @@ def _cloud_ai_process_catalog_impl(
     faces_conn.row_factory = sqlite3.Row
     review_conn = sqlite3.connect(str(paths["review_state_db"]))
     review_conn.row_factory = sqlite3.Row
+
+    # Processar pastas de referência (#BASE) antes das fotos do evento
+    try:
+        _cloud_ai_process_references(faces_conn, catalog_id, paths)
+    except Exception:
+        pass
+
     processed = 0
     skipped = 0
     errors = 0
@@ -534,6 +938,23 @@ def _cloud_ai_process_catalog_impl(
         for file_info in candidates:
             cloud_file_id = file_info["id"]
             source_path = _cloud_ai_resolve_source_path(cloud_file_id)
+            if not source_path:
+                try:
+                    from cloud.drive_cache import cache
+                    thumb_url = file_info.get("thumbnailUrl")
+                    if thumb_url:
+                        import requests
+                        import re
+                        thumb_url = re.sub(r'=[sw]\d+.*$', '=s1024', thumb_url)
+                        resp = requests.get(thumb_url, timeout=10)
+                        if resp.status_code == 200:
+                            thumb_path = cache.get_thumb_path(cloud_file_id)
+                            with open(thumb_path, "wb") as f:
+                                f.write(resp.content)
+                            source_path = thumb_path
+                except Exception:
+                    pass
+
             if not source_path:
                 skipped += 1
                 continue
@@ -570,10 +991,15 @@ def _cloud_ai_process_catalog_impl(
                         person_id = f"person_{uuid.uuid4().hex[:12]}"
                         _cloud_ai_upsert_person(faces_conn, person_id, name=f"Pessoa {processed + idx + 1}")
                         _cloud_ai_upsert_cluster(faces_conn, person_id, confidence, created=True)
+                        review_conf = 0.0 # Sem match
+                        review_status = "pending" # Unidentified faces always go to review
                     else:
                         _cloud_ai_upsert_person(faces_conn, person_id, name=f"Pessoa {person_id[-6:]}")
                         _cloud_ai_upsert_cluster(faces_conn, person_id, confidence, created=False)
-                    local_cache_path = crop_path
+                        review_conf = similarity if similarity > 0 else confidence
+                        review_status = "pending" if review_conf < 0.82 else "ready"
+                    
+                    local_cache_path = str(crop_path)
                     faces_conn.execute(
                         """
                         INSERT OR REPLACE INTO faces (
@@ -594,8 +1020,6 @@ def _cloud_ai_process_catalog_impl(
                             now,
                         ),
                     )
-                    review_conf = similarity if similarity > 0 else confidence
-                    review_status = "pending" if review_conf < 0.82 else "ready"
                     review_decision = None if review_status == "pending" else "auto_accept"
                     review_item_id = f"review_{face_id}"
                     review_conn.execute(
@@ -640,6 +1064,10 @@ def _cloud_ai_process_catalog_impl(
         )
         faces_conn.commit()
         _cloud_ai_refresh_clusters_json(paths)
+        try:
+            _cloud_ai_sync_to_catalog_fpdb(catalog_id, paths)
+        except Exception:
+            pass
         return {
             "success": True,
             "catalogId": catalog_id,

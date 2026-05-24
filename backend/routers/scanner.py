@@ -44,7 +44,7 @@ def clear_checkpoints(req: dict):
 
 @router.post("/api/scan/start")
 def start_scan(req: scm.ScanRequest):
-    from backend import _invalidate_stats_caches
+    from utils import _invalidate_stats_caches
     _invalidate_stats_caches()
     return scm.start_scan(req)
 
@@ -82,7 +82,7 @@ def get_scan_status():
 
 @router.post("/api/scan/clear_summary")
 def clear_scan_summary():
-    from backend import _invalidate_stats_caches
+    from utils import _invalidate_stats_caches
     _invalidate_stats_caches()
     return scm.clear_scan_summary()
 
@@ -173,7 +173,7 @@ def scanner_preview_ocr(path: str = ""):
     Preview OCR de uma única foto. Não salva no banco.
     Usa rosto detectado com InsightFace para calcular crop da ficha e rodar OCR.
     """
-    from backend import log_info, _suppress_stdout
+    from utils import log_info, _suppress_stdout
     decoded = urllib.parse.unquote(path).strip()
     if not decoded or not os.path.isfile(decoded):
         return {"ok": False, "error": "Arquivo não encontrado"}
@@ -464,7 +464,7 @@ def scanner_preview_faces(path: str = ""):
     """
     Preview faces de uma única foto. Não salva no banco, não usa FAISS, não cria cluster.
     """
-    from backend import log_info, _suppress_stdout
+    from utils import log_info, _suppress_stdout
     decoded = urllib.parse.unquote(path).strip()
     if not decoded or not os.path.isfile(decoded):
         return {"ok": False, "error": "Arquivo não encontrado", "faces": []}

@@ -22,6 +22,11 @@ class DriveManager:
     def __init__(self):
         self.service = None
 
+    def _high_res_thumb_link(self, url: Optional[str], size: int = 1024) -> Optional[str]:
+        if not url: return url
+        import re
+        return re.sub(r'=s\d+$', f'=s{size}', url)
+
     def _get_service(self):
         if not is_authenticated():
             raise Exception("Não autenticado no Google Drive")
@@ -115,7 +120,7 @@ class DriveManager:
                         "name": f["name"],
                         "mimeType": mime_type,
                         "isFolder": is_folder,
-                        "thumbnailUrl": f.get("thumbnailLink") if not is_folder else None,
+                        "thumbnailUrl": self._high_res_thumb_link(f.get("thumbnailLink")) if not is_folder else None,
                         "webContentLink": f.get("webContentLink") or f.get("webViewLink"),
                         "modifiedTime": f.get("modifiedTime"),
                         "size": parsed_size,
@@ -167,7 +172,7 @@ class DriveManager:
                     "name": f["name"],
                     "mimeType": mime_type,
                     "isFolder": is_folder,
-                    "thumbnailUrl": f.get("thumbnailLink") if not is_folder else None,
+                    "thumbnailUrl": self._high_res_thumb_link(f.get("thumbnailLink")) if not is_folder else None,
                     "webContentLink": f.get("webContentLink") or f.get("webViewLink"),
                     "modifiedTime": f.get("modifiedTime"),
                     "size": parsed_size,
@@ -217,7 +222,7 @@ class DriveManager:
                             size=parsed_size,
                             parent=f.get("parents", [None])[0],
                             modifiedTime=f.get("modifiedTime"),
-                            thumbnailLink=f.get("thumbnailLink"),
+                            thumbnailLink=self._high_res_thumb_link(f.get("thumbnailLink")),
                             webViewLink=f.get("webViewLink"),
                             webContentLink=f.get("webContentLink"),
                         )
@@ -309,7 +314,7 @@ class DriveManager:
                 size=parsed_size,
                 parent=f.get("parents", [None])[0],
                 modifiedTime=f.get("modifiedTime"),
-                thumbnailLink=f.get("thumbnailLink"),
+                thumbnailLink=self._high_res_thumb_link(f.get("thumbnailLink")),
                 webViewLink=f.get("webViewLink"),
                 webContentLink=f.get("webContentLink"),
             )

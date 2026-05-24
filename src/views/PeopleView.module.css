@@ -696,3 +696,75 @@
   z-index: 20;
   padding: 16px;
 }
+
+/* ── Merge mode styles ── */
+.mergeModeBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #1e3a5f, #2a4a7f);
+  border-bottom: 1px solid #3b6db5;
+  color: #fff;
+  font-size: 14px;
+}
+.mergeModeBarContent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mergeModeCancel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+.mergeModeCancel:hover {
+  background: rgba(255,255,255,0.25);
+}
+
+.cardMergeSource {
+  opacity: 0.5;
+  border-color: #3b82f6;
+}
+
+.cardMergeTarget {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+  position: relative;
+}
+
+.mergeTargetOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 10;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.mergeDuplicatesBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px !important;
+  white-space: nowrap;
+  color: #a89af7;
+}
+.mergeDuplicatesBtn:hover {
+  background: rgba(168, 154, 247, 0.1);
+}

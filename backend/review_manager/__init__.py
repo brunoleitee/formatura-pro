@@ -18,8 +18,9 @@ import unicodedata
 import cv2
 import numpy as np
 from fastapi import HTTPException, Query
-from pydantic import BaseModel
 from typing import List, Optional
+from utils import validate_config
+from .models import *
 
 # Cache para face_cache_path (com limite de tamanho)
 face_cache_path_cache = {}
@@ -200,6 +201,11 @@ def _safe_alunos_execute(cur, sql: str, params=None):
 
 def configure(**kwargs):
     _cfg.update(kwargs)
+    validate_config(_cfg, [
+        "backup_catalog_db", "get_db", "get_current_catalog", "sanitize_catalog_name",
+        "ensure_face_engine", "imread_unicode", "scanner_engine",
+        "load_quality_settings", "thumb_cache_dir", "log_info",
+    ], "review_manager")
 
 
 def _get(name, default=None):
@@ -233,6 +239,8 @@ def _safe_filename(name: str) -> str:
 
 def _ensure_aluno_row(cur, aluno_id: str, face_cache_path: str = "n/a", class_name: str | None = None, person_key: str | None = None, catalog: str = ""):
     if not _alunos_exists(cur):
+        return
+    if aluno_id and aluno_id.lower().startswith("pessoa "):
         return
     resolved_class = str(class_name or "").strip() or "Sem turma"
 
@@ -445,11 +453,6 @@ def _remove_person_reference(conn, catalog: str, aluno_id: str):
             os.rmdir(legacy_dir)
     except Exception:
         pass
-class SyncReferencesReq(BaseModel):
-    """Request para sincronizar referências faciais faltantes."""
-    catalog: str = ""
-
-
 def sync_missing_references(req: SyncReferencesReq):
     """
     Sincroniza referências faciais faltantes para alunos identificados.
@@ -488,106 +491,6 @@ def sync_missing_references(req: SyncReferencesReq):
                 errors.append(f"{aluno_id}: {e}")
 
     return {"status": "ok", "created": created, "total": total, "catalog": catalog, "errors": errors[:8]}
-
-
-class ManualIdentifyReq(BaseModel):
-    """Request para identificação manual de uma face."""
-    foto_path: str
-    catalog: str
-    box: list
-    new_name: str
-
-
-class ManualSearchReq(BaseModel):
-    catalog: str
-    image_path: str
-    face_index: int = 0
-    min_score: float = 0.45
-    limit: int = 80
-    unidentified_only: bool = False
-
-
-class RenameReq(BaseModel):
-    old_id: str
-    new_id: str
-
-
-class DeletePersonReq(BaseModel):
-    aluno_id: str
-
-
-class DeletePhotoReq(BaseModel):
-    aluno_id: str
-    foto_path: str
-
-
-class RenamePhotoReq(BaseModel):
-    old_path: str
-    new_name: str
-
-
-class DiscardPhotoReq(BaseModel):
-    foto_path: str
-    discard: bool = True
-
-
-class BulkDiscardPhotoReq(BaseModel):
-    catalog: str = ""
-    foto_paths: Optional[list[str]] = None
-    rowids: Optional[list[int]] = None
-    photo_ids: Optional[list[int]] = None
-    reason: Optional[str] = None
-
-    def ids(self) -> list[int]:
-        return self.rowids or self.photo_ids or []
-
-
-class BulkRestorePhotoReq(BaseModel):
-    catalog: str = ""
-    foto_paths: Optional[list[str]] = None
-    rowids: Optional[list[int]] = None
-    photo_ids: Optional[list[int]] = None
-
-    def ids(self) -> list[int]:
-        return self.rowids or self.photo_ids or []
-
-
-class BulkManualIdentifyReq(BaseModel):
-    catalog: str
-    new_name: str
-    rowids: list[int]
-
-
-class AssignUnknownClusterRequest(BaseModel):
-    catalog: str = ""
-    cluster_id: str
-    aluno_id: str | None = None
-    nome_formando: str | None = None
-    class_name: str = ""
-
-
-class IgnoreUnknownClusterRequest(BaseModel):
-    catalog: str = ""
-    cluster_id: str
-    rowids: list[int] = []
-
-
-class GraduationAnalysisRequest(BaseModel):
-    catalog: str = ""
-
-
-class GraduationManualOverrideRequest(BaseModel):
-    catalog: str = ""
-    rowids: list[int]
-    action: str   # "confirm" | "remove"
-    item: str     # "gown" | "diploma" | "sash" | "cap" | "jabor"
-
-
-class QualitySettingsReq(BaseModel):
-    blur_blurry_threshold: float
-    blur_attention_threshold: float
-    min_photos_per_person: int
-    manual_search_min_score: float
 
 
 def manual_identify(req: ManualIdentifyReq):
@@ -877,7 +780,9 @@ def _find_existing_aluno_id(cur, candidates: list[str], class_name: str | None =
     return None
 
 
-def _resolve_assign_aluno(cur, aluno_id: str | None, nome_formando: str | None, class_name: str | None = None, catalog: str = "") -> tuple[str, str]:
+def _resolve_assign_aluno(cur, aluno_id: str | None, nome_formando: str | None, class_name: str | None = None, catalog: str = "") -> tuple[str, str, str, str]:
+    """Returns (final_id, normalized_name, existing_person_key, existing_class_name).
+    existing_person_key will be empty string for new students."""
     resolved_aluno_id = str(aluno_id or "").strip()
     normalized_name = _normalize_formando_name(nome_formando)
 
@@ -886,19 +791,48 @@ def _resolve_assign_aluno(cur, aluno_id: str | None, nome_formando: str | None, 
 
     resolved_class = str(class_name or "").strip() or "Sem turma"
 
-    if resolved_aluno_id:
-        existing = _find_existing_aluno_id(cur, [resolved_aluno_id], class_name=resolved_class)
-        resolved_aluno_id = existing or resolved_aluno_id
-        person_key = make_person_key(catalog=catalog, class_name=resolved_class, student_id=resolved_aluno_id)
-        _ensure_aluno_row(cur, resolved_aluno_id, class_name=resolved_class, person_key=person_key, catalog=catalog)
-        return resolved_aluno_id, normalized_name or resolved_aluno_id
+    def _get_existing_details(a_id):
+        try:
+            # 1. Tentar por person_key exato
+            cur.execute("SELECT aluno_id, class_name, person_key FROM alunos WHERE person_key = ? LIMIT 1", (a_id,))
+            row = cur.fetchone()
+            if row: return row
+            
+            # 2. Tentar por aluno_id e class_name
+            if resolved_class and resolved_class not in ("Sem turma", "__SEM_TURMA__"):
+                cur.execute("SELECT aluno_id, class_name, person_key FROM alunos WHERE lower(aluno_id) = lower(?) AND class_name = ? LIMIT 1", (a_id, resolved_class))
+                row = cur.fetchone()
+                if row: return row
+            
+            # 3. Tentar por aluno_id (preferindo quem nao é "Sem turma")
+            cur.execute("SELECT aluno_id, class_name, person_key FROM alunos WHERE lower(aluno_id) = lower(?) ORDER BY CASE WHEN class_name IN ('Sem turma', '__SEM_TURMA__') THEN 1 ELSE 0 END LIMIT 1", (a_id,))
+            return cur.fetchone()
+        except Exception:
+            return None
 
-    generated_aluno_id = _build_stable_aluno_id(normalized_name)
-    existing = _find_existing_aluno_id(cur, [normalized_name, generated_aluno_id], class_name=resolved_class)
-    resolved_aluno_id = existing or generated_aluno_id
-    person_key = make_person_key(catalog=catalog, class_name=resolved_class, student_id=resolved_aluno_id)
-    _ensure_aluno_row(cur, resolved_aluno_id, class_name=resolved_class, person_key=person_key, catalog=catalog)
-    return resolved_aluno_id, normalized_name
+    target_id = resolved_aluno_id
+    if not target_id:
+        target_id = _build_stable_aluno_id(normalized_name)
+    
+    # Busca por ID ou Nome gerado
+    row = _get_existing_details(target_id)
+    if not row and normalized_name:
+        row = _get_existing_details(normalized_name)
+
+    if row:
+        final_id = str(row['aluno_id'])
+        final_class = str(row['class_name'] or "").strip() or "Sem turma"
+        final_pk = str(row['person_key']) if row['person_key'] else make_person_key(catalog=catalog, class_name=final_class, student_id=final_id)
+        
+        _ensure_aluno_row(cur, final_id, class_name=final_class, person_key=final_pk, catalog=catalog)
+        return final_id, normalized_name or final_id, final_pk, final_class
+    else:
+        # Novo aluno
+        final_id = target_id
+        final_pk = make_person_key(catalog=catalog, class_name=resolved_class, student_id=final_id)
+        _ensure_aluno_row(cur, final_id, class_name=resolved_class, person_key=final_pk, catalog=catalog)
+        return final_id, normalized_name or final_id, "", resolved_class
+
 
 
 def _ensure_unknown_face_clusters_schema(cur):
@@ -1642,7 +1576,11 @@ def _extract_face_boxes(photo: dict | str | None) -> list[tuple[int, int, int, i
 
 
 def _load_photo_bgr(photo_path: str):
-    if not photo_path or not os.path.exists(photo_path):
+    if not photo_path:
+        return None
+    if photo_path.startswith("cloud://"):
+        return None
+    if not os.path.exists(photo_path):
         return None
     image_loader = _get("imread_unicode")
     if callable(image_loader):
@@ -2270,10 +2208,21 @@ def assign_cluster(req: AssignUnknownClusterRequest):
     with get_db(catalog) as conn:
         cur = conn.cursor()
         class_name = str(getattr(req, 'class_name', '') or '').strip() or "Sem turma"
-        resolved_aluno_id, normalized_name = _resolve_assign_aluno(
+        resolved_aluno_id, normalized_name, existing_pk, existing_class = _resolve_assign_aluno(
             cur, req.aluno_id, req.nome_formando,
             class_name=class_name, catalog=catalog,
         )
+
+        # Use existing person_key if available to avoid creating duplicate identities
+        if existing_pk:
+            person_key = existing_pk
+            class_name = existing_class
+        else:
+            person_key = make_person_key(
+                catalog=catalog,
+                class_name=class_name,
+                student_id=resolved_aluno_id,
+            )
 
         cur.execute(
             """
@@ -2287,12 +2236,6 @@ def assign_cluster(req: AssignUnknownClusterRequest):
         cluster_rows = cur.fetchall()
         if not cluster_rows:
             raise HTTPException(status_code=404, detail="Cluster desconhecido não encontrado.")
-
-        person_key = make_person_key(
-            catalog=catalog,
-            class_name=class_name,
-            student_id=resolved_aluno_id,
-        )
 
         face_ids = [int(row["face_id"]) for row in cluster_rows if row["face_id"] is not None]
         updated = 0
@@ -4351,6 +4294,177 @@ def merge_people(req: MergePeopleReq):
     return {"status": "ok", "merged_count": total_deleted, "target": target_name}
 
 
+def merge_person_identities(req: MergePersonReq):
+    """Mescla duas identidades de pessoa em uma única identidade canônica.
+    
+    Move todas as fotos/faces/ocorrências da source para a target.
+    Remove a identidade source da tabela alunos.
+    Preserva favoritos, descartes, ratings e status.
+    """
+    get_db = _get("get_db")
+    catalog = _sanitize_catalog_name(req.catalog or _current_catalog())
+    if not catalog:
+        raise HTTPException(status_code=400, detail="Nenhum catálogo selecionado")
+
+    source_raw = str(req.source_person_id or "").strip()
+    target_raw = str(req.target_person_id or "").strip()
+    if not source_raw or not target_raw:
+        raise HTTPException(status_code=400, detail="source_person_id e target_person_id são obrigatórios")
+    if source_raw == target_raw:
+        return {"status": "ok", "merged": False, "reason": "source e target são os mesmos"}
+
+    logger.info("[people-merge] source=%s target=%s catalog=%s", source_raw, target_raw, catalog)
+
+    with get_db(catalog) as conn:
+        cur = conn.cursor()
+
+        # ── Resolver source ──
+        source_row = _safe_alunos_fetchone(cur, "SELECT aluno_id, person_key, class_name FROM alunos WHERE person_key = ?", (source_raw,))
+        if not source_row:
+            source_row = _safe_alunos_fetchone(cur, "SELECT aluno_id, person_key, class_name FROM alunos WHERE aluno_id = ?", (source_raw,))
+        if not source_row:
+            raise HTTPException(status_code=404, detail=f"source_person_id '{source_raw}' não encontrado na tabela alunos")
+
+        source_aluno_id = str(source_row["aluno_id"] or "").strip()
+        source_pk = str(source_row["person_key"] or "").strip()
+
+        # ── Resolver target ──
+        target_row = _safe_alunos_fetchone(cur, "SELECT aluno_id, person_key, class_name, face_cache_path FROM alunos WHERE person_key = ?", (target_raw,))
+        if not target_row:
+            target_row = _safe_alunos_fetchone(cur, "SELECT aluno_id, person_key, class_name, face_cache_path FROM alunos WHERE aluno_id = ?", (target_raw,))
+        if not target_row:
+            raise HTTPException(status_code=404, detail=f"target_person_id '{target_raw}' não encontrado na tabela alunos")
+
+        target_aluno_id = str(target_row["aluno_id"] or "").strip()
+        target_pk = str(target_row["person_key"] or "").strip()
+        target_class = str(target_row["class_name"] or "").strip() or "Sem turma"
+
+        if source_pk == target_pk or (not source_pk and source_aluno_id == target_aluno_id):
+            logger.info("[people-merge] source e target já são a mesma identidade, nada a fazer")
+            return {"status": "ok", "merged": False, "reason": "já são a mesma identidade"}
+
+        logger.info("[people-merge] source_resolved: aluno_id=%s person_key=%s", source_aluno_id, source_pk)
+        logger.info("[people-merge] target_resolved: aluno_id=%s person_key=%s", target_aluno_id, target_pk)
+
+        # ── Backup antes do merge ──
+        try:
+            backup_fn = _get("backup_catalog_db")
+            if backup_fn:
+                backup_fn(catalog, "antes_mesclar_pessoas_v2")
+        except Exception:
+            pass
+
+        # ── Contar ocorrências da source antes de mover ──
+        cur.execute("SELECT COUNT(*) as cnt FROM ocorrencias WHERE person_key = ?", (source_pk,))
+        source_occ_count = cur.fetchone()["cnt"]
+        # Também pegar ocorrências que tenham aluno_id = source_aluno_id mas person_key vazia/diferente
+        if source_aluno_id:
+            cur.execute(
+                "SELECT COUNT(*) as cnt FROM ocorrencias WHERE aluno_id = ? AND (person_key IS NULL OR TRIM(person_key) = '' OR TRIM(person_key) = ?)",
+                (source_aluno_id, source_pk),
+            )
+            source_occ_fallback = cur.fetchone()["cnt"]
+        else:
+            source_occ_fallback = 0
+
+        # ── Mover ocorrências ──
+        # 1. Por person_key (principal)
+        cur.execute("UPDATE ocorrencias SET aluno_id = ?, person_key = ? WHERE person_key = ?", (target_aluno_id, target_pk, source_pk))
+        faces_moved_by_pk = cur.rowcount
+
+        # 2. Por aluno_id (fallback para registros sem person_key ou com person_key antiga)
+        if source_aluno_id:
+            cur.execute(
+                """UPDATE ocorrencias SET aluno_id = ?, person_key = ? 
+                   WHERE aluno_id = ? 
+                     AND (person_key IS NULL OR TRIM(person_key) = '' OR TRIM(person_key) = ?)
+                   """,
+                (target_aluno_id, target_pk, source_aluno_id, source_pk),
+            )
+            faces_moved_by_aluno = cur.rowcount
+        else:
+            faces_moved_by_aluno = 0
+
+        total_faces_moved = faces_moved_by_pk + faces_moved_by_aluno
+        logger.info("[people-merge] faces_moved=%d (pk=%d aluno=%d)", total_faces_moved, faces_moved_by_pk, faces_moved_by_aluno)
+
+        # ── Atualizar unknown_face_clusters que referenciam o source ──
+        try:
+            if source_pk:
+                cur.execute("UPDATE unknown_face_clusters SET suggested_student = ? WHERE suggested_student = ?", (target_aluno_id, source_aluno_id))
+        except Exception:
+            pass
+
+        # ── Remover source da tabela alunos ──
+        source_deleted = False
+        if source_pk:
+            _safe_alunos_execute(cur, "DELETE FROM alunos WHERE person_key = ?", (source_pk,))
+            if cur.rowcount and cur.rowcount > 0:
+                source_deleted = True
+        if source_aluno_id and not source_deleted:
+            _safe_alunos_execute(cur, "DELETE FROM alunos WHERE aluno_id = ? AND person_key = ?", (source_aluno_id, source_pk or ""))
+            source_deleted = True
+
+        logger.info("[people-merge] old_identity_removed=%s (pk=%s aluno=%s)", source_deleted, source_pk, source_aluno_id)
+
+        # ── Remover referência de face cache da source ──
+        try:
+            _remove_person_reference(conn, catalog, source_pk or source_aluno_id)
+        except Exception:
+            pass
+
+        # ── Garantir que o target existe na tabela alunos com dados corretos ──
+        _ensure_aluno_row(cur, target_aluno_id, class_name=target_class, person_key=target_pk, catalog=catalog)
+
+        # ── Recalcular referência do target ──
+        try:
+            _ensure_person_reference(conn, catalog, target_aluno_id)
+        except Exception:
+            pass
+
+        # ── Registrar action_logs ──
+        _ensure_action_logs_table(cur)
+        cur.execute(
+            "INSERT INTO action_logs (action, details) VALUES (?, ?)",
+            (
+                "person_merged",
+                json.dumps(
+                    {
+                        "source_aluno_id": source_aluno_id,
+                        "source_person_key": source_pk,
+                        "target_aluno_id": target_aluno_id,
+                        "target_person_key": target_pk,
+                        "faces_moved": total_faces_moved,
+                        "confirmed_by_user": req.confirmed_by_user,
+                        "catalog": catalog,
+                    },
+                    ensure_ascii=False,
+                ),
+            ),
+        )
+
+        conn.commit()
+
+    # ── Invalidar cache ──
+    try:
+        import people_data_manager as pdm
+        pdm.invalidate_people_cache()
+    except Exception:
+        pass
+
+    logger.info("[people-merge] concluído: target=%s source=%s faces=%d", target_pk, source_pk, total_faces_moved)
+
+    return {
+        "status": "ok",
+        "merged": True,
+        "source_person_id": source_pk or source_aluno_id,
+        "target_person_id": target_pk or target_aluno_id,
+        "target_name": target_aluno_id,
+        "faces_moved": total_faces_moved,
+        "source_removed": source_deleted,
+    }
+
+
 def folder_stats(path: str = Query(...)):
     dec = urllib.parse.unquote(path)
     if not os.path.isdir(dec):
@@ -4670,11 +4784,12 @@ def cancel_manual_search():
 
 def get_suggestions(aluno_id: str):
     get_db = _get("get_db")
+    current_catalog = _value("get_current_catalog")
     ref_ids = _value("ref_ids", [])
     faiss_index = _value("faiss_index")
     ensure_face_engine = _get("ensure_face_engine")
     se = _get("scanner_engine")
-    with get_db() as conn:
+    with get_db(current_catalog) as conn:
         cur = conn.cursor()
         cur.execute("SELECT foto_path, x1, y1, x2, y2 FROM ocorrencias WHERE aluno_id = ? LIMIT 3", (aluno_id,))
         rows = cur.fetchall()
@@ -4779,7 +4894,7 @@ def rename_person(req: RenameReq):
     get_db = _get("get_db")
     current_catalog = _value("get_current_catalog")
     backup_catalog_db(current_catalog, "antes_renomear")
-    with get_db() as conn:
+    with get_db(current_catalog) as conn:
         cur = conn.cursor()
         old_ref_path = ""
         old_class_name = "Sem turma"
@@ -4828,7 +4943,7 @@ def delete_person(req: DeletePersonReq):
         backup_catalog_db(current_catalog, "antes_excluir_pessoa")
     except Exception as e:
         print(f"Aviso: backup falhou antes de excluir pessoa: {e}")
-    with get_db() as conn:
+    with get_db(current_catalog) as conn:
         cur = conn.cursor()
 
         # Descobrir se aluno_id recebido é um person_key ou um nome
@@ -4853,7 +4968,7 @@ def delete_photo(req: DeletePhotoReq):
     get_db = _get("get_db")
     current_catalog = _value("get_current_catalog")
     backup_catalog_db(current_catalog, "antes_excluir_foto")
-    with get_db() as conn:
+    with get_db(current_catalog) as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM ocorrencias WHERE aluno_id = ? AND foto_path = ?", (req.aluno_id, req.foto_path))
         conn.commit()
@@ -4889,7 +5004,7 @@ def rename_photo(req: RenamePhotoReq):
     backup_catalog_db(current_catalog, "antes_renomear_foto")
     os.rename(old_path, new_path)
 
-    with get_db() as conn:
+    with get_db(current_catalog) as conn:
         cur = conn.cursor()
         for table in ("ocorrencias", "discarded_photos", "face_embeddings"):
             cur.execute(

@@ -2,9 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Save, RefreshCw, Trash2, Info, Image, Settings2, Cpu, FolderOpen, Cloud } from 'lucide-react';
 import { api, type QualitySettings, type AppSettings } from '../services/api';
 import { useApp } from '../context/AppContext';
-import { CloudProviderCards } from '../features/cloud/CloudProviderCards';
 import type { CloudConnection, CloudProvider, CloudProviderSummary } from '../features/cloud/types';
-import { cloudApi } from '../services/cloudApi';
 import cloudStyles from './CloudSettings.module.css';
 
 type SettingsTab = 'quality' | 'export' | 'performance' | 'system' | 'cloud';
@@ -18,10 +16,6 @@ export default function SettingsView() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
   const [clearing, setClearing] = useState(false);
-  const [cloudProviders, setCloudProviders] = useState<CloudProviderSummary[]>([]);
-  const [cloudConnections, setCloudConnections] = useState<CloudConnection[]>([]);
-  const [cloudCache, setCloudCache] = useState<{ folder?: string; usedBytes?: number }>({});
-  const [cloudLoading, setCloudLoading] = useState(false);
 
   const loadAbortRef = useRef<AbortController | null>(null);
 
@@ -59,22 +53,6 @@ export default function SettingsView() {
     };
   }, [load]);
 
-  const loadCloudSettings = useCallback(async () => {
-    setCloudLoading(true);
-    try {
-      const [providers, status] = await Promise.all([
-        cloudApi.getCloudProviders(),
-        cloudApi.getCloudStatus(),
-      ]);
-      setCloudProviders(providers.providers);
-      setCloudConnections(status.connections);
-      setCloudCache(status.cache || {});
-    } catch (e) {
-      console.error('Erro ao carregar configurações cloud:', e);
-    } finally {
-      setCloudLoading(false);
-    }
-  }, []);
 
   useEffect(() => {
     void loadCloudSettings();
@@ -100,48 +78,9 @@ export default function SettingsView() {
     setClearing(false);
   };
 
-  const handleCloudConnect = async (provider: CloudProvider) => {
-    if (provider !== 'google_drive') return;
-    setCloudLoading(true);
-    try {
-      const result = await cloudApi.getGoogleAuthUrl();
-      if (result.auth_url) {
-        window.open(result.auth_url, '_blank', 'width=600,height=700');
-        setMsg('Autenticação do Google Drive aberta em nova janela.');
-      } else if (result.error) {
-        setMsg(result.error);
-      }
-    } catch {
-      setMsg('Erro ao conectar Google Drive.');
-    } finally {
-      setCloudLoading(false);
-    }
-  };
 
-  const handleCloudDisconnect = async (provider: CloudProvider) => {
-    if (provider !== 'google_drive') return;
-    setCloudLoading(true);
-    try {
-      await cloudApi.googleLogout();
-      await loadCloudSettings();
-      setMsg('Google Drive desconectado.');
-    } catch {
-      setMsg('Erro ao desconectar Google Drive.');
-    } finally {
-      setCloudLoading(false);
-    }
-  };
 
-  const handleSwitchAccount = async (provider: CloudProvider) => {
-    if (provider !== 'google_drive') return;
-    await handleCloudDisconnect(provider);
-    await handleCloudConnect(provider);
-  };
 
-  const handleClearCloudCache = () => {
-    setCloudCache(prev => ({ ...prev, usedBytes: 0 }));
-    setMsg('Cache cloud limpo localmente.');
-  };
 
   const formatBytes = (value?: number) => {
     if (!value) return '0 MB';

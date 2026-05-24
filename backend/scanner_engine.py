@@ -439,24 +439,14 @@ def load_references(ref_path):
 
             rel_parent = Path(os.path.relpath(full, ref_path)).parent
             parts = rel_parent.as_posix().split("/")
-            # Remover ".." (caminho relativo acima do ref_path) e pastas estruturais
-            ignored_folders = {"#BASE", "BASE", "base", "referencias", "referências", "referencia", "referência"}
-            structural_filter = {
-                p.casefold() for p in parts if p.strip() and p.strip() != ".."
-                if p.strip().casefold() in {x.casefold() for x in ignored_folders}
-            }
-            valid_parts = [
-                p for p in parts
-                if p.strip() and p.strip() != ".."
-                and p.strip().casefold() not in {x.casefold() for x in ignored_folders}
-            ]
+            clean_parts = [p for p in parts if p.strip() and p not in (".", "..")]
 
             person_name = file_stem
             reference_folder = file_stem
             ref_name = file_stem
 
-            if valid_parts:
-                class_name = valid_parts[-1]  # Última pasta significativa = turma
+            if clean_parts:
+                class_name = "/".join(clean_parts)
             else:
                 class_name = "__SEM_TURMA__"
 
@@ -1161,6 +1151,8 @@ def run_scanner_worker(req):
                             has_alunos_table = cur.fetchone() is not None
                             if has_alunos_table:
                                 for apkey, (anome, acls, aref) in aluno_batch.items():
+                                    if anome.lower().startswith("pessoa "):
+                                        continue
                                     try:
                                         cur.execute(
                                             "INSERT OR REPLACE INTO alunos (person_key, aluno_id, face_cache_path, class_name, reference_folder) VALUES (?, ?, ?, ?, ?)",

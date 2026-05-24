@@ -12,6 +12,7 @@ from collections import defaultdict
 from fastapi import HTTPException
 from fastapi.responses import FileResponse, StreamingResponse, Response
 from PIL import ExifTags, Image
+from utils import validate_config
 
 _cfg = {}
 _thumb_cache_prune_lock = threading.Lock()
@@ -126,6 +127,10 @@ def _create_error_placeholder(size=300):
 
 def configure(**kwargs):
     _cfg.update(kwargs)
+    validate_config(_cfg, [
+        "get_db", "get_current_catalog", "load_quality_settings",
+        "get_blur_info", "log_info", "thumb_cache_dir",
+    ], "media_manager")
 
 
 def _get(name, default=None):
@@ -743,9 +748,40 @@ def get_image_thumb(path: str, size: int = 300, quality: int = 80):
 def get_thumb(path: str, x1: int, y1: int, x2: int, y2: int, size: int = 120, expand: float = 0.35, quality: int = 80):
     started = time.perf_counter()
     decoded_path = urllib.parse.unquote(path)
+
+    if path.startswith("cloud://"):
+        drive_file_id = path[8:]
+        try:
+            from cloud.drive_cache import cache, download_queue
+            from cloud import is_authenticated, drive_manager
+            
+            thumb_path = cache.get_thumb_path(drive_file_id)
+            if cache.thumb_exists(drive_file_id):
+                decoded_path = str(thumb_path)
+            elif cache.image_exists(drive_file_id):
+                decoded_path = str(cache.get_image_path(drive_file_id))
+            else:
+                if is_authenticated():
+                    file_info = drive_manager.get_file_metadata(drive_file_id)
+                    if file_info:
+                        from fastapi import Response
+                        download_queue.add_task(
+                            file_id=drive_file_id,
+                            file_type="thumb",
+                            url=file_info.thumbnailLink or f"https://drive.google.com/uc?id={drive_file_id}",
+                            dest_path=cache.get_thumb_dir(),
+                            priority=1
+                        )
+                from fastapi import Response
+                return Response(status_code=202)
+        except Exception as e:
+            _log_thumb_perf("cloud_face", drive_file_id, size, (time.perf_counter() - started) * 1000.0, "error", extra=str(e))
+            from fastapi.responses import StreamingResponse
+            return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
     
     try:
         if not os.path.exists(decoded_path):
+            from fastapi import HTTPException
             raise HTTPException(status_code=404)
         
         cache_path = get_cached_thumb_path(decoded_path, "face", x1, y1, x2, y2, size, expand, quality)
@@ -868,9 +904,45 @@ def get_image(path: str):
     raise HTTPException(status_code=404)
 
 def get_image_resized(path: str, max_size: int = 1200):
-    decoded_path = _resolve_preview_path(path)
+    safe_size = max(1, min(int(max_size or 1200), 2560))
+
+    if path.startswith("cloud://"):
+        drive_file_id = path[8:]
+        try:
+            from cloud.drive_cache import cache, download_queue
+            from cloud import is_authenticated, drive_manager
+            
+            preview_path = cache.get_preview_path(drive_file_id)
+            if cache.preview_exists(drive_file_id):
+                decoded_path = str(preview_path)
+            elif cache.original_exists(drive_file_id):
+                decoded_path = str(cache.get_original_path(drive_file_id))
+            else:
+                if is_authenticated():
+                    file_info = drive_manager.get_file_metadata(drive_file_id)
+                    if file_info:
+                        from fastapi import Response
+                        import re
+                        thumb_link = file_info.thumbnailLink or f"https://drive.google.com/uc?id={drive_file_id}"
+                        if file_info.thumbnailLink:
+                            thumb_link = re.sub(r'=[sw]\d+.*$', f'=s{safe_size}', file_info.thumbnailLink)
+                            
+                        download_queue.add_task(
+                            file_id=drive_file_id,
+                            file_type="preview",
+                            url=thumb_link,
+                            dest_path=cache.get_preview_dir(),
+                            priority=1
+                        )
+                from fastapi import Response
+                return Response(status_code=202)
+        except Exception as e:
+            from fastapi.responses import StreamingResponse
+            return StreamingResponse(_create_error_placeholder(safe_size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+    else:
+        decoded_path = _resolve_preview_path(path)
+
     try:
-        safe_size = max(1, min(int(max_size or 1200), 2560))
         cache_path = get_cached_thumb_path(decoded_path, f"resized_{safe_size}", safe_size)
         
         if os.path.exists(cache_path):

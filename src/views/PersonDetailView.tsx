@@ -179,8 +179,8 @@ export default function PersonDetailView() {
     try {
       const personIdParam = selectedPersonId.includes('::') ? selectedPersonId : selectedPersonId;
       const [data, people] = await Promise.all([
-        api.getPersonPhotos(personIdParam, controller.signal),
-        api.getPeople(false, controller.signal).catch(() => []),
+        api.getPersonPhotos(personIdParam, currentCatalog, controller.signal),
+        api.getPeople(false, currentCatalog, controller.signal).catch(() => []),
       ]);
       if (controller.signal.aborted) return;
       setPhotos(data);

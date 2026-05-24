@@ -318,7 +318,7 @@ def get_stats(catalog: str = ""):
                     SELECT
                         (SELECT COUNT(*) FROM ocorrencias) AS total_occurrences,
                         (SELECT COUNT(DISTINCT foto_path) FROM ocorrencias) AS photos_with_faces,
-                        (SELECT COUNT(*) FROM alunos WHERE aluno_id != 'system_catalog') AS total_people,
+                        (SELECT COUNT(*) FROM alunos WHERE aluno_id != 'system_catalog' AND aluno_id NOT LIKE 'Pessoa%') AS total_people,
                         (SELECT COUNT(DISTINCT aluno_id) FROM ocorrencias
                          WHERE aluno_id NOT LIKE 'Pessoa %' AND aluno_id != 'system_catalog') AS named_people,
                         (SELECT COUNT(*) FROM ocorrencias WHERE aluno_id LIKE 'Pessoa %') AS unnamed_people,

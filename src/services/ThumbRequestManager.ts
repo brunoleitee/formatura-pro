@@ -12,6 +12,7 @@ interface RequestEntry {
   reject: (err: Error) => void;
   addedAt: number;
   startedAt: number;
+  nextTryAt?: number;
 }
 
 const ABORT_PROTECT_MS = 300;
@@ -126,11 +127,28 @@ class ThumbRequestManager {
 
   private pump(): void {
     this.queue.sort((a, b) => b.priority - a.priority || a.addedAt - b.addedAt);
-    while (this.active.size < this.MAX_ACTIVE && this.queue.length > 0) {
-      const entry = this.queue.shift()!;
+    const now = Date.now();
+    let i = 0;
+    let minWait = Infinity;
+
+    while (this.active.size < this.MAX_ACTIVE && i < this.queue.length) {
+      const entry = this.queue[i];
+      if (entry.nextTryAt && entry.nextTryAt > now) {
+        const wait = entry.nextTryAt - now;
+        if (wait < minWait) minWait = wait;
+        i++;
+        continue;
+      }
+
+      this.queue.splice(i, 1);
       entry.startedAt = Date.now();
+      entry.nextTryAt = 0; // reset
       this.active.set(entry.key, entry);
       this.execute(entry);
+    }
+
+    if (minWait !== Infinity && minWait > 0) {
+      setTimeout(() => this.pump(), minWait);
     }
   }
 
@@ -141,11 +159,21 @@ class ThumbRequestManager {
 
   private async execute(entry: RequestEntry): Promise<void> {
     const started = performance.now();
+    let isRetry = false;
     try {
       const response = await fetch(entry.url, {
         signal: entry.controller.signal,
-        cache: 'force-cache',
+        cache: 'default',
       });
+      
+      if (response.status === 202) {
+        entry.nextTryAt = Date.now() + 1500;
+        isRetry = true;
+        return;
+      }
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
       this.log('done', `key=${entry.key} ms=${Math.round(performance.now() - started)}`);
@@ -158,9 +186,13 @@ class ThumbRequestManager {
       }
     } finally {
       this.active.delete(entry.key);
+      if (isRetry && !entry.controller.signal.aborted) {
+        this.queue.push(entry);
+      }
       this.pump();
     }
   }
+
 }
 
 export const thumbManager = new ThumbRequestManager();

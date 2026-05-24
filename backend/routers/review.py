@@ -234,13 +234,13 @@ def graduation_manual_override(req: GraduationManualOverrideRequest):
 
 @router.post("/api/review/bulk-discard")
 def bulk_discard_photos(req: BulkDiscardPhotoReq):
-    from backend import _invalidate_stats_caches
+    from utils import _invalidate_stats_caches
     _invalidate_stats_caches()
     return rm.bulk_discard_photos(req)
 
 
 @router.post("/api/review/bulk-restore")
 def bulk_restore_photos(req: BulkRestorePhotoReq):
-    from backend import _invalidate_stats_caches
+    from utils import _invalidate_stats_caches
     _invalidate_stats_caches()
     return rm.bulk_restore_photos(req)

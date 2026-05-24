@@ -17,7 +17,6 @@ import { Sidebar } from './Sidebar';
 import { logPerf, perfNow } from '../../utils/perf';
 import { lazy, Suspense } from 'react';
 
-const CloudView = lazy(() => import('../../views/CloudView'));
 const ScannerWorkspace = lazy(() => import('../../views/ScannerWorkspace'));
 
 interface ConfirmDialogOptions {
@@ -132,7 +131,7 @@ export function AppShell() {
   );
 
   const renderView = () => {
-    if (!currentCatalog && activeView !== 'settings' && activeView !== 'cloud-sync') {
+    if (!currentCatalog && activeView !== 'settings') {
       return renderEmptyCatalog();
     }
     switch (activeView) {
@@ -143,7 +142,6 @@ export function AppShell() {
       case 'review':        return <ReviewView />;
       case 'export':        return <ExportView />;
       case 'settings':      return <SettingsView />;
-      case 'cloud-sync':     return <Suspense fallback={<div style={{padding:40,color:'#9ca3af'}}>Carregando...</div>}><CloudView /></Suspense>;
       case 'scanner':        return <ScannerWorkspace />;
       case 'catalog-settings': return <CatalogSettingsView onRequestConfirm={requestConfirm} />;
       default:              return <CatalogView />;

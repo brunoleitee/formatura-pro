@@ -2,10 +2,12 @@ import os
 import subprocess
 import sys
 import urllib.parse
+import threading
 
 from fastapi import HTTPException
 
 _cfg = {}
+_tkinter_lock = threading.Lock()
 
 
 def configure(**kwargs):
@@ -151,15 +153,19 @@ def open_path(path: str):
 
 
 def select_folder():
-    import tkinter as tk
-    from tkinter import filedialog
-
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    path = filedialog.askdirectory()
-    root.destroy()
-    return {"path": path}
+    with _tkinter_lock:
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            root.focus_force()
+            path = filedialog.askdirectory()
+            root.destroy()
+            return {"path": path or ""}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Falha ao abrir seletor de pasta: {str(e)}")
 
 
 def select_image():
