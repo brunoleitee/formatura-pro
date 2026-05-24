@@ -125,6 +125,30 @@ def get_writable_app_dir():
     os.makedirs(app_dir, exist_ok=True)
     return app_dir
 
+class SafeStream:
+    def __init__(self, original):
+        self.original = original
+    def write(self, data):
+        try:
+            if self.original:
+                self.original.write(data)
+        except (OSError, IOError):
+            pass
+    def flush(self):
+        try:
+            if self.original:
+                self.original.flush()
+        except (OSError, IOError):
+            pass
+    def __getattr__(self, name):
+        return getattr(self.original, name)
+
+# Blindagem global de standard streams para evitar crash head-less no Windows
+if sys.stdout:
+    sys.stdout = SafeStream(sys.stdout)
+if sys.stderr:
+    sys.stderr = SafeStream(sys.stderr)
+
 def ensure_windowed_stdio():
     if not getattr(sys, "frozen", False):
         return
@@ -156,7 +180,21 @@ try:
 except ImportError:
     FAISS_AVAILABLE = False
 
-app = FastAPI(title="Formatura PRO API")
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("[graduation-analysis] routes registered", flush=True)
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        print(path, flush=True)
+    try:
+        se.ensure_face_engine()
+    except Exception as e:
+        print(f"[AI] warmup InsightFace adiado: {e}", flush=True)
+    _start_metrics_worker()
+    print("[metrics] background worker iniciado", flush=True)
+    yield
+
+app = FastAPI(title="Formatura PRO API", lifespan=lifespan)
 
 THUMB_SEMAPHORE_SMALL = threading.Semaphore(16)
 THUMB_SEMAPHORE_LARGE = threading.Semaphore(4)
@@ -839,21 +877,7 @@ qa_load_caches_from_disk()
 
 
 
-@app.on_event("startup")
-async def log_graduation_analysis_routes():
-    print("[graduation-analysis] routes registered", flush=True)
-    for route in app.routes:
-        path = getattr(route, "path", "")
-        print(path, flush=True)
-    try:
-        se.ensure_face_engine()
-    except Exception as e:
-        print(f"[AI] warmup InsightFace adiado: {e}", flush=True)
 
-@app.on_event("startup")
-async def start_metrics_worker():
-    _start_metrics_worker()
-    print("[metrics] background worker iniciado", flush=True)
 
 
 

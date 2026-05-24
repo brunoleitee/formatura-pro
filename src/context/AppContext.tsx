@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
 import { api } from '../services/api';
 
 export type ViewName =
@@ -24,6 +24,7 @@ interface AppContextValue {
   catalogSubfolder: string | null;
   catalogSubfolders: string[];
   isLoadingCatalogPhotos: boolean;
+  isBackendOnline: boolean;
   setCatalogSubfolder: (s: string | null) => void;
   setCatalogSubfolders: (folders: string[]) => void;
   setIsLoadingCatalogPhotos: (loading: boolean) => void;
@@ -45,11 +46,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [catalogSubfolder, setCatalogSubfolder] = useState<string | null>(null);
   const [catalogSubfolders, setCatalogSubfolders] = useState<string[]>([]);
   const [isLoadingCatalogPhotos, setIsLoadingCatalogPhotos] = useState(false);
+  const [isBackendOnline, setIsBackendOnline] = useState(true);
 
   const refreshCatalogs = useCallback(async () => {
     setIsLoadingCatalogs(true);
     try {
       const data = await api.getCatalogs();
+      setIsBackendOnline(true);
       setCatalogs(data.catalogs);
       if (data.current) {
         setCurrentCatalog(data.current);
@@ -61,10 +64,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     } catch (e) {
       console.error('Erro ao carregar catálogos:', e);
+      setIsBackendOnline(false);
     } finally {
       setIsLoadingCatalogs(false);
     }
   }, []);
+
+  // Polling periódico (Heartbeat) de conexão para diagnosticar instabilidade do backend
+  useEffect(() => {
+    let timer: number;
+    const checkConnection = async () => {
+      try {
+        await api.getSystemStatus();
+        setIsBackendOnline(true);
+      } catch (e) {
+        setIsBackendOnline(false);
+      }
+    };
+
+    // Polling a cada 5s se saudável, ou 2.5s se offline para reconexão célere
+    timer = window.setInterval(checkConnection, isBackendOnline ? 5000 : 2500);
+
+    return () => window.clearInterval(timer);
+  }, [isBackendOnline]);
+
+  // Forçar atualização do catálogo local ao reconectar
+  useEffect(() => {
+    if (isBackendOnline && catalogs.length === 0) {
+      refreshCatalogs();
+    }
+  }, [isBackendOnline, catalogs.length, refreshCatalogs]);
 
   const setCatalog = useCallback(async (name: string) => {
     try {
@@ -95,6 +124,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       catalogSubfolder,
       catalogSubfolders,
       isLoadingCatalogPhotos,
+      isBackendOnline,
       setCatalogSubfolder,
       setCatalogSubfolders,
       setIsLoadingCatalogPhotos,

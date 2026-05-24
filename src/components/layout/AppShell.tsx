@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { LoaderCircle } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useScan } from '../../context/ScanContext';
 import { api } from '../../services/api';
@@ -37,7 +38,7 @@ function normalizeScanProgress(progress: number | undefined) {
 }
 
 export function AppShell() {
-  const { currentCatalog, activeView, refreshCatalogs, navigate } = useApp();
+  const { currentCatalog, activeView, refreshCatalogs, navigate, isBackendOnline } = useApp();
   const { scanStatus, isScanning, scanMsg, handleScanStarted } = useScan();
 
   const [showCatalogModal, setShowCatalogModal] = useState(false);
@@ -191,6 +192,67 @@ export function AppShell() {
           resolve?.(false);
         }}
       />
+      {!isBackendOnline && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(15, 17, 26, 0.82)',
+          backdropFilter: 'blur(12px)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999,
+          color: '#f1f5f9',
+          fontFamily: 'Inter, system-ui, sans-serif',
+        }}>
+          <style>{`
+            @keyframes spin-rotate {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+            .connection-spin {
+              animation: spin-rotate 1.5s linear infinite;
+            }
+            @keyframes status-pulse {
+              0%, 100% { opacity: 0.4; }
+              50% { opacity: 1; }
+            }
+            .connection-pulse {
+              animation: status-pulse 1.8s ease-in-out infinite;
+            }
+          `}</style>
+          <div style={{
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-strong)',
+            padding: '40px',
+            borderRadius: 'var(--radius-xl)',
+            boxShadow: 'var(--shadow-modal)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            maxWidth: '380px',
+            textAlign: 'center',
+            gap: '20px',
+          }}>
+            <div style={{
+              width: '56px', height: '56px',
+              borderRadius: '50%',
+              background: 'var(--bg-active)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <LoaderCircle size={26} className="connection-spin" style={{ color: 'var(--accent)' }} />
+            </div>
+            <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 600, color: 'var(--text-primary)' }}>Conectando ao Servidor...</h2>
+            <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              A conexão com o servidor local do Formatura PRO foi interrompida ou o serviço está iniciando. Aguardando reconexão automática...
+            </p>
+            <div style={{
+              fontSize: '0.74rem',
+              color: 'var(--text-muted)',
+              display: 'flex', alignItems: 'center', gap: '6px',
+              marginTop: '4px',
+            }}>
+              <div className="connection-pulse" style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--warning)' }}></div>
+              <span>Tentando restabelecer porta local...</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -350,8 +350,9 @@ class DbConnection:
             existing_cols = {row[1] for row in cur.fetchall()}
             if "photo_hash" not in existing_cols:
                 cur.execute("ALTER TABLE ocorrencias ADD COLUMN photo_hash TEXT")
-        except Exception:
-            pass
+                self.conn.commit()
+        except Exception as e:
+            logger.warning("Falha ao migrar banco de dados para adicionar photo_hash: %s", e)
         ensure_quality_columns(self.conn)
         ensure_graduation_columns(self.conn)
         ensure_identity_columns(self.conn)
@@ -391,7 +392,10 @@ class DbConnection:
         c.execute("CREATE INDEX IF NOT EXISTS idx_ocor_aluno ON ocorrencias(aluno_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_ocor_foto ON ocorrencias(foto_path)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_ocor_foto_path ON ocorrencias(foto_path)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_ocor_photo_hash ON ocorrencias(photo_hash)")
+        try:
+            c.execute("CREATE INDEX IF NOT EXISTS idx_ocor_photo_hash ON ocorrencias(photo_hash)")
+        except Exception as e:
+            logger.warning("Falha ao criar indice idx_ocor_photo_hash: %s", e)
         c.execute("""
             CREATE TABLE IF NOT EXISTS export_history (
                 uuid TEXT PRIMARY KEY, dest_path TEXT,

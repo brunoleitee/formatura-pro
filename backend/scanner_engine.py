@@ -228,10 +228,10 @@ def imread_unicode(path):
             _cfg["log_debug"](f"Imagem corrompida: {path}")
         else:
             _cfg["log_debug"](f"Erro OS lendo {path}: {e}")
-        return None
+        return None, 1.0
     except Exception as e:
         _cfg["log_debug"](f"Erro lendo {path}: {e}")
-        return None
+        return None, 1.0
 
 
 def file_sha1(path):
@@ -842,6 +842,11 @@ def run_scanner_worker(req):
                     idx, path = idx_path_tuple
                     if _cancel_requested():
                         return idx, path, None, 1.0, None, None, 0.0, 0.0
+                    
+                    # Pular decodificação e blur se a foto já existe no catálogo (Otimização Incremental)
+                    if path in existing_photo_paths:
+                        return idx, path, None, 1.0, None, None, 0.0, 0.0
+
                     t0_dec = time.time()
                     loaded_img, loaded_scale = _load_single_image(path)
                     t_dec = (time.time() - t0_dec) * 1000
@@ -876,7 +881,15 @@ def run_scanner_worker(req):
                     future = pending_futures.pop(0)
                     f_idx, p, img, img_scale, b_score, b_status, t_decode, t_blur = future.result()
 
-                    scan_state["status_text"] = f"Processando {f_idx+1}/{total}: {os.path.basename(p)}"
+                    # Desvio Incremental: se a foto já existe no catálogo, pulamos o processamento pesado de IA
+                    if p in existing_photo_paths:
+                        processed_photo_paths.add(p)
+                        scan_state["total_processadas"] = len(processed_photo_paths)
+                        scan_state["progress"] = scan_state["total_processadas"] / total
+                        scan_state["status_text"] = f"Indexado: {scan_state['total_processadas']}/{total} - {os.path.basename(p)}"
+                        continue
+
+                    scan_state["status_text"] = f"Processando {scan_state['total_processadas']+1}/{total}: {os.path.basename(p)}"
 
                     if img is None:
                         if _cancel_requested():

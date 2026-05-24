@@ -244,11 +244,23 @@ def _ensure_aluno_row(cur, aluno_id: str, face_cache_path: str = "n/a", class_na
         return
     resolved_class = str(class_name or "").strip() or "Sem turma"
 
+    # Buscar se já existe por aluno_id (case-insensitive) para evitar duplicatas órfãs
+    row = _safe_alunos_fetchone(cur, "SELECT person_key, face_cache_path, class_name FROM alunos WHERE LOWER(aluno_id) = LOWER(?) LIMIT 1", (aluno_id,))
+    if row:
+        existing_key = row["person_key"]
+        existing_class = str(row["class_name"] or "").strip()
+        if resolved_class and resolved_class != "Sem turma" and existing_class in ("", "Sem turma"):
+            _safe_alunos_execute(cur, "UPDATE alunos SET class_name = ? WHERE person_key = ?", (resolved_class, existing_key))
+        existing_face = str(row["face_cache_path"] or "").strip()
+        if face_cache_path and face_cache_path != "n/a" and existing_face in ("", "n/a"):
+            _safe_alunos_execute(cur, "UPDATE alunos SET face_cache_path = ? WHERE person_key = ?", (face_cache_path, existing_key))
+        return
+
     # Gerar person_key se não fornecido
     if not person_key:
         person_key = make_person_key(catalog=catalog, class_name=resolved_class, student_id=aluno_id)
 
-    # Buscar por person_key (PK)
+    # Buscar por person_key (PK) como redundância secundária
     row = _safe_alunos_fetchone(cur, "SELECT face_cache_path, class_name, person_key FROM alunos WHERE person_key = ? LIMIT 1", (person_key,))
     if row:
         existing_class = str(row["class_name"] or "").strip()
@@ -395,7 +407,8 @@ def _ensure_person_reference(conn, catalog: str, aluno_id: str, force: bool = Fa
                         pass
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         image_loader = _get("imread_unicode")
-        img_np = image_loader(candidate_path) if callable(image_loader) else None
+        img_res = image_loader(candidate_path) if callable(image_loader) else None
+        img_np = img_res[0] if isinstance(img_res, tuple) else img_res
         if img_np is not None and candidate.get("box"):
             x1, y1, x2, y2 = [int(v) for v in candidate["box"]]
             h, w = img_np.shape[:2]
@@ -530,9 +543,12 @@ def manual_identify(req: ManualIdentifyReq):
 
         # Buscar class_name do formando já existente ou da ocorrência
         resolved_class = "Sem turma"
-        existing_row = _safe_alunos_fetchone(cur, "SELECT class_name FROM alunos WHERE aluno_id = ? LIMIT 1", (new_name,))
+        # Busca robusta case-insensitive
+        existing_row = _safe_alunos_fetchone(cur, "SELECT class_name, person_key, aluno_id FROM alunos WHERE LOWER(aluno_id) = LOWER(?) LIMIT 1", (new_name,))
         if existing_row:
             resolved_class = str(existing_row["class_name"] or "").strip() or "Sem turma"
+            person_key = existing_row["person_key"]
+            new_name = existing_row["aluno_id"] # Preserva a grafia existente com case correto
         else:
             # Tentar buscar da ocorrência atual
             cur.execute(
@@ -546,8 +562,7 @@ def manual_identify(req: ManualIdentifyReq):
                     pk_parts = occ_pk.split("::")
                     if len(pk_parts) >= 2 and pk_parts[1] not in ("__SEM_TURMA__", ""):
                         resolved_class = pk_parts[1]
-
-        person_key = make_person_key(catalog=req.catalog, class_name=resolved_class, student_id=new_name)
+            person_key = make_person_key(catalog=req.catalog, class_name=resolved_class, student_id=new_name)
 
         cur.execute(
             "SELECT aluno_id FROM ocorrencias WHERE foto_path COLLATE NOCASE = ? AND x1 = ? AND y1 = ? AND x2 = ? AND y2 = ?",
@@ -1585,7 +1600,11 @@ def _load_photo_bgr(photo_path: str):
     image_loader = _get("imread_unicode")
     if callable(image_loader):
         try:
-            img = image_loader(photo_path)
+            res = image_loader(photo_path)
+            if isinstance(res, tuple):
+                img, scale = res
+            else:
+                img, scale = res, 1.0
             if img is not None:
                 return img
         except Exception:
@@ -4522,7 +4541,8 @@ def detect_faces_for_search(image_path):
     se = _get("scanner_engine")
 
     ensure_face_engine()
-    img = imread_unicode(image_path)
+    res = imread_unicode(image_path)
+    img = res[0] if isinstance(res, tuple) else res
     if img is None:
         raise HTTPException(status_code=400, detail="Nao foi possivel ler a imagem.")
     from services.face_engine import FACE_INFERENCE_LOCK
@@ -4574,7 +4594,11 @@ def get_cached_occurrence_embedding(conn, occ):
     logger.info("[face-cache] miss occurrence_rowid=%s path=%s (recomputando)", occ["rowid"], name)
 
     try:
-        img = imread_unicode(path)
+        res = imread_unicode(path)
+        if isinstance(res, tuple):
+            img, scale = res
+        else:
+            img, scale = res, 1.0
         if img is None:
             return None
         from services.face_engine import FACE_INFERENCE_LOCK
@@ -4590,7 +4614,7 @@ def get_cached_occurrence_embedding(conn, occ):
     for face in faces:
         if not hasattr(face, "embedding") or face.embedding is None:
             continue
-        fbox = [int(v) for v in face.bbox]
+        fbox = [round(v * scale) for v in face.bbox]
         score = box_iou(target_box, fbox)
         if score > best_iou:
             best_iou = score
@@ -4814,7 +4838,11 @@ def get_suggestions(aluno_id: str):
 
         from services.face_engine import FACE_INFERENCE_LOCK
         for r in rows:
-            img = imread_unicode(r["foto_path"])
+            res = imread_unicode(r["foto_path"])
+            if isinstance(res, tuple):
+                img, scale = res
+            else:
+                img, scale = res, 1.0
             if img is None:
                 continue
             with FACE_INFERENCE_LOCK:
@@ -4910,19 +4938,27 @@ def rename_person(req: RenameReq):
             old_class_name = str(old_row["class_name"] or "").strip() or "Sem turma"
             old_person_key = str(old_row["person_key"] or "").strip()
 
+        # Buscar se o novo ID já existe de forma case-insensitive no catálogo para Merge saudável
+        dup_row = _safe_alunos_fetchone(cur, "SELECT person_key, aluno_id FROM alunos WHERE LOWER(aluno_id) = LOWER(?) LIMIT 1", (req.new_id,))
+        if dup_row:
+            actual_new_id = dup_row["aluno_id"]
+            actual_new_person_key = dup_row["person_key"]
+        else:
+            actual_new_id = req.new_id
+            actual_new_person_key = make_person_key(catalog=current_catalog, class_name=old_class_name, student_id=actual_new_id)
+
         # Atualizar ocorrências: buscar por person_key ou aluno_id
-        new_person_key = make_person_key(catalog=current_catalog, class_name=old_class_name, student_id=req.new_id)
         if old_person_key:
-            cur.execute("UPDATE ocorrencias SET aluno_id = ?, person_key = ? WHERE person_key = ?", (req.new_id, new_person_key, old_person_key))
+            cur.execute("UPDATE ocorrencias SET aluno_id = ?, person_key = ? WHERE person_key = ?", (actual_new_id, actual_new_person_key, old_person_key))
         else:
-            cur.execute("UPDATE ocorrencias SET aluno_id = ?, person_key = ? WHERE aluno_id = ?", (req.new_id, new_person_key, req.old_id))
+            cur.execute("UPDATE ocorrencias SET aluno_id = ?, person_key = ? WHERE aluno_id = ?", (actual_new_id, actual_new_person_key, req.old_id))
 
-        _ensure_aluno_row(cur, req.new_id, class_name=old_class_name, person_key=new_person_key, catalog=current_catalog)
+        _ensure_aluno_row(cur, actual_new_id, class_name=old_class_name, person_key=actual_new_person_key, catalog=current_catalog)
 
-        # Remover registro antigo
-        if old_person_key:
+        # Remover registro antigo se não for o mesmo que o novo (para evitar deletar se for merge de case do mesmo aluno)
+        if old_person_key and old_person_key != actual_new_person_key:
             _safe_alunos_execute(cur, "DELETE FROM alunos WHERE person_key = ?", (old_person_key,))
-        else:
+        elif not old_person_key and req.old_id.lower() != actual_new_id.lower():
             _safe_alunos_execute(cur, "DELETE FROM alunos WHERE aluno_id = ?", (req.old_id,))
 
         conn.commit()

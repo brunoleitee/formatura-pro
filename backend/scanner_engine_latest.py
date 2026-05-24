@@ -1,7 +1,0 @@
-﻿"""Compatibilidade para a versao antiga do scanner.
-
-Este modulo apenas reexporta a implementacao atual para evitar manter
-um caminho paralelo com logica antiga de providers.
-"""
-
-from scanner_engine import *  # noqa: F401,F403
