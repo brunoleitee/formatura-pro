@@ -1,6 +1,6 @@
 import { API_BASE } from '../services/api/core';
 
-const PHOTO_SOURCE_BASE = 'http://127.0.0.1:8000';
+const PHOTO_SOURCE_BASE = '';
 
 function buildThumbUrl(path: string | null | undefined, size: number, q?: number) {
   if (!path) return null;

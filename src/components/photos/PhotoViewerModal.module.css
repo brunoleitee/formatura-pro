@@ -1,10 +1,13 @@
 .viewerOverlay {
   position: fixed;
   inset: 0;
-  background: #0a0b10;
+  background: rgba(10, 11, 16, 0.82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   display: flex;
   z-index: 1000;
   color: #e2e8f0;
+  transition: backdrop-filter 0.3s ease;
 }
 
 .viewerOverlay.discarded .mainImage {
@@ -149,7 +152,7 @@
   position: relative;
   overflow: hidden;
   min-width: 0;
-  background: #000;
+  background: rgba(0, 0, 0, 0.25);
 }
 
 .viewerTopMeta {

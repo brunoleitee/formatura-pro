@@ -121,7 +121,7 @@ const CardInfoSection = memo(function CardInfoSection({
 export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thumbHeight, cardHeight, thumbTargetSize, thumbLowTargetSize, imgLoading = 'lazy', imgFetchPriority = 'auto', onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
   const thumbSize = (thumbTargetSize ?? 240) > 0 ? (thumbTargetSize ?? 240) : 0;
   const thumbUrl = useMemo(
-    () => thumbSize > 0 ? (getGridThumbUrl(photo.path, thumbSize, 70) ?? '') : '',
+    () => thumbSize > 0 ? (getGridThumbUrl(photo.path, thumbSize, 85) ?? '') : '',
     [photo.path, thumbSize]
   );
   const thumbKey = useMemo(() => `thumb:${photo.path}:${thumbSize}`, [photo.path, thumbSize]);

@@ -1,9 +1,11 @@
 import { API_BASE, fetchJSON, post } from './core';
-import type { Person, SearchResult } from './types';
+import type { Person, SearchResult, MergePersonResponse } from './types';
 
 export const peopleApi = {
-  getPeople: (unknown = false, signal?: AbortSignal) => fetchJSON<Person[]>(`${API_BASE}/people?unknown=${unknown}`, { signal }),
+  getPeople: (unknown = false, catalog = '', signal?: AbortSignal) => fetchJSON<Person[]>(`${API_BASE}/people?unknown=${unknown}&catalog=${encodeURIComponent(catalog)}`, { signal }),
   renamePerson: (old_id: string, new_id: string) => post(`${API_BASE}/rename-person`, { old_id, new_id }),
   deletePerson: (aluno_id: string) => post(`${API_BASE}/delete-person`, { aluno_id }),
   globalSearch: (q: string) => fetchJSON<SearchResult[]>(`${API_BASE}/search/global?q=${encodeURIComponent(q)}`),
+  mergePeople: (payload: { source_person_id: string; target_person_id: string; catalog?: string }) =>
+    post<MergePersonResponse>(`${API_BASE}/people/merge`, payload),
 };

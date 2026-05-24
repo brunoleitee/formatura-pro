@@ -17,8 +17,7 @@ from onnx_provider_utils import get_onnx_providers, get_session_providers
 
 os.environ.setdefault("NO_ALBUMENTATIONS_UPDATE", "1")
 
-_FACE_ENGINE_LOCK = threading.Lock()
-FACE_INFERENCE_LOCK = threading.RLock()
+from services.face_engine import FACE_INFERENCE_LOCK
 
 # Scanner progress watchdog
 _scan_last_progress_at = 0.0
@@ -33,8 +32,8 @@ def _default_quiet_external_output():
         yield
 
 _cfg = {
-    "log_debug": lambda msg: None,
-    "log_info": lambda msg: None,
+    "log_debug": lambda msg, *args, **kwargs: None,
+    "log_info": lambda msg, *args, **kwargs: None,
     "quiet_external_output": _default_quiet_external_output,
     "get_memory_info": lambda: {},
     "get_db": None,
@@ -79,6 +78,8 @@ _cfg = {
 
 def configure(**kwargs):
     _cfg.update({k: v for k, v in kwargs.items() if v is not None})
+    from services import face_engine
+    face_engine.configure(**kwargs)
 
 
 AI_PROVIDER_PRIORITY = [
@@ -337,107 +338,14 @@ def _provider_config(provider_name):
     }
 
 
-def get_available_ai_provider():
-    provider_info = get_onnx_providers(
-        log_debug=_cfg["log_debug"],
-    )
-    available = provider_info["available_providers"]
-
-    return {
-        "available_providers": available,
-        "provider_error": provider_info.get("provider_error", ""),
-        "preload_error": "",
-        "selected_provider": provider_info["provider"],
-        "selected_label": provider_info["label"],
-        "selected_providers": provider_info["selected_providers"],
-        "provider_options": provider_info["provider_options"],
-        "ctx_id": provider_info["ctx_id"],
-        "provider": provider_info["provider"],
-        "label": provider_info["label"],
-        "device": provider_info["device"],
-        "cuda_failed": provider_info["cuda_failed"],
-    }
-
-
 def ensure_face_engine():
-    global _cfg
-    if _cfg["app_face"] is not None:
-        _cfg["log_info"]("[AI] reutilizando InsightFace global")
-        return
-
-    with _FACE_ENGINE_LOCK:
-        if _cfg["app_face"] is not None:
-            _cfg["log_info"]("[AI] reutilizando InsightFace global")
-            return
-
-        _cfg["log_info"]("[AI] inicializando InsightFace global...")
-        provider_info = get_available_ai_provider()
-        selected_provider = provider_info["selected_provider"]
-        selected_providers = provider_info["selected_providers"]
-        provider_options = provider_info["provider_options"]
-        ctx_id = provider_info["ctx_id"]
-
-        face_engine_device = _cfg["face_engine_device"]
-        face_engine_provider = _cfg["face_engine_provider"]
-        face_engine_label = _cfg["face_engine_label"]
-        face_engine_gpu_error = _cfg["face_engine_gpu_error"]
-        model_root = _cfg["runtime_dir"] if os.path.isdir(os.path.join(_cfg["runtime_dir"], "models", "buffalo_l")) else "~/.insightface"
-
-        from insightface.app import FaceAnalysis
-
-        try:
-            with quiet_external_output():
-                app_face = FaceAnalysis(
-                    name="buffalo_l",
-                    root=model_root,
-                    providers=selected_providers,
-                    provider_options=provider_options,
-                    allowed_modules=["detection", "recognition"],
-                )
-                app_face.prepare(ctx_id=ctx_id, det_size=_cfg.get("det_size", (640, 640)))
-
-            real_providers = get_session_providers(app_face)
-            real_provider = real_providers[0] if real_providers else selected_provider
-            _cfg["log_info"](f"[AI] Sessao ONNX providers reais: {real_providers}")
-            face_engine_device = "GPU" if real_provider in {"CUDAExecutionProvider", "DmlExecutionProvider"} else "CPU"
-            face_engine_provider = real_provider
-            face_engine_label = _provider_label(real_provider)
-            face_engine_gpu_error = provider_info.get("provider_error", "")
-            if face_engine_device == "GPU":
-                _cfg["log_info"](f"[AI] {face_engine_label} ativo")
-            else:
-                _cfg["log_info"](f"[AI] GPU indisponivel, usando CPU (solicitado={selected_provider})")
-            _cfg["log_info"](f"[AI] Provider ativo: {real_provider}")
-        except Exception as e:
-            _cfg["log_info"](f"[AI] Falha ao carregar engine de IA: {e}")
-            _cfg["log_info"](f"[AI] Traceback completo:\n{traceback.format_exc()}")
-            if selected_provider == "CPUExecutionProvider":
-                raise
-
-            _cfg["log_info"](f"[AI] {selected_provider} falhou, fallback para CPU")
-            with quiet_external_output():
-                app_face = FaceAnalysis(
-                    name="buffalo_l",
-                    root=model_root,
-                    providers=["CPUExecutionProvider"],
-                    provider_options=None,
-                    allowed_modules=["detection", "recognition"],
-                )
-                app_face.prepare(ctx_id=-1, det_size=_cfg.get("det_size", (640, 640)))
-            real_providers = get_session_providers(app_face)
-            real_provider = real_providers[0] if real_providers else "CPUExecutionProvider"
-            face_engine_device = "CPU"
-            face_engine_provider = real_provider
-            face_engine_label = _provider_label(real_provider)
-            face_engine_gpu_error = str(e)
-            _cfg["log_info"](f"[AI] Provider ativo: {real_provider}")
-
-        _cfg["app_face"] = app_face
-        _cfg["face_engine_device"] = face_engine_device
-        _cfg["face_engine_provider"] = face_engine_provider
-        _cfg["face_engine_label"] = face_engine_label
-        _cfg["face_engine_gpu_error"] = face_engine_gpu_error
-        _cfg["log_info"](f"[Face] model loaded device={face_engine_device} provider={face_engine_provider} label={face_engine_label}")
+    from services import face_engine
+    face_engine.ensure_face_engine()
+    _cfg["app_face"] = face_engine.app_face
+    _cfg["face_engine_device"] = face_engine.face_engine_device
+    _cfg["face_engine_provider"] = face_engine.face_engine_provider
+    _cfg["face_engine_label"] = face_engine.face_engine_label
+    _cfg["face_engine_gpu_error"] = face_engine.face_engine_gpu_error
 
 
 def _detect_photo_class_context(photo_path: str, scan_roots: list[str]) -> str:
@@ -531,24 +439,14 @@ def load_references(ref_path):
 
             rel_parent = Path(os.path.relpath(full, ref_path)).parent
             parts = rel_parent.as_posix().split("/")
-            # Remover ".." (caminho relativo acima do ref_path) e pastas estruturais
-            ignored_folders = {"#BASE", "BASE", "base", "referencias", "referências", "referencia", "referência"}
-            structural_filter = {
-                p.casefold() for p in parts if p.strip() and p.strip() != ".."
-                if p.strip().casefold() in {x.casefold() for x in ignored_folders}
-            }
-            valid_parts = [
-                p for p in parts
-                if p.strip() and p.strip() != ".."
-                and p.strip().casefold() not in {x.casefold() for x in ignored_folders}
-            ]
+            clean_parts = [p for p in parts if p.strip() and p not in (".", "..")]
 
             person_name = file_stem
             reference_folder = file_stem
             ref_name = file_stem
 
-            if valid_parts:
-                class_name = valid_parts[-1]  # Última pasta significativa = turma
+            if clean_parts:
+                class_name = "/".join(clean_parts)
             else:
                 class_name = "__SEM_TURMA__"
 
@@ -722,23 +620,28 @@ def find_or_create_cluster(emb):
 
 
 def get_app_face():
-    return _cfg["app_face"]
+    from services import face_engine
+    return face_engine.get_app_face()
 
 
 def get_face_engine_device():
-    return _cfg["face_engine_device"]
+    from services import face_engine
+    return face_engine.get_face_engine_device()
 
 
 def get_face_engine_provider():
-    return _cfg["face_engine_provider"]
+    from services import face_engine
+    return face_engine.get_face_engine_provider()
 
 
 def get_face_engine_label():
-    return _cfg["face_engine_label"] or _cfg["face_engine_device"]
+    from services import face_engine
+    return face_engine.get_face_engine_label()
 
 
 def get_face_engine_gpu_error():
-    return _cfg["face_engine_gpu_error"]
+    from services import face_engine
+    return face_engine.get_face_engine_gpu_error()
 
 
 def _scan_state():
@@ -795,7 +698,7 @@ def _load_single_image(path):
 
 
 def _log_memory(label=""):
-    log_info = _cfg.get("log_info", lambda msg: None)
+    log_info = _cfg.get("log_info", lambda msg, *args, **kwargs: None)
     try:
         import psutil
         import os as _os
@@ -1248,6 +1151,8 @@ def run_scanner_worker(req):
                             has_alunos_table = cur.fetchone() is not None
                             if has_alunos_table:
                                 for apkey, (anome, acls, aref) in aluno_batch.items():
+                                    if anome.lower().startswith("pessoa "):
+                                        continue
                                     try:
                                         cur.execute(
                                             "INSERT OR REPLACE INTO alunos (person_key, aluno_id, face_cache_path, class_name, reference_folder) VALUES (?, ?, ?, ?, ?)",

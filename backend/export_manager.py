@@ -143,6 +143,58 @@ def _collect_reference_dirs(conn):
     return sorted(reference_dirs)
 
 
+def _is_base_reference_folder(folder_path: str) -> bool:
+    """Detecta se uma pasta é de referência/base pelos nomes."""
+    base_names = {"REFERENCIA", "REFERÊNCIA", "REFERENCIAS", "REFERÊNCIAS", "BASE", "#BASE", "REF"}
+    folder_name = os.path.basename(os.path.normpath(folder_path)).strip().upper()
+    return folder_name in base_names
+
+
+def count_base_photos_from_catalog(catalog: str) -> int:
+    """Conta fotos que estão em pastas de referência/base no catálogo.
+    
+    Detecta pastas por nomes: REFERENCIA, REFERÊNCIA, REFERENCIAS, 
+    REFERÊNCIAS, BASE, #BASE, REF
+    NÃO considera a pasta 'ID' como base/referência.
+    """
+    get_db = _get("get_db")
+    log_info = _get("log_info", print)
+    try:
+        with get_db(catalog) as conn:
+            cur = conn.cursor()
+            # Buscar caminhos de pastas das ocorrencias
+            cur.execute("""
+                SELECT DISTINCT foto_path FROM ocorrencias
+                WHERE aluno_id = ? OR aluno_id LIKE ?
+            """, ("#BASE", "#BASE%"))
+            all_base_paths = [r[0] for r in cur.fetchall() if r[0]]
+            
+            # Também buscar pastas de referência da tabela alunos
+            try:
+                cur.execute("SELECT face_cache_path FROM alunos WHERE face_cache_path IS NOT NULL AND face_cache_path != ''")
+                ref_paths = [r[0] for r in cur.fetchall() if r[0]]
+            except Exception:
+                ref_paths = []
+            
+            # Contar fotos únicas de pastas base/referência
+            base_photos = set()
+            for path in all_base_paths:
+                base_photos.add(path)
+            
+            # Detectar por caminho de pasta
+            for path in ref_paths:
+                dir_path = os.path.dirname(path) if path else ""
+                if dir_path and _is_base_reference_folder(dir_path):
+                    base_photos.add(path)
+            
+            log_info(f"[export-report] base_photos_count={len(base_photos)}")
+            log_info(f"[export-report] base_detection_paths={list(base_photos)[:5]}")
+            return len(base_photos)
+    except Exception as e:
+        log_info(f"[export-report] erro ao contar fotos base: {e}")
+        return 0
+
+
 def _clean_student_id(aid: str) -> str:
     if not aid:
         return aid
@@ -159,6 +211,49 @@ def _clean_student_id(aid: str) -> str:
         cleaned = parts[0]
         
     return cleaned.strip()
+
+
+def clean_student_display_id(raw_id: str, student_name: str | None = None, folder_name: str | None = None) -> str:
+    """Limpa o ID interno do formando para exibição no relatório.
+    
+    Regras:
+    1. Se student_name existir, usar student_name limpo
+    2. Senão, quebrar raw_id por '::'
+    3. Remover partes vazias, catalog id numérico, '__SEM_TURMA__', turma
+    4. Remover duplicados consecutivos
+    5. Retornar último nome válido
+    """
+    if student_name and student_name.strip():
+        return student_name.strip()
+    if folder_name and folder_name.strip() and "::" not in folder_name:
+        return folder_name.strip()
+    
+    if "::" not in raw_id:
+        return raw_id.strip()
+    
+    parts = raw_id.split("::")
+    # Filtrar partes inválidas
+    valid = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        if p.isdigit() and len(p) <= 5:
+            continue
+        if p in ("__SEM_TURMA__", "__SEM_REFERENCIA__", "__SEM_CATALOGO__"):
+            continue
+        valid.append(p)
+    
+    # Remover duplicados consecutivos
+    deduped = []
+    for p in valid:
+        if deduped and deduped[-1].lower() == p.lower():
+            continue
+        deduped.append(p)
+    
+    if not deduped:
+        return raw_id.strip()
+    return deduped[-1]
 
 
 def _export_folder_name(aid, sanitize_folder_name):
@@ -672,8 +767,8 @@ def _file_starts_with(path, prefix):
 def _write_simple_pdf(path, summary_rows, per_person_rows):
     lines = ["FORMATURA PRO", "RELATORIO DE EXPORTACAO", ""]
     lines.extend([f"{row[0]}: {row[1]}" for row in summary_rows[1:]])
-    lines.extend(["", "FORMANDOS", "ID | Nome da pasta | Quantidade de fotos"])
-    lines.extend([f"{row[0]} | {row[1]} | {row[2]}" for row in per_person_rows[1:]])
+    lines.extend(["", "FORMANDOS", "ID Formando   | Pasta Destino    | Qtd Fotos"])
+    lines.extend([f"{str(row[0]):14s} | {str(row[1]):17s} | {str(row[2]):>9s}" for row in per_person_rows[1:]])
 
     page_chunks = [lines[i:i + 46] for i in range(0, len(lines), 46)] or [[]]
     objects = []
@@ -812,7 +907,7 @@ def _write_reportlab_pdf(path, summary_rows, per_person_rows):
     story.append(Spacer(1, 8))
     story.append(table_from_rows(summary_rows, [54 * mm, report_width - (54 * mm)], dark_labels={"destino"}))
     story.append(Paragraph("Formandos", centered_section_style))
-    story.append(table_from_rows(per_person_rows, [20 * mm, report_width - (62 * mm), 42 * mm]))
+    story.append(table_from_rows(per_person_rows, [report_width * 0.35, report_width * 0.35, report_width * 0.30]))
     doc.build(story)
 
 
@@ -1027,12 +1122,15 @@ def run_export_worker(req: ExportReq, catalog_name: str):
                 folder_count = len(exported_folders)
                 destination_photo_total = exported_files
 
+                # Contar fotos base do catálogo (não apenas as exportadas)
+                base_photos_total = count_base_photos_from_catalog(catalog_name)
+
                 summary_rows = [
                     ["Relatorio de Exportacao", ""],
                     ["Catalogo", catalog_name],
                     ["Data/Hora", datetime.now().strftime("%d/%m/%Y %H:%M:%S")],
                     ["Fotos Exportadas", str(destination_photo_total)],
-                    ["Fotos Base", str(base_copy_count)],
+                    ["Fotos Base", str(base_photos_total)],
                     ["Pastas Criadas", str(folder_count)],
                     ["Tempo Total", _format_duration(elapsed_total)],
                     ["Destino", req.dest_path],
@@ -1041,7 +1139,9 @@ def run_export_worker(req: ExportReq, catalog_name: str):
                 per_person_rows = [["ID Formando", "Pasta Destino", "Qtd Fotos"]]
                 for aid in sorted(per_person_counts.keys(), key=lambda x: x.lower()):
                     p_al_path = safe_p_al_map.get(aid, aid)
-                    per_person_rows.append([aid, os.path.basename(p_al_path), str(per_person_counts[aid])])
+                    display_name = clean_student_display_id(aid, student_name=str(p_al_path).rsplit(os.sep, 1)[-1] if p_al_path else aid)
+                    folder_display = str(p_al_path).rsplit(os.sep, 1)[-1] if p_al_path else display_name
+                    per_person_rows.append([display_name, folder_display, str(per_person_counts[aid])])
 
                 try:
                     _write_export_report(report_path, summary_rows, per_person_rows)

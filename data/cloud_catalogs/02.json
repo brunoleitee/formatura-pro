@@ -1,0 +1,14 @@
+{
+  "catalogId": "02",
+  "provider": "google_drive",
+  "folderId": "1bqZx0thQ7CLG343LGq49978YgRmnqm-4",
+  "eventName": "02",
+  "references": [
+    "#BASE CANDIDA ARANTES",
+    "#BASE NECIME LOPES"
+  ],
+  "totalFiles": 3183,
+  "mode": "face",
+  "status": "indexed",
+  "createdAt": "2026-05-21T17:11:08.038172"
+}

@@ -4,6 +4,7 @@ import threading
 import logging
 
 from fastapi import HTTPException
+from utils import validate_config
 
 _cfg = {}
 _people_cache = {}
@@ -40,6 +41,7 @@ def get_image_dimensions(p):
 
 def configure(**kwargs):
     _cfg.update(kwargs)
+    validate_config(_cfg, ["get_db", "get_current_catalog", "get_catalog_dir", "get_blur_label", "load_quality_settings", "sqlite3"], "people_data_manager")
 
 
 def _get(name, default=None):
@@ -51,8 +53,8 @@ def current_catalog():
     return getter() if getter else ""
 
 
-def _get_cached_people(unknown: bool):
-    cat = current_catalog()
+def _get_cached_people(unknown: bool, catalog: str = ""):
+    cat = catalog or current_catalog()
     key = f"{cat}:{unknown}"
     now = time.time()
 
@@ -82,7 +84,7 @@ def global_search(q: str = ""):
                         SELECT DISTINCT aluno_id
                         FROM ocorrencias
                         WHERE aluno_id LIKE ?
-                        AND aluno_id NOT LIKE 'Pessoa %'
+                        AND aluno_id NOT LIKE 'Pessoa%'
                         AND aluno_id != 'Desconhecido'
                         LIMIT 20
                     """, (search_query,))
@@ -96,26 +98,65 @@ def global_search(q: str = ""):
     return results[:100]
 
 
-def get_people(unknown: bool = False):
+def _is_valid_formando(aluno_id: str, person_key: str = "") -> bool:
+    """
+    Verifica se um aluno tem identidade válida para aparecer na aba Formandos.
+    Só é considerado formando real se tiver:
+    - nome confirmado (não é "Pessoa X" nem desconhecido)
+    - OU referência vinculada (person_key com pasta de referência válida)
+    - OU confirmação manual
+    """
+    aid = str(aluno_id or "").strip().lower()
+    if not aid:
+        return False
+    if aid.startswith("pessoa ") or aid in ("unknown", "desconhecido", "sem_nome", "nao_mapeado", "não_mapeado", "__unknown__", "system_catalog", "base", "referencia", "referência"):
+        return False
+    if aid.startswith("#base"):
+        return False
+
+    if person_key and "::" in person_key:
+        parts = person_key.split("::")
+        if len(parts) >= 4:
+            ref_part = parts[2]
+            if ref_part not in ("", "__SEM_REFERENCIA__"):
+                return True
+            student_part = parts[3]
+            if student_part and not student_part.lower().startswith("pessoa ") and student_part.lower() not in ("unknown", "desconhecido", "sem_nome"):
+                return True
+
+    if not person_key or "::" not in person_key:
+        if aid.startswith("pessoa ") or aid in ("unknown", "desconhecido", "sem_nome"):
+            return False
+        return True
+
+    return True
+
+
+def get_people(unknown: bool = False, catalog: str = ""):
     invalidate_people_cache()
-    cached = _get_cached_people(unknown)
+    cached = _get_cached_people(unknown, catalog)
     if cached is not None:
         return cached
 
     try:
         get_db = _get("get_db")
-        cat = current_catalog()
+        cat = catalog or current_catalog()
         if not cat:
+            print("[people] catalog recebido: <vazio> — retornando lista vazia")
             return []
 
-        with get_db() as conn:
+        print(f"[people] catalog recebido: {cat}")
+
+        with get_db(cat) as conn:
             cur = conn.cursor()
             if unknown:
                 _t = time.perf_counter()
                 cur.execute("""
                     SELECT aluno_id, COUNT(*) as total FROM ocorrencias
-                    WHERE lower(aluno_id) IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__')
+                    WHERE (lower(aluno_id) IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__', 'system_catalog')
                        OR aluno_id LIKE 'Pessoa%'
+                       OR aluno_id LIKE '#BASE%'
+                       OR lower(aluno_id) IN ('base', 'referencia', 'referência'))
                     GROUP BY aluno_id ORDER BY total DESC, aluno_id ASC
                 """)
                 rows = cur.fetchall()
@@ -132,7 +173,7 @@ def get_people(unknown: bool = False):
                 } for row in rows]
             else:
                 # Diagnostic: check person_key coverage
-                cur.execute("SELECT COUNT(*) as total, COUNT(DISTINCT COALESCE(NULLIF(TRIM(person_key), ''), aluno_id)) as distinct_identity FROM ocorrencias WHERE lower(aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__') AND aluno_id NOT LIKE 'Pessoa%'")
+                cur.execute("SELECT COUNT(*) as total, COUNT(DISTINCT COALESCE(NULLIF(TRIM(person_key), ''), aluno_id)) as distinct_identity FROM ocorrencias WHERE lower(aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__', 'system_catalog') AND aluno_id NOT LIKE 'Pessoa%' AND aluno_id NOT LIKE '#BASE%' AND lower(aluno_id) NOT IN ('base', 'referencia', 'referência')")
                 _diag = cur.fetchone()
                 logging.getLogger(__name__).info(
                     "[people] diagnostic: total_rows=%d distinct_identities=%d",
@@ -152,8 +193,10 @@ def get_people(unknown: bool = False):
                         FROM ocorrencias o
                         LEFT JOIN photo_meta pm ON pm.foto_path = o.foto_path
                         LEFT JOIN discarded_photos dp ON dp.foto_path = o.foto_path
-                        WHERE lower(o.aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__')
+                        WHERE lower(o.aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__', 'system_catalog')
                           AND o.aluno_id NOT LIKE 'Pessoa%'
+                          AND o.aluno_id NOT LIKE '#BASE%'
+                          AND lower(o.aluno_id) NOT IN ('base', 'referencia', 'referência')
                         GROUP BY COALESCE(NULLIF(TRIM(o.person_key), ''), o.aluno_id)
                     ),
                     covers AS (
@@ -200,8 +243,53 @@ def get_people(unknown: bool = False):
                     LEFT JOIN covers cov ON cov.identity_key = s.identity_key
                     ORDER BY s.aluno_id ASC
                 """)
-                rows = cur.fetchall()
+                rows = [dict(r) for r in cur.fetchall()]
                 _sql_logger.info("[sql-perf] endpoint=/api/people query=people_stats rows=%d ms=%.0f", len(rows), (time.perf_counter() - _t) * 1000)
+
+                # Log diagnósticos para catalog cloud
+                try:
+                    cur.execute("SELECT COUNT(*) as cnt FROM ocorrencias")
+                    _total_photos = cur.fetchone()["cnt"]
+                    print(f"[people] total photos catalog: {_total_photos}")
+                except Exception:
+                    pass
+                print(f"[people] total identities: {len(rows)}")
+
+                # Buscar alunos cadastrados na tabela alunos para incluir quem tem 0 fotos/ocorrências
+                try:
+                    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+                    _has_alunos_table = cur.fetchone() is not None
+                    if _has_alunos_table:
+                        # Obter chaves já presentes
+                        seen_identities = set()
+                        for r in rows:
+                            identity_key = str(r["identity_key"] or "")
+                            seen_identities.add(identity_key)
+
+                        cur.execute("SELECT aluno_id, face_cache_path, class_name, person_key, reference_folder FROM alunos")
+                        all_alunos = cur.fetchall()
+                        for ar in all_alunos:
+                            pk = str(ar["person_key"] or "")
+                            aid = ar["aluno_id"]
+                            identity = pk if pk else aid
+                            
+                            if identity not in seen_identities and aid != "system_catalog" and aid != "#BASE" and lower(aid) not in ("base", "referencia", "referência") and not aid.lower().startswith("pessoa "):
+                                seen_identities.add(identity)
+                                rows.append({
+                                    "aluno_id": aid,
+                                    "identity_key": identity,
+                                    "total": 0,
+                                    "avg_quality": 0.0,
+                                    "favorites_count": 0,
+                                    "discarded_count": 0,
+                                    "cover_path": None,
+                                    "x1": None,
+                                    "y1": None,
+                                    "x2": None,
+                                    "y2": None
+                                })
+                except Exception as _alunos_err:
+                    print(f"Erro ao mesclar alunos sem fotos: {_alunos_err}")
                 
                 _t = time.perf_counter()
                 cur.execute("""
@@ -212,8 +300,10 @@ def get_people(unknown: bool = False):
                             ROW_NUMBER() OVER (PARTITION BY COALESCE(NULLIF(TRIM(person_key), ''), aluno_id) ORDER BY rowid ASC) as rn
                         FROM ocorrencias
                         WHERE x1 IS NOT NULL
-                          AND lower(aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__')
+                          AND lower(aluno_id) NOT IN ('unknown', 'desconhecido', 'sem_nome', 'nao_mapeado', 'nao_mapeado', '__unknown__', 'system_catalog')
                           AND aluno_id NOT LIKE 'Pessoa%'
+                          AND aluno_id NOT LIKE '#BASE%'
+                          AND lower(aluno_id) NOT IN ('base', 'referencia', 'referência')
                     )
                     SELECT identity_key, aluno_id, foto_path, x1, y1, x2, y2 FROM ranked WHERE rn <= 4
                 """)
@@ -292,6 +382,9 @@ def get_people(unknown: bool = False):
                             person_key, aluno_id, class_name,
                         )
 
+                    if not _is_valid_formando(aluno_id, person_key):
+                        continue
+
                     results.append({
                         "id": person_key if person_key else aluno_id,
                         "name": aluno_id,
@@ -306,6 +399,8 @@ def get_people(unknown: bool = False):
                         "avatar_path": avatar_path,
                         "sample_photos": samples_by_aluno.get(identity_key, []),
                     })
+
+        print(f"[people] total people retornadas: {len(results)}")
 
         with _people_cache_lock:
             key = f"{cat}:{unknown}"
@@ -325,14 +420,33 @@ def invalidate_people_cache():
         _people_cache = {}
 
 
-def get_photos(aluno_id: str):
+def _get_cloud_names_map(cur):
+    try:
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cloud_photos'")
+        if cur.fetchone() is not None:
+            cur.execute("SELECT cloud_file_id, name FROM cloud_photos")
+            return {r["cloud_file_id"]: r["name"] for r in cur.fetchall() if r["cloud_file_id"] and r["name"]}
+    except Exception:
+        pass
+    return {}
+
+
+def _resolve_photo_name(path, cloud_names):
+    if path.startswith("cloud://"):
+        file_id = path[8:]
+        if file_id in cloud_names:
+            return cloud_names[file_id]
+    return os.path.basename(path)
+
+
+def get_photos(aluno_id: str, catalog: str = ""):
     get_db = _get("get_db")
     get_blur_label = _get("get_blur_label")
     load_quality_settings = _get("load_quality_settings")
-    cat = current_catalog()
+    cat = catalog if catalog else current_catalog()
     if not cat:
         return []
-    with get_db() as conn:
+    with get_db(cat) as conn:
         cur = conn.cursor()
         cur.execute("SELECT foto_path FROM discarded_photos")
         discarded = {r["foto_path"] for r in cur.fetchall()}
@@ -343,7 +457,7 @@ def get_photos(aluno_id: str):
         try:
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
             if cur.fetchone() is not None:
-                cur.execute("SELECT person_key, class_name FROM alunos WHERE aluno_id = ? LIMIT 1", (aluno_id,))
+                cur.execute("SELECT person_key, class_name FROM alunos WHERE aluno_id = ? OR person_key = ? LIMIT 1", (aluno_id, aluno_id))
                 row = cur.fetchone()
                 if row:
                     person_key_filter = str(row["person_key"] or "").strip()
@@ -364,9 +478,11 @@ def get_photos(aluno_id: str):
                 SELECT rowid, foto_path, x1, y1, x2, y2, blur_score, blur_status, closed_eyes,
                        is_foreground, foreground_score, background_penalty_reason, person_key
                 FROM ocorrencias
-                WHERE aluno_id = ?
-            """, (aluno_id,))
+                WHERE aluno_id = ? OR person_key = ?
+            """, (aluno_id, aluno_id))
         rows = cur.fetchall()
+
+        cloud_names = _get_cloud_names_map(cur)
 
         unique_photos = {}
         for r in rows:
@@ -374,7 +490,7 @@ def get_photos(aluno_id: str):
             if p not in unique_photos:
                 unique_photos[p] = {
                     "path": p,
-                    "name": os.path.basename(p),
+                    "name": _resolve_photo_name(p, cloud_names),
                     "type": os.path.splitext(p)[1].lower().lstrip(".") or "img",
                     "size": None,
                     "mtime": None,
@@ -427,7 +543,7 @@ def get_photos(aluno_id: str):
     return list(unique_photos.values())
 
 
-def get_photos_by_person_key(person_key: str):
+def get_photos_by_person_key(person_key: str, catalog: str = ""):
     """
     Busca fotos filtradas por person_key (identidade composta).
     Com fallback tolerante para normalização.
@@ -435,7 +551,7 @@ def get_photos_by_person_key(person_key: str):
     get_db = _get("get_db")
     get_blur_label = _get("get_blur_label")
     load_quality_settings = _get("load_quality_settings")
-    cat = current_catalog()
+    cat = catalog if catalog else current_catalog()
     if not cat:
         return []
 
@@ -452,7 +568,7 @@ def get_photos_by_person_key(person_key: str):
         return cur.fetchall()
 
     try:
-        with get_db() as conn:
+        with get_db(cat) as conn:
             cur = conn.cursor()
 
             # Diagnostic: check if any rows have this person_key
@@ -525,13 +641,15 @@ def get_photos_by_person_key(person_key: str):
             pk_parts = person_key.split("::")
             display_name = pk_parts[-1] if len(pk_parts) >= 1 else "Desconhecido"
 
+            cloud_names = _get_cloud_names_map(cur)
+
             unique_photos = {}
             for r in rows:
                 p = r["foto_path"]
                 if p not in unique_photos:
                     unique_photos[p] = {
                         "path": p,
-                        "name": os.path.basename(p),
+                        "name": _resolve_photo_name(p, cloud_names),
                         "type": os.path.splitext(p)[1].lower().lstrip(".") or "img",
                         "size": None,
                         "mtime": None,
@@ -652,128 +770,134 @@ def get_photos_page(catalog="", limit=100, offset=0, subfolder=None):
     if not cat:
         return {"photos": [], "total": 0, "limit": limit, "offset": offset, "hasMore": False}
 
-    with get_db(cat) as conn:
-        cur = conn.cursor()
+    try:
+        with get_db(cat) as conn:
+            cur = conn.cursor()
 
-        if subfolder:
-            subfolder_clean = subfolder.replace("\\", "/").strip("/")
-            cur.execute(
-                "SELECT COUNT(DISTINCT foto_path) FROM ocorrencias WHERE REPLACE(foto_path, char(92), '/') LIKE '%/' || ? || '/%'",
-                (subfolder_clean,)
-            )
-            main_total = cur.fetchone()[0]
-        else:
-            cur.execute("SELECT COUNT(DISTINCT foto_path) FROM ocorrencias")
-            main_total = cur.fetchone()[0]
-
-        cur.execute("SELECT foto_path FROM discarded_photos")
-        discarded = {r["foto_path"] for r in cur.fetchall()}
-
-        cur.execute("SELECT path FROM catalog_folders WHERE catalog_name = ? AND status = 'inactive'", (cat,))
-        inactive_folders = [os.path.normpath(r["path"]).lower() for r in cur.fetchall()]
-
-        if subfolder:
-            subfolder_clean = subfolder.replace("\\", "/").strip("/")
-            base_query = """
-                SELECT foto_path,
-                       MAX(blur_score) as blur_score,
-                       MAX(blur_status) as blur_status,
-                       MAX(closed_eyes) as closed_eyes,
-                       COUNT(CASE WHEN x1 IS NOT NULL THEN 1 END) as face_count
-                FROM ocorrencias
-                WHERE REPLACE(foto_path, char(92), '/') LIKE '%/' || ? || '/%'
-                GROUP BY foto_path
-                ORDER BY foto_path
-                LIMIT ? OFFSET ?
-            """
-            cur.execute(base_query, (subfolder_clean, limit, offset))
-        else:
-            base_query = """
-                SELECT foto_path,
-                       MAX(blur_score) as blur_score,
-                       MAX(blur_status) as blur_status,
-                       MAX(closed_eyes) as closed_eyes,
-                       COUNT(CASE WHEN x1 IS NOT NULL THEN 1 END) as face_count
-                FROM ocorrencias
-                GROUP BY foto_path
-                ORDER BY foto_path
-                LIMIT ? OFFSET ?
-            """
-            cur.execute(base_query, (limit, offset))
-        rows = cur.fetchall()
-
-        qs = load_quality_settings()
-        unique_photos = {}
-        for r in rows:
-            p = r["foto_path"]
-            p_norm = os.path.normpath(p).lower()
-            is_inactive = any(p_norm.startswith(inf + os.sep) or p_norm.startswith(inf + "/") for inf in inactive_folders)
-            entry = {
-                "path": p,
-                "name": os.path.basename(p),
-                "type": os.path.splitext(p)[1].lower().lstrip(".") or "img",
-                "size": None, "mtime": None, "ctime": None,
-                "faces": [],
-                "total_faces_in_db": r["face_count"],
-                "discarded": p in discarded,
-                "blur_score": r["blur_score"],
-                "blur_status": r["blur_status"],
-                "blur_label": get_blur_label(r["blur_score"], qs),
-                "closed_eyes": bool(r["closed_eyes"]),
-                "source": "event",
-                "folder_active": not is_inactive,
-            }
-            try:
-                stat = os.stat(p)
-                entry["size"] = stat.st_size
-                entry["mtime"] = stat.st_mtime
-                w, h = get_image_dimensions(p)
-                entry["width"] = w
-                entry["height"] = h
-            except Exception:
-                entry["width"] = None
-                entry["height"] = None
-            unique_photos[p] = entry
-
-        if unique_photos:
-            paths = list(unique_photos.keys())
-            for i in range(0, len(paths), 900):
-                chunk = paths[i:i + 900]
-                placeholders = ",".join(["?"] * len(chunk))
+            if subfolder:
+                subfolder_clean = subfolder.replace("\\", "/").strip("/")
                 cur.execute(
-                    f"SELECT rowid, foto_path, aluno_id, x1, y1, x2, y2 FROM ocorrencias WHERE foto_path IN ({placeholders})",
-                    chunk
+                    "SELECT COUNT(DISTINCT foto_path) FROM ocorrencias WHERE REPLACE(foto_path, char(92), '/') LIKE '%/' || ? || '/%'",
+                    (subfolder_clean,)
                 )
-                for c in cur.fetchall():
-                    fp = c["foto_path"]
-                    if fp in unique_photos:
-                        unique_photos[fp]["faces"].append({
-                            "rowid": c["rowid"],
-                            "aluno_id": c["aluno_id"],
-                            "x1": c["x1"], "y1": c["y1"],
-                            "x2": c["x2"], "y2": c["y2"],
-                        })
+                main_total = cur.fetchone()[0]
+            else:
+                cur.execute("SELECT COUNT(DISTINCT foto_path) FROM ocorrencias")
+                main_total = cur.fetchone()[0]
 
-    # Add ref photos (only on first page, they are typically few)
-    if offset == 0:
-        ref_photos = _collect_ref_photos(cat, discarded)
-        for p, photo in ref_photos.items():
-            if p not in unique_photos:
-                if subfolder:
-                    p_norm = p.replace("\\", "/")
-                    sub_clean = subfolder.replace("\\", "/").strip("/")
-                    if f"/{sub_clean}/" not in p_norm:
-                        continue
-                unique_photos[p] = photo
+            cur.execute("SELECT foto_path FROM discarded_photos")
+            discarded = {r["foto_path"] for r in cur.fetchall()}
 
-    total = main_total
-    return {
-        "photos": list(unique_photos.values()),
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "hasMore": (offset + limit) < total,
-    }
+            cur.execute("SELECT path FROM catalog_folders WHERE catalog_name = ? AND status = 'inactive'", (cat,))
+            inactive_folders = [os.path.normpath(r["path"]).lower() for r in cur.fetchall()]
+
+            if subfolder:
+                subfolder_clean = subfolder.replace("\\", "/").strip("/")
+                base_query = """
+                    SELECT foto_path,
+                           MAX(blur_score) as blur_score,
+                           MAX(blur_status) as blur_status,
+                           MAX(closed_eyes) as closed_eyes,
+                           COUNT(CASE WHEN x1 IS NOT NULL THEN 1 END) as face_count
+                    FROM ocorrencias
+                    WHERE REPLACE(foto_path, char(92), '/') LIKE '%/' || ? || '/%'
+                    GROUP BY foto_path
+                    ORDER BY foto_path
+                    LIMIT ? OFFSET ?
+                """
+                cur.execute(base_query, (subfolder_clean, limit, offset))
+            else:
+                base_query = """
+                    SELECT foto_path,
+                           MAX(blur_score) as blur_score,
+                           MAX(blur_status) as blur_status,
+                           MAX(closed_eyes) as closed_eyes,
+                           COUNT(CASE WHEN x1 IS NOT NULL THEN 1 END) as face_count
+                    FROM ocorrencias
+                    GROUP BY foto_path
+                    ORDER BY foto_path
+                    LIMIT ? OFFSET ?
+                """
+                cur.execute(base_query, (limit, offset))
+            rows = cur.fetchall()
+
+            qs = load_quality_settings()
+            cloud_names = _get_cloud_names_map(cur)
+            
+            unique_photos = {}
+            for r in rows:
+                p = r["foto_path"]
+                p_norm = os.path.normpath(p).lower()
+                is_inactive = any(p_norm.startswith(inf + os.sep) or p_norm.startswith(inf + "/") for inf in inactive_folders)
+                entry = {
+                    "path": p,
+                    "name": _resolve_photo_name(p, cloud_names),
+                    "type": os.path.splitext(p)[1].lower().lstrip(".") or "img",
+                    "size": None, "mtime": None, "ctime": None,
+                    "faces": [],
+                    "total_faces_in_db": r["face_count"],
+                    "discarded": p in discarded,
+                    "blur_score": r["blur_score"],
+                    "blur_status": r["blur_status"],
+                    "blur_label": get_blur_label(r["blur_score"], qs),
+                    "closed_eyes": bool(r["closed_eyes"]),
+                    "source": "event",
+                    "folder_active": not is_inactive,
+                }
+                try:
+                    stat = os.stat(p)
+                    entry["size"] = stat.st_size
+                    entry["mtime"] = stat.st_mtime
+                    w, h = get_image_dimensions(p)
+                    entry["width"] = w
+                    entry["height"] = h
+                except Exception:
+                    entry["width"] = None
+                    entry["height"] = None
+                unique_photos[p] = entry
+
+            if unique_photos:
+                paths = list(unique_photos.keys())
+                for i in range(0, len(paths), 900):
+                    chunk = paths[i:i + 900]
+                    placeholders = ",".join(["?"] * len(chunk))
+                    cur.execute(
+                        f"SELECT rowid, foto_path, aluno_id, x1, y1, x2, y2 FROM ocorrencias WHERE foto_path IN ({placeholders})",
+                        chunk
+                    )
+                    for c in cur.fetchall():
+                        fp = c["foto_path"]
+                        if fp in unique_photos:
+                            unique_photos[fp]["faces"].append({
+                                "rowid": c["rowid"],
+                                "aluno_id": c["aluno_id"],
+                                "x1": c["x1"], "y1": c["y1"],
+                                "x2": c["x2"], "y2": c["y2"],
+                            })
+
+        # Add ref photos (only on first page, they are typically few)
+        if offset == 0:
+            ref_photos = _collect_ref_photos(cat, discarded)
+            for p, photo in ref_photos.items():
+                if p not in unique_photos:
+                    if subfolder:
+                        p_norm = p.replace("\\", "/")
+                        sub_clean = subfolder.replace("\\", "/").strip("/")
+                        if f"/{sub_clean}/" not in p_norm:
+                            continue
+                    unique_photos[p] = photo
+
+        total = main_total
+        return {
+            "photos": list(unique_photos.values()),
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "hasMore": (offset + limit) < total,
+        }
+    except Exception:
+        logging.getLogger(__name__).exception("[get_photos_page] erro inesperado")
+        return {"photos": [], "total": 0, "limit": limit, "offset": offset, "hasMore": False}
 
 
 def get_all_photos(limit: int = None):
@@ -807,6 +931,7 @@ def get_all_photos(limit: int = None):
         cur.execute(base_query, params)
         rows = cur.fetchall()
         qs = load_quality_settings()
+        cloud_names = _get_cloud_names_map(cur)
         unique_photos = {}
         for r in rows:
             p = r["foto_path"]
@@ -814,7 +939,7 @@ def get_all_photos(limit: int = None):
             is_inactive = any(p_norm.startswith(inf + os.sep) or p_norm.startswith(inf + "/") for inf in inactive_folders)
             unique_photos[p] = {
                 "path": p,
-                "name": os.path.basename(p),
+                "name": _resolve_photo_name(p, cloud_names),
                 "type": os.path.splitext(p)[1].lower().lstrip(".") or "img",
                 "size": None, "mtime": None, "ctime": None,
                 "faces": [],

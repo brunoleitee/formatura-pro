@@ -12,6 +12,7 @@ class DriveFile(BaseModel):
     modifiedTime: Optional[datetime] = None
     thumbnailLink: Optional[str] = None
     webViewLink: Optional[str] = None
+    webContentLink: Optional[str] = None
 
 
 class DriveFolder(BaseModel):

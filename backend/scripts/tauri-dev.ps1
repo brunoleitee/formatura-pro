@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+    $ErrorActionPreference = "Stop"
 
 $root = Split-Path $PSScriptRoot -Parent
 $backend = Join-Path $root "backend.py"
@@ -144,7 +144,7 @@ if (-not (Test-Path $thumbTarget)) {
 Write-Host "[BACKEND] Iniciando Python backend..."
 $env:NODE_OPTIONS = "--dns-result-order=ipv4first"
 $env:FORM_PRO_NO_BROWSER = "1"
-$backendProcess = Start-Process -FilePath "python" -ArgumentList "`"$backend`"" -WorkingDirectory $root -WindowStyle Normal -PassThru
+$backendProcess = Start-Process -FilePath "py" -ArgumentList "-3.10", "`"$backend`"" -WorkingDirectory $root -WindowStyle Normal -PassThru
 
 
 Write-Host "[BACKEND] Aguardando porta 8000..."

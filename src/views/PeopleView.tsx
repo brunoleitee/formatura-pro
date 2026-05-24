@@ -1,9 +1,10 @@
 import { memo, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { Users, RefreshCw, Edit2, Trash2, Check, X, Star, Award, LayoutGrid, List, Search, ExternalLink, Trash, Camera } from 'lucide-react';
+import { Users, RefreshCw, Edit2, Trash2, Check, X, Star, Award, LayoutGrid, List, Search, ExternalLink, Trash, Camera, Merge, UserCheck } from 'lucide-react';
 import { api, type Person } from '../services/api';
 import { useApp } from '../context/AppContext';
 import { resolveAvatarUrl } from '../utils/avatarUrl';
+import { isTemporaryPersonId } from '../utils/personIdentity';
 import { faceThumb } from '../components/review/FaceCard';
 import styles from './PeopleView.module.css';
 
@@ -68,23 +69,31 @@ const PeopleCard = memo(function PeopleCard({
   viewMode,
   isRenaming,
   renameValue,
+  mergeMode,
+  mergeSource,
   onOpen,
   onStartRename,
   onCancelRename,
   onRenameValue,
   onConfirmRename,
   onDelete,
+  onStartMerge,
+  onTargetMerge,
 }: {
   person: Person;
   viewMode: 'cards' | 'list';
   isRenaming: boolean;
   renameValue: string;
+  mergeMode: 'idle' | 'selecting' | 'merging';
+  mergeSource: Person | null;
   onOpen: (id: string) => void;
   onStartRename: (person: Person) => void;
   onCancelRename: () => void;
   onRenameValue: (value: string) => void;
   onConfirmRename: (id: string) => void;
   onDelete: (person: Person) => void;
+  onStartMerge: (person: Person) => void;
+  onTargetMerge: (person: Person) => void;
 }) {
   const quality = Math.round((person.avg_quality || 0) * 100);
   const isList = viewMode === 'list';
@@ -95,10 +104,24 @@ const PeopleCard = memo(function PeopleCard({
 
   useEffect(() => { setPhotoFailed(false); }, [avatarUrl]);
 
+  const isMergeTarget = mergeMode === 'selecting' && mergeSource && (mergeSource.person_key || mergeSource.id) !== (person.person_key || person.id);
+
   // ── Modo lista (inalterado) ──
   if (isList) {
     return (
-      <div className={styles.card} onClick={() => !isRenaming && onOpen(person.person_key || person.id)}>
+      <div
+        className={`${styles.card} ${mergeMode === 'selecting' && mergeSource?.id === person.id ? styles.cardMergeSource : ''} ${isMergeTarget ? styles.cardMergeTarget : ''}`}
+        onClick={() => {
+          if (mergeMode === 'selecting' && isMergeTarget) { onTargetMerge(person); return; }
+          if (!isRenaming) onOpen(person.person_key || person.id);
+        }}
+      >
+        {mergeMode === 'selecting' && isMergeTarget && (
+          <div className={styles.mergeTargetOverlay}>
+            <UserCheck size={24} />
+            <span>Mesclar aqui</span>
+          </div>
+        )}
         <PersonAvatar person={person} />
 
         <div className={styles.infoSection}>
@@ -156,6 +179,11 @@ const PeopleCard = memo(function PeopleCard({
             <button className={styles.actionBtn} onClick={() => onStartRename(person)} title="Renomear">
               <Edit2 size={14} /> Renomear
             </button>
+            {mergeMode === 'idle' && (
+              <button className={styles.actionBtn} onClick={() => onStartMerge(person)} title="Mesclar">
+                <Merge size={14} /> Mesclar
+              </button>
+            )}
             <button className={`${styles.actionBtn} ${styles.actionBtnDanger}`} onClick={() => onDelete(person)} title="Excluir">
               <Trash2 size={14} /> Excluir
             </button>
@@ -170,7 +198,19 @@ const PeopleCard = memo(function PeopleCard({
   const discards = person.discarded_count || 0;
 
   return (
-    <div className={styles.cardCompact} onClick={() => !isRenaming && onOpen(person.person_key || person.id)}>
+    <div
+      className={`${styles.cardCompact} ${mergeMode === 'selecting' && mergeSource?.id === person.id ? styles.cardMergeSource : ''} ${isMergeTarget ? styles.cardMergeTarget : ''}`}
+      onClick={() => {
+        if (mergeMode === 'selecting' && isMergeTarget) { onTargetMerge(person); return; }
+        if (!isRenaming) onOpen(person.person_key || person.id);
+      }}
+    >
+      {mergeMode === 'selecting' && isMergeTarget && (
+        <div className={styles.mergeTargetOverlay}>
+          <UserCheck size={24} />
+          <span>Mesclar aqui</span>
+        </div>
+      )}
       {/* 1. Área da foto */}
       <div className={styles.gridPhotoArea}>
         {(!avatarUrl || photoFailed) ? (
@@ -249,6 +289,11 @@ const PeopleCard = memo(function PeopleCard({
           <button className={styles.gridActionBtn} onClick={() => onStartRename(person)} title="Renomear">
             <Edit2 size={14} />
           </button>
+          {mergeMode === 'idle' && (
+            <button className={styles.gridActionBtn} onClick={() => onStartMerge(person)} title="Mesclar">
+              <Merge size={14} />
+            </button>
+          )}
           <button className={`${styles.gridActionBtn} ${styles.gridActionBtnDanger}`} onClick={() => onDelete(person)} title="Excluir">
             <Trash2 size={14} />
           </button>
@@ -270,6 +315,9 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
   const [sortBy, setSortBy] = useState<'name' | 'id' | 'photos' | 'quality'>('name');
   const [filterFavorites, setFilterFavorites] = useState(false);
   const [viewMode, setViewMode] = useLocalStorage<'cards' | 'list'>('identifiedViewMode', 'list');
+  const [mergeMode, setMergeMode] = useState<'idle' | 'selecting' | 'merging'>('idle');
+  const [mergeSource, setMergeSource] = useState<Person | null>(null);
+  const [merging, setMerging] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -284,7 +332,7 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
     if (!currentCatalog) return;
     setLoading(true);
     try {
-      const data = await api.getPeople(false, controller.signal);
+      const data = await api.getPeople(false, currentCatalog, controller.signal);
       if (!controller.signal.aborted) {
         setPeople(data);
       }
@@ -307,6 +355,78 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
       }
     };
   }, [load]);
+
+  const handleMergeDuplicates = useCallback(async () => {
+    if (!currentCatalog) return;
+    const nameGroups = new Map<string, Person[]>();
+    for (const p of people) {
+      const key = p.name.toLowerCase().trim();
+      if (!nameGroups.has(key)) nameGroups.set(key, []);
+      nameGroups.get(key)!.push(p);
+    }
+    const duplicates: Person[][] = [];
+    for (const [, group] of nameGroups) {
+      if (group.length > 1) duplicates.push(group);
+    }
+    if (duplicates.length === 0) {
+      setError('Nenhum duplicado encontrado.');
+      return;
+    }
+    let merged = 0;
+    setMerging(true);
+    for (const group of duplicates) {
+      const sorted = [...group].sort((a, b) => (b.total_photos || 0) - (a.total_photos || 0));
+      const target = sorted[0];
+      for (let i = 1; i < sorted.length; i++) {
+        const source = sorted[i];
+        try {
+          await api.mergePeople({ source_person_id: source.person_key || source.id, target_person_id: target.person_key || target.id, catalog: currentCatalog });
+          merged++;
+        } catch (err) {
+          console.error('[merge] erro ao mesclar', source.name, err);
+        }
+      }
+    }
+    setMerging(false);
+    if (merged > 0) {
+      setError(`Mesclados ${merged} grupo(s) de duplicados com sucesso.`);
+      await load();
+    }
+  }, [people, currentCatalog, load]);
+
+  const handleStartMerge = useCallback((person: Person) => {
+    setMergeSource(person);
+    setMergeMode('selecting');
+  }, []);
+
+  const handleTargetMerge = useCallback(async (targetPerson: Person) => {
+    if (!mergeSource || !currentCatalog) return;
+    const source = mergeSource;
+    const sourceId = source.person_key || source.id;
+    const targetId = targetPerson.person_key || targetPerson.id;
+    if (sourceId === targetId) {
+      setMergeMode('idle');
+      setMergeSource(null);
+      return;
+    }
+    setMerging(true);
+    try {
+      await api.mergePeople({ source_person_id: sourceId, target_person_id: targetId, catalog: currentCatalog });
+      setError(`"${source.name}" mesclado em "${targetPerson.name}" com sucesso.`);
+      await load();
+    } catch (err: any) {
+      console.error('[merge] erro:', err);
+      setError('Erro ao mesclar formandos.');
+    }
+    setMerging(false);
+    setMergeMode('idle');
+    setMergeSource(null);
+  }, [mergeSource, currentCatalog, load]);
+
+  const handleCancelMerge = useCallback(() => {
+    setMergeMode('idle');
+    setMergeSource(null);
+  }, []);
 
   const handleOpenPerson = useCallback((id: string) => {
     navigate('person-detail', id);
@@ -348,7 +468,9 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
 
   const filtered = useMemo(() => {
     let result = people.filter(p =>
-      !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.id.toLowerCase().includes(search.toLowerCase())
+      !isTemporaryPersonId(p.name) &&
+      !isTemporaryPersonId(p.id) &&
+      (!search || p.name.toLowerCase().includes(search.toLowerCase()) || p.id.toLowerCase().includes(search.toLowerCase()))
     );
 
     if (filterFavorites) {
@@ -370,6 +492,17 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
 
   return (
     <div className="view-container" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {mergeMode === 'selecting' && mergeSource && (
+        <div className={styles.mergeModeBar}>
+          <div className={styles.mergeModeBarContent}>
+            <Merge size={16} />
+            <span>Clique no formando de destino para mesclar <strong>{mergeSource.name}</strong> nele</span>
+          </div>
+          <button className={styles.mergeModeCancel} onClick={handleCancelMerge} disabled={merging}>
+            <X size={16} /> Cancelar
+          </button>
+        </div>
+      )}
       <div className={styles.viewHeader}>
         <div className={styles.headerTitleSection}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -430,6 +563,15 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
             >
               <List size={18} />
             </button>
+            <button
+              className={`icon-btn small ${styles.mergeDuplicatesBtn}`}
+              onClick={handleMergeDuplicates}
+              disabled={merging}
+              title="Mesclar duplicados automaticamente"
+            >
+              <Merge size={14} />
+              <span>Mesclar duplicados</span>
+            </button>
           </div>
 
           <button className="icon-btn" onClick={load} title="Atualizar">
@@ -465,12 +607,16 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
                   viewMode={viewMode}
                   isRenaming={renamingId === getIdentity(person)}
                   renameValue={renameValue}
+                  mergeMode={mergeMode}
+                  mergeSource={mergeSource}
                   onOpen={handleOpenPerson}
                   onStartRename={handleStartRename}
                   onCancelRename={handleCancelRename}
                   onRenameValue={handleRenameValue}
                   onConfirmRename={handleRenameSubmit}
                   onDelete={handleDeletePerson}
+                  onStartMerge={handleStartMerge}
+                  onTargetMerge={handleTargetMerge}
                 />
               );
             })}

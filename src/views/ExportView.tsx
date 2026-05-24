@@ -3,6 +3,7 @@ import { Download, FolderOpen, RefreshCw, Check, Users, X as XIcon, ChevronRight
 import { api, type Person, type ExportStatus, type ExportSummary } from '../services/api';
 import { useApp } from '../context/AppContext';
 import ExportFinishModal from '../components/ExportFinishModal';
+import { isTemporaryPersonId } from '../utils/personIdentity';
 import { resolveAvatarUrl } from '../utils/avatarUrl';
 import s from './ExportView.module.css';
 
@@ -98,7 +99,7 @@ function ExportViewContent() {
     if (!currentCatalog) return;
     setLoading(true);
     try {
-      const data = await api.getPeople(false, controller.signal);
+      const data = await api.getPeople(false, currentCatalog, controller.signal);
       if (!controller.signal.aborted) {
         setPeople(data);
       }
@@ -209,6 +210,8 @@ function ExportViewContent() {
   }, [people]);
 
   const filtered = people.filter(p =>
+    !isTemporaryPersonId(p.name) &&
+    !isTemporaryPersonId(p.id) &&
     (!search || p.name.toLowerCase().includes(search.toLowerCase())) &&
     (selectedClass === 'all' || (p.class_name || 'Sem turma').trim() === selectedClass)
   );
