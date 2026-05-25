@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 import system_manager as sm
 import interaction_manager as im
+import maintenance_manager as mm
 from db import get_db
 from review_manager.models import DiscardPhotoReq, QualitySettingsReq
 from pydantic import BaseModel
@@ -57,12 +58,12 @@ def get_stats(catalog: str = ""):
 
 @router.post("/api/logs/open")
 def open_logs():
-    return im.open_logs()
+    return mm.open_logs()
 
 
 @router.post("/api/app-folder/open")
 def open_app_folder():
-    return im.open_app_folder()
+    return mm.open_app_folder()
 
 @router.post("/api/system/open-path")
 def open_system_path(req: OpenPathReq):

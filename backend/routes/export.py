@@ -28,7 +28,7 @@ def get_export_history():
 
 @router.post("/api/export/undo")
 def undo_last_export():
-    return ex.undo_last_export()
+    return ex.clear_export_summary()
 
 
 @router.post("/api/export/start")

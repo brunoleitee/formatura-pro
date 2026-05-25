@@ -17,7 +17,7 @@ export interface ScanSessionMeta {
   startedAt: number;
 }
 
-function normalizeScanProgress(progress: number | undefined) {
+export function normalizeScanProgress(progress: number | undefined) {
   if (!Number.isFinite(progress)) return 0;
   const value = Number(progress);
   return Math.max(0, Math.min(100, value <= 1 ? value * 100 : value));

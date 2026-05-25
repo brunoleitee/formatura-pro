@@ -13,7 +13,6 @@ import {
   Copy,
   Zap,
   CheckCircle2,
-  XCircle,
   ScanLine,
   TrendingUp,
   FileWarning,
@@ -36,10 +35,6 @@ import { useApp } from '../context/AppContext';
 import styles from './DashboardView.module.css';
 
 export const DEFAULT_PHOTOS_GOAL = 50;
-
-function hasKnownFace(photo: Photo) {
-  return Boolean(photo.faces?.some((f) => isKnownFaceLabel(f.aluno_id)));
-}
 
 function fmt(n: number) {
   return new Intl.NumberFormat('pt-BR').format(n);

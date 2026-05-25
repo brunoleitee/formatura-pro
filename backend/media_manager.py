@@ -945,12 +945,36 @@ def get_image_resized(path: str, max_size: int = 1200):
     try:
         cache_path = get_cached_thumb_path(decoded_path, f"resized_{safe_size}", safe_size)
         
+        # Se cache existe, verificar EXIF — se a imagem original precisa de rotação
+        # e o cache foi gerado sem ela, forçar regeneração
         if os.path.exists(cache_path):
-            return FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+            img_check = Image.open(decoded_path)
+            needs_rotate = False
+            try:
+                exif = img_check._getexif()
+                if exif:
+                    from PIL.ExifTags import TAGS as ExifTags_tags
+                    for key, val in ExifTags_tags.items():
+                        if val == "Orientation":
+                            ori = exif.get(key)
+                            if ori and ori in (3, 6, 8):
+                                needs_rotate = True
+                            break
+            except Exception:
+                pass
+            img_check.close()
+            
+            if not needs_rotate:
+                return FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+            # Cache existe mas precisa de regeneração com orientação correta
+            try:
+                os.remove(cache_path)
+            except Exception:
+                pass
         
-        with Image.open(decoded_path) as img:
-            img.thumbnail((safe_size, safe_size), Image.Resampling.LANCZOS)
-            img.save(cache_path, format="JPEG", quality=85, optimize=True)
+        img = load_pil_with_orientation(decoded_path)
+        img.thumbnail((safe_size, safe_size), Image.Resampling.LANCZOS)
+        img.save(cache_path, format="JPEG", quality=85, optimize=True)
         
         return FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
     except HTTPException:

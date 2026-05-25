@@ -9,7 +9,6 @@ export type ViewName =
   | 'review'
   | 'export'
   | 'settings'
-  | 'cloud-sync'
   | 'catalog-settings'
   | 'scanner'
   ;

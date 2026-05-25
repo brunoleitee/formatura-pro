@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { useScan } from '../../context/ScanContext';
+import { useScan, normalizeScanProgress } from '../../context/ScanContext';
 import { api } from '../../services/api';
 import ConfirmModal from '../ConfirmModal';
 import CatalogModal from '../CatalogModal';
@@ -29,12 +29,6 @@ interface ConfirmDialogOptions {
 
 interface ConfirmDialogState extends ConfirmDialogOptions {
   resolve: (confirmed: boolean) => void;
-}
-
-function normalizeScanProgress(progress: number | undefined) {
-  if (!Number.isFinite(progress)) return 0;
-  const value = Number(progress);
-  return Math.max(0, Math.min(100, value <= 1 ? value * 100 : value));
 }
 
 export function AppShell() {

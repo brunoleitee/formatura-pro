@@ -1,7 +1,5 @@
 import { API_BASE } from '../services/api/core';
 
-const PHOTO_SOURCE_BASE = '';
-
 function buildThumbUrl(path: string | null | undefined, size: number, q?: number) {
   if (!path) return null;
   const qStr = q != null ? `&q=${q}` : '';
@@ -11,10 +9,6 @@ function buildThumbUrl(path: string | null | undefined, size: number, q?: number
 function buildPreviewUrl(path: string | null | undefined, size: number) {
   if (!path) return null;
   return `${API_BASE}/image_preview?path=${encodeURIComponent(path)}&size=${size}`;
-}
-
-export function buildPhotoSourceUrl(path: string): string {
-  return `${PHOTO_SOURCE_BASE}/api/photo-source/full?path=${encodeURIComponent(path)}`;
 }
 
 export function getAvatarThumbUrl(path: string | null | undefined) {

@@ -9,6 +9,7 @@ import review_manager as rm
 import media_manager as mm
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 BulkManualIdentifyReq = rm.BulkManualIdentifyReq
 AssignUnknownClusterRequest = rm.AssignUnknownClusterRequest
@@ -116,7 +117,7 @@ def assign_cluster(req: AssignUnknownClusterRequest):
         )
     except Exception as e:
         traceback.print_exc()
-        logging.getLogger(__name__).exception("[assign_unknown_cluster] erro")
+        logger.exception("[assign_unknown_cluster] erro")
         return JSONResponse(
             status_code=500,
             content={
@@ -143,7 +144,7 @@ def ignore_cluster(req: IgnoreUnknownClusterRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logging.getLogger(__name__).exception("[ignore_unknown_cluster] erro")
+        logger.exception("[ignore_unknown_cluster] erro")
         return JSONResponse(
             status_code=500,
             content={
@@ -193,7 +194,7 @@ def start_graduation_analysis(req: GraduationAnalysisRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logging.getLogger(__name__).exception("[graduation_analysis_start] erro")
+        logger.exception("[graduation_analysis_start] erro")
         return JSONResponse(
             status_code=500,
             content={
@@ -209,7 +210,7 @@ def get_graduation_analysis_status(catalog: str = ""):
     try:
         return rm.get_graduation_analysis_status(catalog)
     except Exception as e:
-        logging.getLogger(__name__).exception("[graduation_analysis_status] erro")
+        logger.exception("[graduation_analysis_status] erro")
         return JSONResponse(
             status_code=500,
             content={
@@ -224,11 +225,13 @@ def get_graduation_analysis_status(catalog: str = ""):
 def graduation_manual_override(req: GraduationManualOverrideRequest):
     try:
         return rm.graduation_manual_override(req)
+    except HTTPException:
+        raise
     except Exception as e:
-        logging.getLogger(__name__).exception("[graduation_manual_override] erro")
+        logger.exception("[graduation_manual_override] erro")
         return JSONResponse(
             status_code=500,
-            content={"ok": False, "error": str(e)},
+            content={"ok": False, "detail": str(e), "error": str(e)},
         )
 
 

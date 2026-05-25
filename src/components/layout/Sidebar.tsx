@@ -3,7 +3,7 @@ import {
   FolderOpen, ChevronDown, ChevronLeft, ChevronRight, Trash2,
   Image as ImageIcon, Users, UserCheck, Download, LayoutDashboard,
   Settings, Search, ScanLine, Loader, Users as UsersIcon,
-  Cloud, MoreHorizontal,
+  MoreHorizontal,
 } from 'lucide-react';
 import { useApp, type ViewName } from '../../context/AppContext';
 import { api } from '../../services/api';

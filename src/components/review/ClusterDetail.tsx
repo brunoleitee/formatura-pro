@@ -1,7 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef, type CSSProperties } from 'react';
 import type { AssignClusterResponse, RichCluster, RichClusterFace } from '../../services/api';
 import { api } from '../../services/api';
-// import { useDragSelection } from '../../hooks/useDragSelection';
 import ClusterHero, { type ClusterHeroHandle } from './ClusterHero';
 import ClusterStatsPanel from './ClusterStatsPanel';
 import ClusterToolbar from './ClusterToolbar';
@@ -73,7 +72,6 @@ export default function ClusterDetail({
   const [collapsed, setCollapsed] = useState(false);
   const [lastSelectedRowId, setLastSelectedRowId] = useState<number | null>(null);
   const [isCompareOpen, setIsCompareOpen] = useState(false);
-  const [rejectedName, setRejectedName] = useState<string | null>(null);
   const [matchedLabel, setMatchedLabel] = useState<string | null>(null);
   const heroRef = useRef<ClusterHeroHandle>(null);
   const graduationRef = useRef<GraduationActionsHandle>(null);
@@ -343,7 +341,6 @@ export default function ClusterDetail({
           }}
           onClose={() => setIsCompareOpen(false)}
           onReject={(name) => {
-            setRejectedName(name);
             setIsCompareOpen(false);
             if (cluster.suggested_student === name) {
               cluster.suggested_student = null;

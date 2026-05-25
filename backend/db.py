@@ -119,6 +119,10 @@ def ensure_identity_columns(conn):
             cur.execute("ALTER TABLE ocorrencias ADD COLUMN person_key TEXT DEFAULT ''")
         if "reference_folder" not in cols:
             cur.execute("ALTER TABLE ocorrencias ADD COLUMN reference_folder TEXT DEFAULT ''")
+        if "graduation_reviewed" not in cols:
+            cur.execute("ALTER TABLE ocorrencias ADD COLUMN graduation_reviewed INTEGER DEFAULT 0")
+        if "manual_graduation_tags" not in cols:
+            cur.execute("ALTER TABLE ocorrencias ADD COLUMN manual_graduation_tags TEXT DEFAULT ''")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_ocor_person_key ON ocorrencias(person_key)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_ocor_person_key_aluno ON ocorrencias(person_key, aluno_id)")
         _ensure_ocorrencias_unique(cur)
