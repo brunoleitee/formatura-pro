@@ -1,48 +1,91 @@
 :root {
-  /* ── Colors ── */
-  --bg-primary: #0f111a;
-  --bg-secondary: #1a1d2d;
-  --bg-tertiary: #252a41;
-  --bg-elevated: #1a1e2e;
+  --card: #222327;
+  --ring: #8c5cff;
+  --input: #33353a;
+  --muted: #2a2c33;
+  --accent: #1e293b;
+  --border: #33353a;
+  --radius: 1.4rem;
+  --chart-1: #4ade80;
+  --chart-2: #8c5cff;
+  --chart-3: #fca5a5;
+  --chart-4: #5993f4;
+  --chart-5: #a0a0a0;
+  --popover: #222327;
+  --primary: #8c5cff;
+  --sidebar: #161618;
+  --spacing: 0.27rem;
+  --font-mono: IBM Plex Mono, monospace;
+  --font-sans: Plus Jakarta Sans, sans-serif;
+  --secondary: #2a2c33;
+  --background: #1a1b1e;
+  --font-serif: Lora, serif;
+  --foreground: #f0f0f0;
+  --destructive: #f87171;
+  --shadow-color: hsl(0 0% 0%);
+  --sidebar-ring: #8c5cff;
+  --shadow-spread: 0px;
+  --letter-spacing: -0.025em;
+  --shadow-opacity: 0.16;
+  --sidebar-accent: #2a2c33;
+  --sidebar-border: #33353a;
+  --card-foreground: #f0f0f0;
+  --shadow-offset-x: 0px;
+  --shadow-offset-y: 2px;
+  --sidebar-primary: #8c5cff;
+  --muted-foreground: #a0a0a0;
+  --accent-foreground: #79c0ff;
+  --popover-foreground: #f0f0f0;
+  --primary-foreground: #ffffff;
+  --sidebar-foreground: #f0f0f0;
+  --secondary-foreground: #f0f0f0;
+  --destructive-foreground: #ffffff;
+  --sidebar-accent-foreground: #8c5cff;
+  --sidebar-primary-foreground: #ffffff;
+
+  /* ── Legacy aliases ── */
+  --bg-primary: var(--background);
+  --bg-secondary: var(--card);
+  --bg-tertiary: var(--muted);
+  --bg-elevated: var(--card);
   --bg-hover: rgba(255, 255, 255, 0.04);
-  --bg-active: rgba(59, 130, 246, 0.12);
+  --bg-active: rgba(140, 92, 255, 0.12);
 
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --text-label: #475569;
+  --text-primary: var(--foreground);
+  --text-secondary: var(--muted-foreground);
+  --text-muted: var(--chart-5);
+  --text-label: #64748b;
 
-  --accent: #3b82f6;
-  --accent-hover: #2563eb;
-  --accent-soft: rgba(59, 130, 246, 0.15);
-  --accent-glow: rgba(59, 130, 246, 0.08);
+  --accent-hover: #7033ff;
+  --accent-soft: rgba(140, 92, 255, 0.15);
+  --accent-glow: rgba(140, 92, 255, 0.08);
 
-  --success: #10b981;
-  --success-soft: rgba(16, 185, 129, 0.12);
-  --warning: #f59e0b;
-  --warning-soft: rgba(245, 158, 11, 0.12);
-  --danger: #ef4444;
-  --danger-soft: rgba(239, 68, 68, 0.12);
+  --success: #4ade80;
+  --success-soft: rgba(74, 222, 128, 0.12);
+  --warning: #fca5a5;
+  --warning-soft: rgba(252, 165, 165, 0.12);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.12);
 
-  --border-default: rgba(255, 255, 255, 0.08);
-  --border-color: var(--border-default);
+  --border-default: var(--border);
+  --border-color: var(--border);
   --border-strong: rgba(255, 255, 255, 0.12);
-  --border-accent: rgba(59, 130, 246, 0.35);
+  --border-accent: rgba(140, 92, 255, 0.35);
 
   /* ── Radius ── */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-2xl: 20px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-2xl: 22px;
   --radius-full: 9999px;
 
   /* ── Shadows ── */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.35);
-  --shadow-xl: 0 16px 40px rgba(0, 0, 0, 0.4);
-  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 1px 3px hsla(0, 0%, 0%, 0.3);
+  --shadow-md: 0 4px 12px hsla(0, 0%, 0%, 0.3);
+  --shadow-lg: 0 8px 24px hsla(0, 0%, 0%, 0.35);
+  --shadow-xl: 0 16px 40px hsla(0, 0%, 0%, 0.4);
+  --shadow-modal: 0 20px 60px hsla(0, 0%, 0%, 0.5);
 
   /* ── Spacing ── */
   --space-1: 4px;
@@ -75,15 +118,15 @@
   /* ── Scrollbar ── */
   --scrollbar-width: 6px;
   --scrollbar-radius: 3px;
-  --scrollbar-track: var(--bg-primary);
-  --scrollbar-thumb: var(--bg-tertiary);
-  --scrollbar-thumb-hover: var(--text-muted);
+  --scrollbar-track: var(--background);
+  --scrollbar-thumb: var(--muted);
+  --scrollbar-thumb-hover: var(--muted-foreground);
 
   /* ── Cards ── */
-  --card-bg: var(--bg-secondary);
-  --card-border: var(--border-default);
+  --card-bg: var(--card);
+  --card-border: var(--border);
   --card-border-hover: var(--border-strong);
-  --card-border-selected: rgba(96, 165, 250, 0.6);
+  --card-border-selected: rgba(140, 92, 255, 0.5);
   --card-radius: var(--radius-lg);
   --card-padding: var(--space-4);
   --card-shadow: var(--shadow-sm);
