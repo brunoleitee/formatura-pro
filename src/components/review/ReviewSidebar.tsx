@@ -1,18 +1,13 @@
 import { useMemo, useState, memo } from 'react';
-import { RefreshCw, Search, X } from 'lucide-react';
+import { RefreshCw, Search, Sparkles, X } from 'lucide-react';
 import type { ReviewClusterSummary } from '../../services/api';
 import { faceThumb } from './FaceCard';
+import { formatSimilarity } from '../../utils/format';
+import { CONF_CONFIRMED, CONF_POSSIBLE } from '../../utils/constants';
+import { getSuggestionInfo } from '../../utils/suggestionUtils';
 import styles from './ReviewSidebar.module.css';
 
-type PriorityFilter = 'all' | 'gown' | 'diploma' | 'sash' | 'cap' | 'high_priority';
-
-function fmtSim(sim: number | null | undefined): string {
-  if (sim == null || !isFinite(sim) || isNaN(sim)) return '--%';
-  return `${Math.round(sim * 100)}%`;
-}
-
-const CONF_CONFIRMED = 0.92;
-const CONF_POSSIBLE = 0.70;
+type PriorityFilter = 'all' | 'gown' | 'diploma' | 'sash' | 'cap' | 'jabor' | 'high_priority';
 
 interface ReviewSidebarProps {
   clusters: ReviewClusterSummary[];
@@ -32,10 +27,12 @@ const ClusterItem = memo(function ClusterItem({
   cluster,
   isSelected,
   onClick,
+  clusterId,
 }: {
   cluster: ReviewClusterSummary;
   isSelected: boolean;
-  onClick: () => void;
+  onClick: (id: string) => void;
+  clusterId: string;
 }) {
   const rep = cluster.representative;
   const pct = Math.round(cluster.cohesion_score * 100);
@@ -79,11 +76,22 @@ const ClusterItem = memo(function ClusterItem({
   const photoCount = cluster.total_photos ?? cluster.photo_count ?? cluster.face_count;
   const photoCountLabel = `${photoCount} foto${photoCount !== 1 ? 's' : ''}`;
   const confidenceLabel = `${pct}%`;
+  const suggestionInfo = getSuggestionInfo(cluster);
+  const matchSimilarity = suggestionInfo.tier === 'none' ? null : suggestionInfo.similarity;
+  const matchTone =
+    matchSimilarity == null ? 'none' :
+    matchSimilarity >= 0.70 ? 'strong' :
+    matchSimilarity > 0 ? 'partial' :
+    'none';
+  const matchToneClass =
+    matchTone === 'strong' ? styles.itemMatchStrong :
+    matchTone === 'partial' ? styles.itemMatchPartial :
+    styles.itemMatchNone;
 
   return (
     <button
-      className={`${styles.item} ${isSelected ? styles.itemActive : ''}`}
-      onClick={onClick}
+      className={`${styles.item} ${matchToneClass} ${isSelected ? styles.itemActive : ''}`}
+      onClick={() => onClick(clusterId)}
       type="button"
     >
       <div className={styles.avatar}>
@@ -107,25 +115,21 @@ const ClusterItem = memo(function ClusterItem({
       <div className={styles.itemInfo}>
         <span className={styles.itemName}>Pessoa {String(cluster.cluster_number).padStart(2, '0')}</span>
         <div className={styles.suggestionRow}>
-        {cluster.suggested_student && cluster.suggested_similarity != null && isFinite(cluster.suggested_similarity) && cluster.suggested_similarity >= 0.55 ? (
-          <span className={styles.suggestionBadgeStrong} title={`Sugestão: ${cluster.suggested_student} — ${fmtSim(cluster.suggested_similarity)}`}>
-            {cluster.suggested_student} — {fmtSim(cluster.suggested_similarity)}
-          </span>
-        ) : cluster.suggested_student && cluster.suggested_similarity != null && isFinite(cluster.suggested_similarity) && cluster.suggested_similarity >= 0.45 ? (
-            <span className={styles.suggestionBadgePossible} title={`Possível: ${cluster.suggested_student} — ${fmtSim(cluster.suggested_similarity)}`}>
-              Possível {cluster.suggested_student}
-            </span>
-          ) : cluster.best_student_debug && cluster.best_similarity_debug != null && isFinite(cluster.best_similarity_debug) && cluster.best_similarity_debug >= 0.30 ? (
-            <span className={styles.suggestionBadgeDebug} title={`Fraco: ${cluster.best_student_debug} — ${fmtSim(cluster.best_similarity_debug)}`}>
-              Fraco: {cluster.best_student_debug}
-            </span>
-          ) : cluster.unknown_similar_id && cluster.unknown_similar_number && cluster.unknown_similar_similarity != null && isFinite(cluster.unknown_similar_similarity) && cluster.unknown_similar_similarity >= 0.55 ? (
-            <span className={styles.suggestionBadgeUnknown} title={`Provável mesmo formando que grupo #${cluster.unknown_similar_number} — ${fmtSim(cluster.unknown_similar_similarity)}`}>
-              Parece #<strong>{cluster.unknown_similar_number}</strong> — {fmtSim(cluster.unknown_similar_similarity)}
-            </span>
-          ) : (
-            <span className={styles.suggestionBadgeNone} title="Sem correspondência conhecida">Sem match</span>
-          )}
+            {(() => {
+              const info = suggestionInfo;
+              switch (info.tier) {
+                case 'strong':
+                  return <span className={styles.suggestionBadgeStrong} title={`${info.student} — ${formatSimilarity(info.similarity)}`}>{info.student} — {formatSimilarity(info.similarity)}</span>;
+                case 'possible':
+                  return <span className={styles.suggestionBadgePossible} title={`Possível: ${info.student} — ${formatSimilarity(info.similarity)}`}>Possível {info.student}</span>;
+                case 'weak':
+                  return <span className={styles.suggestionBadgeDebug} title={`Fraco: ${info.student} — ${formatSimilarity(info.similarity)}`}>Fraco: {info.student}</span>;
+                case 'unknown':
+                  return <span className={styles.suggestionBadgeUnknown} title={`Provável mesmo formando que grupo #${info.similarNumber} — ${formatSimilarity(info.similarity)}`}>Parece #<strong>{info.similarNumber}</strong> — {formatSimilarity(info.similarity)}</span>;
+                default:
+                  return <span className={styles.suggestionBadgeNone} title="Sem correspondência conhecida">Sem match</span>;
+              }
+            })()}
         </div>
         <span className={styles.itemMeta}>
           <span>{photoCountLabel}</span>
@@ -171,7 +175,7 @@ export default function ReviewSidebar({
   const titleCountLabel = loading && loadedCount === 0 ? '...' : String(total || loadedCount);
   const headerSubLabel = loading ? 'Calculando...' : clusters.length === 0
     ? 'Nenhum grupo pendente'
-    : `${loadedCount} de ${total || loadedCount} grupo${(total || loadedCount) !== 1 ? 's' : ''} aguardando identificação`;
+    : `${total || loadedCount} grupo${(total || loadedCount) !== 1 ? 's' : ''} pendente${(total || loadedCount) !== 1 ? 's' : ''}`;
   const hasGraduationAnalysis = clusters.some((cluster) =>
     Boolean(
       (cluster.gown_confidence ?? (cluster.has_gown ? 1 : 0)) >= CONF_POSSIBLE ||
@@ -225,11 +229,15 @@ export default function ReviewSidebar({
   }, [clusters, graduationFilter]);
 
   const visibleClusters = search.trim()
-    ? filteredClusters.filter((cluster, i) =>
-        `grupo ${i + 1}`.includes(search.toLowerCase()) ||
-        String(cluster.face_count).includes(search) ||
-        (cluster.graduation_tags ?? []).some(tag => tag.includes(search.toLowerCase()))
-      )
+    ? filteredClusters.filter((cluster) => {
+        const q = search.toLowerCase();
+        return (
+          `pessoa ${String(cluster.cluster_number).padStart(2, '0')}`.includes(q) ||
+          `grupo ${cluster.cluster_number}`.includes(q) ||
+          String(cluster.face_count).includes(q) ||
+          (cluster.graduation_tags ?? []).some(tag => tag.toLowerCase().includes(q))
+        );
+      })
     : filteredClusters;
 
   const showMissingGraduationAnalysis =
@@ -250,6 +258,7 @@ export default function ReviewSidebar({
       <div className={styles.header}>
         <div className={styles.headerRow}>
           <div className={styles.headerTitle}>
+            <Sparkles size={14} className={styles.titleIcon} />
             <span className={styles.titleText}>Descobertos pela IA</span>
             <span className={styles.titleCount}>{titleCountLabel}</span>
           </div>
@@ -268,7 +277,6 @@ export default function ReviewSidebar({
       {/* Divider */}
       <div className={styles.divider} />
 
-      {/* Search */}
       <div className={styles.searchWrap}>
         <Search size={13} className={styles.searchIcon} />
         <input
@@ -278,7 +286,7 @@ export default function ReviewSidebar({
           onChange={e => setSearch(e.target.value)}
         />
         {search && (
-          <button className={styles.searchClear} onClick={() => setSearch('')} type="button">
+          <button className={styles.searchClear} onClick={() => setSearch('')} type="button" title="Limpar filtro">
             <X size={11} />
           </button>
         )}
@@ -328,7 +336,8 @@ export default function ReviewSidebar({
                 key={cluster.cluster_id}
                 cluster={cluster}
                 isSelected={cluster.cluster_id === selectedId}
-                onClick={() => onSelect(cluster.cluster_id)}
+                onClick={onSelect}
+                clusterId={cluster.cluster_id}
               />
             ))}
             {hasMore && !search.trim() && (

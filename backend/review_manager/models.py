@@ -94,6 +94,7 @@ class IgnoreUnknownClusterRequest(BaseModel):
 
 class GraduationAnalysisRequest(BaseModel):
     catalog: str = ""
+    use_ai_ultra: bool = False
 
 
 class GraduationManualOverrideRequest(BaseModel):

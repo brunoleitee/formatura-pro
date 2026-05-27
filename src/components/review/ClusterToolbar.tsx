@@ -1,4 +1,5 @@
-import { Image as ImageIcon, Sparkles, ChevronDown, ScanFace, GitCompare } from 'lucide-react';
+import { memo } from 'react';
+import { Image as ImageIcon, ChevronDown, ScanFace, GitCompare } from 'lucide-react';
 import styles from './ClusterToolbar.module.css';
 
 export type FilterOption = 'all' | 'best' | 'sharp';
@@ -34,7 +35,7 @@ const SORT_LABELS: Record<SortOption, string> = {
   rowid: 'Original',
 };
 
-export default function ClusterToolbar({
+const ClusterToolbar = memo(function ClusterToolbar({
   filter,
   sort,
   viewMode,
@@ -54,6 +55,7 @@ export default function ClusterToolbar({
   const zoomMin = viewMode === 'photo' ? 180 : 120;
   const zoomMax = viewMode === 'photo' ? 380 : 280;
   const zoomStep = viewMode === 'photo' ? 20 : 10;
+  const nextViewMode = viewMode === 'photo' ? 'face' : 'photo';
   return (
     <div className={styles.toolbar}>
       {/* Filtro */}
@@ -72,7 +74,6 @@ export default function ClusterToolbar({
 
       {/* Ordenação */}
       <div className={styles.selectWrap}>
-        <span className={styles.sortPrefix}>Ordenar por:</span>
         <select
           className={`${styles.select} ${styles.selectSort}`}
           value={sort}
@@ -85,36 +86,16 @@ export default function ClusterToolbar({
         <ChevronDown size={12} className={styles.selectIcon} />
       </div>
 
-      {/* Selecionar melhores */}
-      <button className={styles.btnSelectBest} onClick={onSelectBest}>
-        <Sparkles size={13} />
-        Selecionar melhores
-      </button>
-
-      {/* Separador */}
-      <div className={styles.sep} />
-
       {/* Toggle Foto/Rosto */}
-      <div className={styles.viewToggle}>
-        <button
-          className={`${styles.viewBtn} ${viewMode === 'photo' ? styles.viewBtnActive : ''}`}
-          onClick={() => onViewMode('photo')}
-          title="Foto inteira"
-          type="button"
-        >
-          <ImageIcon size={14} />
-          <span>Foto</span>
-        </button>
-        <button
-          className={`${styles.viewBtn} ${viewMode === 'face' ? styles.viewBtnActive : ''}`}
-          onClick={() => onViewMode('face')}
-          title="Apenas rosto"
-          type="button"
-        >
-          <ScanFace size={14} />
-          <span>Rosto</span>
-        </button>
-      </div>
+      <button
+        className={styles.viewToggleSingle}
+        onClick={() => onViewMode(nextViewMode)}
+        title={viewMode === 'photo' ? 'Alternar para rosto' : 'Alternar para foto inteira'}
+        type="button"
+      >
+        {viewMode === 'photo' ? <ImageIcon size={14} /> : <ScanFace size={14} />}
+        <span>{viewMode === 'photo' ? 'Foto' : 'Rosto'}</span>
+      </button>
 
       {/* Zoom slider */}
       <div className={styles.zoomWrap}>
@@ -155,4 +136,6 @@ export default function ClusterToolbar({
       </div>
     </div>
   );
-}
+});
+
+export default ClusterToolbar;

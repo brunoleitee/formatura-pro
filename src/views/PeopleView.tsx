@@ -32,7 +32,7 @@ const PersonAvatar = memo(function PersonAvatar({ person }: { person: Person }) 
           <img
             src={avatarUrl}
             alt={person.name}
-            loading="eager"
+            loading="lazy"
             decoding="async"
             onError={() => setFailed(true)}
           />
@@ -222,7 +222,7 @@ const PeopleCard = memo(function PeopleCard({
             className={styles.gridPhoto}
             src={avatarUrl}
             alt={person.name}
-            loading="eager"
+            loading="lazy"
             decoding="async"
             onError={() => setPhotoFailed(true)}
           />
@@ -339,6 +339,7 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
     } catch (e: any) {
       if (e?.name !== 'AbortError') {
         console.error(e);
+        setError('Erro ao carregar formandos.');
       }
     } finally {
       if (!controller.signal.aborted) {
@@ -384,6 +385,7 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
           merged++;
         } catch (err) {
           console.error('[merge] erro ao mesclar', source.name, err);
+          setError(`Erro ao mesclar "${source.name}".`);
         }
       }
     }
@@ -399,17 +401,27 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
     setMergeMode('selecting');
   }, []);
 
+  const mergeInFlightRef = useRef(false);
   const handleTargetMerge = useCallback(async (targetPerson: Person) => {
     if (!mergeSource || !currentCatalog) return;
+    // Guard against re-entry: the backend merge involves DB writes and
+    // re-clustering, so subsequent clicks on the same target would either
+    // 404 (source already gone) or duplicate work.
+    if (mergeInFlightRef.current) return;
+    mergeInFlightRef.current = true;
     const source = mergeSource;
     const sourceId = source.person_key || source.id;
     const targetId = targetPerson.person_key || targetPerson.id;
     if (sourceId === targetId) {
+      mergeInFlightRef.current = false;
       setMergeMode('idle');
       setMergeSource(null);
       return;
     }
     setMerging(true);
+    // Clear merge UI immediately so cards stop responding to clicks.
+    setMergeMode('idle');
+    setMergeSource(null);
     try {
       await api.mergePeople({ source_person_id: sourceId, target_person_id: targetId, catalog: currentCatalog });
       setError(`"${source.name}" mesclado em "${targetPerson.name}" com sucesso.`);
@@ -417,10 +429,10 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
     } catch (err: any) {
       console.error('[merge] erro:', err);
       setError('Erro ao mesclar formandos.');
+    } finally {
+      setMerging(false);
+      mergeInFlightRef.current = false;
     }
-    setMerging(false);
-    setMergeMode('idle');
-    setMergeSource(null);
   }, [mergeSource, currentCatalog, load]);
 
   const handleCancelMerge = useCallback(() => {
@@ -491,7 +503,7 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
   }, [people, search, filterFavorites, sortBy]);
 
   return (
-    <div className="view-container" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div className={`view-container ${styles.peopleRoot}`}>
       {mergeMode === 'selecting' && mergeSource && (
         <div className={styles.mergeModeBar}>
           <div className={styles.mergeModeBarContent}>
@@ -503,7 +515,7 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
           </button>
         </div>
       )}
-      <div className={styles.viewHeader}>
+      <div className={`${styles.viewHeader} ${mergeMode === 'selecting' && mergeSource ? styles.viewHeaderWithMergeBar : ''}`}>
         <div className={styles.headerTitleSection}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <Users size={28} />
@@ -524,7 +536,7 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
               />
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#111418', borderRadius: '8px', padding: '2px', border: '1px solid #2d323a' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--people-bg-card)', borderRadius: '8px', padding: '2px', border: '1px solid var(--people-border)' }}>
               <select 
                 className={styles.sortSelect}
                 value={sortBy}
@@ -540,7 +552,7 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
 
             <button 
               className="icon-btn small"
-              style={{ background: filterFavorites ? '#2563eb' : 'transparent', color: filterFavorites ? '#fff' : '#64748b', border: '1px solid #2d323a' }}
+              style={{ background: filterFavorites ? '#2563eb' : 'transparent', color: filterFavorites ? '#fff' : '#64748b', border: '1px solid var(--people-border)' }}
               onClick={() => setFilterFavorites(!filterFavorites)}
               title={filterFavorites ? "Mostrando apenas favoritas" : "Filtrar favoritas"}
             >
@@ -563,16 +575,17 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
             >
               <List size={18} />
             </button>
-            <button
-              className={`icon-btn small ${styles.mergeDuplicatesBtn}`}
-              onClick={handleMergeDuplicates}
-              disabled={merging}
-              title="Mesclar duplicados automaticamente"
-            >
-              <Merge size={14} />
-              <span>Mesclar duplicados</span>
-            </button>
           </div>
+
+          <button
+            className={`icon-btn small ${styles.mergeDuplicatesBtn}`}
+            onClick={handleMergeDuplicates}
+            disabled={merging}
+            title="Mesclar duplicados automaticamente"
+          >
+            <Merge size={14} />
+            <span>Mesclar duplicados</span>
+          </button>
 
           <button className="icon-btn" onClick={load} title="Atualizar">
             <RefreshCw size={18} className={loading ? 'spin' : ''} />
@@ -582,7 +595,7 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
 
       {error && <p className="error-msg">{error}</p>}
 
-      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <div className={styles.peopleScroll}>
         {loading && people.length === 0 ? (
           <div className="empty-state">
             <RefreshCw size={32} className="spin" />

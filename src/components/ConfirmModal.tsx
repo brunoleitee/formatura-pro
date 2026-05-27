@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
-import { AlertTriangle, X } from 'lucide-react';
+import { useRef, useEffect } from 'react';
+import { AlertTriangle } from 'lucide-react';
+import Modal from './ui/Modal';
 import styles from './ConfirmModal.module.css';
 
 export interface ConfirmModalProps {
@@ -25,65 +26,21 @@ export default function ConfirmModal({
 
   useEffect(() => {
     if (!open) return;
-    document.body.style.overflow = 'hidden';
-    const frame = window.requestAnimationFrame(() => cancelBtnRef.current?.focus());
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onCancel();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = '';
-    };
-  }, [open, onCancel]);
-
-  if (!open) return null;
+    const frame = requestAnimationFrame(() => cancelBtnRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
 
   return (
-    <div
-      className={styles.overlay}
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onCancel();
-      }}
-    >
-      <section
-        className={styles.modal}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="confirm-modal-title"
-        aria-describedby="confirm-modal-message"
-      >
-        <button className={styles.closeBtn} onClick={onCancel} aria-label="Fechar">
-          <X size={14} />
+    <Modal open={open} onClose={onCancel} title={title} icon={<AlertTriangle size={18} />} size="sm">
+      <p className={styles.message}>{message}</p>
+      <div className={styles.actions}>
+        <button ref={cancelBtnRef} className={styles.cancelBtn} onClick={onCancel}>
+          {cancelText}
         </button>
-
-        <div className={styles.iconWrap} aria-hidden="true">
-          <AlertTriangle size={18} />
-        </div>
-
-        <h2 id="confirm-modal-title" className={styles.title}>
-          {title}
-        </h2>
-        <p id="confirm-modal-message" className={styles.message}>
-          {message}
-        </p>
-
-        <div className={styles.actions}>
-          <button ref={cancelBtnRef} className={styles.cancelBtn} onClick={onCancel}>
-            {cancelText}
-          </button>
-          <button className={styles.confirmBtn} onClick={onConfirm}>
-            {confirmText}
-          </button>
-        </div>
-      </section>
-    </div>
+        <button className={styles.confirmBtn} onClick={onConfirm}>
+          {confirmText}
+        </button>
+      </div>
+    </Modal>
   );
 }

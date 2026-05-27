@@ -28,7 +28,7 @@
 
 .treeItemSelected {
   background: rgba(37, 99, 235, 0.15);
-  border-left: 2px solid #3b82f6;
+  border-left: 2px solid var(--accent-primary);
 }
 
 .itemLeft {
@@ -47,15 +47,15 @@
   height: 18px;
   border: none;
   background: transparent;
-  color: #5a6577;
+  color: var(--tree-text-muted);
   cursor: pointer;
   border-radius: 4px;
   transition: all 0.2s;
 }
 
 .expandBtn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #94a3b8;
+  background: var(--tree-bg-hover);
+  color: var(--tree-text-soft);
 }
 
 .expandSpacer {
@@ -69,9 +69,9 @@
   flex-shrink: 0;
 }
 
-.statusGreen { background: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.4); }
-.statusYellow { background: #f59e0b; box-shadow: 0 0 6px rgba(245, 158, 11, 0.4); }
-.statusRed { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
+.statusGreen { background: var(--success); box-shadow: 0 0 6px rgba(16, 185, 129, 0.4); }
+.statusYellow { background: var(--warning); box-shadow: 0 0 6px rgba(245, 158, 11, 0.4); }
+.statusRed { background: var(--danger-solid-bg); box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
 
 .folderIcon {
   color: #eab308;
@@ -101,7 +101,7 @@
   align-items: center;
   gap: 4px;
   font-size: 8px;
-  color: #5a6577;
+  color: var(--tree-text-muted);
   font-weight: 500;
   opacity: 0.8;
 }
@@ -109,7 +109,7 @@
 .itemName {
   font-size: 11px;
   font-weight: 500;
-  color: #e2e8f0;
+  color: var(--tree-text-light);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -117,8 +117,8 @@
 
 .rootBadge {
   font-size: 8px;
-  background: #1e293b;
-  color: #94a3b8;
+  background: var(--tree-status-bg);
+  color: var(--tree-text-soft);
   padding: 1px 4px;
   border-radius: 3px;
   font-weight: 700;
@@ -146,15 +146,15 @@
   letter-spacing: 0.02em;
 }
 
-.badgeRaw { background: rgba(59, 130, 246, 0.1); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2); }
-.badgeJpg { background: rgba(59, 130, 246, 0.1); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2); }
-.badgeHeic { background: rgba(245, 158, 11, 0.1); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.2); }
-.badgeMov { background: rgba(239, 68, 68, 0.1); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.2); }
+.badgeRaw { background: var(--tree-accent-bg); color: var(--tree-accent-text); border: 1px solid var(--tree-accent-border); }
+.badgeJpg { background: var(--tree-accent-bg); color: var(--tree-accent-text); border: 1px solid var(--tree-accent-border); }
+.badgeHeic { background: var(--tree-warning-bg); color: var(--tree-warning-text); border: 1px solid var(--tree-warning-border); }
+.badgeMov { background: var(--tree-danger-bg); color: var(--tree-danger-text); border: 1px solid var(--tree-danger-border); }
 
 .fileCount {
   font-size: 10px;
   font-weight: 700;
-  color: #5a6577;
+  color: var(--tree-text-muted);
   min-width: 40px;
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -163,7 +163,7 @@
 .treeChildren {
   margin-left: 14px;
   padding-left: 4px;
-  border-left: 1px solid rgba(255, 255, 255, 0.05);
+  border-left: 1px solid var(--tree-bg-hover);
 }
 
 .loadingState, .errorState, .emptyState {
@@ -173,16 +173,16 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: #5a6577;
+  color: var(--tree-text-muted);
   font-size: 11px;
   text-align: center;
 }
 
 .retryBtn {
   margin-top: 4px;
-  background: #1a1c23;
-  border: 1px solid #2d2f36;
-  color: #e2e8f0;
+  background: var(--tree-bg-active);
+  border: 1px solid var(--tree-border-active);
+  color: var(--tree-text-light);
   padding: 4px 10px;
   border-radius: 4px;
   font-size: 10px;
@@ -190,5 +190,5 @@
 }
 
 .retryBtn:hover {
-  background: #2d2f36;
+  background: var(--tree-badge-bg);
 }

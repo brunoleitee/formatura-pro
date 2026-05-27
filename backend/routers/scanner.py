@@ -17,7 +17,10 @@ import scanner_engine as se
 
 router = APIRouter()
 
-IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff")
+IMAGE_EXTENSIONS = (
+    ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff",
+    ".cr2", ".cr3", ".nef", ".arw", ".dng", ".orf", ".rw2", ".raf", ".srw", ".x3f",
+)
 
 
 @router.get("/api/scanner/folder-tree")
@@ -540,3 +543,236 @@ def scanner_preview_faces(path: str = ""):
     except Exception as e:
         logging.getLogger(__name__).exception("[preview-faces] failed path=%s", decoded)
         return {"ok": False, "error": str(e), "faces": []}
+
+
+# ── GERADOR DE REFERÊNCIAS AUTOMATIZADAS ───────────────────────────────────
+
+class CreateReferencesReq(BaseModel):
+    id_folder: str
+    catalog: Optional[str] = None
+
+
+def run_create_references_worker(id_folder: str, catalog: str):
+    from state import create_references_state
+    import scanner_engine as se
+    from services.ocr_pipeline import detect_document_number_region, process_hybrid_ocr, process_ocr
+    import cv2
+    import os
+    import re
+    from PIL import Image, ImageOps
+    from services.face_engine import FACE_INFERENCE_LOCK
+
+    create_references_state.update({
+        "is_running": True,
+        "progress": 0.0,
+        "processed": 0,
+        "total": 0,
+        "status_text": "Iniciando processamento...",
+        "error": None,
+        "result": None,
+    })
+
+    try:
+        valid_extensions = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff")
+        all_photos = []
+        for root, dirs, files in os.walk(id_folder):
+            # Ignora pastas de referências geradas e subpastas de saída para evitar loop
+            dirs[:] = [d for d in dirs if d.lower() not in ("#referencia", "referencia")]
+            for f in files:
+                if f.lower().endswith(valid_extensions):
+                    all_photos.append(os.path.join(root, f))
+
+        total_photos = len(all_photos)
+        create_references_state.update({
+            "total": total_photos,
+            "status_text": f"Encontradas {total_photos} fotos. Processando..."
+        })
+
+        if total_photos == 0:
+            create_references_state.update({
+                "is_running": False,
+                "progress": 1.0,
+                "status_text": "Nenhuma foto encontrada no diretório informado.",
+                "result": {"created_count": 0}
+            })
+            return
+
+        created_count = 0
+        se.ensure_face_engine()
+        app_face = se.get_app_face()
+
+        parent_dir = os.path.dirname(os.path.abspath(id_folder))
+
+        for idx, photo_path in enumerate(all_photos, 1):
+            try:
+                img = cv2.imread(photo_path)
+                if img is None:
+                    continue
+
+                primary_face = None
+                if app_face:
+                    with FACE_INFERENCE_LOCK:
+                        raw_faces = app_face.get(img) or []
+                    if raw_faces:
+                        raw_faces.sort(key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
+                        best = raw_faces[0]
+                        fx1, fy1, fx2, fy2 = map(int, best.bbox[:4])
+                        primary_face = (fx1, fy1, fx2, fy2)
+
+                if primary_face is None:
+                    continue
+
+                student_id = None
+                # 1. Document region detector
+                doc_result = detect_document_number_region(img, photo_path, primary_face)
+                number = doc_result.get("number") if doc_result else None
+                if number and len(str(number).strip()) >= 3:
+                    student_id = str(number).strip()
+
+                # 2. Hybrid OCR
+                if not student_id:
+                    try:
+                        hybrid = process_hybrid_ocr(img, photo_path)
+                        number = hybrid["fields"].get("numero")
+                        if number and len(str(number).strip()) >= 3:
+                            student_id = str(number).strip()
+                    except Exception:
+                        pass
+
+                # 3. Fallback old OCR
+                if not student_id:
+                    try:
+                        old_result = process_ocr(photo_path, primary_face)
+                        old_number = old_result.get("fields", {}).get("numero")
+                        if old_number and len(str(old_number).strip()) >= 3:
+                            student_id = str(old_number).strip()
+                    except Exception:
+                        pass
+
+                # 4. Regex fallback on text
+                if not student_id:
+                    try:
+                        full_res = process_ocr(photo_path)
+                        if full_res and full_res.get("ocr_text"):
+                            nums = re.findall(r"\b(\d{3,6})\b", full_res["ocr_text"])
+                            if nums:
+                                student_id = nums[0]
+                    except Exception:
+                        pass
+
+                if student_id:
+                    student_id_clean = re.sub(r'[\/:*?"<>|]', '', student_id).strip()
+                    if student_id_clean:
+                        rel_dir = os.path.dirname(os.path.relpath(photo_path, id_folder))
+                        dest_dir = os.path.join(parent_dir, "#referencia", rel_dir)
+                        os.makedirs(dest_dir, exist_ok=True)
+
+                        pil_img = Image.open(photo_path)
+                        pil_img = ImageOps.exif_transpose(pil_img)
+                        w, h = pil_img.size
+
+                        fx1, fy1, fx2, fy2 = primary_face
+                        face_w = max(1, fx2 - fx1)
+                        face_h = max(1, fy2 - fy1)
+                        face_cx = (fx1 + fx2) / 2.0
+
+                        # 24x30 (cm) → proporção 4:5 retrato. Crop deve ir do
+                        # topo da cabeça até a base da ficha para permitir
+                        # conferência visual do número.
+                        TARGET_RATIO = 24.0 / 30.0  # largura / altura = 0.8
+
+                        # Anchors verticais:
+                        # - topo: ~0.55*face_h acima da face para sobrar cabelo
+                        # - base: ~5.0*face_h abaixo da face para alcançar a ficha
+                        head_top = fy1 - 0.55 * face_h
+                        ficha_bottom = fy2 + 4.0 * face_h
+
+                        # Clamp vertical à imagem
+                        crop_top = max(0.0, head_top)
+                        crop_bottom = min(float(h), ficha_bottom)
+                        crop_h = max(1.0, crop_bottom - crop_top)
+
+                        # Largura derivada do ratio, centrada no rosto
+                        crop_w = crop_h * TARGET_RATIO
+                        crop_left = face_cx - crop_w / 2.0
+                        crop_right = face_cx + crop_w / 2.0
+
+                        # Se a largura calculada estoura a imagem, encolhe
+                        # mantendo o ratio (reduzindo a altura pela base —
+                        # preferimos preservar a cabeça acima).
+                        if crop_left < 0 or crop_right > w:
+                            max_half = min(face_cx, w - face_cx)
+                            if max_half * 2.0 < crop_w:
+                                crop_w = max_half * 2.0
+                                crop_h = crop_w / TARGET_RATIO
+                                crop_bottom = crop_top + crop_h
+                                crop_left = face_cx - crop_w / 2.0
+                                crop_right = face_cx + crop_w / 2.0
+
+                        # Se ainda assim a altura ficou maior que a imagem
+                        # (face muito próxima de uma das laterais), reduz a
+                        # largura também — última garantia de não estourar.
+                        if crop_bottom > h:
+                            crop_bottom = float(h)
+                            crop_h = crop_bottom - crop_top
+                            crop_w = crop_h * TARGET_RATIO
+                            crop_left = face_cx - crop_w / 2.0
+                            crop_right = face_cx + crop_w / 2.0
+
+                        left = max(0, int(round(crop_left)))
+                        top = max(0, int(round(crop_top)))
+                        right = min(w, int(round(crop_right)))
+                        bottom = min(h, int(round(crop_bottom)))
+
+                        crop = pil_img.crop((left, top, right, bottom))
+                        dest_file = os.path.join(dest_dir, f"{student_id_clean}.jpg")
+                        crop.save(dest_file, "JPEG", quality=90)
+                        created_count += 1
+
+            except Exception as photo_err:
+                logging.getLogger(__name__).warning(f"[create-references] Erro ao processar {photo_path}: {photo_err}")
+
+            create_references_state.update({
+                "processed": idx,
+                "progress": idx / total_photos,
+                "status_text": f"Processando {idx} de {total_photos} fotos. Criadas: {created_count}"
+            })
+
+        create_references_state.update({
+            "is_running": False,
+            "progress": 1.0,
+            "status_text": f"Processamento concluído. {created_count} referências criadas na pasta '#referencia'!",
+            "result": {
+                "created_count": created_count,
+            }
+        })
+
+    except Exception as e:
+        logging.getLogger(__name__).exception("[create-references] Falha crítica")
+        create_references_state.update({
+            "is_running": False,
+            "status_text": f"Erro: {str(e)}",
+            "error": str(e),
+        })
+
+
+@router.post("/api/scanner/create-references")
+def create_references(req: CreateReferencesReq):
+    from state import create_references_state
+    if create_references_state.get("is_running"):
+        return {"status": "already_running", "running": True}
+
+    id_folder = req.id_folder.strip()
+    if not id_folder or not os.path.isdir(id_folder):
+        raise HTTPException(status_code=400, detail="Diretório de ID inválido ou inexistente")
+
+    catalog = req.catalog or ""
+    import threading
+    threading.Thread(target=run_create_references_worker, args=(id_folder, catalog), daemon=True).start()
+    return {"status": "started", "running": True}
+
+
+@router.get("/api/scanner/create-references/status")
+def get_create_references_status():
+    from state import create_references_state
+    return create_references_state

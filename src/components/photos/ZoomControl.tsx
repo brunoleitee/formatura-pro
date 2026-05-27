@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import styles from './ZoomControl.module.css';
 
 interface ZoomControlProps {
@@ -8,7 +9,7 @@ interface ZoomControlProps {
   step?: number;
 }
 
-export function ZoomControl({ zoom, onZoom, min = 120, max = 380, step = 20 }: ZoomControlProps) {
+export const ZoomControl = memo(function ZoomControl({ zoom, onZoom, min = 120, max = 380, step = 20 }: ZoomControlProps) {
   return (
     <div className={styles.zoomWrap}>
       <input
@@ -24,4 +25,4 @@ export function ZoomControl({ zoom, onZoom, min = 120, max = 380, step = 20 }: Z
       <span className={styles.zoomLabel}>{zoom}</span>
     </div>
   );
-}
+});

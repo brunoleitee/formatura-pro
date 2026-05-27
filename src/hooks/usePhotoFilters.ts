@@ -8,7 +8,7 @@ export function usePhotoFilters(photos: Photo[], currentCatalog: string, selecte
   const [filter, setFilter] = useState<PhotoFilter>('all');
 
   const filteredPhotos = useMemo(() => {
-    let result = photos.filter(p => {
+    const result = photos.filter(p => {
       if (hideDiscarded && p.discarded) return false;
 
       if (filter === 'mapped') return isPhotoMapped(p);

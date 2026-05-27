@@ -16,15 +16,15 @@
 }
 
 .aiReady {
-  background: rgba(21, 128, 61, 0.8);
-  color: #bbf7d0;
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: var(--photo-badge-bg);
+  color: var(--photo-badge-text);
+  border: 1px solid var(--photo-badge-border);
 }
 
 .aiProcessing {
-  background: rgba(202, 138, 4, 0.65);
-  color: #fef9c3;
-  border: 1px solid rgba(250, 204, 21, 0.25);
+  background: var(--photo-badge-star-bg);
+  color: var(--photo-badge-star-text);
+  border: 1px solid var(--photo-badge-star-border);
   animation: aiPulse 1.6s ease-in-out infinite;
 }
 
@@ -40,7 +40,7 @@
   padding-left: 6px;
   font-size: 0.75rem;
   letter-spacing: 0.03em;
-  color: #fbbf24;
+  color: var(--photo-star-color);
   pointer-events: none;
   line-height: 1;
   flex-shrink: 0;
@@ -60,7 +60,7 @@
   z-index: 6;
   font-size: 0.8rem;
   pointer-events: none;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 1px 2px var(--black-heavy));
 }
 
 .blurBadge {
@@ -75,7 +75,7 @@
   letter-spacing: 0.03em;
   pointer-events: none;
   backdrop-filter: blur(4px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px var(--black-light);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -84,15 +84,15 @@
 }
 
 .blurBadgeBlurry {
-  background: rgba(185, 28, 28, 0.75);
-  color: #fecaca;
-  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: var(--photo-badge-error-bg);
+  color: var(--photo-badge-error-text);
+  border: 1px solid var(--photo-badge-error-border);
 }
 
 .blurBadgeAttention {
-  background: rgba(180, 115, 10, 0.7);
-  color: #fde68a;
-  border: 1px solid rgba(245, 158, 11, 0.2);
+  background: var(--photo-badge-flag-bg);
+  color: var(--photo-badge-flag-text);
+  border: 1px solid var(--photo-badge-flag-border);
 }
 
 .discardBadge {
@@ -100,8 +100,8 @@
   top: 8px;
   left: 8px;
   z-index: 6;
-  background: rgba(185, 28, 28, 0.85);
-  color: #fecaca;
+  background: var(--photo-badge-danger-bg);
+  color: var(--photo-badge-error-text);
   font-size: 0.6rem;
   font-weight: 700;
   padding: 3px 8px;
@@ -109,8 +109,8 @@
   letter-spacing: 0.04em;
   pointer-events: none;
   backdrop-filter: blur(4px);
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--danger-border);
+  box-shadow: 0 2px 8px var(--black-light);
 }
 
 .faceLabel {
@@ -124,18 +124,18 @@
   white-space: nowrap;
   letter-spacing: 0.02em;
   backdrop-filter: blur(4px);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 6px var(--black-light);
   pointer-events: none;
 }
 
 .faceLabelFg {
-  background: rgba(16, 185, 129, 0.8);
-  color: #d1fae5;
-  border: 1px solid rgba(52, 211, 153, 0.2);
+  background: var(--photo-badge-bg);
+  color: var(--photo-badge-text);
+  border: 1px solid var(--photo-badge-border);
 }
 
 .faceLabelBg {
-  background: rgba(217, 119, 6, 0.75);
-  color: #fef3c7;
-  border: 1px solid rgba(245, 158, 11, 0.2);
+  background: var(--photo-badge-warning-bg);
+  color: var(--photo-badge-warning-text);
+  border: 1px solid var(--photo-badge-flag-border);
 }

@@ -1,4 +1,4 @@
-const BLOCKED_DIRS = new Set([
+export const BLOCKED_DIRS = new Set([
   '.git', '.github', 'node_modules', 'src', 'backend', 'frontend',
   'dist', 'build', 'target', '__pycache__', '.cache', '.temp',
   'assets', 'examples', 'images', 'lossless_images', 'cargo_toml',

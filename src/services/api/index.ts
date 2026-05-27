@@ -27,6 +27,9 @@ export const api = {
   // Stats & System
   getStats: (catalog = '', signal?: AbortSignal) => fetchJSON<Stats>(`${API_BASE}/stats?catalog=${encodeURIComponent(catalog)}`, { signal }),
   getSystemStatus: (signal?: AbortSignal) => fetchJSON(`${API_BASE}/system/status`, { signal }),
+  getOllamaStatus: (signal?: AbortSignal) => fetchJSON<{ running: boolean; has_model: boolean; version?: string; models: string[] }>(`${API_BASE}/system/ollama/status`, { signal }),
+  pullOllamaModelUrl: () => `${API_BASE}/system/ollama/pull`,
+  downloadOllamaInstallerUrl: () => `${API_BASE}/system/ollama/download-installer`,
 
   // Interaction
   openFolder: (path: string) => post(`${API_BASE}/open-folder`, { path }),

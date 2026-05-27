@@ -16,9 +16,11 @@ import SettingsView from '../../views/SettingsView';
 import CatalogSettingsView from '../../views/CatalogSettingsView';
 import { Sidebar } from './Sidebar';
 import { logPerf, perfNow } from '../../utils/perf';
-import { lazy, Suspense } from 'react';
+import { autoCatalogName } from '../../utils/catalogUtils';
+import { lazy } from 'react';
 
 const ScannerWorkspace = lazy(() => import('../../views/ScannerWorkspace'));
+const CreateReferencesView = lazy(() => import('../../views/CreateReferencesView'));
 
 interface ConfirmDialogOptions {
   title: string;
@@ -66,12 +68,6 @@ export function AppShell() {
     navigate('scanner');
   };
 
-  function autoCatalogName(): string {
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `Catalogo_${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
-  }
-
   const handleQuickCreate = async () => {
     const name = autoCatalogName();
     try {
@@ -99,13 +95,13 @@ export function AppShell() {
           onClick={handleQuickCreate}
           style={{
             padding: '10px 22px', borderRadius: '10px', border: 'none',
-            background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-            color: '#fff', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer',
+            background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+            color: '#000', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer',
             transition: 'box-shadow 0.2s',
-            boxShadow: '0 4px 14px rgba(59,130,246,0.35)',
+            boxShadow: '0 4px 14px rgba(245,158,11,0.25)',
           }}
-          onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 6px 20px rgba(59,130,246,0.5)'}
-          onMouseLeave={(e) => e.currentTarget.style.boxShadow = '0 4px 14px rgba(59,130,246,0.35)'}
+          onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 6px 20px rgba(245,158,11,0.4)'}
+          onMouseLeave={(e) => e.currentTarget.style.boxShadow = '0 4px 14px rgba(245,158,11,0.25)'}
         >
           Criar catálogo rápido
         </button>
@@ -138,6 +134,7 @@ export function AppShell() {
       case 'export':        return <ExportView />;
       case 'settings':      return <SettingsView />;
       case 'scanner':        return <ScannerWorkspace />;
+      case 'references':     return <CreateReferencesView />;
       case 'catalog-settings': return <CatalogSettingsView onRequestConfirm={requestConfirm} />;
       default:              return <CatalogView />;
     }

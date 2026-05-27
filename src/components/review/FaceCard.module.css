@@ -7,7 +7,7 @@
   cursor: pointer;
   border-radius: 10px;
   overflow: hidden;
-  background: #1c1f30;
+  background: var(--facecard-bg);
   position: relative;
   aspect-ratio: 1 / 1;
   flex-shrink: 0;
@@ -48,9 +48,9 @@
   inset: 0;
   background: linear-gradient(
     90deg,
-    #1c1f30 0%,
-    #252a3e 50%,
-    #1c1f30 100%
+    var(--facecard-bg) 0%,
+    var(--facecard-bg-end) 50%,
+    var(--facecard-bg) 100%
   );
   background-size: 200% 100%;
   animation: shimmer 1.4s ease infinite;
@@ -70,6 +70,6 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  border: 2.5px solid #3b82f6;
+  border: 2.5px solid var(--facecard-border);
   pointer-events: none;
 }

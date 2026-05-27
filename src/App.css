@@ -230,8 +230,8 @@
 }
 
 .nav-subitem.active {
-  color: #e8a020;
-  background: rgba(232, 160, 32, 0.08);
+  color: var(--accent);
+  background: var(--bg-active);
 }
 
 .nav-subitem-muted { opacity: 0.5; cursor: default; }
@@ -242,7 +242,7 @@
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   padding-top: 6px;
 }
-.nav-subitem-settings.active { color: #e8a020; background: rgba(232, 160, 32, 0.08); }
+.nav-subitem-settings.active { color: var(--accent); background: var(--bg-active); }
 
 /* ── Flyout (modo colapsado) ── */
 .sidebar-flyout {
@@ -285,7 +285,7 @@
   transition: background 0.12s, color 0.12s;
 }
 .sidebar-flyout-item:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
-.sidebar-flyout-item.active { color: #e8a020; }
+.sidebar-flyout-item.active { color: var(--accent); }
 
 /* Catalog selector in sidebar */
 .catalog-selector-wrap {
@@ -815,9 +815,19 @@
   width: 80px;
   height: 4px;
   border-radius: var(--radius-full);
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--slider-track);
   outline: none;
   cursor: pointer;
+}
+.slider-base::-webkit-slider-runnable-track {
+  background: var(--slider-track);
+  height: 4px;
+  border-radius: var(--radius-full);
+}
+.slider-base::-moz-range-track {
+  background: var(--slider-track);
+  height: 4px;
+  border-radius: var(--radius-full);
 }
 .slider-base::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -827,8 +837,19 @@
   background: var(--accent);
   cursor: pointer;
   transition: transform var(--transition-fast);
+  margin-top: -5px; /* centraliza a bolinha de 14px no track de 4px */
+}
+.slider-base::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+  transition: transform var(--transition-fast);
 }
 .slider-base::-webkit-slider-thumb:hover { transform: scale(1.25); }
+.slider-base::-moz-range-thumb:hover { transform: scale(1.25); }
 
 /* Checkbox / Radio accent */
 input[type="checkbox"], input[type="radio"] {
@@ -1388,7 +1409,8 @@ html.scrolling-fast .photo-info {
 .photo-card {
   background-color: var(--bg-primary);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--card-border);
+  border: 1px solid var(--photocard-border);
+  box-shadow: 0 4px 10px var(--photo-shadow), 0 1px 2px rgba(0, 0, 0, 0.02);
   transition: var(--card-transition);
   cursor: pointer;
   width: 100%;
@@ -1453,7 +1475,7 @@ html.scrolling-fast .photo-info {
 .photo-img-placeholder {
   width: 100%;
   aspect-ratio: 3 / 2;
-  background-color: #111;
+  background-color: var(--bg-tertiary);
   position: relative;
   overflow: hidden;
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
@@ -1480,9 +1502,9 @@ html.scrolling-fast .photo-info {
   inset: 0;
   background: linear-gradient(
     90deg,
-    #111318 25%,
-    rgba(255, 255, 255, 0.03) 50%,
-    #111318 75%
+    var(--bg-tertiary) 25%,
+    var(--bg-hover) 50%,
+    var(--bg-tertiary) 75%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
@@ -1497,7 +1519,7 @@ html.scrolling-fast .photo-info {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: #111318;
+  background: var(--bg-tertiary);
   color: var(--text-secondary);
   font-size: 0.7rem;
   opacity: 0.6;
@@ -1996,6 +2018,7 @@ html.scrolling-fast .photo-info {
   border-radius: var(--card-radius);
   padding: var(--card-padding);
   min-width: 320px;
+  max-width: 620px;
   flex: 1;
   display: flex;
   flex-direction: column;

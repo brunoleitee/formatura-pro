@@ -10,15 +10,15 @@
 }
 
 .container {
-  background: rgba(20, 20, 23, 0.85);
+  background: var(--bulkbar-bg);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--bulkbar-border);
   border-radius: 16px;
   padding: 12px 24px;
   display: flex;
   align-items: center;
   gap: 32px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  box-shadow: 0 12px 40px var(--bulkbar-shadow), 0 0 0 1px var(--bulkbar-shadow-alt);
 }
 
 .info {
@@ -30,13 +30,13 @@
 .count {
   font-size: 24px;
   font-weight: 700;
-  color: #fff;
+  color: var(--bulkbar-text);
   line-height: 1;
 }
 
 .label {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--bulkbar-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-top: 4px;
@@ -59,7 +59,7 @@
   transition: all 0.2s ease;
   min-width: 200px;
   text-align: left;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bulkbar-shadow-alt);
 }
 
 .actionBtn:hover {
@@ -68,7 +68,7 @@
 
 .actionBtn:focus-visible,
 .clearBtn:focus-visible {
-  outline: 2px solid rgba(96, 165, 250, 0.45);
+  outline: 2px solid var(--bulkbar-outline);
   outline-offset: 2px;
 }
 
@@ -79,7 +79,7 @@
   width: 40px;
   height: 40px;
   border-radius: 10px;
-  color: #fff;
+  color: var(--bulkbar-text);
 }
 
 .btnText {
@@ -89,51 +89,51 @@
 
 .hint {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--bulkbar-text-soft);
   margin-bottom: 2px;
 }
 
 .main {
   font-size: 14px;
   font-weight: 600;
-  color: #fff;
+  color: var(--bulkbar-text);
 }
 
 /* Variants */
 .discard .btnIcon {
-  background: #ef4444;
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+  background: var(--bulkbar-danger-bg);
+  box-shadow: 0 4px 12px var(--bulkbar-danger-shadow);
 }
 
 .discard:hover {
-  background: rgba(239, 68, 68, 0.1);
+  background: var(--bulkbar-danger-soft);
 }
 
 .restore .btnIcon {
-  background: #22c55e;
-  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+  background: var(--bulkbar-success-bg);
+  box-shadow: 0 4px 12px var(--bulkbar-success-shadow);
 }
 
 .restore:hover {
-  background: rgba(34, 197, 94, 0.1);
+  background: var(--bulkbar-success-soft);
 }
 
 .removeIdent .btnIcon {
-  background: #3b82f6;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  background: var(--bulkbar-accent-bg);
+  box-shadow: 0 4px 12px var(--bulkbar-accent-shadow);
 }
 
 .removeIdent:hover {
-  background: rgba(59, 130, 246, 0.1);
+  background: var(--bulkbar-accent-soft);
 }
 
 .clearBtn {
   width: 40px;
   height: 40px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-  color: #cbd5e1;
+  border: 1px solid var(--white-default);
+  background: var(--white-mid);
+  color: var(--bulkbar-secondary-text);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -144,10 +144,10 @@
 
 .clearBtn:hover {
   transform: translateY(-1px);
-  background: rgba(59, 130, 246, 0.1);
-  border-color: rgba(96, 165, 250, 0.28);
-  color: #eff6ff;
-  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.12);
+  background: var(--bulkbar-accent-soft);
+  border-color: var(--bulkbar-selected-border);
+  color: var(--bulkbar-selected-text);
+  box-shadow: 0 10px 20px var(--bulkbar-selected-shadow);
 }
 
 @keyframes slideUp {

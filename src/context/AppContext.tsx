@@ -11,6 +11,7 @@ export type ViewName =
   | 'settings'
   | 'catalog-settings'
   | 'scanner'
+  | 'references'
   ;
 
 interface AppContextValue {
@@ -31,6 +32,8 @@ interface AppContextValue {
   refreshCatalogs: () => Promise<void>;
   bumpRefresh: () => void;
   navigate: (view: ViewName, personId?: string) => void;
+  accentColor: string;
+  setAccentColor: (color: string) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -46,6 +49,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [catalogSubfolders, setCatalogSubfolders] = useState<string[]>([]);
   const [isLoadingCatalogPhotos, setIsLoadingCatalogPhotos] = useState(false);
   const [isBackendOnline, setIsBackendOnline] = useState(true);
+  const [accentColor, setAccentColor] = useState(() => localStorage.getItem('accent_color') || 'blue');
+
+  useEffect(() => {
+    const style = document.documentElement.style;
+    if (accentColor.startsWith('custom_')) {
+      const hex = accentColor.replace('custom_', '');
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      const dark = document.documentElement.classList.contains('dark');
+      const softAlpha = dark ? 0.15 : 0.08;
+      const glowAlpha = dark ? 0.08 : 0.04;
+      const bgAlpha = dark ? 0.12 : 0.08;
+      const borderAlpha = dark ? 0.35 : 0.25;
+      const hover = `rgb(${Math.round(r * 0.8)}, ${Math.round(g * 0.8)}, ${Math.round(b * 0.8)})`;
+      style.setProperty('--accent', hex);
+      style.setProperty('--accent-hover', hover);
+      style.setProperty('--accent-soft', `rgba(${r}, ${g}, ${b}, ${softAlpha})`);
+      style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, ${glowAlpha})`);
+      style.setProperty('--bg-active', `rgba(${r}, ${g}, ${b}, ${bgAlpha})`);
+      style.setProperty('--border-accent', `rgba(${r}, ${g}, ${b}, ${borderAlpha})`);
+      style.setProperty('--accent-primary', hex);
+      style.setProperty('--hero-btn-bg', hex);
+      style.setProperty('--hero-btn-bg-hover', hover);
+      style.setProperty('--toolbar-accent', hex);
+      style.setProperty('--toolbar-bg-accent', hex);
+      style.setProperty('--bulkbar-accent-bg', hex);
+      style.setProperty('--ws-border-active', hex);
+      style.setProperty('--ws-overlay-accent', `rgba(${r}, ${g}, ${b}, 0.9)`);
+      document.documentElement.setAttribute('data-accent', 'blue');
+    } else {
+      const vars = ['--accent', '--accent-hover', '--accent-soft', '--accent-glow', '--bg-active', '--border-accent', '--accent-primary', '--hero-btn-bg', '--hero-btn-bg-hover', '--toolbar-accent', '--toolbar-bg-accent', '--bulkbar-accent-bg', '--ws-border-active', '--ws-overlay-accent'];
+      for (const v of vars) style.removeProperty(v);
+      document.documentElement.setAttribute('data-accent', accentColor);
+    }
+    localStorage.setItem('accent_color', accentColor);
+  }, [accentColor]);
 
   const refreshCatalogs = useCallback(async () => {
     setIsLoadingCatalogs(true);
@@ -131,6 +171,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshCatalogs,
       bumpRefresh,
       navigate,
+      accentColor,
+      setAccentColor,
     }}>
       {children}
     </AppContext.Provider>

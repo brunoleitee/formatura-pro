@@ -1,7 +1,17 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import type { Photo } from '../services/api';
 
-export function getPhotoId(photo: any) {
+export interface IdentifiablePhoto {
+  rowid?: number | string;
+  id?: number | string;
+  original_path?: string;
+  originalPath?: string;
+  file_path?: string;
+  filePath?: string;
+  path?: string;
+}
+
+export function getPhotoId(photo: IdentifiablePhoto) {
   const id = String(
     photo.rowid ??
     photo.id ??

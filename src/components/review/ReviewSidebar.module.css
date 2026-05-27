@@ -1,18 +1,18 @@
 /* ReviewSidebar — painel lateral premium */
 
 .sidebar {
-  width: 220px;
+  width: 232px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: #11131e;
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--sidebar);
+  border-right: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   overflow: hidden;
 }
 
 /* ── Header ── */
 .header {
-  padding: 14px 12px 10px;
+  padding: 15px 12px 10px;
   flex-shrink: 0;
 }
 
@@ -27,21 +27,29 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+
+.titleIcon {
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: 0.85;
 }
 
 .titleText {
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
   text-transform: uppercase;
-  color: #64748b;
+  color: var(--text-secondary);
+  line-height: 1.2;
 }
 
 .titleCount {
   font-size: 0.72rem;
   font-weight: 700;
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
+  background: var(--accent-soft);
+  color: var(--accent);
   border-radius: 20px;
   padding: 1px 7px;
   min-width: 22px;
@@ -49,19 +57,19 @@
 }
 
 .headerSub {
-  font-size: 0.76rem;
-  color: rgba(100, 116, 139, 0.6);
+  font-size: 0.78rem;
+  color: var(--text-muted);
   margin: 0;
   line-height: 1.4;
 }
 
 .refreshBtn {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.03);
-  color: #64748b;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--card) 48%, transparent);
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -72,49 +80,50 @@
 }
 
 .refreshBtn:hover {
-  color: #e2e8f0;
-  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--sidebar-text);
+  border-color: var(--border-strong);
 }
 
 .divider {
   height: 1px;
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, var(--border) 62%, transparent);
   flex-shrink: 0;
 }
 
-/* ── Search ── */
 .searchWrap {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  margin: 10px 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  padding: 0 12px;
-  height: 32px;
+  gap: 8px;
+  margin: 10px 12px 8px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--card) 46%, transparent);
+  border: 1px solid transparent;
   flex-shrink: 0;
-  transition: border-color var(--transition-fast);
+  transition: background 0.16s ease, border-color 0.16s ease;
 }
 
 .searchWrap:focus-within {
-  border-color: var(--accent);
+  background: color-mix(in srgb, var(--card) 72%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .searchIcon {
   color: var(--text-muted);
   flex-shrink: 0;
+  opacity: 0.85;
 }
 
 .searchInput {
   flex: 1;
-  background: none;
-  border: none;
-  outline: none;
-  font-size: var(--text-xs);
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
   color: var(--text-primary);
   font-family: inherit;
-  min-width: 0;
+  font-size: 0.76rem;
 }
 
 .searchInput::placeholder {
@@ -122,35 +131,36 @@
 }
 
 .searchClear {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  background: none;
-  border: none;
-  padding: 2px;
-  border-radius: var(--radius-sm);
-  flex-shrink: 0;
-  transition: color var(--transition-fast);
 }
 
 .searchClear:hover {
+  background: var(--bg-hover);
   color: var(--text-secondary);
 }
 
 .filterWrap {
-  margin: -2px 12px 8px;
+  margin: 0 12px 10px;
   flex-shrink: 0;
 }
 
 .filterSelect {
   width: 100%;
   appearance: none;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--card) 42%, transparent);
+  border: 1px solid transparent;
+  border-radius: 9px;
   padding: 0 var(--space-3);
-  height: 30px;
+  height: 34px;
   font-size: var(--text-xs);
   color: var(--text-secondary);
   outline: none;
@@ -177,10 +187,10 @@
 .list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 8px 12px;
+  padding: 4px 7px 14px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 10px;
 }
 
 .list::-webkit-scrollbar {
@@ -190,11 +200,11 @@
   background: transparent;
 }
 .list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--white-mid-soft);
   border-radius: 2px;
 }
 .list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--white-strong);
 }
 
 .list::-webkit-scrollbar-track {
@@ -202,7 +212,7 @@
 }
 
 .list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--white-default);
   border-radius: 4px;
 }
 
@@ -213,7 +223,7 @@
   gap: 8px;
   padding: 32px 16px;
   font-size: 0.8rem;
-  color: #475569;
+  color: var(--sidebar-text-secondary);
   flex-direction: column;
 }
 
@@ -221,9 +231,9 @@
   margin: 10px 6px 0;
   min-height: 34px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  color: #cbd5e1;
+  border: 1px solid var(--white-default);
+  background: var(--white-light);
+  color: var(--sidebar-text-muted);
   font-size: 0.76rem;
   font-weight: 600;
   font-family: inherit;
@@ -232,8 +242,8 @@
 }
 
 .loadMoreButton:hover:not(:disabled) {
-  border-color: rgba(96, 165, 250, 0.28);
-  background: rgba(59, 130, 246, 0.08);
+  border-color: var(--border-accent);
+  background: var(--accent-soft);
 }
 
 .loadMoreButton:disabled {
@@ -245,45 +255,75 @@
 .item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 8px;
+  gap: 10px;
+  padding: 9px 7px 9px 9px;
+  border-radius: 12px;
   background: transparent;
   border: 1px solid transparent;
   cursor: pointer;
   width: 100%;
   text-align: left;
+  position: relative;
   transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease;
 }
 
+.item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 18px;
+  bottom: 18px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--danger);
+  opacity: 0.75;
+}
+
 .item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(148, 163, 184, 0.14);
+  background: color-mix(in srgb, var(--card) 42%, transparent);
+  border-color: var(--border-default);
   transform: translateY(-1px);
 }
 
 .itemActive {
-  background: linear-gradient(180deg, rgba(37, 99, 235, 0.18), rgba(37, 99, 235, 0.08)) !important;
-  border-color: rgba(96, 165, 250, 0.38) !important;
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.16) inset, 0 12px 22px rgba(37, 99, 235, 0.14);
+  background: color-mix(in srgb, var(--accent) 9%, var(--card)) !important;
+  border-color: color-mix(in srgb, var(--accent) 24%, transparent) !important;
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--accent) 11%, transparent), 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent) inset;
 }
 
 /* ── Avatar circular ── */
 .avatar {
-  width: 40px;
-  height: 40px;
+  width: 66px;
+  height: 66px;
   border-radius: 50%;
-  overflow: hidden;
+  overflow: visible;
   flex-shrink: 0;
-  background: #1c1f30;
+  background: var(--muted);
   position: relative;
-  border: 2px solid rgba(255, 255, 255, 0.06);
-  transition: border-color 0.15s;
+  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+  transition: border-color 0.15s, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.item:hover .avatar {
+  transform: scale(1.035);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.24);
+}
+
+.itemMatchStrong::before {
+  background: var(--success);
+}
+
+.itemMatchPartial::before {
+  background: var(--warning);
+}
+
+.itemMatchNone::before {
+  background: var(--danger);
 }
 
 .itemActive .avatar {
-  border-color: rgba(96, 165, 250, 0.62);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+  border-color: color-mix(in srgb, var(--accent) 52%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .avatarImg {
@@ -291,6 +331,7 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  border-radius: 50%;
 }
 
 .avatarFallback {
@@ -300,7 +341,9 @@
   align-items: center;
   justify-content: center;
   font-size: 1.1rem;
-  color: #475569;
+  color: var(--sidebar-text-secondary);
+  border-radius: 50%;
+  overflow: hidden;
 }
 
 /* ── Item text ── */
@@ -309,20 +352,20 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 6px;
 }
 
 .itemName {
-  font-size: 0.82rem;
-  font-weight: 500;
-  color: #cbd5e1;
+  font-size: 0.91rem;
+  font-weight: 700;
+  color: var(--sidebar-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .itemActive .itemName {
-  color: #e2e8f0;
+  color: var(--sidebar-text);
 }
 
 .suggestionRow {
@@ -330,66 +373,84 @@
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
-  min-height: 18px;
+  min-height: 20px;
 }
 
 .suggestionBadgeStrong {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 1px 7px;
-  border-radius: 5px;
-  font-size: 0.58rem;
+  padding: 2px 8px;
+  border-radius: 7px;
+  font-size: 0.62rem;
   font-weight: 800;
-  letter-spacing: 0.04em;
-  background: rgba(16, 185, 129, 0.12);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  letter-spacing: 0;
+  background: transparent;
+  color: var(--sidebar-success);
+  border: 0;
+  padding: 0;
   white-space: nowrap;
+}
+
+.itemMatchStrong .suggestionBadgeStrong {
+  color: var(--success);
 }
 
 .suggestionBadgePossible {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 1px 7px;
-  border-radius: 5px;
-  font-size: 0.58rem;
+  padding: 2px 8px;
+  border-radius: 7px;
+  font-size: 0.62rem;
   font-weight: 800;
-  letter-spacing: 0.04em;
-  background: rgba(245, 158, 11, 0.1);
-  color: #fcd34d;
-  border: 1px solid rgba(245, 158, 11, 0.16);
+  letter-spacing: 0;
+  background: transparent;
+  color: var(--sidebar-warning);
+  border: 0;
+  padding: 0;
   white-space: nowrap;
+}
+
+.itemMatchPartial .suggestionBadgePossible,
+.itemMatchPartial .suggestionBadgeDebug,
+.itemMatchPartial .suggestionBadgeUnknown {
+  color: var(--warning);
 }
 
 .suggestionBadgeNone {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 1px 7px;
-  border-radius: 5px;
-  font-size: 0.58rem;
+  padding: 2px 8px;
+  border-radius: 7px;
+  font-size: 0.62rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  background: rgba(100, 116, 139, 0.08);
-  color: #64748b;
-  border: 1px solid rgba(100, 116, 139, 0.12);
+  letter-spacing: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 0;
+  padding: 0;
   white-space: nowrap;
+}
+
+.itemMatchNone .suggestionBadgeNone {
+  color: var(--danger);
 }
 
 .suggestionBadgeDebug {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 1px 7px;
-  border-radius: 5px;
-  font-size: 0.58rem;
+  padding: 2px 8px;
+  border-radius: 7px;
+  font-size: 0.62rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  background: rgba(239, 68, 68, 0.1);
-  color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.14);
+  letter-spacing: 0;
+  background: transparent;
+  color: var(--sidebar-danger);
+  border: 0;
+  padding: 0;
   white-space: nowrap;
 }
 
@@ -397,24 +458,25 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 1px 7px;
-  border-radius: 5px;
-  font-size: 0.58rem;
+  padding: 2px 8px;
+  border-radius: 7px;
+  font-size: 0.62rem;
   font-weight: 800;
-  letter-spacing: 0.04em;
-  background: rgba(147, 51, 234, 0.1);
-  color: #c084fc;
-  border: 1px solid rgba(147, 51, 234, 0.16);
+  letter-spacing: 0;
+  background: transparent;
+  color: var(--sidebar-purple);
+  border: 0;
+  padding: 0;
   white-space: nowrap;
 }
 
 .itemActive .itemMeta {
-  color: #cbd5e1;
+  color: var(--sidebar-text-muted);
 }
 
 .itemMeta {
-  font-size: 0.73rem;
-  color: #475569;
+  font-size: 0.76rem;
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   gap: 4px;
@@ -423,9 +485,9 @@
 .badgeRow {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   flex-wrap: wrap;
-  min-height: 16px;
+  min-height: 18px;
 }
 
 .dot {
@@ -433,56 +495,56 @@
 }
 
 .confidence {
-  color: #3b82f6;
+  color: var(--text-secondary);
   font-weight: 600;
 }
 
 /* ── IA badge ── */
 .iaBadge {
-  font-size: 0.58rem;
+  font-size: 0.6rem;
   font-weight: 800;
-  letter-spacing: 0.06em;
-  background: rgba(16, 185, 129, 0.12);
-  color: #10b981;
-  border: 1px solid rgba(52, 211, 153, 0.2);
-  border-radius: 4px;
-  padding: 2px 5px;
+  letter-spacing: 0;
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--sidebar-success-strong);
+  border: 1px solid color-mix(in srgb, var(--success) 20%, transparent);
+  border-radius: 6px;
+  padding: 2px 6px;
   flex-shrink: 0;
 }
 
 .successBadge {
-  font-size: 0.58rem;
+  font-size: 0.6rem;
   font-weight: 800;
-  letter-spacing: 0.05em;
-  background: rgba(16, 185, 129, 0.12);
-  color: #34d399;
+  letter-spacing: 0;
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+  color: var(--sidebar-success);
   border: 1px solid rgba(52, 211, 153, 0.22);
-  border-radius: 4px;
-  padding: 2px 5px;
+  border-radius: 6px;
+  padding: 2px 6px;
   flex-shrink: 0;
 }
 
 .tagBadge {
-  font-size: 0.58rem;
+  font-size: 0.6rem;
   font-weight: 800;
-  letter-spacing: 0.05em;
-  background: rgba(59, 130, 246, 0.1);
-  color: #93c5fd;
-  border: 1px solid rgba(59, 130, 246, 0.18);
-  border-radius: 4px;
-  padding: 2px 5px;
+  letter-spacing: 0;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: color-mix(in srgb, var(--accent) 84%, var(--text-primary));
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: 6px;
+  padding: 2px 6px;
   flex-shrink: 0;
 }
 
 .tagBadgeMuted {
-  font-size: 0.58rem;
+  font-size: 0.6rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  background: rgba(100, 116, 139, 0.08);
-  color: #64748b;
+  letter-spacing: 0;
+  background: color-mix(in srgb, var(--muted) 42%, transparent);
+  color: var(--sidebar-text-soft);
   border: 1px solid rgba(100, 116, 139, 0.15);
-  border-radius: 4px;
-  padding: 2px 5px;
+  border-radius: 6px;
+  padding: 2px 6px;
   flex-shrink: 0;
 }
 

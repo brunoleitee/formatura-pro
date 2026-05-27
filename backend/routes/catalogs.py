@@ -5,6 +5,7 @@ Extraídas de backend.py para reduzir o monólito.
 
 import json
 import logging
+import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 

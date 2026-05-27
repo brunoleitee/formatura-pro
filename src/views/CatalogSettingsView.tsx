@@ -149,8 +149,10 @@ export default function CatalogSettingsView({ onRequestConfirm }: Props) {
         setErr(result.error || 'Erro ao adicionar pasta');
         showToast(result.error || 'Erro ao adicionar pasta', 'error');
       }
-    } catch {
-      setErr('Erro ao selecionar pasta');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Erro ao adicionar pasta';
+      setErr(msg);
+      showToast(msg, 'error');
     } finally {
       setAdding(false);
     }
@@ -291,9 +293,9 @@ export default function CatalogSettingsView({ onRequestConfirm }: Props) {
                     <CatalogFolderCard
                       key={f.id}
                       folder={f}
-                      onRemove={() => handleRemoveFolder(f)}
-                      onScan={() => handleScanFolder(f)}
-                      onToggle={() => handleToggleFolder(f)}
+                      onRemove={handleRemoveFolder}
+                      onScan={handleScanFolder}
+                      onToggle={handleToggleFolder}
                     />
                   ))
                 ) : (

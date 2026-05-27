@@ -130,3 +130,90 @@ def delete_catalog(req: SetCatalogReq):
     if get_current_catalog() == cname:
         set_current_catalog("")
     return {"status": "ok"}
+
+
+def catalog_folder_stats(catalog: str):
+    get_db = _get("get_db")
+    get_current_catalog = _get("get_current_catalog")
+    
+    cat = catalog or (get_current_catalog() if get_current_catalog else "")
+    if not cat:
+        return {
+            "activeFolders": 0, "totalPhotos": 0, "recognizedPhotos": 0, "newPhotos": 0,
+            "lastScanAt": None, "totalFaces": 0, "photosWithFaces": 0, "knownPersons": 0
+        }
+    try:
+        with get_db(cat) as conn:
+            cur = conn.cursor()
+            
+            # Verificar se tabelas existem no banco
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ocorrencias'")
+            has_ocorrencias = cur.fetchone() is not None
+            
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alunos'")
+            has_alunos = cur.fetchone() is not None
+
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='catalog_folders'")
+            has_folders = cur.fetchone() is not None
+
+            active_folders = 0
+            last_scan_at = None
+            if has_folders:
+                cur.execute("SELECT COUNT(*), MAX(last_scan_at) FROM catalog_folders WHERE catalog_name = ? AND status = 'active'", (cat,))
+                row = cur.fetchone()
+                if row:
+                    active_folders = row[0] or 0
+                    last_scan_at = row[1]
+
+            total_photos = 0
+            recognized_photos = 0
+            new_photos = 0
+            total_faces = 0
+            photos_with_faces = 0
+            if has_ocorrencias:
+                cur.execute("""
+                    SELECT
+                        COUNT(*) AS total_faces,
+                        COUNT(DISTINCT foto_path) AS photos_with_faces,
+                        (SELECT COUNT(DISTINCT foto_path) FROM ocorrencias
+                         WHERE aluno_id NOT LIKE 'Pessoa %'
+                           AND aluno_id != 'system_catalog'
+                           AND aluno_id != 'Desconhecido'
+                           AND aluno_id != '') AS recognized_photos,
+                        (SELECT COUNT(DISTINCT foto_path) FROM ocorrencias
+                         WHERE aluno_id LIKE 'Pessoa %'
+                            OR aluno_id = 'Desconhecido'
+                            OR aluno_id = '') AS new_photos
+                    FROM ocorrencias
+                """)
+                row = cur.fetchone()
+                if row:
+                    total_faces = row["total_faces"] or 0
+                    photos_with_faces = row["photos_with_faces"] or 0
+                    recognized_photos = row["recognized_photos"] or 0
+                    new_photos = row["new_photos"] or 0
+                total_photos = photos_with_faces
+
+            known_persons = 0
+            if has_alunos:
+                cur.execute("SELECT COUNT(*) FROM alunos WHERE aluno_id != 'system_catalog' AND aluno_id NOT LIKE 'Pessoa%'")
+                row = cur.fetchone()
+                if row:
+                    known_persons = row[0] or 0
+
+            return {
+                "activeFolders": active_folders,
+                "totalPhotos": total_photos,
+                "recognizedPhotos": recognized_photos,
+                "newPhotos": new_photos,
+                "lastScanAt": last_scan_at,
+                "totalFaces": total_faces,
+                "photosWithFaces": photos_with_faces,
+                "knownPersons": known_persons
+            }
+    except Exception as e:
+        print(f"Erro em catalog_folder_stats: {e}")
+        return {
+            "activeFolders": 0, "totalPhotos": 0, "recognizedPhotos": 0, "newPhotos": 0,
+            "lastScanAt": None, "totalFaces": 0, "photosWithFaces": 0, "knownPersons": 0
+        }

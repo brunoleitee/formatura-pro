@@ -404,6 +404,21 @@ export default function DashboardView() {
     );
   }
 
+  /* ── Error state ── */
+  if (error) {
+    return (
+      <div className={styles.page}>
+        <div className={styles.pageHeader}>
+          <div>
+            <h1 className={styles.pageTitle}>Visão Geral</h1>
+            <p className={styles.pageSubtitle}>{currentCatalog || 'Nenhum catálogo carregado'}</p>
+          </div>
+        </div>
+        <div className={styles.errorBanner}>{error}</div>
+      </div>
+    );
+  }
+
   /* ── Empty state ── */
   if (!hasCatalog || !hasData) {
     return (
@@ -414,7 +429,6 @@ export default function DashboardView() {
             <p className={styles.pageSubtitle}>{currentCatalog || 'Nenhum catálogo carregado'}</p>
           </div>
         </div>
-        {error && <div className={styles.errorBanner}>{error}</div>}
         <div className={styles.emptyState}>
           <Sparkles size={32} />
           <h2>Nenhum catálogo carregado</h2>

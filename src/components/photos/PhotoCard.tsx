@@ -293,16 +293,16 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
     containIntrinsicSize: cardWidth && cardHeight ? `${cardWidth}px ${cardHeight}px` : '320px 360px',
     transition: 'border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease',
     transform: isHovered ? 'translateY(-2px)' : 'translateY(0)',
-    borderColor: isSelected ? 'rgba(96, 165, 250, 0.85)' : isHovered ? 'rgba(148, 163, 184, 0.18)' : undefined,
+    borderColor: isSelected ? 'var(--photocard-selected-border)' : isHovered ? 'var(--photocard-hover-border)' : undefined,
     boxShadow: isSelected
-      ? '0 0 0 1px rgba(59, 130, 246, 0.26) inset, 0 12px 28px rgba(37, 99, 235, 0.14), 0 0 0 1px rgba(96, 165, 250, 0.08)'
+      ? '0 0 0 1px var(--photocard-selected-shadow-dark) inset, 0 12px 28px var(--photocard-selected-shadow), 0 0 0 1px var(--photocard-selected-shadow-soft)'
       : isHovered
-      ? '0 12px 24px rgba(0, 0, 0, 0.18)'
+      ? 'var(--photocard-shadow)'
       : undefined,
     background: isSelected && isDiscarded
-      ? 'linear-gradient(180deg, rgba(127, 29, 29, 0.54), rgba(15, 23, 42, 0.92))'
+      ? 'linear-gradient(180deg, var(--photocard-selection-bg), var(--photocard-selection-bg-alt2))'
       : isSelected
-      ? 'linear-gradient(180deg, rgba(37, 99, 235, 0.12), rgba(15, 23, 42, 0.92))'
+      ? 'linear-gradient(180deg, var(--photocard-selected-bg), var(--photocard-selected-bg-alt))'
       : undefined,
   };
 
@@ -329,7 +329,7 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
           height: `${thumbHeight}px`,
           flexShrink: 0,
           overflow: 'hidden',
-          background: isLoaded ? 'transparent' : '#111',
+          background: isLoaded ? 'transparent' : 'var(--bg-tertiary)',
         } : undefined}
       >
         {!hasError && (
@@ -445,9 +445,9 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
             position: 'absolute',
             right: '8px',
             top: '8px',
-            background: 'rgba(10, 17, 29, 0.88)',
-            color: 'white',
-            border: '1px solid rgba(96, 165, 250, 0.30)',
+            background: 'var(--accent)',
+            color: 'var(--primary-foreground)',
+            border: '1px solid var(--accent-hover)',
             borderRadius: '999px',
             width: 'auto',
             height: '28px',

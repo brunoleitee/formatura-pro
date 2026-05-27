@@ -31,6 +31,7 @@ class ExportReq(BaseModel):
     include_quality: bool = False
     include_descarte: bool = True
     organize_by_class: bool = False
+    export_format: str = "original"
 
 
 def load_export_history():
@@ -521,15 +522,15 @@ def check_export_conflicts(req: ExportReq):
         conflicts = []
         for aid, f, p_al in worklist:
             safe_aid = _export_folder_name(aid, sanitize_folder_name)
-            safe_p_al = os.path.join(req.dest_path, safe_aid)
+            safe_p_al = p_al if aid not in ("#BASE", "#DESCARTE") else os.path.join(req.dest_path, safe_aid)
 
-            dest_file = os.path.join(safe_p_al, os.path.basename(f))
+            dest_file = os.path.join(safe_p_al, _export_output_filename(f, req))
             if os.path.exists(dest_file):
                 conflicts.append({
                     "aluno_id": aid,
                     "source": f,
                     "dest": dest_file,
-                    "name": os.path.basename(f),
+                    "name": os.path.basename(dest_file),
                 })
         export_base = os.path.join(req.dest_path, "Exportação")
         for report_path in export_report_paths(export_base):
@@ -651,6 +652,56 @@ def _unique_dest_file(folder, filename, conflict_strategy):
     return _next_available_dest_file(folder, filename)
 
 
+RAW_IMAGE_EXTENSIONS = {
+    ".cr2", ".cr3", ".nef", ".arw", ".dng", ".raf", ".orf", ".rw2", ".pef", ".srw",
+}
+
+
+def _normalized_export_format(req):
+    value = str(getattr(req, "export_format", "original") or "original").strip().lower()
+    return "jpg" if value in {"jpg", "jpeg"} else "original"
+
+
+def _export_output_filename(source_path, req):
+    filename = os.path.basename(source_path)
+    if _normalized_export_format(req) != "jpg":
+        return filename
+    stem, _ext = os.path.splitext(filename)
+    return f"{stem}.jpg"
+
+
+def _save_as_jpeg(source_path, dest_file):
+    ext = os.path.splitext(source_path)[1].lower()
+    try:
+        if ext in RAW_IMAGE_EXTENSIONS:
+            try:
+                import rawpy
+            except Exception as e:
+                raise RuntimeError("Conversor RAW nao disponivel (rawpy)") from e
+
+            from PIL import Image
+
+            with rawpy.imread(source_path) as raw:
+                rgb = raw.postprocess(use_camera_wb=True, no_auto_bright=True, output_bps=8)
+            Image.fromarray(rgb).save(dest_file, "JPEG", quality=95, optimize=True)
+            return
+
+        from PIL import Image, ImageOps
+
+        with Image.open(source_path) as img:
+            img = ImageOps.exif_transpose(img)
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            img.save(dest_file, "JPEG", quality=95, optimize=True)
+    except Exception:
+        if os.path.exists(dest_file):
+            try:
+                os.remove(dest_file)
+            except Exception:
+                pass
+        raise
+
+
 def _prepare_recreate_destination(req, catalog_name):
     backup_catalog_db = _get("backup_catalog_db")
     log_debug = _get("log_debug", lambda *_: None)
@@ -765,6 +816,16 @@ def _file_starts_with(path, prefix):
 
 
 def _write_simple_pdf(path, summary_rows, per_person_rows):
+    # Otimização: limitar formandos no PDF para evitar lentidão
+    max_pdf_rows = 150
+    if len(per_person_rows) > max_pdf_rows:
+        header = per_person_rows[0]
+        data_rows = per_person_rows[1:]
+        extra_count = len(data_rows) - (max_pdf_rows - 1)
+        truncated_rows = [header] + data_rows[:max_pdf_rows - 1]
+        truncated_rows.append([f"... e outros {extra_count} formandos no XLSX", "", ""])
+        per_person_rows = truncated_rows
+
     lines = ["FORMATURA PRO", "RELATORIO DE EXPORTACAO", ""]
     lines.extend([f"{row[0]}: {row[1]}" for row in summary_rows[1:]])
     lines.extend(["", "FORMANDOS", "ID Formando   | Pasta Destino    | Qtd Fotos"])
@@ -814,6 +875,16 @@ def _write_simple_pdf(path, summary_rows, per_person_rows):
 
 
 def _write_reportlab_pdf(path, summary_rows, per_person_rows):
+    # Otimização: limitar formandos no PDF para evitar lentidão exponencial do ReportLab
+    max_pdf_rows = 150
+    if len(per_person_rows) > max_pdf_rows:
+        header = per_person_rows[0]
+        data_rows = per_person_rows[1:]
+        extra_count = len(data_rows) - (max_pdf_rows - 1)
+        truncated_rows = [header] + data_rows[:max_pdf_rows - 1]
+        truncated_rows.append([f"... e outros {extra_count} formandos no XLSX", "", ""])
+        per_person_rows = truncated_rows
+
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -933,153 +1004,168 @@ def run_export_worker(req: ExportReq, catalog_name: str):
     try:
         os.makedirs(req.dest_path, exist_ok=True)
         _prepare_recreate_destination(req, catalog_name)
+        
+        # 1. Abre a conexão apenas para extrair a lista de trabalho rápida, e já fecha imediatamente!
         with get_db(catalog_name) as conn:
-            cur = conn.cursor()
             worklist = build_export_worklist(conn, req)
 
-            export_base = os.path.join(req.dest_path, "Exportação")
-            os.makedirs(export_base, exist_ok=True)
+        export_base = os.path.join(req.dest_path, "Exportação")
+        os.makedirs(export_base, exist_ok=True)
 
-            safe_p_al_map = {}
-            organize_by_class = bool(getattr(req, "organize_by_class", False))
-            log_info(f"[export] export_base={export_base} organize_by_class={organize_by_class}")
-            for aid, _f, p_al in worklist:
-                if aid not in safe_p_al_map:
-                    if aid in ("#BASE", "#DESCARTE"):
-                        safe_aid = _export_folder_name(aid, sanitize_folder_name)
-                        safe_p_al_map[aid] = os.path.join(req.dest_path, safe_aid)
-                    else:
-                        if organize_by_class:
-                            safe_p_al_map[aid] = p_al
-                            log_info(f"[export-folder] student={aid} p_al={p_al}")
-                        else:
-                            safe_aid = _export_folder_name(aid, sanitize_folder_name)
-                            safe_p_al_map[aid] = os.path.join(export_base, safe_aid)
-                    try:
-                        os.makedirs(safe_p_al_map[aid], exist_ok=True)
-                    except Exception as e:
-                        log_info(f"Erro ao criar pasta para {aid}: {e}")
-
-            log_info(f"[export] safe_p_al_map (amostra): {dict(list(safe_p_al_map.items())[:5])}")
-
-            total = len(worklist)
-            export_state["total_files"] = total
-            if total == 0:
-                export_state["status_text"] = "Nenhuma foto selecionada para exportar!"
-                export_state["is_exporting"] = False
-                return
-
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-
-            start_time = time.time()
-            exported_files = 0
-            exported_folders = set()
-            per_person_counts = {}
-            base_copy_count = 0
-            files_copied_this_export = []
-            incremental_mode = req.conflict_strategy == "incremental"
-            existing_dest_keys = set()
-            for aid, f, _p_al in worklist:
-                p_al_safe = safe_p_al_map.get(aid)
-                if p_al_safe:
-                    dest_path_check = os.path.join(p_al_safe, os.path.basename(f))
-                    if os.path.exists(dest_path_check):
-                        existing_dest_keys.add(dest_path_check.lower())
-
-            state_lock = threading.Lock()
-            results = [None] * total
-            processed_count = 0
-
-            def process_copy(idx, aid, f):
-                if not export_state["is_exporting"]:
-                    return idx, aid, os.path.basename(f), f, "", "Cancelado", None, False, False
-
-                p_al = safe_p_al_map.get(aid)
-                if not p_al:
-                    return idx, aid, os.path.basename(f), f, "", "Erro: Pasta de destino invalida", None, False, False
-
-                try:
-                    if os.path.exists(f):
-                        with state_lock:
-                            dest_file = _unique_dest_file(p_al, os.path.basename(f), req.conflict_strategy)
-                            dest_existed_before_export = dest_file.lower() in existing_dest_keys
-
-                            if dest_existed_before_export and req.conflict_strategy == "replace":
-                                return idx, aid, os.path.basename(f), f, dest_file, "Ja existia", None, False, True
-                            elif incremental_mode and os.path.exists(dest_file):
-                                return idx, aid, os.path.basename(f), f, dest_file, "Ja existia (incremental)", None, False, True
-                            else:
-                                if req.conflict_strategy == "replace" and os.path.exists(dest_file):
-                                    dest_file = _next_available_dest_file(p_al, os.path.basename(f))
-                                existing_dest_keys.add(dest_file.lower())
-                                copied_path = dest_file
-                                file_copied = True
-
-                        is_copy_only = aid == "#BASE"
-                        if req.mode == "move" and not is_copy_only:
-                            shutil.move(f, dest_file)
-                            status = "Movido"
-                        else:
-                            shutil.copy2(f, dest_file)
-                            status = "Copiado"
-
-                        return idx, aid, os.path.basename(f), f, dest_file, status, copied_path, file_copied, True
-                    else:
-                        return idx, aid, os.path.basename(f), f, "", "Erro: Fonte nao encontrada", None, False, False
-                except Exception as e:
-                    return idx, aid, os.path.basename(f), f, "", f"Erro: {str(e)}", None, False, False
-
-            # Usar ThreadPoolExecutor para paralelizar a gravação de arquivos (I/O)
-            max_workers = 8
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = {executor.submit(process_copy, idx, aid, f): idx for idx, (aid, f, _) in enumerate(worklist)}
-                for future in as_completed(futures):
-                    if not export_state["is_exporting"]:
-                        for fut in futures:
-                            fut.cancel()
-                        break
-                    
-                    try:
-                        res = future.result()
-                        idx, aid, filename, f, dest_file, status, copied_path, file_copied, success = res
-                        results[idx] = res
-
-                        with state_lock:
-                            processed_count += 1
-                            if file_copied and copied_path:
-                                exported_files += 1
-                                files_copied_this_export.append(copied_path)
-
-                            p_al = safe_p_al_map.get(aid)
-                            if success and p_al:
-                                if aid == "#BASE":
-                                    base_copy_count += 1
-                                    exported_folders.add(p_al)
-                                elif aid != "#DESCARTE":
-                                    per_person_counts[aid] = per_person_counts.get(aid, 0) + 1
-                                    exported_folders.add(p_al)
-
-                            export_state["processed_files"] = processed_count
-                            if processed_count % 5 == 0 or processed_count == total:
-                                elapsed = time.time() - start_time
-                                avg = elapsed / processed_count
-                                export_state["eta_seconds"] = int(avg * (total - processed_count))
-                                export_state["progress"] = round((processed_count / total) * 100, 1)
-                    except Exception as e:
-                        log_info(f"Worker: Erro no processamento concorrente do arquivo: {e}")
-
-            # Reconstruir o file_report_rows na ordem sequencial original
-            file_report_rows = [["Formando/Pasta", "Arquivo", "Origem", "Destino", "Status"]]
-            for idx in range(total):
-                res = results[idx]
-                if res is None:
-                    aid, f, _ = worklist[idx]
-                    file_report_rows.append([aid, os.path.basename(f), f, "", "Erro: Cancelado ou Nao Processado"])
+        safe_p_al_map = {}
+        organize_by_class = bool(getattr(req, "organize_by_class", False))
+        log_info(f"[export] export_base={export_base} organize_by_class={organize_by_class}")
+        for aid, _f, p_al in worklist:
+            if aid not in safe_p_al_map:
+                if aid in ("#BASE", "#DESCARTE"):
+                    safe_aid = _export_folder_name(aid, sanitize_folder_name)
+                    safe_p_al_map[aid] = os.path.join(req.dest_path, safe_aid)
                 else:
-                    idx, aid, filename, f, dest_file, status, copied_path, file_copied, success = res
-                    file_report_rows.append([aid, filename, f, dest_file, status])
+                    if organize_by_class:
+                        safe_p_al_map[aid] = p_al
+                        log_info(f"[export-folder] student={aid} p_al={p_al}")
+                    else:
+                        safe_aid = _export_folder_name(aid, sanitize_folder_name)
+                        safe_p_al_map[aid] = os.path.join(export_base, safe_aid)
+                try:
+                    os.makedirs(safe_p_al_map[aid], exist_ok=True)
+                except Exception as e:
+                    log_info(f"Erro ao criar pasta para {aid}: {e}")
 
-            export_uuid = str(uuid.uuid4())
+        log_info(f"[export] safe_p_al_map (amostra): {dict(list(safe_p_al_map.items())[:5])}")
+
+        total = len(worklist)
+        export_state["total_files"] = total
+        if total == 0:
+            export_state["status_text"] = "Nenhuma foto selecionada para exportar!"
+            export_state["is_exporting"] = False
+            return
+
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        start_time = time.time()
+        exported_files = 0
+        exported_folders = set()
+        per_person_counts = {}
+        base_copy_count = 0
+        files_copied_this_export = []
+        incremental_mode = req.conflict_strategy == "incremental"
+        existing_dest_keys = set()
+        for aid, f, _p_al in worklist:
+            p_al_safe = safe_p_al_map.get(aid)
+            if p_al_safe:
+                dest_path_check = os.path.join(p_al_safe, _export_output_filename(f, req))
+                if os.path.exists(dest_path_check):
+                    existing_dest_keys.add(dest_path_check.lower())
+
+        state_lock = threading.Lock()
+        results = [None] * total
+        processed_count = 0
+
+        def process_copy(idx, aid, f):
+            if not export_state["is_exporting"]:
+                return idx, aid, os.path.basename(f), f, "", "Cancelado", None, False, False
+
+            p_al = safe_p_al_map.get(aid)
+            if not p_al:
+                return idx, aid, os.path.basename(f), f, "", "Erro: Pasta de destino invalida", None, False, False
+
+            try:
+                if os.path.exists(f):
+                    output_filename = _export_output_filename(f, req)
+                    with state_lock:
+                        dest_file = _unique_dest_file(p_al, output_filename, req.conflict_strategy)
+                        dest_existed_before_export = dest_file.lower() in existing_dest_keys
+
+                        if dest_existed_before_export and req.conflict_strategy == "replace":
+                            return idx, aid, output_filename, f, dest_file, "Ja existia", None, False, True
+                        elif incremental_mode and os.path.exists(dest_file):
+                            return idx, aid, output_filename, f, dest_file, "Ja existia (incremental)", None, False, True
+                        else:
+                            if req.conflict_strategy == "replace" and os.path.exists(dest_file):
+                                dest_file = _next_available_dest_file(p_al, output_filename)
+                            existing_dest_keys.add(dest_file.lower())
+                            copied_path = dest_file
+                            file_copied = True
+
+                    export_format = _normalized_export_format(req)
+                    is_copy_only = aid == "#BASE" or export_format == "jpg"
+                    if export_format == "jpg":
+                        ext = os.path.splitext(f)[1].lower()
+                        if ext in (".jpg", ".jpeg"):
+                            shutil.copy2(f, dest_file)
+                            status = "Copiado JPG"
+                        else:
+                            _save_as_jpeg(f, dest_file)
+                            status = "Convertido JPG"
+                    elif req.mode == "move" and not is_copy_only:
+                        shutil.move(f, dest_file)
+                        status = "Movido"
+                    else:
+                        shutil.copy2(f, dest_file)
+                        status = "Copiado"
+
+                    return idx, aid, output_filename, f, dest_file, status, copied_path, file_copied, True
+                else:
+                    return idx, aid, os.path.basename(f), f, "", "Erro: Fonte nao encontrada", None, False, False
+            except Exception as e:
+                return idx, aid, os.path.basename(f), f, "", f"Erro: {str(e)}", None, False, False
+
+        # Usar ThreadPoolExecutor para paralelizar a gravação de arquivos (I/O) - Concorrência livre de banco!
+        max_workers = 8
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(process_copy, idx, aid, f): idx for idx, (aid, f, _) in enumerate(worklist)}
+            for future in as_completed(futures):
+                if not export_state["is_exporting"]:
+                    for fut in futures:
+                        fut.cancel()
+                    break
+                
+                try:
+                    res = future.result()
+                    idx, aid, filename, f, dest_file, status, copied_path, file_copied, success = res
+                    results[idx] = res
+
+                    with state_lock:
+                        processed_count += 1
+                        if file_copied and copied_path:
+                            exported_files += 1
+                            files_copied_this_export.append(copied_path)
+
+                        p_al = safe_p_al_map.get(aid)
+                        if success and p_al:
+                            if aid == "#BASE":
+                                base_copy_count += 1
+                                exported_folders.add(p_al)
+                            elif aid != "#DESCARTE":
+                                per_person_counts[aid] = per_person_counts.get(aid, 0) + 1
+                                exported_folders.add(p_al)
+
+                        export_state["processed_files"] = processed_count
+                        if processed_count % 5 == 0 or processed_count == total:
+                            elapsed = time.time() - start_time
+                            avg = elapsed / processed_count
+                            export_state["eta_seconds"] = int(avg * (total - processed_count))
+                            export_state["progress"] = round((processed_count / total) * 100, 1)
+                except Exception as e:
+                    log_info(f"Worker: Erro no processamento concorrente do arquivo: {e}")
+
+        # Reconstruir o file_report_rows na ordem sequencial original
+        file_report_rows = [["Formando/Pasta", "Arquivo", "Origem", "Destino", "Status"]]
+        for idx in range(total):
+            res = results[idx]
+            if res is None:
+                aid, f, _ = worklist[idx]
+                file_report_rows.append([aid, os.path.basename(f), f, "", "Erro: Cancelado ou Nao Processado"])
+            else:
+                idx, aid, filename, f, dest_file, status, copied_path, file_copied, success = res
+                file_report_rows.append([aid, filename, f, dest_file, status])
+
+        export_uuid = str(uuid.uuid4())
+        
+        # 2. Abre a conexão apenas para inserir o histórico final curto de forma rápida e segura!
+        with get_db(catalog_name) as conn:
+            cur = conn.cursor()
             try:
                 cur.execute("SELECT 1 FROM export_history LIMIT 1")
             except sqlite3.OperationalError:
@@ -1110,104 +1196,108 @@ def run_export_worker(req: ExportReq, catalog_name: str):
                     datetime.now().isoformat(),
                 ),
             )
+            conn.commit()
 
-            export_state["status_text"] = "Exportacao concluida com sucesso!"
-            elapsed_total = time.time() - start_time
+        export_state["status_text"] = "Exportacao concluida com sucesso!"
+        elapsed_total = time.time() - start_time
+
+        try:
+            all_reports = export_report_paths(export_base)
+            report_path = _unique_dest_file(export_base, os.path.basename(all_reports[0]), "copy")
+            pdf_report_path = _unique_dest_file(export_base, os.path.basename(all_reports[1]), "copy")
+
+            folder_count = len(exported_folders)
+            destination_photo_total = exported_files
+
+            # Contar fotos base do catálogo usando nova conexão curta e protegida
+            base_photos_total = count_base_photos_from_catalog(catalog_name)
+
+            summary_rows = [
+                ["Relatorio de Exportacao", ""],
+                ["Catalogo", catalog_name],
+                ["Data/Hora", datetime.now().strftime("%d/%m/%Y %H:%M:%S")],
+                ["Formato", "JPEG convertido" if _normalized_export_format(req) == "jpg" else "Original"],
+                ["Fotos Exportadas", str(destination_photo_total)],
+                ["Fotos Base", str(base_photos_total)],
+                ["Pastas Criadas", str(folder_count)],
+                ["Tempo Total", _format_duration(elapsed_total)],
+                ["Destino", req.dest_path],
+            ]
+
+            per_person_rows = [["ID Formando", "Pasta Destino", "Qtd Fotos"]]
+            for aid in sorted(per_person_counts.keys(), key=lambda x: x.lower()):
+                p_al_path = safe_p_al_map.get(aid, aid)
+                display_name = clean_student_display_id(aid, student_name=str(p_al_path).rsplit(os.sep, 1)[-1] if p_al_path else aid)
+                folder_display = str(p_al_path).rsplit(os.sep, 1)[-1] if p_al_path else display_name
+                per_person_rows.append([display_name, folder_display, str(per_person_counts[aid])])
 
             try:
-                all_reports = export_report_paths(export_base)
-                report_path = _unique_dest_file(export_base, os.path.basename(all_reports[0]), "copy")
-                pdf_report_path = _unique_dest_file(export_base, os.path.basename(all_reports[1]), "copy")
-
-                folder_count = len(exported_folders)
-                destination_photo_total = exported_files
-
-                # Contar fotos base do catálogo (não apenas as exportadas)
-                base_photos_total = count_base_photos_from_catalog(catalog_name)
-
-                summary_rows = [
-                    ["Relatorio de Exportacao", ""],
-                    ["Catalogo", catalog_name],
-                    ["Data/Hora", datetime.now().strftime("%d/%m/%Y %H:%M:%S")],
-                    ["Fotos Exportadas", str(destination_photo_total)],
-                    ["Fotos Base", str(base_photos_total)],
-                    ["Pastas Criadas", str(folder_count)],
-                    ["Tempo Total", _format_duration(elapsed_total)],
-                    ["Destino", req.dest_path],
-                ]
-
-                per_person_rows = [["ID Formando", "Pasta Destino", "Qtd Fotos"]]
-                for aid in sorted(per_person_counts.keys(), key=lambda x: x.lower()):
-                    p_al_path = safe_p_al_map.get(aid, aid)
-                    display_name = clean_student_display_id(aid, student_name=str(p_al_path).rsplit(os.sep, 1)[-1] if p_al_path else aid)
-                    folder_display = str(p_al_path).rsplit(os.sep, 1)[-1] if p_al_path else display_name
-                    per_person_rows.append([display_name, folder_display, str(per_person_counts[aid])])
-
-                try:
-                    _write_export_report(report_path, summary_rows, per_person_rows)
-                except Exception as e:
-                    log_info(f"Worker: Erro write_export_report: {e}")
-                    report_path = ""
-                try:
-                    _write_reportlab_pdf(pdf_report_path, summary_rows, per_person_rows)
-                except Exception as e:
-                    log_info(f"Worker: Erro write_reportlab_pdf: {e}")
-                    try:
-                        _write_simple_pdf(pdf_report_path, summary_rows, per_person_rows)
-                        log_info("Worker: PDF simples gerado como fallback.")
-                    except Exception as fallback_error:
-                        log_info(f"Worker: Erro write_simple_pdf fallback: {fallback_error}")
-                        pdf_report_path = ""
-
-                export_state["export_summary"] = {
-                    "export_id": export_state.get("export_id", ""),
-                    "export_dir": req.dest_path,
-                    "pdf_path": pdf_report_path,
-                    "dest_path": req.dest_path,
-                    "report_path": report_path,
-                    "pdf_report_path": pdf_report_path,
-                    "time_seconds": int(elapsed_total),
-                    "time_str": _format_duration(elapsed_total),
-                    "folder_count": folder_count,
-                    "photo_count": destination_photo_total,
-                    "mode": req.mode,
-                }
-                export_state["export_dir"] = req.dest_path
-                export_state["pdf_path"] = pdf_report_path
-
-                append_export_history({
-                    "catalog": catalog_name,
-                    "export_id": export_state.get("export_id", ""),
-                    "dest_path": req.dest_path,
-                    "export_dir": req.dest_path,
-                    "mode": req.mode,
-                    "time_str": _format_duration(elapsed_total),
-                    "time_seconds": int(elapsed_total),
-                    "folder_count": folder_count,
-                    "photo_count": destination_photo_total,
-                    "report_path": report_path,
-                    "pdf_report_path": pdf_report_path,
-                    "pdf_path": pdf_report_path,
-                    "created_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                })
+                _write_export_report(report_path, summary_rows, per_person_rows)
             except Exception as e:
-                log_info(f"Worker: Erro ao gerar resumo/relatorios: {e}")
-                export_state["export_summary"] = {
-                    "export_id": export_state.get("export_id", ""),
-                    "export_dir": req.dest_path,
-                    "pdf_path": "",
-                    "dest_path": req.dest_path,
-                    "report_path": "",
-                    "pdf_report_path": "",
-                    "time_seconds": int(elapsed_total),
-                    "time_str": _format_duration(elapsed_total),
-                    "folder_count": 0,
-                    "photo_count": exported_files,
-                    "mode": req.mode,
-                }
+                log_info(f"Worker: Erro write_export_report: {e}")
+                report_path = ""
+            try:
+                _write_reportlab_pdf(pdf_report_path, summary_rows, per_person_rows)
+            except Exception as e:
+                log_info(f"Worker: Erro write_reportlab_pdf: {e}")
+                try:
+                    _write_simple_pdf(pdf_report_path, summary_rows, per_person_rows)
+                    log_info("Worker: PDF simples gerado como fallback.")
+                except Exception as fallback_error:
+                    log_info(f"Worker: Erro write_simple_pdf fallback: {fallback_error}")
+                    pdf_report_path = ""
 
-            conn.commit()
-            log_info(f"Worker: Exportacao concluida com sucesso e commit realizado. arquivos={exported_files} pastas={len(exported_folders)} tempo={elapsed_total:.2f}s")
+            export_state["export_summary"] = {
+                "export_id": export_state.get("export_id", ""),
+                "export_dir": req.dest_path,
+                "pdf_path": pdf_report_path,
+                "dest_path": req.dest_path,
+                "report_path": report_path,
+                "pdf_report_path": pdf_report_path,
+                "time_seconds": int(elapsed_total),
+                "time_str": _format_duration(elapsed_total),
+                "folder_count": folder_count,
+                "photo_count": destination_photo_total,
+                "mode": req.mode,
+                "export_format": _normalized_export_format(req),
+            }
+            export_state["export_dir"] = req.dest_path
+            export_state["pdf_path"] = pdf_report_path
+
+            append_export_history({
+                "catalog": catalog_name,
+                "export_id": export_state.get("export_id", ""),
+                "dest_path": req.dest_path,
+                "export_dir": req.dest_path,
+                "mode": req.mode,
+                "export_format": _normalized_export_format(req),
+                "time_str": _format_duration(elapsed_total),
+                "time_seconds": int(elapsed_total),
+                "folder_count": folder_count,
+                "photo_count": destination_photo_total,
+                "report_path": report_path,
+                "pdf_report_path": pdf_report_path,
+                "pdf_path": pdf_report_path,
+                "created_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            })
+        except Exception as e:
+            log_info(f"Worker: Erro ao gerar resumo/relatorios: {e}")
+            export_state["export_summary"] = {
+                "export_id": export_state.get("export_id", ""),
+                "export_dir": req.dest_path,
+                "pdf_path": "",
+                "dest_path": req.dest_path,
+                "report_path": "",
+                "pdf_report_path": "",
+                "time_seconds": int(elapsed_total),
+                "time_str": _format_duration(elapsed_total),
+                "folder_count": 0,
+                "photo_count": exported_files,
+                "mode": req.mode,
+                "export_format": _normalized_export_format(req),
+            }
+
+        log_info(f"Worker: Exportacao concluida com sucesso. arquivos={exported_files} pastas={len(exported_folders)} tempo={elapsed_total:.2f}s")
     except Exception as e:
         log_info(f"Worker: Erro fatal durante a exportacao: {str(e)}")
         export_state["status_text"] = f"Erro fatal: {str(e)}"
@@ -1222,7 +1312,7 @@ def start_export(req: ExportReq):
     validate_destination_path = _get("validate_destination_path")
     backup_catalog_db = _get("backup_catalog_db")
 
-    log_info(f"API: Recebido pedido de exportacao. IDs: {len(req.ids)}, Modo: {req.mode}")
+    log_info(f"API: Recebido pedido de exportacao. IDs: {len(req.ids)}, Modo: {req.mode}, Formato: {_normalized_export_format(req)}")
     if export_state["is_exporting"]:
         raise HTTPException(400, "Exportação em andamento.")
     validate_destination_path(req.dest_path)

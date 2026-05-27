@@ -322,6 +322,7 @@ export interface RichCluster {
   discovered_at?: string;
   suggested_student?: string | null;
   suggested_similarity?: number | null;
+  suggested_person_key?: string | null;
   best_student_debug?: string | null;
   best_similarity_debug?: number | null;
   unknown_similar_id?: string | null;
@@ -342,6 +343,7 @@ export interface ReviewClusterSummary {
   priority_score?: number;
   suggested_student?: string | null;
   suggested_similarity?: number | null;
+  suggested_person_key?: string | null;
   unknown_similar_id?: string | null;
   unknown_similar_number?: number | null;
   unknown_similar_similarity?: number | null;
@@ -419,6 +421,7 @@ export interface StudentMatchPreviewResponse {
   matched_student_name: string | null;
   matched_student_folder: string;
   matched_student_label: string;
+  matched_student_person_key?: string | null;
   reference_path?: string | null;
   reference_missing?: boolean;
   message?: string;
@@ -536,4 +539,16 @@ export interface MergePersonResponse {
   faces_moved: number;
   source_removed: boolean;
   reason?: string;
+}
+
+export interface CreateReferencesStatus {
+  is_running: boolean;
+  progress: number;
+  processed: number;
+  total: number;
+  status_text: string;
+  error: string | null;
+  result: {
+    created_count: number;
+  } | null;
 }

@@ -14,6 +14,8 @@ from fastapi.responses import FileResponse, StreamingResponse, Response
 from PIL import ExifTags, Image
 from utils import validate_config
 
+RAW_EXTENSIONS = (".cr2", ".cr3", ".nef", ".arw", ".dng", ".orf", ".rw2", ".raf", ".srw", ".x3f")
+
 _cfg = {}
 _thumb_cache_prune_lock = threading.Lock()
 _thumb_cache_last_prune = 0.0
@@ -137,7 +139,21 @@ def _get(name, default=None):
     return _cfg.get(name, default)
 
 
+def _load_raw_as_pil(path):
+    try:
+        import rawpy
+    except Exception as e:
+        raise RuntimeError("Conversor RAW nao disponivel (rawpy)") from e
+    with rawpy.imread(path) as raw:
+        rgb = raw.postprocess(use_camera_wb=True, no_auto_bright=True, output_bps=8)
+    return Image.fromarray(rgb)
+
+
 def load_pil_with_orientation(path):
+    ext = os.path.splitext(path)[1].lower()
+    if ext in RAW_EXTENSIONS:
+        return _load_raw_as_pil(path)
+
     img = Image.open(path)
     try:
         exif = img._getexif()
@@ -687,7 +703,8 @@ def get_image_thumb(path: str, size: int = 300, quality: int = 80):
                     return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
             
             try:
-                if _run_thumb_engine("image", decoded_path, cache_path, size):
+                ext = os.path.splitext(decoded_path)[1].lower()
+                if ext not in RAW_EXTENSIONS and _run_thumb_engine("image", decoded_path, cache_path, size):
                     result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
                     _put_result_in_cache(cache_path, result)
                     _log_thumb_perf("image", decoded_path, size, (time.perf_counter() - started) * 1000.0, "rust", quality=quality)
@@ -821,7 +838,8 @@ def get_thumb(path: str, x1: int, y1: int, x2: int, y2: int, size: int = 120, ex
                     return StreamingResponse(_create_error_placeholder(size), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
             
             try:
-                if _run_thumb_engine("face", decoded_path, cache_path, size, x1=x1, y1=y1, x2=x2, y2=y2, expand=expand):
+                ext = os.path.splitext(decoded_path)[1].lower()
+                if ext not in RAW_EXTENSIONS and _run_thumb_engine("face", decoded_path, cache_path, size, x1=x1, y1=y1, x2=x2, y2=y2, expand=expand):
                     result = FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
                     _put_result_in_cache(cache_path, result)
                     _log_thumb_perf("face", decoded_path, size, (time.perf_counter() - started) * 1000.0, "rust", quality=quality)
@@ -844,11 +862,12 @@ def get_thumb(path: str, x1: int, y1: int, x2: int, y2: int, size: int = 120, ex
                     y2 = max(y1 + 1, min(y2, h))
                     face_w, face_h = x2 - x1, y2 - y1
 
-                    v_expand = expand + 0.1
+                    top_expand = expand + 0.55
+                    bottom_expand = expand + 0.12
                     left = max(0, x1 - int(face_w * expand))
-                    top = max(0, y1 - int(face_h * v_expand))
+                    top = max(0, y1 - int(face_h * top_expand))
                     right = min(w, x2 + int(face_w * expand))
-                    bottom = min(h, y2 + int(face_h * v_expand))
+                    bottom = min(h, y2 + int(face_h * bottom_expand))
 
                     crop = pil.crop((left, top, right, bottom))
                     crop.thumbnail((size, size), Image.Resampling.LANCZOS)
@@ -948,10 +967,11 @@ def get_image_resized(path: str, max_size: int = 1200):
         # Se cache existe, verificar EXIF — se a imagem original precisa de rotação
         # e o cache foi gerado sem ela, forçar regeneração
         if os.path.exists(cache_path):
-            img_check = Image.open(decoded_path)
+            ext = os.path.splitext(decoded_path)[1].lower()
+            img_check = None if ext in RAW_EXTENSIONS else Image.open(decoded_path)
             needs_rotate = False
             try:
-                exif = img_check._getexif()
+                exif = img_check._getexif() if img_check is not None else None
                 if exif:
                     from PIL.ExifTags import TAGS as ExifTags_tags
                     for key, val in ExifTags_tags.items():
@@ -962,7 +982,8 @@ def get_image_resized(path: str, max_size: int = 1200):
                             break
             except Exception:
                 pass
-            img_check.close()
+            if img_check is not None:
+                img_check.close()
             
             if not needs_rotate:
                 return FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
@@ -1266,7 +1287,6 @@ def get_discard_candidates(catalog: str = ""):
     return items
 
 
-RAW_EXTENSIONS = (".cr2", ".cr3", ".nef", ".arw", ".dng", ".orf", ".rw2", ".raf", ".srw", ".x3f")
 VIDEO_EXTENSIONS = (".mov", ".mp4", ".avi", ".mts", ".m2ts", ".insv", ".360")
 IMAGE_EXT = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff")
 HEIC_EXT = (".heic", ".heif")

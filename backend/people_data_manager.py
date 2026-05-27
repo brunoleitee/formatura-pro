@@ -273,7 +273,7 @@ def get_people(unknown: bool = False, catalog: str = ""):
                             aid = ar["aluno_id"]
                             identity = pk if pk else aid
                             
-                            if identity not in seen_identities and aid != "system_catalog" and aid != "#BASE" and lower(aid) not in ("base", "referencia", "referência") and not aid.lower().startswith("pessoa "):
+                            if identity not in seen_identities and aid != "system_catalog" and aid != "#BASE" and aid.lower() not in ("base", "referencia", "referência") and not aid.lower().startswith("pessoa "):
                                 seen_identities.add(identity)
                                 rows.append({
                                     "aluno_id": aid,

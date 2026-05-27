@@ -1,10 +1,12 @@
 import { Component, type ErrorInfo, type ReactNode, useState, useEffect, useCallback, useRef } from 'react';
-import { UserCheck, RefreshCw, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
+import { UserCheck, RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
 import type { AssignClusterResponse, Photo, PhotoContextResponse, GraduationAnalysisStatus, ReviewClusterSummary, RichCluster } from '../services/api';
 import { useApp } from '../context/AppContext';
 import ReviewSidebar from '../components/review/ReviewSidebar';
 import ClusterDetail from '../components/review/ClusterDetail';
+import GraduationAnalysisPanel from '../components/review/GraduationAnalysisPanel';
+import WelcomeState from '../components/review/WelcomeState';
 import { PhotoViewerModal } from '../components/photos/PhotoViewerModal';
 import { isKnownFace } from '../utils/personIdentity';
 import styles from './ReviewView.module.css';
@@ -182,6 +184,8 @@ const wasGraduationRunningRef = useRef(false);
       setPageOffset((prev) => prev + nextClusters.length);
       setReviewReady(Boolean(data?.review_ready ?? true));
       if (data?.total_faces_in_catalog !== undefined) setTotalFacesInCatalog(data.total_faces_in_catalog);
+    } catch {
+      showReviewToast?.('Erro ao carregar mais grupos', 'error');
     } finally {
       setLoadingMore(false);
     }
@@ -385,7 +389,7 @@ const wasGraduationRunningRef = useRef(false);
     setSelected((prev) => (prev && prev.cluster_id === next.cluster_id ? next : prev));
   }, []);
 
-  const handleStartGraduationAnalysis = useCallback(async () => {
+  const handleStartGraduationAnalysis = useCallback(async (useAiUltra: boolean) => {
     if (!currentCatalog || graduationStatus?.is_running || isStartingGraduationAnalysis) return;
     setIsStartingGraduationAnalysis(true);
     try {
@@ -393,7 +397,7 @@ const wasGraduationRunningRef = useRef(false);
       try {
         await api.generateAllEmbeddings(currentCatalog);
       } catch { /* continua mesmo se falhar */ }
-      await api.startGraduationAnalysis(currentCatalog);
+      await api.startGraduationAnalysis(currentCatalog, useAiUltra);
       await refreshGraduationStatus();
     } finally {
       setIsStartingGraduationAnalysis(false);
@@ -545,169 +549,4 @@ const wasGraduationRunningRef = useRef(false);
   );
 }
 
-function GraduationAnalysisPanel({
-  status,
-  isStarting,
-  onStart,
-}: {
-  status: GraduationAnalysisStatus | null;
-  isStarting: boolean;
-  onStart: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const isRunning = Boolean(status?.is_running);
-  const progress = Math.max(0, Math.min(100, (status?.progress ?? 0) * 100));
-  const hasResult = Boolean(status?.result);
-  const buttonLabel = isRunning || isStarting ? 'Analisando...' : (hasResult ? 'Reanalisar' : 'Analisar');
 
-  // Status compacto resumido: mostra contagem quando há resultado, ou progresso, ou pronto pra rodar
-  let compactStatus: string;
-  if (isStarting && !isRunning) {
-    compactStatus = 'Gerando embeddings das fotos...';
-  } else if (isRunning) {
-    compactStatus = `Analisando ${status?.processed ?? 0}/${status?.total ?? 0} (${Math.round(progress)}%)`;
-  } else if (status?.error) {
-    compactStatus = status.error;
-  } else if (status?.result) {
-    const n = status.result.processed_files;
-    compactStatus = `Itens analisados: ${n} foto${n !== 1 ? 's' : ''}`;
-  } else {
-    compactStatus = 'Itens de formatura não analisados';
-  }
-
-  return (
-    <div className={`${styles.analysisPanel} ${open ? styles.analysisPanelOpen : ''}`}>
-      <div className={styles.analysisCompact}>
-        <span className={styles.analysisEyebrow}>
-          <Sparkles size={11} />
-          <span>{compactStatus}</span>
-        </span>
-        {(isRunning || isStarting) && (
-          <span className={styles.analysisCompactBar}>
-            <span
-              className={`${styles.analysisCompactBarFill} ${isStarting && !isRunning ? styles.analysisCompactBarIndeterminate : ''}`}
-              style={isRunning ? { width: `${progress}%` } : undefined}
-            />
-          </span>
-        )}
-        <button
-          type="button"
-          className={styles.analysisButton}
-          onClick={onStart}
-          disabled={isRunning || isStarting}
-        >
-          <RefreshCw
-            size={11}
-            className={`${styles.spin} ${isRunning || isStarting ? styles.inlineVisible : styles.inlineHidden}`}
-          />
-          <span>{buttonLabel}</span>
-        </button>
-        <button
-          type="button"
-          className={styles.analysisToggle}
-          onClick={() => setOpen(v => !v)}
-          title={open ? 'Recolher' : 'Detalhes'}
-        >
-          {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-        </button>
-      </div>
-
-      {open && (
-        <div className={styles.analysisDetails}>
-          <p className={styles.analysisStatus}>
-            <span>{status?.status_text || 'Pronto para rodar a análise visual em segundo plano.'}</span>
-          </p>
-          {(isRunning || hasResult) && (
-            <div className={styles.analysisProgressWrap}>
-              <div className={styles.analysisProgressMeta}>
-                <span>{status?.processed ?? 0} / {status?.total ?? 0} fotos</span>
-                <span>{Math.round(progress)}%</span>
-              </div>
-              <div className={styles.analysisProgressTrack}>
-                <div className={styles.analysisProgressFill} style={{ width: `${progress}%` }} />
-              </div>
-            </div>
-          )}
-          {!isRunning && status?.result && (
-            <div className={styles.analysisResult}>
-              <span>
-                {status.result.processed_files} foto{status.result.processed_files !== 1 ? 's' : ''} analisada{status.result.processed_files !== 1 ? 's' : ''}
-                {' · '}
-                {status.result.updated_faces} registro{status.result.updated_faces !== 1 ? 's' : ''} atualizado{status.result.updated_faces !== 1 ? 's' : ''}
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function WelcomeState({
-  count,
-  loading,
-  reviewReady = true,
-  totalFacesInCatalog = 0,
-  loadingMessage = 'Carregando grupos salvos...',
-  onRefresh,
-}: {
-  count: number;
-  loading: boolean;
-  reviewReady?: boolean;
-  totalFacesInCatalog?: number;
-  loadingMessage?: string;
-  onRefresh: () => void;
-}) {
-  const hasNoFaces = totalFacesInCatalog === 0 && count === 0;
-  const titleLabel = loading
-    ? loadingMessage
-    : hasNoFaces
-    ? 'Nenhum rosto encontrado'
-    : count === 0
-    ? (reviewReady ? 'Tudo identificado!' : 'Ainda preparando a revisão')
-    : 'Revisão IA';
-  const subtitleLabel = loading
-    ? 'A primeira página está sendo carregada a partir dos clusters já salvos no catálogo.'
-    : hasNoFaces
-    ? 'O Scanner processou as fotos, mas nenhum rosto foi detectado nelas.'
-    : count === 0
-    ? (reviewReady
-      ? 'Nenhuma face desconhecida pendente neste evento.'
-      : 'Os dados da revisão ainda estão sendo preparados em segundo plano.')
-    : `${count} grupo${count !== 1 ? 's' : ''} aguardando identificação. Selecione um grupo na barra lateral para começar.`;
-
-  return (
-    <div className={styles.welcome}>
-      <div className={styles.welcomeInner}>
-        <div className={styles.welcomeOrb}>
-          {loading ? (
-            <RefreshCw size={32} strokeWidth={1.5} className={styles.spin} />
-          ) : (
-            <UserCheck size={32} strokeWidth={1.5} />
-          )}
-        </div>
-
-        <h2 className={styles.welcomeTitle}>
-          <span>{titleLabel}</span>
-        </h2>
-
-        <p className={styles.welcomeSubtitle}>
-          <span>{subtitleLabel}</span>
-        </p>
-
-        <div className={`${styles.welcomeHint} ${!loading && count > 0 ? styles.blockVisible : styles.blockHidden}`}>
-          <span>← Selecione um grupo para revisar</span>
-        </div>
-
-        <button
-          className={`${styles.welcomeRefresh} ${!loading && count === 0 ? styles.inlineFlexVisible : styles.inlineFlexHidden}`}
-          onClick={onRefresh}
-          disabled={loading}
-        >
-          <RefreshCw size={14} />
-          <span>Recarregar</span>
-        </button>
-      </div>
-    </div>
-  );
-}

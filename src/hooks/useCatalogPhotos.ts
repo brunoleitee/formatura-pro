@@ -12,6 +12,7 @@ export function useCatalogPhotos() {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const nextOffsetRef = useRef(0);
   const loadingMoreRef = useRef(false);
@@ -43,6 +44,7 @@ export function useCatalogPhotos() {
     } catch (e: any) {
       if (e?.name !== 'AbortError') {
         console.error(e);
+        setError('Erro ao carregar fotos.');
       }
     } finally {
       if (!controller.signal.aborted) setLoading(false);
@@ -61,6 +63,7 @@ export function useCatalogPhotos() {
       nextOffsetRef.current = offset + PAGE_SIZE;
     } catch (e: any) {
       console.error(e);
+      setError('Erro ao carregar mais fotos.');
     } finally {
       loadingMoreRef.current = false;
       setLoadingMore(false);
@@ -88,5 +91,5 @@ export function useCatalogPhotos() {
     updatePhotoStatus(path, { discarded: false });
   }, [updatePhotoStatus]);
 
-  return { photos, total, hasMore, loading, loadingMore, loadPhotos, loadMore, updatePhotoStatus, discardPhoto, restorePhoto };
+  return { photos, total, hasMore, loading, loadingMore, error, loadPhotos, loadMore, updatePhotoStatus, discardPhoto, restorePhoto };
 }

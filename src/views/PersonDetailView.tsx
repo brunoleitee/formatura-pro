@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef, memo } from 'react';
+import { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
+import { PhotoGridContext, usePhotoGridContext } from '../hooks/usePhotoGridContext';
 import { ArrowLeft, RefreshCw, Image as ImageIcon } from 'lucide-react';
 import { api, type Photo } from '../services/api';
 import { useApp } from '../context/AppContext';
@@ -12,17 +13,11 @@ import PhotoBulkActionsBar from '../components/photos/PhotoBulkActionsBar';
 const PERSON_THUMB_SIZE = 240;
 const PERSON_OBSERVER_MARGIN = '300px';
 
-function ObserverPhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, getSelectionCount, containerRef }: {
+function ObserverPhotoCard({ photo, isSelected }: {
   photo: Photo;
   isSelected: boolean;
-  onClick: (photo: Photo, event: React.MouseEvent) => void;
-  onDoubleClick?: (photo: Photo) => void;
-  onOpenDetails: (photo: Photo) => void;
-  onDragStart?: (photo: Photo, event: React.PointerEvent) => void;
-  onDragEnd?: (photo: Photo, event: React.PointerEvent) => void;
-  getSelectionCount: () => number;
-  containerRef: React.RefObject<HTMLDivElement | null>;
 }) {
+  const ctx = usePhotoGridContext();
   const [visible, setVisible] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -42,12 +37,12 @@ function ObserverPhotoCard({ photo, isSelected, onClick, onDoubleClick, onOpenDe
       <MemoPhotoCard
         photo={photo}
         isSelected={isSelected}
-        onClick={onClick}
-        onDoubleClick={onDoubleClick}
-        onOpenDetails={onOpenDetails}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
-        getSelectionCount={getSelectionCount}
+        onClick={ctx.onPhotoClick}
+        onDoubleClick={ctx.onDoubleClick}
+        onOpenDetails={ctx.onOpenDetails}
+        onDragStart={ctx.onDragStart}
+        onDragEnd={ctx.onDragEnd}
+        getSelectionCount={ctx.getSelectionCount}
         thumbTargetSize={visible ? PERSON_THUMB_SIZE : 0}
       />
     </div>
@@ -59,28 +54,13 @@ const MemoObserverPhotoCard = memo(ObserverPhotoCard);
 function Section({ 
   title, 
   items, 
-  color, 
-  selectedPaths, 
-  onPhotoClick, 
-  onDoubleClick, 
-  onOpenDetails,
-  onDragStart,
-  onDragEnd,
-  getSelectionCount,
-  containerRef
+  color,
 }: { 
   title: string; 
   items: Photo[]; 
   color: string;
-  selectedPaths: Set<string>;
-  onPhotoClick: (photo: Photo, event: React.MouseEvent) => void;
-  onDoubleClick: (photo: Photo) => void;
-  onOpenDetails: (photo: Photo) => void;
-  onDragStart: (photo: Photo, event: React.PointerEvent) => void;
-  onDragEnd: (photo: Photo, event: React.PointerEvent) => void;
-  getSelectionCount: () => number;
-  containerRef: React.RefObject<HTMLDivElement | null>;
 }) {
+  const ctx = usePhotoGridContext();
   if (items.length === 0) return null;
   return (
     <div style={{ marginBottom: 32 }}>
@@ -96,14 +76,7 @@ function Section({
             <MemoObserverPhotoCard
               key={id}
               photo={p}
-              isSelected={selectedPaths.has(id)}
-              onClick={onPhotoClick}
-              onDoubleClick={onDoubleClick}
-              onOpenDetails={onOpenDetails}
-              onDragStart={onDragStart}
-              onDragEnd={onDragEnd}
-              getSelectionCount={getSelectionCount}
-              containerRef={containerRef}
+              isSelected={ctx.selectedPaths.has(id)}
             />
           );
         })}
@@ -116,6 +89,7 @@ export default function PersonDetailView() {
   const { selectedPersonId, navigate, currentCatalog } = useApp();
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [detailsPhoto, setDetailsPhoto] = useState<Photo | null>(null);
   const [personInfo, setPersonInfo] = useState<{ name: string; class_name: string } | null>(null);
   const [planeFilter, setPlaneFilter] = useState<'all' | 'foreground' | 'background'>('all');
@@ -200,6 +174,7 @@ export default function PersonDetailView() {
     } catch (e: any) {
       if (e?.name !== 'AbortError') {
         console.error(e);
+        setError('Erro ao carregar fotos do formando.');
       }
     } finally {
       if (!controller.signal.aborted) {
@@ -233,6 +208,7 @@ export default function PersonDetailView() {
       load();
     } catch (e) { 
       console.error(e);
+      setError('Erro ao descartar fotos.');
       load();
     }
   }, [selectedPaths, photos, currentCatalog, clearSelection, updatePhotoStatusLocal, load]);
@@ -247,6 +223,7 @@ export default function PersonDetailView() {
       load();
     } catch (e) { 
       console.error(e);
+      setError('Erro ao restaurar fotos.');
       load();
     }
   }, [selectedPaths, photos, currentCatalog, clearSelection, updatePhotoStatusLocal, load]);
@@ -267,7 +244,7 @@ export default function PersonDetailView() {
         clearSelection();
         load();
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); setError('Erro ao remover identificação.'); }
   }, [selectedPaths, photos, currentCatalog, clearSelection, load]);
 
   const handleDragStart = useCallback((photo: Photo) => {
@@ -354,6 +331,13 @@ export default function PersonDetailView() {
   const filteredAttention = getFilteredAndSortedPhotos(attention);
   const filteredBlurry = getFilteredAndSortedPhotos(blurry);
   const filteredDiscarded = getFilteredAndSortedPhotos(discarded);
+
+  const photoGridCtx = useMemo(() => ({
+    selectedPaths, containerRef: scrollRef,
+    onPhotoClick: toggleSelection, onDoubleClick: setViewerPhoto,
+    onOpenDetails: setDetailsPhoto, onDragStart: handleDragStart,
+    onDragEnd: handleDragEnd, getSelectionCount,
+  }), [selectedPaths, scrollRef, toggleSelection, setViewerPhoto, setDetailsPhoto, handleDragStart, handleDragEnd, getSelectionCount]);
 
   return (
     <div className="view-container" style={{ position: 'relative' }}>
@@ -478,58 +462,12 @@ export default function PersonDetailView() {
             data-scroll-container="true"
             style={{ flex: 1, overflowY: 'auto', paddingRight: 8 }}
           >
-            <Section 
-              title="Boas fotos" 
-              items={filteredGood} 
-              color="var(--success-color)" 
-              selectedPaths={selectedPaths}
-              onPhotoClick={toggleSelection}
-              onDoubleClick={setViewerPhoto}
-              onOpenDetails={setDetailsPhoto}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-              getSelectionCount={getSelectionCount}
-              containerRef={scrollRef}
-            />
-            <Section 
-              title="Requer atenção" 
-              items={filteredAttention} 
-              color="var(--warning-color)" 
-              selectedPaths={selectedPaths}
-              onPhotoClick={toggleSelection}
-              onDoubleClick={setViewerPhoto}
-              onOpenDetails={setDetailsPhoto}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-              getSelectionCount={getSelectionCount}
-              containerRef={scrollRef}
-            />
-            <Section 
-              title="Desfocadas" 
-              items={filteredBlurry} 
-              color="var(--danger-color)" 
-              selectedPaths={selectedPaths}
-              onPhotoClick={toggleSelection}
-              onDoubleClick={setViewerPhoto}
-              onOpenDetails={setDetailsPhoto}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-              getSelectionCount={getSelectionCount}
-              containerRef={scrollRef}
-            />
-            <Section 
-              title="Descartadas" 
-              items={filteredDiscarded} 
-              color="var(--text-secondary)" 
-              selectedPaths={selectedPaths}
-              onPhotoClick={toggleSelection}
-              onDoubleClick={setViewerPhoto}
-              onOpenDetails={setDetailsPhoto}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-              getSelectionCount={getSelectionCount}
-              containerRef={scrollRef}
-            />
+            <PhotoGridContext.Provider value={photoGridCtx}>
+              <Section title="Boas fotos" items={filteredGood} color="var(--success-color)" />
+              <Section title="Requer atenção" items={filteredAttention} color="var(--warning-color)" />
+              <Section title="Desfocadas" items={filteredBlurry} color="var(--danger-color)" />
+              <Section title="Descartadas" items={filteredDiscarded} color="var(--text-secondary)" />
+            </PhotoGridContext.Provider>
           </div>
 
           {detailsPhoto && (

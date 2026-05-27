@@ -5,7 +5,7 @@
   flex: 1;
   display: flex;
   overflow: hidden;
-  background: #0d0f1a;
+  background: var(--background);
 }
 
 .reviewView {
@@ -18,37 +18,37 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #0f111a;
+  background: var(--background);
   position: relative;
 }
 
 .analysisPanel {
   flex-shrink: 0;
-  border-bottom: 1px solid var(--toolbar-sep-color, rgba(255, 255, 255, 0.06));
-  background: var(--toolbar-bg, rgba(255, 255, 255, 0.01));
+  border-bottom: 1px solid var(--toolbar-sep-color, var(--review-bg-soft));
+  background: var(--sidebar);
 }
 
 .analysisCompact {
   display: flex;
   align-items: center;
-  gap: var(--space-2, 8px);
-  padding: var(--toolbar-padding, 0 20px);
-  height: var(--toolbar-height, 48px);
+  gap: 10px;
+  padding: 0 18px 0 24px;
+  height: 56px;
 }
 
 .analysisEyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  color: #94a3b8;
-  font-size: 0.72rem;
+  gap: 9px;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
   font-weight: 500;
   flex: 1;
   min-width: 0;
 }
 
 .analysisEyebrow svg {
-  color: #60a5fa;
+  color: var(--accent);
   flex-shrink: 0;
 }
 
@@ -58,19 +58,19 @@
   height: 4px;
   border-radius: 999px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--review-bg-soft);
 }
 
 .analysisCompactBarFill {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, #2563eb, #60a5fa);
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-light, #60a5fa) 100%);
   transition: width 0.2s ease;
 }
 
 .analysisCompactBarIndeterminate {
   width: 100%;
-  background: linear-gradient(90deg, transparent, #60a5fa, transparent);
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
   animation: indeterminate 1.2s ease-in-out infinite;
 }
 
@@ -83,37 +83,42 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  border: 1px solid rgba(59, 130, 246, 0.22);
-  background: rgba(59, 130, 246, 0.1);
-  color: #dbeafe;
-  font-size: 0.72rem;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-accent, rgba(37, 99, 235, 0.25));
+  background: var(--accent-soft, rgba(37, 99, 235, 0.08));
+  color: var(--accent, #2563ef);
+  font-size: 0.76rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   font-family: inherit;
   white-space: nowrap;
 }
 
 .analysisButton:hover:not(:disabled) {
-  background: rgba(59, 130, 246, 0.18);
-  border-color: rgba(96, 165, 250, 0.34);
+  background: var(--accent, #2563ef);
+  border-color: var(--accent, #2563ef);
+  color: var(--primary-foreground, #fafafa);
 }
 
 .analysisButton:disabled {
   cursor: default;
   opacity: 0.6;
+  border-color: var(--border-default);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
 }
 
 .analysisToggle {
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
-  color: #64748b;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-tertiary);
+  color: var(--text-label);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -122,8 +127,8 @@
 }
 
 .analysisToggle:hover {
-  color: #cbd5e1;
-  border-color: rgba(255, 255, 255, 0.15);
+  color: var(--foreground);
+  border-color: var(--border-strong);
 }
 
 .analysisPanelOpen .analysisDetails {
@@ -131,13 +136,13 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.04);
+  border-top: 1px dashed var(--review-border-light);
   padding-top: 8px;
 }
 
 .analysisStatus {
   margin: 0;
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-size: 0.76rem;
   line-height: 1.4;
 }
@@ -153,7 +158,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  color: #cbd5e1;
+  color: var(--foreground);
   font-size: 0.7rem;
 }
 
@@ -161,18 +166,18 @@
   height: 5px;
   border-radius: 999px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--review-bg-soft);
 }
 
 .analysisProgressFill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #2563eb, #60a5fa);
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-light, #60a5fa) 100%);
   transition: width 0.2s ease;
 }
 
 .analysisResult {
-  color: #cbd5e1;
+  color: var(--foreground);
   font-size: 0.72rem;
 }
 
@@ -183,19 +188,19 @@
   z-index: 2500;
   padding: 10px 14px;
   border-radius: 999px;
-  background: rgba(8, 15, 24, 0.9);
-  border: 1px solid rgba(16, 185, 129, 0.24);
-  color: #c8f7e2;
+  background: var(--review-success-bg);
+  border: 1px solid var(--review-success-border);
+  color: var(--review-success-text);
   font-size: 0.78rem;
   font-weight: 600;
-  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.34);
+  box-shadow: 0 18px 38px var(--black-stronger);
   backdrop-filter: blur(12px);
 }
 
 .assignmentToastError {
-  border-color: rgba(239, 68, 68, 0.26);
-  color: #fecaca;
-  background: rgba(15, 23, 42, 0.92);
+  border-color: var(--review-danger-border);
+  color: var(--review-danger-text);
+  background: var(--review-danger-bg);
 }
 
 .blockHidden {
@@ -230,7 +235,7 @@
   align-items: center;
   justify-content: center;
   gap: 12px;
-  color: #475569;
+  color: var(--text-muted);
   font-size: 0.9rem;
 }
 
@@ -256,33 +261,33 @@
   width: 80px;
   height: 80px;
   border-radius: 50%;
-  background: rgba(59, 130, 246, 0.06);
-  border: 1px solid rgba(59, 130, 246, 0.12);
+  background: var(--review-warning-bg);
+  border: 1px solid var(--review-warning-border);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(59, 130, 246, 0.45);
+  color: var(--review-warning-text);
   margin-bottom: 6px;
 }
 
 .welcomeTitle {
   font-size: 1.35rem;
   font-weight: 600;
-  color: #e2e8f0;
+  color: var(--foreground);
   margin: 0;
   letter-spacing: -0.02em;
 }
 
 .welcomeSubtitle {
   font-size: 0.88rem;
-  color: #475569;
+  color: var(--text-muted);
   margin: 0;
   line-height: 1.6;
 }
 
 .welcomeHint {
   font-size: 0.78rem;
-  color: rgba(59, 130, 246, 0.5);
+  color: var(--review-warning-text-hover);
   margin-top: 4px;
   letter-spacing: 0.02em;
   justify-content: center;
@@ -294,9 +299,9 @@
   gap: 7px;
   padding: 9px 18px;
   border-radius: 9px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: rgba(255, 255, 255, 0.03);
-  color: #64748b;
+  border: 1px solid var(--review-border);
+  background: var(--review-bg-hover);
+  color: var(--text-label);
   font-size: 0.84rem;
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
@@ -305,8 +310,8 @@
 }
 
 .welcomeRefresh:hover {
-  color: #94a3b8;
-  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--text-secondary);
+  border-color: var(--review-border-hover);
 }
 
 /* ── Spinner ── */
@@ -323,3 +328,246 @@
     flex-wrap: wrap;
   }
 }
+
+/* Estilos de IA e Triagem Inteligente (Modo Ultra) */
+.modeSelector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 8px 0;
+}
+
+.modeCard {
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.08));
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.02));
+  border-radius: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+  overflow: hidden;
+  text-align: left;
+}
+
+.modeCard:hover {
+  border-color: var(--border-accent, rgba(37, 99, 235, 0.3));
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.04));
+  transform: translateY(-1px);
+}
+
+.modeCardActive {
+  border-color: var(--accent, #3b82f6);
+  background: var(--accent-soft, rgba(59, 130, 246, 0.08));
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.1);
+}
+
+.modeCardActive::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 100%;
+  background: var(--accent, #3b82f6);
+}
+
+.modeCardTitle {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--foreground, #ffffff);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.modeCardDesc {
+  font-size: 0.72rem;
+  color: var(--text-secondary, #9ca3af);
+  line-height: 1.3;
+}
+
+.ollamaStatusBox {
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 8px;
+  border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.01);
+  transition: all 0.2s ease;
+}
+
+.ollamaStatusBoxWarning {
+  background: rgba(245, 158, 11, 0.05);
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.ollamaStatusBoxError {
+  background: rgba(239, 68, 68, 0.05);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.ollamaStatusBoxSuccess {
+  background: rgba(16, 185, 129, 0.05);
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.ollamaTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.ollamaStatusBoxWarning .ollamaTitle {
+  color: #f59e0b;
+}
+
+.ollamaStatusBoxError .ollamaTitle {
+  color: #ef4444;
+}
+
+.ollamaStatusBoxSuccess .ollamaTitle {
+  color: #10b981;
+}
+
+.ollamaText {
+  font-size: 0.72rem;
+  color: var(--text-secondary, #9ca3af);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.ollamaActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ollamaActionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.1));
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.03));
+  color: var(--foreground, #ffffff);
+}
+
+.ollamaActionBtn:hover {
+  background: var(--bg-active, rgba(255, 255, 255, 0.08));
+  border-color: var(--text-muted, rgba(255, 255, 255, 0.2));
+}
+
+.ollamaActionBtnPrimary {
+  border-color: var(--accent, #3b82f6);
+  background: var(--accent, #3b82f6);
+  color: #ffffff;
+}
+
+.ollamaActionBtnPrimary:hover:not(:disabled) {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+.ollamaActionBtnPrimary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.downloadProgressWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.downloadProgressMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--foreground, #ffffff);
+  font-weight: 500;
+}
+
+.downloadProgressMetaDetail {
+  color: var(--text-secondary, #9ca3af);
+  font-size: 0.68rem;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.downloadProgressBar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  position: relative;
+}
+
+.downloadProgressBarFill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #a78bfa 0%, #3b82f6 50%, #60a5fa 100%);
+  background-size: 200% auto;
+  animation: shimmer 1.5s linear infinite;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes shimmer {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.badgeReady {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  font-size: 0.65rem;
+  font-weight: 600;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.pulseGreen {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #10b981;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: pulse 1.6s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+

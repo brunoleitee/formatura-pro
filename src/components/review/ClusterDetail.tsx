@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef, type CSSProperties } from 'react';
-import type { AssignClusterResponse, RichCluster, RichClusterFace } from '../../services/api';
+import type { AssignClusterResponse, RichCluster, RichClusterFace, StudentMatchPreviewResponse } from '../../services/api';
 import { api } from '../../services/api';
 import ClusterHero, { type ClusterHeroHandle } from './ClusterHero';
 import ClusterStatsPanel from './ClusterStatsPanel';
@@ -73,6 +73,8 @@ export default function ClusterDetail({
   const [lastSelectedRowId, setLastSelectedRowId] = useState<number | null>(null);
   const [isCompareOpen, setIsCompareOpen] = useState(false);
   const [matchedLabel, setMatchedLabel] = useState<string | null>(null);
+  const [matchPreview, setMatchPreview] = useState<StudentMatchPreviewResponse | null>(null);
+  const [matchLoading, setMatchLoading] = useState(false);
   const heroRef = useRef<ClusterHeroHandle>(null);
   const graduationRef = useRef<GraduationActionsHandle>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -197,6 +199,11 @@ export default function ClusterDetail({
     setLastSelectedRowId(null);
   }, [cluster.faces]);
 
+  const handleSelectAllVisible = useCallback(() => {
+    setSelected(new Set(visibleRowIds));
+    setLastSelectedRowId(null);
+  }, [visibleRowIds]);
+
   // Zoom controlado pelo slider. Ajuste adaptativo mínimo para preencher espaço.
   const gridZoom = useMemo(() => {
     const count = visibleFaces.length;
@@ -207,31 +214,36 @@ export default function ClusterDetail({
   const thumbSize = gridZoom >= 240 ? 600 : 400;
   const photoImgH = Math.round(gridZoom * 0.85);
 
-  const cleanName = (n: any) => (!n || n === 'null' || n === 'unknown') ? null : n;
-
-  const compareStudent =
-    cleanName(cluster.suggested_student) ||
-    cleanName(cluster.best_student_debug);
-
-  const compareSimilarity =
-    compareStudent === cleanName(cluster.suggested_student)
+  const { compareStudent, compareSimilarity, compareLookupId } = useMemo(() => {
+    const clean = (n: any) => (!n || n === 'null' || n === 'unknown') ? null : n;
+    const student = clean(cluster.suggested_student) || clean(cluster.best_student_debug);
+    const sim = student === clean(cluster.suggested_student)
       ? (cluster.suggested_similarity ?? 0)
       : (cluster.best_similarity_debug ?? 0);
+    // Prefer person_key for the preview lookup to disambiguate homonyms.
+    const lookupId = (student === clean(cluster.suggested_student) && clean(cluster.suggested_person_key))
+      ? clean(cluster.suggested_person_key)
+      : student;
+    return { compareStudent: student, compareSimilarity: sim, compareLookupId: lookupId };
+  }, [cluster.suggested_student, cluster.suggested_similarity, cluster.suggested_person_key, cluster.best_student_debug, cluster.best_similarity_debug]);
 
   // Buscar label amigável (nome real) se houver um melhor match
   useEffect(() => {
-    if (compareStudent && !matchedLabel) {
-      api.getStudentMatchPreview(catalog, cluster.cluster_id, compareStudent)
+    if (compareStudent && compareLookupId) {
+      setMatchLoading(true);
+      api.getStudentMatchPreview(catalog, cluster.cluster_id, compareLookupId)
         .then(data => {
+          setMatchPreview(data);
           if (data.matched_student_label) {
             setMatchedLabel(data.matched_student_label);
           }
         })
         .catch(() => {
-          // Fallback silencioso para o ID original
-        });
+          setMatchPreview(null);
+        })
+        .finally(() => setMatchLoading(false));
     }
-  }, [compareStudent, catalog, cluster.cluster_id]);
+  }, [compareStudent, compareLookupId, catalog, cluster.cluster_id]);
 
   const displayCompareName = matchedLabel || compareStudent;
 
@@ -239,99 +251,135 @@ export default function ClusterDetail({
 
   return (
     <div className={`${styles.root} ${assignmentState?.clusterId === cluster.cluster_id ? styles.rootAssigned : ''}`} key={cluster.cluster_id}>
-      {/* ── Header compacto ── */}
-      <div className={`${styles.topSection} ${collapsed ? styles.topSectionCollapsed : ''}`}>
-        <ClusterHero
-          ref={heroRef}
-          cluster={cluster}
-          catalog={catalog}
-          collapsed={collapsed}
-          onToggleCollapsed={() => setCollapsed(v => !v)}
-          assignmentState={assignmentState}
-          onAssigned={onAssigned}
-          onSkip={onSkip}
-        />
-        {!collapsed && (
-          <ClusterStatsPanel
-            cluster={cluster}
-            selectedCount={selected.size}
-          />
-        )}
-      </div>
-
-      {/* ── Linha pequena: badges + Corrigir itens ── */}
-      <div className={styles.graduationActionsWrap}>
-        <GraduationActions
-          ref={graduationRef}
-          cluster={cluster}
-          catalog={catalog}
-          onUpdate={onClusterUpdate}
-        />
-      </div>
-
-      {/* ── Toolbar compacta ── */}
-      <ClusterToolbar
-        filter={filter}
-        sort={sort}
-        viewMode={viewMode}
-        zoom={zoom}
-        totalVisible={visibleFaces.length}
-        totalAll={cluster.faces.length}
-        onFilter={setFilter}
-        onSort={setSort}
-        onViewMode={setViewMode}
-        onZoom={setZoom}
-        onSelectBest={handleSelectBest}
-        compareStudent={displayCompareName}
-        compareSimilarity={compareSimilarity}
-        onCompare={() => setIsCompareOpen(true)}
-      />
-
-      {/* ── Grid de fotos (prioridade visual) ── */}
-      <div className={styles.gridScroll}>
-        <div
-          ref={gridRef}
-          className={`${styles.gridSelectionHost} ${viewMode === 'photo' ? styles.clusterGridPhoto : styles.clusterGridFace}`}
-          style={{
-            '--grid-item-size': `${gridZoom}px`,
-            '--photo-img-h': `${photoImgH}px`,
-          } as CSSProperties}
-        >
-          {visibleFaces.map(face => (
-          <PhotoCard
-              key={face.rowid}
-              face={face}
-              selected={selected.has(face.rowid)}
-              onToggle={(e) => handlePhotoSelect(face.rowid, e)}
-              onOpen={onOpenPhoto ? (nextFace) => onOpenPhoto(nextFace.path) : undefined}
-              clickMode={onOpenPhoto ? 'open' : 'select'}
-              thumbSize={thumbSize}
-              viewMode={viewMode}
+      <div className={styles.detailFrame}>
+        <div className={styles.mainPane}>
+          {/* ── Header compacto ── */}
+          <div className={`${styles.topSection} ${collapsed ? styles.topSectionCollapsed : ''}`}>
+            <ClusterHero
+              ref={heroRef}
+              cluster={cluster}
+              collapsed={collapsed}
+              onToggleCollapsed={() => setCollapsed(v => !v)}
+              assignmentState={assignmentState}
+              onAssigned={onAssigned}
+              onSkip={onSkip}
+              matchPreview={matchPreview}
+              onSearch={async (q) => {
+                const res = await api.globalSearch(q);
+                return res.map((r: any) => ({ id: r.name, name: r.name }))
+                  .filter((v: any, i: number, a: any[]) => a.findIndex((item: any) => item.id === v.id) === i)
+                  .slice(0, 6);
+              }}
+              onAssign={async (alunoId, nomeFormando, className) => {
+                return await api.assignCluster(catalog, {
+                  cluster_id: cluster.cluster_id,
+                  aluno_id: alunoId,
+                  nome_formando: nomeFormando,
+                  class_name: className || '',
+                });
+              }}
+              onMerge={async () => {
+                await api.mergeCluster(catalog, cluster.cluster_id, cluster.unknown_similar_id!);
+              }}
+              compareStudent={displayCompareName}
+              compareSimilarity={compareSimilarity}
+              onCompare={() => setIsCompareOpen(true)}
             />
-          ))}
+          </div>
+
+          {/* ── Linha pequena: badges + Corrigir itens ── */}
+          <div className={styles.graduationActionsWrap}>
+            <GraduationActions
+              ref={graduationRef}
+              cluster={cluster}
+              catalog={catalog}
+              onUpdate={onClusterUpdate}
+            />
+          </div>
+
+          {/* ── Toolbar compacta ── */}
+          <ClusterToolbar
+            filter={filter}
+            sort={sort}
+            viewMode={viewMode}
+            zoom={zoom}
+            totalVisible={visibleFaces.length}
+            totalAll={cluster.faces.length}
+            onFilter={setFilter}
+            onSort={setSort}
+            onViewMode={setViewMode}
+            onZoom={setZoom}
+            onSelectBest={handleSelectBest}
+            compareStudent={displayCompareName}
+            compareSimilarity={compareSimilarity}
+            onCompare={() => setIsCompareOpen(true)}
+          />
+
+          {/* ── Grid de fotos (prioridade visual) ── */}
+          <div className={styles.gridScroll}>
+            <div
+              ref={gridRef}
+              className={`${styles.gridSelectionHost} ${viewMode === 'photo' ? styles.clusterGridPhoto : styles.clusterGridFace}`}
+              style={{
+                '--grid-item-size': `${gridZoom}px`,
+                '--photo-img-h': `${photoImgH}px`,
+              } as CSSProperties}
+            >
+              {visibleFaces.map(face => (
+              <PhotoCard
+                  key={face.rowid}
+                  face={face}
+                  selected={selected.has(face.rowid)}
+                  onToggle={(e) => handlePhotoSelect(face.rowid, e)}
+                  onOpen={onOpenPhoto ? (nextFace) => onOpenPhoto(nextFace.path) : undefined}
+                  clickMode={onOpenPhoto ? 'open' : 'select'}
+                  thumbSize={thumbSize}
+                  viewMode={viewMode}
+                />
+              ))}
+            </div>
+
+            {visibleFaces.length === 0 && (
+              <div className={styles.emptyFilter}>
+                <span>Nenhuma foto com o filtro atual.</span>
+              </div>
+            )}
+          </div>
         </div>
 
-        {visibleFaces.length === 0 && (
-          <div className={styles.emptyFilter}>
-            <span>Nenhuma foto com o filtro atual.</span>
-          </div>
+        {!collapsed && (
+          <aside className={styles.inspectorPane}>
+            <ClusterStatsPanel
+              cluster={cluster}
+              selectedCount={selected.size}
+              totalSelectable={visibleRowIds.length}
+              onSelectBest={handleSelectBest}
+              onSelectAll={handleSelectAllVisible}
+              compareStudent={displayCompareName}
+              compareSimilarity={compareSimilarity}
+              onCompare={() => setIsCompareOpen(true)}
+            />
+          </aside>
         )}
       </div>
 
       {isCompareOpen && compareStudent && (
         <CompareModal
           cluster={cluster}
-          catalog={catalog}
           bestName={compareStudent}
           bestSim={compareSimilarity}
+          matchData={matchPreview}
+          isLoading={matchLoading}
           onConfirm={async (name) => {
             setIsCompareOpen(false);
             if (onAssigned) {
               try {
+                const targetClass = matchPreview?.matched_student_folder || '';
                 const result = await api.assignCluster(catalog, {
                   cluster_id: cluster.cluster_id,
-                  aluno_id: name,
-                  nome_formando: name,
+                  aluno_id: matchPreview?.matched_student_person_key || name,
+                  nome_formando: matchPreview?.matched_student_name || name,
+                  class_name: targetClass,
                 });
                 onAssigned(result);
               } catch (err) {

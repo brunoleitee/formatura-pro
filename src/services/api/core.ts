@@ -1,5 +1,19 @@
 import { logPerf } from '../../utils/perf';
 
+// Classe de erro HTTP estritamente tipada
+export class HTTPError extends Error {
+  status: number;
+  detail?: string;
+
+  constructor(status: number, message: string, detail?: string) {
+    super(message);
+    this.name = 'HTTPError';
+    this.status = status;
+    this.detail = detail;
+    Object.setPrototypeOf(this, HTTPError.prototype);
+  }
+}
+
 // Em dev, o Vite proxy /api -> http://127.0.0.1:8000 (sem CORS).
 // Em produção o FastAPI serve o frontend e /api fica no mesmo origin.
 export const API_BASE = '/api';
@@ -45,10 +59,8 @@ export async function fetchJSON<T = unknown>(url: string, options?: RequestInit)
       if (res.status >= 500 && !detail) {
         detail = `server_error_${res.status}`;
       }
-      const err: any = new Error(detail ?? `HTTP ${res.status}: ${res.statusText}`);
-      err.status = res.status;
-      err.detail = detail;
-      throw err;
+      const errorMessage = detail ?? `HTTP ${res.status}: ${res.statusText}`;
+      throw new HTTPError(res.status, errorMessage, detail);
     }
     return res.json() as Promise<T>;
   })();

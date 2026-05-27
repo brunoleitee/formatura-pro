@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import type { PhotoFilter } from '../../hooks/usePhotoFilters';
 
@@ -14,7 +15,7 @@ const TABS: { key: PhotoFilter; label: string }[] = [
   { key: 'unmapped', label: 'Não Mapeadas' },
 ];
 
-export function PhotoFilters({ filter, onFilterChange, hideDiscarded = false, onHideDiscardedChange }: PhotoFiltersProps) {
+export const PhotoFilters = memo(function PhotoFilters({ filter, onFilterChange, hideDiscarded = false, onHideDiscardedChange }: PhotoFiltersProps) {
   return (
     <div className="tab-group">
       {TABS.map((t) => (
@@ -39,4 +40,4 @@ export function PhotoFilters({ filter, onFilterChange, hideDiscarded = false, on
       )}
     </div>
   );
-}
+});

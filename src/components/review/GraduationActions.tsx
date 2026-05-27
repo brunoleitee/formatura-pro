@@ -1,7 +1,8 @@
-import { useCallback, useImperativeHandle, forwardRef, useState } from 'react';
+import { useCallback, useImperativeHandle, forwardRef, useState, useMemo } from 'react';
 import { Check, X, Sparkles, Settings2, ChevronUp } from 'lucide-react';
 import type { RichCluster } from '../../services/api';
 import { api } from '../../services/api';
+import { CONF_CONFIRMED, CONF_POSSIBLE } from '../../utils/constants';
 import styles from './GraduationActions.module.css';
 
 export type GraduationItem = 'gown' | 'diploma' | 'sash' | 'cap' | 'jabor';
@@ -40,9 +41,6 @@ const ITEM_HAS_KEY: Record<GraduationItem, keyof RichCluster> = {
   jabor: 'has_jabor',
 };
 
-const CONF_CONFIRMED = 0.92;
-const CONF_POSSIBLE = 0.70;
-
 type ItemState = 'manual_confirm' | 'manual_remove' | 'ai_confirmed' | 'ai_possible' | 'none';
 
 function getItemState(cluster: RichCluster, item: GraduationItem): ItemState {
@@ -74,8 +72,9 @@ function applyOverrideLocally(cluster: RichCluster, item: GraduationItem, action
 
 interface GraduationActionsProps {
   cluster: RichCluster;
-  catalog: string;
+  catalog?: string;
   onUpdate: (next: RichCluster) => void;
+  onOverride?: (item: GraduationItem, action: 'confirm' | 'remove') => Promise<void>;
 }
 
 export interface GraduationActionsHandle {
@@ -83,7 +82,7 @@ export interface GraduationActionsHandle {
 }
 
 export const GraduationActions = forwardRef<GraduationActionsHandle, GraduationActionsProps>(
-  function GraduationActions({ cluster, catalog, onUpdate }, ref) {
+  function GraduationActions({ cluster, catalog, onUpdate, onOverride }, ref) {
     const [open, setOpen] = useState(false);
     const rowids = cluster.faces.map(f => f.rowid);
 
@@ -93,13 +92,17 @@ export const GraduationActions = forwardRef<GraduationActionsHandle, GraduationA
         const optimistic = applyOverrideLocally(cluster, item, action);
         onUpdate(optimistic);
         try {
-          await api.graduationManualOverride(catalog, { rowids, action, item });
+          if (onOverride) {
+            await onOverride(item, action);
+          } else if (catalog) {
+            await api.graduationManualOverride(catalog, { rowids, action, item });
+          }
         } catch (err) {
           console.error('[graduationManualOverride] erro:', err);
           onUpdate(previous);
         }
       },
-      [cluster, catalog, rowids, onUpdate]
+      [cluster, catalog, rowids, onUpdate, onOverride]
     );
 
     const toggle = useCallback(
@@ -113,9 +116,18 @@ export const GraduationActions = forwardRef<GraduationActionsHandle, GraduationA
 
     useImperativeHandle(ref, () => ({ toggle }), [toggle]);
 
-    const summary = ITEMS.map(item => ({ item, state: getItemState(cluster, item) }));
-    const visible = summary.filter(({ state }) => state !== 'none' && state !== 'manual_remove');
-    const hasManual = summary.some(({ state }) => state === 'manual_confirm' || state === 'manual_remove');
+    const summary = useMemo(
+      () => ITEMS.map(item => ({ item, state: getItemState(cluster, item) })),
+      [cluster]
+    );
+    const visible = useMemo(
+      () => summary.filter(({ state }) => state !== 'none' && state !== 'manual_remove'),
+      [summary]
+    );
+    const hasManual = useMemo(
+      () => summary.some(({ state }) => state === 'manual_confirm' || state === 'manual_remove'),
+      [summary]
+    );
 
     return (
       <div className={styles.root}>

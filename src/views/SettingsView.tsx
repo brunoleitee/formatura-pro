@@ -1,12 +1,30 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Save, RefreshCw, Trash2, Info, Image, Settings2, Cpu, FolderOpen } from 'lucide-react';
+import { Save, RefreshCw, Trash2, Info, Image, Settings2, Cpu, FolderOpen, Palette } from 'lucide-react';
 import { api, type QualitySettings, type AppSettings } from '../services/api';
 import { useApp } from '../context/AppContext';
 
-type SettingsTab = 'quality' | 'export' | 'performance' | 'system';
+const ACCENT_OPTIONS = [
+  { id: 'blue',   label: 'Azul',    color: '#3b82f6' },
+  { id: 'green',  label: 'Verde',   color: '#10b981' },
+  { id: 'purple', label: 'Roxo',    color: '#8b5cf6' },
+  { id: 'orange', label: 'Laranja', color: '#f97316' },
+  { id: 'pink',   label: 'Rosa',    color: '#ec4899' },
+  { id: 'gray',   label: 'Cinza',   color: '#6b7280' },
+];
+
+function isCustomColor(id: string) {
+  return id.startsWith('custom_');
+}
+
+function getDisplayColor(id: string) {
+  if (isCustomColor(id)) return id.replace('custom_', '');
+  return ACCENT_OPTIONS.find(o => o.id === id)?.color || '#3b82f6';
+}
+
+type SettingsTab = 'quality' | 'export' | 'performance' | 'system' | 'appearance';
 
 export default function SettingsView() {
-  const { currentCatalog } = useApp();
+  const { currentCatalog, accentColor, setAccentColor } = useApp();
   const [tab, setTab] = useState<SettingsTab>('quality');
   const [quality, setQuality] = useState<QualitySettings | null>(null);
   const [appCfg, setAppCfg] = useState<AppSettings | null>(null);
@@ -109,6 +127,7 @@ export default function SettingsView() {
     { key: 'export', label: 'Exportação', icon: <FolderOpen size={15} /> },
     { key: 'performance', label: 'Performance', icon: <Cpu size={15} /> },
     { key: 'system', label: 'Sistema', icon: <Settings2 size={15} /> },
+    { key: 'appearance', label: 'Aparência', icon: <Palette size={15} /> },
   ];
 
   return (
@@ -146,10 +165,12 @@ export default function SettingsView() {
                     'Pontuação abaixo deste valor = foto desfocada')}
                   {qField('Limite "atenção"', 'blur_attention_threshold', 50, 300, 5,
                     'Pontuação abaixo deste valor = atenção (acima = ok)')}
-                  <button className="btn-primary" style={{ marginTop: 8 }} onClick={saveQuality} disabled={saving}>
-                    <Save size={16} />
-                    {saving ? 'Salvando...' : 'Salvar Qualidade'}
-                  </button>
+                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+                    <button className="btn-primary" onClick={saveQuality} disabled={saving}>
+                      <Save size={16} />
+                      {saving ? 'Salvando...' : 'Salvar Qualidade'}
+                    </button>
+                  </div>
                 </>
               ) : (
                 <div className="empty-state" style={{ padding: 24 }}>
@@ -205,11 +226,17 @@ export default function SettingsView() {
                   <input
                     type="checkbox"
                     checked={Boolean(appCfg.auto_backup)}
-                    onChange={async e => {
-                      const updated = { ...appCfg, auto_backup: e.target.checked };
-                      setAppCfg(updated as AppSettings);
-                      await api.updateSettings(updated).catch(console.error);
-                    }}
+onChange={async e => {
+  const prev = appCfg;
+  const updated = { ...appCfg, auto_backup: e.target.checked };
+  setAppCfg(updated as AppSettings);
+  try {
+    await api.updateSettings(updated);
+  } catch {
+    setAppCfg(prev);
+    setMsg('Erro ao salvar configuração');
+  }
+}}
                   />
                   Backup automático ativado
                 </label>
@@ -226,14 +253,94 @@ export default function SettingsView() {
                 <Info size={14} />
                 <span>Limpar o cache de qualidade força reanálise das fotos.</span>
               </div>
-              <button className="btn-danger" onClick={handleClearCache} disabled={clearing}>
-                <Trash2 size={16} />
-                {clearing ? 'Limpando...' : 'Limpar Cache de Qualidade'}
-              </button>
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+                <button className="btn-danger" onClick={handleClearCache} disabled={clearing}>
+                  <Trash2 size={16} />
+                  {clearing ? 'Limpando...' : 'Limpar Cache de Qualidade'}
+                </button>
+              </div>
             </div>
           </div>
         )}
 
+        {tab === 'appearance' && (
+          <div className="settings-card">
+            <h3>Cor de destaque</h3>
+            <p className="config-hint" style={{ marginTop: -8, maxWidth: 480 }}>
+              Personalize a cor principal da interface (botões, seleções, links).
+            </p>
+            <div style={{ display: 'flex', gap: 12, marginTop: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+              {ACCENT_OPTIONS.map(opt => (
+                <button
+                  key={opt.id}
+                  onClick={() => setAccentColor(opt.id)}
+                  style={{
+                    width: 44, height: 44, borderRadius: '50%', border: '3px solid',
+                    borderColor: accentColor === opt.id ? opt.color : 'transparent',
+                    background: opt.color, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transition: 'border-color 0.15s, transform 0.15s',
+                    transform: accentColor === opt.id ? 'scale(1.1)' : 'scale(1)',
+                    outline: 'none',
+                  }}
+                  title={opt.label}
+                  aria-label={opt.label}
+                >
+                  {accentColor === opt.id && (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </button>
+              ))}
+              <label
+                style={{
+                  width: 44, height: 44, borderRadius: '50%',
+                  border: isCustomColor(accentColor) ? '3px solid var(--accent)' : '2px dashed var(--border-strong)',
+                  background: isCustomColor(accentColor) ? getDisplayColor(accentColor) : 'var(--bg-secondary)',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'border-color 0.15s, transform 0.15s',
+                  transform: isCustomColor(accentColor) ? 'scale(1.1)' : 'scale(1)',
+                  overflow: 'hidden', position: 'relative',
+                }}
+                title="Cor personalizada"
+                aria-label="Escolher cor personalizada"
+              >
+                <span style={{ fontSize: '0.65rem', color: isCustomColor(accentColor) ? 'white' : 'var(--text-secondary)', fontWeight: 700, lineHeight: 1, textAlign: 'center' }}>
+                  {isCustomColor(accentColor) ? '✓' : '+'}
+                </span>
+                <input
+                  type="color"
+                  value={isCustomColor(accentColor) ? getDisplayColor(accentColor) : '#3b82f6'}
+                  onChange={e => setAccentColor(`custom_${e.target.value}`)}
+                  style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%' }}
+                />
+              </label>
+            </div>
+            <div style={{ display: 'flex', gap: 12, marginTop: 8, marginLeft: 4, alignItems: 'center' }}>
+              {ACCENT_OPTIONS.map(opt => (
+                <span key={opt.id} style={{ width: 44, textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                  {opt.label}
+                </span>
+              ))}
+              <span style={{ width: 44, textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                Custom
+              </span>
+            </div>
+
+            <div style={{ marginTop: 24, padding: 16, borderRadius: 12, background: 'var(--bg-secondary)', border: '1px solid var(--border-default)' }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 12 }}>Prévia</p>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button className="btn-primary" style={{ pointerEvents: 'none' }}>Botão</button>
+                <span style={{ color: 'var(--accent)', fontWeight: 600, fontSize: '0.85rem' }}>Link de exemplo</span>
+                <span className="badge" style={{ background: 'var(--accent-soft)', color: 'var(--accent)', borderRadius: 6, padding: '2px 8px', fontSize: '0.75rem', fontWeight: 600 }}>Badge</span>
+                <div style={{ width: 20, height: 20, borderRadius: 6, background: 'var(--accent)', opacity: 0.3 }} />
+                <div style={{ width: 20, height: 20, borderRadius: 6, background: 'var(--accent)', opacity: 0.5 }} />
+                <div style={{ width: 20, height: 20, borderRadius: 6, background: 'var(--accent)' }} />
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

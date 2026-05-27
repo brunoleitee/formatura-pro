@@ -4,7 +4,7 @@ import { api, type Photo } from '../../services/api';
 import { isKnownFace } from '../../utils/personIdentity';
 import { useApp } from '../../context/AppContext';
 import { logPerf, perfNow } from '../../utils/perf';
-import { getGridHighThumbUrl, getGridThumbUrl, getViewerPreviewUrl, buildPhotoSourceUrl } from '../../utils/imageUrls';
+import { getGridHighThumbUrl, getGridThumbUrl, getViewerPreviewUrl } from '../../utils/imageUrls';
 import { aiQueueManager } from '../../services/AIQueueManager';
 import { aiCacheStore } from '../../services/AICacheStore';
 import { aiApi } from '../../services/aiApi';
@@ -331,8 +331,9 @@ export function PhotoViewerModal({
       const results = await api.searchSimilarFaces(face.rowid ?? 0, currentCatalog, 50);
       setSimilarResults(results.results ?? []);
       if ((results.results ?? []).length === 0) setSimilarError('Nenhuma face semelhante encontrada');
-    } catch (err: any) {
-      const msg = err?.detail || err?.message || 'Erro ao buscar semelhantes';
+    } catch (err: unknown) {
+      const errorObj = err as (Error & { detail?: string }) | null;
+      const msg = errorObj?.detail || errorObj?.message || 'Erro ao buscar semelhantes';
       setSimilarError(msg);
       setSimilarResults([]);
     } finally {

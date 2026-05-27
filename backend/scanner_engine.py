@@ -19,6 +19,9 @@ os.environ.setdefault("NO_ALBUMENTATIONS_UPDATE", "1")
 
 from services.face_engine import FACE_INFERENCE_LOCK
 
+RAW_IMAGE_EXTENSIONS = (".cr2", ".cr3", ".nef", ".arw", ".dng", ".orf", ".rw2", ".raf", ".srw", ".x3f")
+STANDARD_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff")
+
 # Scanner progress watchdog
 _scan_last_progress_at = 0.0
 _scan_last_progress_file = ""
@@ -49,7 +52,7 @@ _cfg = {
     "faiss_available": False,
     "runtime_dir": "",
     "data_dir": "",
-    "image_extensions": (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"),
+    "image_extensions": STANDARD_IMAGE_EXTENSIONS + RAW_IMAGE_EXTENSIONS,
     "image_models_ready": False,
     "app_face": None,
     "face_engine_device": "",
@@ -193,10 +196,29 @@ def imread_unicode(path):
             _cfg["log_debug"](f"Arquivo nao existe ou path invalido: {path}")
             return None, 1.0
         file_size = os.path.getsize(path)
-        if file_size > 100 * 1024 * 1024:
+        ext = os.path.splitext(path)[1].lower()
+        max_size = 250 * 1024 * 1024 if ext in RAW_IMAGE_EXTENSIONS else 100 * 1024 * 1024
+        if file_size > max_size:
             _cfg["log_debug"](f"Arquivo muito grande ({file_size / 1024 / 1024:.1f}MB): {path}")
             return None, 1.0
-        with Image.open(path) as pil_img:
+
+        if ext in RAW_IMAGE_EXTENSIONS:
+            try:
+                import rawpy
+            except Exception as e:
+                _cfg["log_debug"](f"RAW sem conversor rawpy: {path} ({e})")
+                return None, 1.0
+            try:
+                with rawpy.imread(path) as raw:
+                    rgb = raw.postprocess(use_camera_wb=True, no_auto_bright=True, output_bps=8)
+                pil_img = Image.fromarray(rgb)
+            except Exception as e:
+                _cfg["log_debug"](f"Erro convertendo RAW {path}: {e}")
+                return None, 1.0
+        else:
+            pil_img = Image.open(path)
+
+        with pil_img:
             if pil_img.mode != "RGB":
                 pil_img = pil_img.convert("RGB")
             pil_img = ImageOps.exif_transpose(pil_img)
@@ -363,6 +385,39 @@ def _detect_photo_class_context(photo_path: str, scan_roots: list[str]) -> str:
     return ""
 
 
+def _detect_current_folder_student(photo_path: str, ref_names: dict, conn=None) -> tuple[str, str]:
+    """
+    Detecta se o caminho da foto está dentro de uma pasta correspondente a um formando cadastrado.
+    Retorna (person_key, student_name) do formando correto, ou (None, None).
+    """
+    try:
+        from pathlib import Path
+        parts = Path(photo_path).parts[:-1]  # Exclui o nome do arquivo
+        folder_names = [str(p).strip().upper() for p in parts if p.strip()]
+        
+        # 1. Tentar bater com ref_names (person_key -> name)
+        for pkey, name in ref_names.items():
+            name_upper = str(name).strip().upper()
+            if name_upper in folder_names:
+                return pkey, name
+                
+        # 2. Tentar bater com a tabela alunos no banco se disponível
+        if conn is not None:
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT aluno_id, person_key FROM alunos")
+                for r in cur.fetchall():
+                    aid_upper = str(r["aluno_id"]).strip().upper()
+                    if aid_upper in folder_names:
+                        return r["person_key"] or f"__UNKNOWN__::{r['aluno_id']}", r["aluno_id"]
+            except Exception:
+                pass
+    except Exception:
+        pass
+            
+    return None, None
+
+
 INVALID_PK_VALUES = {"", ".", ".."}
 
 
@@ -493,6 +548,7 @@ def load_references(ref_path):
             ref_class_to_ids[cls] = []
         ref_class_to_ids[cls].append(i)
     _cfg["ref_class_to_ids"] = ref_class_to_ids
+    _cfg["refs"] = refs
 
 
 def find_best_reference(emb):
@@ -983,166 +1039,353 @@ def run_scanner_worker(req):
                         else:
                             log_info(f"[DB] ignorada (ja existe) path={p}")
                     else:
-                        largest_face_area = max((face_data[5] for face_data in valid_faces), default=0)
-
-                        scored_faces = []
-                        aluno_batch = {}  # person_key -> (nome, class_name, ref_folder)
-                        for face, x1, y1, x2, y2, area in valid_faces:
-                            fg_score, is_fg, f_ratio, c_score, bg_reason = calc_foreground_score(
-                                x1, y1, x2, y2, area, img.shape, face, b_score
-                            )
-                            scored_faces.append({
-                                "face": face, "x1": x1, "y1": y1, "x2": x2, "y2": y2, "area": area,
-                                "fg_score": fg_score, "is_fg": is_fg, "f_ratio": f_ratio,
-                                "c_score": c_score, "bg_reason": bg_reason
-                            })
+                        folder_person_key, folder_student_name = _detect_current_folder_student(p, _cfg.get("ref_names", {}), conn)
+                        
+                        if folder_person_key is not None:
+                            _cfg["log_info"](f"[PASTA-MATCH-MODE] Iniciando analise de pasta para formando: {folder_student_name} (key={folder_person_key}) foto={os.path.basename(p)}")
                             
-                        scored_faces.sort(key=lambda x: x["fg_score"], reverse=True)
-                        
-                        fg_count = 0
-                        for sf in scored_faces:
-                            if sf["is_fg"] == 1:
-                                if fg_count < 3:
-                                    fg_count += 1
+                            # 1. Obter embeddings de referência do formando proprietário
+                            current_student_embs = [r["emb"] for r in _cfg.get("refs", []) if r["person_key"] == folder_person_key]
+                            
+                            # 2. Avaliar cada face detectada
+                            scored_folder_faces = []
+                            for f_idx_local, (face, x1, y1, x2, y2, area) in enumerate(valid_faces):
+                                # Embedding
+                                face_emb = face.embedding.astype("float32")
+                                norm = np.linalg.norm(face_emb)
+                                if norm > 0:
+                                    face_emb = face_emb / norm
+                                    
+                                # Similaridade com o formando da pasta
+                                if current_student_embs:
+                                    similarity = max((float(np.dot(face_emb, ref_emb)) for ref_emb in current_student_embs), default=0.0)
                                 else:
-                                    sf["is_fg"] = 0
-                                    sf["bg_reason"] = "Muitas pessoas na foto (4+)"
-                        
-                        log_info(f"[Face] faces_validas={len(valid_faces)} foreground={fg_count} foto={os.path.basename(p)}")
-
-                        for sf in scored_faces:
-                            face, x1, y1, x2, y2, area = sf["face"], sf["x1"], sf["y1"], sf["x2"], sf["y2"], sf["area"]
-                            fg_score, is_fg, f_ratio, c_score, bg_reason = sf["fg_score"], sf["is_fg"], sf["f_ratio"], sf["c_score"], sf["bg_reason"]
-                            # Coords escaladas para o tamanho original da imagem (para DB e display)
-                            sx1, sy1 = round(x1 * img_scale), round(y1 * img_scale)
-                            sx2, sy2 = round(x2 * img_scale), round(y2 * img_scale)
-
-                            log_debug(f"[foreground-face] area={f_ratio:.3f} center={c_score:.2f} score={fg_score:.2f} foreground={is_fg} reason={bg_reason}")
-
-                            if is_background_face(x1, y1, x2, y2, largest_face_area, img.shape, len(valid_faces)):
-                                scan_state["skipped_background_faces"] += 1
-                                continue
-
-                            total_faces_found += 1
-                            emb = face.embedding.astype("float32")
-                            norm = np.linalg.norm(emb)
-                            if norm == 0:
-                                continue
-                            emb = emb / norm
-                            photo_class_context = _detect_photo_class_context(p, scan_roots)
-                            _cfg["log_info"](
-                                f"[scan-match] foto={os.path.basename(p)} photo_turma={photo_class_context!r}"
-                            )
-                            ref_person_key, ref_sim = find_best_reference_filtered(emb, photo_class_context)
-                            ref_exists = (ref_person_key is not None)
-
-                            if ref_exists and ref_sim >= _cfg["ref_match_threshold"]:
-                                scan_state["total_matches"] += 1
-                                ref_class_name = get_reference_class_name(ref_person_key)
-                                ref_folder = get_reference_folder(ref_person_key)
-                                nome = get_reference_name(ref_person_key)
+                                    similarity = 0.0
+                                    
+                                # Qualidade
+                                sharpness_score = 0.5
+                                if b_score is not None:
+                                    try:
+                                        val = float(b_score)
+                                        sharpness_score = min(1.0, max(0.0, val / 100.0))
+                                    except:
+                                        pass
+                                        
+                                # Tamanho
+                                face_area_ratio = area / (img_h * img_w) if (img_h * img_w) > 0 else 0
+                                tamanho_da_face = min(1.0, face_area_ratio / 0.05)
+                                
+                                # Centralidade
+                                face_cx = (x1 + x2) / 2.0
+                                face_cy = (y1 + y2) / 2.0
+                                img_cx = img_w / 2.0
+                                img_cy = img_h / 2.0
+                                dist_x = abs(face_cx - img_cx) / img_w
+                                dist_y = abs(face_cy - img_cy) / img_h
+                                dist = (dist_x**2 + dist_y**2)**0.5
+                                center_score = max(0.0, 1.0 - (dist * 2.0))
+                                
+                                # Score Final Ponderado
+                                final_score = (similarity * 0.75) + (sharpness_score * 0.10) + (tamanho_da_face * 0.08) + (center_score * 0.07)
+                                
+                                scored_folder_faces.append({
+                                    "face": face, "x1": x1, "y1": y1, "x2": x2, "y2": y2, "area": area,
+                                    "similarity": similarity, "sharpness_score": sharpness_score,
+                                    "tamanho_da_face": tamanho_da_face, "center_score": center_score,
+                                    "final_score": final_score, "f_idx_local": f_idx_local,
+                                    "decisao": "Pendente",
+                                    "ref_person_key": folder_person_key,
+                                    "student_name": folder_student_name
+                                })
+                                
+                            # Ordenar faces em ordem decrescente de final_score
+                            scored_folder_faces.sort(key=lambda x: x["final_score"], reverse=True)
+                            
+                            # 3. Decidir atribuições
+                            match_found = False
+                            threshold = _cfg.get("ref_match_threshold", 0.60)
+                            
+                            if scored_folder_faces:
+                                # A primeira face ordenada é a candidata principal
+                                best_face = scored_folder_faces[0]
+                                if best_face["similarity"] >= threshold:
+                                    best_face["decisao"] = f"Aceito como formando da pasta ({folder_student_name})"
+                                    match_found = True
+                                else:
+                                    best_face["decisao"] = "Abaixo do limiar - Enviado para Revisão IA"
+                                    
+                                # Se a primeira face bater com o formando, as outras faces secundárias serão enviadas para cluster local
+                                for other_face in scored_folder_faces[1:]:
+                                    other_face["decisao"] = "Face secundária enviada para cluster desconhecido" if match_found else "Abaixo do limiar - Enviado para Revisão IA"
+                            
+                            # 4. Log detalhado por face solicitado pelo usuário
+                            for fd_idx, fd in enumerate(scored_folder_faces):
+                                bbox_str = f"[{fd['x1']}, {fd['y1']}, {fd['x2']}, {fd['y2']}]"
                                 _cfg["log_info"](
-                                    f"[scan-match] matched person_key={ref_person_key[:60]} nome={nome} score={ref_sim:.4f} foto={os.path.basename(p)}"
+                                    f"[PASTA-FACE-DIAGNOSTIC] FaceIndex={fd_idx} | "
+                                    f"similarity={fd['similarity']:.4f} | "
+                                    f"bbox={bbox_str} | "
+                                    f"area={fd['area']} | "
+                                    f"center_score={fd['center_score']:.4f} | "
+                                    f"final_score={fd['final_score']:.4f} | "
+                                    f"decisão={fd['decisao']}"
                                 )
-
-                                if ref_class_name and photo_class_context and ref_class_name != photo_class_context:
-                                    _cfg["log_info"](
-                                        f"[identity-guard] match aceito com turma diferente (sem alternativa na mesma turma): "
-                                        f"nome={nome} ref_turma={ref_class_name} photo_turma={photo_class_context} "
-                                        f"sim={ref_sim:.4f} foto={p}"
-                                    )
-                            else:
-                                if ref_exists:
-                                    _cfg["log_info"](
-                                        f"[scan-match] ref encontrada mas score {ref_sim:.4f} abaixo do threshold {_cfg['ref_match_threshold']}, criando cluster"
-                                    )
+                                
+                            # 5. Salvar cada face no banco de dados SQLite
+                            for fd in scored_folder_faces:
+                                face, x1, y1, x2, y2, area = fd["face"], fd["x1"], fd["y1"], fd["x2"], fd["y2"], fd["area"]
+                                sx1, sy1 = round(x1 * img_scale), round(y1 * img_scale)
+                                sx2, sy2 = round(x2 * img_scale), round(y2 * img_scale)
+                                
+                                emb = face.embedding.astype("float32")
+                                norm = np.linalg.norm(emb)
+                                if norm > 0:
+                                    emb = emb / norm
+                                
+                                fg_score, is_fg, f_ratio, c_score, bg_reason = calc_foreground_score(
+                                    x1, y1, x2, y2, area, img.shape, face, b_score
+                                )
+                                
+                                if fd["decisao"].startswith("Aceito"):
+                                    # Associado ao formando proprietário
+                                    nome = folder_student_name
+                                    ref_person_key = folder_person_key
+                                    ref_class_name = get_reference_class_name(ref_person_key)
+                                    ref_folder = get_reference_folder(ref_person_key)
+                                    # Rostos na borda que batem com a referência da pasta NÃO devem ser descartados
+                                    # Forçamos is_fg a 1 para o formando correto
+                                    is_fg = 1
+                                    bg_reason = ""
+                                    scan_state["total_matches"] += 1
                                 else:
-                                    _cfg["log_info"](
-                                        f"[scan-match] nenhuma referencia encontrada, criando cluster"
+                                    # Enviado para Revisão IA (cluster desconhecido "Pessoa X")
+                                    nome = find_or_create_cluster(emb)
+                                    ref_person_key = ""
+                                    ref_class_name = ""
+                                    ref_folder = ""
+                                    is_fg = 0
+                                    bg_reason = "Revisão IA (Pasta de Formando)"
+                                    
+                                if not ref_person_key:
+                                    ref_person_key = make_person_key(
+                                        catalog=cname,
+                                        class_name=ref_class_name or photo_class_context or "__SEM_TURMA__",
+                                        reference_folder=ref_folder or photo_class_context or "__SEM_REFERENCIA__",
+                                        student_id=nome,
                                     )
-                                nome = find_or_create_cluster(emb)
-                                ref_class_name = ""
-                                ref_person_key = ""
-                                ref_folder = ""
-
-                            if not ref_person_key:
-                                ref_person_key = make_person_key(
-                                    catalog=cname,
-                                    class_name=ref_class_name or photo_class_context or "__SEM_TURMA__",
-                                    reference_folder=ref_folder or photo_class_context or "__SEM_REFERENCIA__",
-                                    student_id=nome,
+                                    
+                                photo_faces.append({
+                                    "bbox": [sx1, sy1, sx2, sy2],
+                                    "confidence": round(float(fd["similarity"]), 4) if fd["decisao"].startswith("Aceito") else 0.95,
+                                    "name": nome,
+                                    "person_key": ref_person_key,
+                                })
+                                
+                                # Salvar Ocorrência
+                                cur.execute(
+                                    """
+                                    INSERT INTO ocorrencias
+                                    (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status,
+                                     foreground_score, is_foreground, face_area_ratio, center_score, background_penalty_reason,
+                                     person_key, reference_folder)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    ON CONFLICT(foto_path, x1, y1, x2, y2) DO UPDATE SET
+                                        aluno_id = excluded.aluno_id,
+                                        person_key = excluded.person_key,
+                                        reference_folder = excluded.reference_folder
+                                    """,
+                                    (nome, p, sx1, sy1, sx2, sy2, photo_hash, b_score, b_status,
+                                     fg_score, is_fg, f_ratio, c_score, bg_reason, ref_person_key, ref_folder),
                                 )
-
+                                
+                                # Salvar embedding para permitir re-match e re-cluster
+                                try:
+                                    occ_row = cur.execute(
+                                        "SELECT rowid FROM ocorrencias WHERE foto_path = ? AND x1 = ? AND y1 = ? AND x2 = ? AND y2 = ? LIMIT 1",
+                                        (p, sx1, sy1, sx2, sy2)
+                                    ).fetchone()
+                                    if occ_row:
+                                        try:
+                                            mtime_ns = int(os.path.getmtime(p) * 1e9)
+                                            fsize    = os.path.getsize(p)
+                                        except OSError:
+                                            mtime_ns, fsize = 0, 0
+                                        cur.execute("""
+                                            INSERT OR REPLACE INTO face_embeddings
+                                            (occurrence_rowid, foto_path, x1, y1, x2, y2, embedding, mtime_ns, size)
+                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        """, (occ_row[0], p, sx1, sy1, sx2, sy2,
+                                              emb.tobytes(), mtime_ns, fsize))
+                                except Exception as _emb_err:
+                                    log_info(f"[Scanner] erro ao salvar embedding: {_emb_err}")
+                                    
+                            # Atualiza estatísticas do scan
                             scan_state["total_clusters"] = len(_cfg["cluster_names"])
-
-                            log_info(
-                                f"[Scanner Decisão] foto={os.path.basename(p)} | "
-                                f"ID sugerido={nome} | "
-                                f"confiança facial={ref_sim:.4f} | "
-                                f"existência de referência={ref_exists} | "
-                                f"person_key={ref_person_key[:60]}"
-                            )
-
-                            photo_faces.append({
-                                "bbox": [sx1, sy1, sx2, sy2],
-                                "confidence": round(float(ref_sim), 4) if ref_exists else 0.95,
-                                "name": nome,
-                                "person_key": ref_person_key,
-                            })
-
-                            t_face = (time.time() - t0_face) * 1000
-
-                            _cfg["log_info"](f"[scan-save] final foto={os.path.basename(p)} aluno={nome} class_name={ref_class_name or '?'} person_key={ref_person_key}")
-                            cur.execute(
-                                """
-                                INSERT INTO ocorrencias
-                                (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status,
-                                 foreground_score, is_foreground, face_area_ratio, center_score, background_penalty_reason,
-                                 person_key, reference_folder)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                ON CONFLICT(foto_path, x1, y1, x2, y2) DO UPDATE SET
-                                    aluno_id = excluded.aluno_id,
-                                    person_key = excluded.person_key,
-                                    reference_folder = excluded.reference_folder
-                                """,
-                                (nome, p, sx1, sy1, sx2, sy2, photo_hash, b_score, b_status,
-                                 fg_score, is_fg, f_ratio, c_score, bg_reason, ref_person_key, ref_folder),
-                            )
-                            rowcount = cur.rowcount
                             if p not in existing_photo_paths:
                                 inserted_photo_paths.add(p)
                                 existing_photo_paths.add(p)
-                                log_info(f"[DB] inserida path={p} aluno={nome} person_key={ref_person_key[:60]} rowcount={rowcount}")
-                            else:
-                                log_info(f"[DB] ignorada (ja existe) path={p} aluno={nome}")
-                            detected_class = get_reference_class_name(nome) or photo_class_context or "Sem turma"
-                            print(f"[db-save] aluno={nome} class_name={detected_class} person_key={ref_person_key[:60]}")
-                            if ref_person_key:
-                                aluno_batch[ref_person_key] = (nome, detected_class, ref_folder or detected_class)
+                        else:
+                            # ── PROCESSO TRADICIONAL GLOBAL ──
+                            largest_face_area = max((face_data[5] for face_data in valid_faces), default=0)
 
-                            # Salvar embedding na tabela face_embeddings para permitir
-                            # re-match e re-cluster sem precisar re-escanear
-                            try:
-                                occ_row = cur.execute(
-                                    "SELECT rowid FROM ocorrencias WHERE foto_path = ? AND x1 = ? AND y1 = ? AND x2 = ? AND y2 = ? LIMIT 1",
-                                    (p, sx1, sy1, sx2, sy2)
-                                ).fetchone()
-                                if occ_row:
-                                    try:
-                                        mtime_ns = int(os.path.getmtime(p) * 1e9)
-                                        fsize    = os.path.getsize(p)
-                                    except OSError:
-                                        mtime_ns, fsize = 0, 0
-                                    cur.execute("""
-                                        INSERT OR REPLACE INTO face_embeddings
-                                        (occurrence_rowid, foto_path, x1, y1, x2, y2, embedding, mtime_ns, size)
-                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                    """, (occ_row[0], p, sx1, sy1, sx2, sy2,
-                                          emb.tobytes(), mtime_ns, fsize))
-                            except Exception as _emb_err:
-                                log_info(f"[Scanner] erro ao salvar embedding: {_emb_err}")
+                            scored_faces = []
+                            aluno_batch = {}  # person_key -> (nome, class_name, ref_folder)
+                            for face, x1, y1, x2, y2, area in valid_faces:
+                                fg_score, is_fg, f_ratio, c_score, bg_reason = calc_foreground_score(
+                                    x1, y1, x2, y2, area, img.shape, face, b_score
+                                )
+                                scored_faces.append({
+                                    "face": face, "x1": x1, "y1": y1, "x2": x2, "y2": y2, "area": area,
+                                    "fg_score": fg_score, "is_fg": is_fg, "f_ratio": f_ratio,
+                                    "c_score": c_score, "bg_reason": bg_reason
+                                })
+                                
+                            scored_faces.sort(key=lambda x: x["fg_score"], reverse=True)
+                            
+                            fg_count = 0
+                            for sf in scored_faces:
+                                if sf["is_fg"] == 1:
+                                    if fg_count < 3:
+                                        fg_count += 1
+                                    else:
+                                        sf["is_fg"] = 0
+                                        sf["bg_reason"] = "Muitas pessoas na foto (4+)"
+                            
+                            log_info(f"[Face] faces_validas={len(valid_faces)} foreground={fg_count} foto={os.path.basename(p)}")
 
-                            log_info(f"[Scanner] face found bbox=[{sx1}, {sy1}, {sx2}, {sy2}] path={os.path.basename(p)}")
+                            for sf in scored_faces:
+                                face, x1, y1, x2, y2, area = sf["face"], sf["x1"], sf["y1"], sf["x2"], sf["y2"], sf["area"]
+                                fg_score, is_fg, f_ratio, c_score, bg_reason = sf["fg_score"], sf["is_fg"], sf["f_ratio"], sf["c_score"], sf["bg_reason"]
+                                # Coords escaladas para o tamanho original da imagem (para DB e display)
+                                sx1, sy1 = round(x1 * img_scale), round(y1 * img_scale)
+                                sx2, sy2 = round(x2 * img_scale), round(y2 * img_scale)
+
+                                log_debug(f"[foreground-face] area={f_ratio:.3f} center={c_score:.2f} score={fg_score:.2f} foreground={is_fg} reason={bg_reason}")
+
+                                if is_background_face(x1, y1, x2, y2, largest_face_area, img.shape, len(valid_faces)):
+                                    scan_state["skipped_background_faces"] += 1
+                                    continue
+
+                                total_faces_found += 1
+                                emb = face.embedding.astype("float32")
+                                norm = np.linalg.norm(emb)
+                                if norm == 0:
+                                    continue
+                                emb = emb / norm
+                                photo_class_context = _detect_photo_class_context(p, scan_roots)
+                                _cfg["log_info"](
+                                    f"[scan-match] foto={os.path.basename(p)} photo_turma={photo_class_context!r}"
+                                )
+                                ref_person_key, ref_sim = find_best_reference_filtered(emb, photo_class_context)
+                                ref_exists = (ref_person_key is not None)
+
+                                if ref_exists and ref_sim >= _cfg["ref_match_threshold"]:
+                                    scan_state["total_matches"] += 1
+                                    ref_class_name = get_reference_class_name(ref_person_key)
+                                    ref_folder = get_reference_folder(ref_person_key)
+                                    nome = get_reference_name(ref_person_key)
+                                    _cfg["log_info"](
+                                        f"[scan-match] matched person_key={ref_person_key[:60]} nome={nome} score={ref_sim:.4f} foto={os.path.basename(p)}"
+                                    )
+
+                                    if ref_class_name and photo_class_context and ref_class_name != photo_class_context:
+                                        _cfg["log_info"](
+                                            f"[identity-guard] match aceito com turma diferente (sem alternativa na mesma turma): "
+                                            f"nome={nome} ref_turma={ref_class_name} photo_turma={photo_class_context} "
+                                            f"sim={ref_sim:.4f} foto={p}"
+                                        )
+                                else:
+                                    if ref_exists:
+                                        _cfg["log_info"](
+                                            f"[scan-match] ref encontrada mas score {ref_sim:.4f} abaixo do threshold {_cfg['ref_match_threshold']}, criando cluster"
+                                        )
+                                    else:
+                                        _cfg["log_info"](
+                                            f"[scan-match] nenhuma referencia encontrada, criando cluster"
+                                        )
+                                    nome = find_or_create_cluster(emb)
+                                    ref_class_name = ""
+                                    ref_person_key = ""
+                                    ref_folder = ""
+
+                                if not ref_person_key:
+                                    ref_person_key = make_person_key(
+                                        catalog=cname,
+                                        class_name=ref_class_name or photo_class_context or "__SEM_TURMA__",
+                                        reference_folder=ref_folder or photo_class_context or "__SEM_REFERENCIA__",
+                                        student_id=nome,
+                                    )
+
+                                scan_state["total_clusters"] = len(_cfg["cluster_names"])
+
+                                log_info(
+                                    f"[Scanner Decisão] foto={os.path.basename(p)} | "
+                                    f"ID sugerido={nome} | "
+                                    f"confiança facial={ref_sim:.4f} | "
+                                    f"existência de referência={ref_exists} | "
+                                    f"person_key={ref_person_key[:60]}"
+                                )
+
+                                photo_faces.append({
+                                    "bbox": [sx1, sy1, sx2, sy2],
+                                    "confidence": round(float(ref_sim), 4) if ref_exists else 0.95,
+                                    "name": nome,
+                                    "person_key": ref_person_key,
+                                })
+
+                                t_face = (time.time() - t0_face) * 1000
+
+                                _cfg["log_info"](f"[scan-save] final foto={os.path.basename(p)} aluno={nome} class_name={ref_class_name or '?'} person_key={ref_person_key}")
+                                cur.execute(
+                                    """
+                                    INSERT INTO ocorrencias
+                                    (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status,
+                                     foreground_score, is_foreground, face_area_ratio, center_score, background_penalty_reason,
+                                     person_key, reference_folder)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    ON CONFLICT(foto_path, x1, y1, x2, y2) DO UPDATE SET
+                                        aluno_id = excluded.aluno_id,
+                                        person_key = excluded.person_key,
+                                        reference_folder = excluded.reference_folder
+                                    """,
+                                    (nome, p, sx1, sy1, sx2, sy2, photo_hash, b_score, b_status,
+                                     fg_score, is_fg, f_ratio, c_score, bg_reason, ref_person_key, ref_folder),
+                                )
+                                rowcount = cur.rowcount
+                                if p not in existing_photo_paths:
+                                    inserted_photo_paths.add(p)
+                                    existing_photo_paths.add(p)
+                                    log_info(f"[DB] inserida path={p} aluno={nome} person_key={ref_person_key[:60]} rowcount={rowcount}")
+                                else:
+                                    log_info(f"[DB] ignorada (ja existe) path={p} aluno={nome}")
+                                detected_class = get_reference_class_name(nome) or photo_class_context or "Sem turma"
+                                print(f"[db-save] aluno={nome} class_name={detected_class} person_key={ref_person_key[:60]}")
+                                if ref_person_key:
+                                    aluno_batch[ref_person_key] = (nome, detected_class, ref_folder or detected_class)
+
+                                # Salvar embedding na tabela face_embeddings para permitir
+                                # re-match e re-cluster sem precisar re-escanear
+                                try:
+                                    occ_row = cur.execute(
+                                        "SELECT rowid FROM ocorrencias WHERE foto_path = ? AND x1 = ? AND y1 = ? AND x2 = ? AND y2 = ? LIMIT 1",
+                                        (p, sx1, sy1, sx2, sy2)
+                                    ).fetchone()
+                                    if occ_row:
+                                        try:
+                                            mtime_ns = int(os.path.getmtime(p) * 1e9)
+                                            fsize    = os.path.getsize(p)
+                                        except OSError:
+                                            mtime_ns, fsize = 0, 0
+                                        cur.execute("""
+                                            INSERT OR REPLACE INTO face_embeddings
+                                            (occurrence_rowid, foto_path, x1, y1, x2, y2, embedding, mtime_ns, size)
+                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        """, (occ_row[0], p, sx1, sy1, sx2, sy2,
+                                              emb.tobytes(), mtime_ns, fsize))
+                                except Exception as _emb_err:
+                                    log_info(f"[Scanner] erro ao salvar embedding: {_emb_err}")
+
+                                log_info(f"[Scanner] face found bbox=[{sx1}, {sy1}, {sx2}, {sy2}] path={os.path.basename(p)}")
 
                             current_time = time.time()
                             if current_time - last_face_update_time > 0.5:

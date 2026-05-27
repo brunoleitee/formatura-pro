@@ -10,6 +10,7 @@ import s from './ExportView.module.css';
 type ExportMode = 'copy' | 'move';
 type ConflictStrategy = 'copy' | 'skip' | 'overwrite';
 type SortBy = 'az' | 'za' | 'count';
+type ExportFormat = 'original' | 'jpg';
 
 const STEPS = [
   { title: 'Seleção', sub: 'Escolha os formandos' },
@@ -35,7 +36,7 @@ const ExportAvatar = memo(function ExportAvatar({ person, index }: { person: Per
     <img
       src={avatarUrl}
       alt={person.name}
-      loading="eager"
+      loading="lazy"
       decoding="async"
       onError={() => setFailed(true)}
       style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
@@ -77,6 +78,7 @@ function ExportViewContent() {
   const [conflict, setConflict] = useState<ConflictStrategy>('copy');
   const [includeQuality, setIncludeQuality] = useState(false);
   const [includeDescarte, setIncludeDescarte] = useState(true);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('original');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<ExportStatus | null>(null);
   const [polling, setPolling] = useState(false);
@@ -132,6 +134,7 @@ function ExportViewContent() {
     setSearch('');
     setSelectedClass('all');
     setOrganizeByClass(false);
+    setExportFormat('original');
     pollingFailuresRef.current = 0;
     setError('');
     setStep(1);
@@ -140,7 +143,7 @@ function ExportViewContent() {
   useEffect(() => {
     if (!polling) return;
     let cancelled = false;
-    let interval: ReturnType<typeof setInterval> | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const poll = async () => {
       if (cancelled) return;
       try {
@@ -148,20 +151,25 @@ function ExportViewContent() {
         if (cancelled) return;
         setStatus(st);
         pollingFailuresRef.current = 0;
-        if (!st.is_exporting && !st.running) setPolling(false);
+        if (!st.is_exporting && !st.running) {
+          setPolling(false);
+          return;
+        }
       } catch {
         if (cancelled) return;
         pollingFailuresRef.current += 1;
         if (pollingFailuresRef.current >= 3) {
           setPolling(false);
           setError('Não foi possível consultar o status da exportação. Verifique se o backend está ativo.');
+          return;
         }
       }
+      const delay = status?.progress != null && status.progress >= 90 ? 200 : 800;
+      timer = setTimeout(poll, delay);
     };
     poll();
-    interval = setInterval(poll, 800);
-    return () => { cancelled = true; if (interval) clearInterval(interval); };
-  }, [polling]);
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [polling, status?.progress]);
 
   useEffect(() => {
     if (!status || status.is_exporting) return;
@@ -227,7 +235,7 @@ function ExportViewContent() {
 
   const selectedPeople = useMemo(
     () => people.filter(p => selected.has(getPersonId(p))),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [people, selected]
   );
   const totalSelectedPhotos = useMemo(
@@ -249,7 +257,7 @@ function ExportViewContent() {
     setFinishModalData(null);
     pollingFailuresRef.current = 0;
     try {
-      await api.startExport([...selected], destPath, mode, conflict, includeQuality, includeDescarte, organizeByClass);
+      await api.startExport([...selected], destPath, mode, conflict, includeQuality, includeDescarte, organizeByClass, exportFormat);
       setPolling(true);
       const st = await api.getExportStatus().catch(() => null);
       if (st) setStatus(st);
@@ -481,7 +489,7 @@ function ExportViewContent() {
             <div className="export-summary">
               <Check size={20} color="var(--success-color)" />
               <span>Exportação concluída com sucesso!</span>
-              <button className="icon-btn" onClick={async () => { await api.clearExportSummary(); setStatus(null); }}>✕</button>
+              <button className="icon-btn" onClick={async () => { try { await api.clearExportSummary(); setStatus(null); } catch { setError('Erro ao limpar resumo'); } }}>✕</button>
             </div>
           )}
 
@@ -498,6 +506,23 @@ function ExportViewContent() {
           )}
 
           <div className={s.configGrid}>
+            {/* Formato dos arquivos */}
+            <div className={s.card}>
+              <div className={s.cardLabel}>Formato dos arquivos</div>
+              <div className={s.radioGroup}>
+                {([
+                  ['original', 'Original (mantém CR2/JPG)'],
+                  ['jpg', 'JPEG convertido'],
+                ] as const).map(([val, label]) => (
+                  <label key={val} className={`${s.radioOpt} ${exportFormat === val ? s.radioActive : ''}`}>
+                    <input type="radio" value={val} checked={exportFormat === val} onChange={() => setExportFormat(val)} />
+                    <span className={s.radioDot} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
             {/* Modo de exportação */}
             <div className={s.card}>
               <div className={s.cardLabel}>Modo de exportação</div>

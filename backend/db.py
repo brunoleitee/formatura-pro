@@ -327,6 +327,11 @@ class DbConnection:
         try:
             self.conn = sqlite3.connect(db_path, timeout=30)
             self.conn.row_factory = sqlite3.Row
+            try:
+                self.conn.execute("PRAGMA journal_mode=WAL")
+                self.conn.execute("PRAGMA synchronous=NORMAL")
+            except Exception as pragma_err:
+                logger.warning(f"Falha ao configurar PRAGMA WAL no banco {db_path}: {pragma_err}")
         except Exception as e:
             logger.error(f"FATAL: Erro ao conectar ao banco {db_path}: {e}")
             self.conn = None

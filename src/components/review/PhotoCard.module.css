@@ -3,27 +3,27 @@
 /* ── Card base ── */
 .photoCard {
   position: relative;
-  background: #0f1118;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 10px;
+  background: color-mix(in srgb, var(--card) 30%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
+  border-radius: 9px;
   overflow: hidden;
   cursor: pointer;
   user-select: none;
   outline: 2px solid transparent;
   outline-offset: -2px;
-  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease, background .18s ease;
 }
 
 .photoCard:hover {
-  border-color: rgba(148, 163, 184, 0.25);
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--border));
   transform: translateY(-2px);
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.26);
 }
 
 .photoCard.selected {
-  border-color: rgba(96, 165, 250, 0.82);
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.22) inset, 0 0 0 1px rgba(96, 165, 250, 0.08), 0 14px 30px rgba(37, 99, 235, 0.18);
-  background: linear-gradient(180deg, rgba(37, 99, 235, 0.12), rgba(15, 17, 24, 0.95));
+  border-color: color-mix(in srgb, var(--accent) 58%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent) inset, 0 14px 30px color-mix(in srgb, var(--accent) 13%, rgba(0, 0, 0, 0.34));
+  background: color-mix(in srgb, var(--accent) 8%, var(--card));
 }
 
 /* ── Wrapper da imagem ── */
@@ -58,8 +58,9 @@
 }
 
 .photoCardPhotoMode .photoCardImage {
-  object-fit: contain;
-  background: #000;
+  object-fit: cover;
+  object-position: center 24%;
+  background: var(--black-solid);
 }
 
 .photoCardFaceMode .photoCardImage {
@@ -77,7 +78,7 @@
 .skeleton {
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, #0f1118 0%, #1a1e2e 50%, #0f1118 100%);
+  background: linear-gradient(90deg, var(--photocard-bg) 0%, var(--photo-card-bg-end) 50%, var(--photocard-bg) 100%);
   background-size: 200% 100%;
   animation: shimmer 1.4s ease infinite;
 }
@@ -92,15 +93,16 @@
   position: absolute;
   top: 8px;
   left: 8px;
-  background: #16a34a;
-  color: #fff;
-  font-size: 0.65rem;
+  background: color-mix(in srgb, var(--success) 78%, rgba(0, 0, 0, 0.35));
+  color: var(--hero-text-white);
+  font-size: 0.62rem;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   padding: 3px 8px;
-  border-radius: 4px;
+  border-radius: 6px;
   pointer-events: none;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(8px);
 }
 
 .badgeHidden { display: none; }
@@ -111,11 +113,11 @@
   position: absolute;
   top: 8px;
   right: 8px;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.45);
-  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid color-mix(in srgb, var(--foreground) 46%, transparent);
+  background: rgba(0, 0, 0, 0.18);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -124,10 +126,10 @@
 }
 
 .checkArea.checkAreaSelected {
-  background: #3b82f6;
-  border-color: #3b82f6;
-  color: #fff;
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14);
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: var(--hero-text-white);
+  box-shadow: 0 0 0 4px var(--accent-primary-soft);
 }
 
 .checkHidden  { display: none; }
@@ -164,28 +166,28 @@
 }
 
 .badge {
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   font-weight: 700;
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
-  letter-spacing: 0.02em;
-  backdrop-filter: blur(4px);
+  padding: 3px 7px;
+  border-radius: 6px;
+  letter-spacing: 0;
+  backdrop-filter: blur(8px);
 }
 
 .info {
-  background: rgba(15, 23, 42, 0.75);
-  color: #cbd5e1;
-  border: 1px solid rgba(148, 163, 184, 0.15);
+  background: var(--photocard-tag-bg);
+  color: var(--photocard-tag-text);
+  border: 1px solid var(--photocard-tag-border);
 }
 
 .warning {
-  background: rgba(15, 23, 42, 0.75);
-  color: #fcd34d;
-  border: 1px solid rgba(251, 191, 36, 0.2);
+  background: var(--photocard-tag-bg);
+  color: var(--photocard-star-text);
+  border: 1px solid var(--photocard-star-border);
 }
 
 .success {
   background: var(--badge-green-bg, rgba(22, 163, 74, 0.2));
-  color: #86efac;
-  border: 1px solid rgba(52, 211, 153, 0.2);
+  color: var(--photocard-approved-text);
+  border: 1px solid var(--photocard-approved-border);
 }

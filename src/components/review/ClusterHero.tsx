@@ -1,18 +1,13 @@
 import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
-import { UserPlus, EyeOff, Check, X, Sparkles, Merge, ChevronUp, ChevronDown } from 'lucide-react';
-import type { AssignClusterResponse, RichCluster, SearchResult } from '../../services/api';
-import { api } from '../../services/api';
+import { UserPlus, EyeOff, Check, X, Sparkles, Merge, GitCompare } from 'lucide-react';
+import type { AssignClusterResponse, RichCluster, StudentMatchPreviewResponse } from '../../services/api';
 import { faceThumb } from './FaceCard';
+import { formatSimilarity } from '../../utils/format';
+import { getSuggestionInfo } from '../../utils/suggestionUtils';
 import styles from './ClusterHero.module.css';
-
-function fmtSim(sim: number | null | undefined): string {
-  if (sim == null || !isFinite(sim) || isNaN(sim)) return '--%';
-  return `${Math.round(sim * 100)}%`;
-}
 
 interface ClusterHeroProps {
   cluster: RichCluster;
-  catalog: string;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
   assignmentState?: {
@@ -23,6 +18,13 @@ interface ClusterHeroProps {
   } | null;
   onAssigned: (payload: AssignClusterResponse) => void;
   onSkip: () => void;
+  onSearch?: (q: string) => Promise<Array<{ id: string; name: string }>>;
+  onAssign?: (alunoId: string | null, nomeFormando: string | null, className?: string | null) => Promise<AssignClusterResponse>;
+  onMerge?: () => Promise<void>;
+  matchPreview?: StudentMatchPreviewResponse | null;
+  compareStudent?: string | null;
+  compareSimilarity?: number | null;
+  onCompare?: () => void;
 }
 
 export interface ClusterHeroHandle {
@@ -31,12 +33,17 @@ export interface ClusterHeroHandle {
 
 const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function ClusterHero({
   cluster,
-  catalog,
   collapsed = false,
-  onToggleCollapsed,
   assignmentState = null,
   onAssigned,
   onSkip,
+  onSearch,
+  onAssign,
+  onMerge,
+  matchPreview = null,
+  compareStudent = null,
+  compareSimilarity = null,
+  onCompare,
 }, ref) {
   const [identifying, setIdentifying] = useState(false);
   const [nameInput, setNameInput] = useState('');
@@ -53,19 +60,21 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
   const faceCountLabel = `${cluster.face_count} foto${cluster.face_count !== 1 ? 's' : ''}`;
   const cohesionLabel = `${pct}% coesão`;
   const isAssigned = assignmentState?.clusterId === cluster.cluster_id;
+  const compareEnabled = Boolean(
+    compareStudent &&
+    compareSimilarity != null &&
+    Number.isFinite(compareSimilarity) &&
+    compareSimilarity >= 0.30 &&
+    onCompare
+  );
 
   const loadSuggestions = useCallback(async (q: string) => {
-    if (q.length < 2) { setSuggestions([]); return; }
+    if (q.length < 2 || !onSearch) { setSuggestions([]); return; }
     try {
-      const res = await api.globalSearch(q);
-      setSuggestions(
-        res
-           .map((r: SearchResult) => ({ id: r.name, name: r.name }))
-           .filter((v, i, a) => a.findIndex((item) => item.id === v.id) === i)
-           .slice(0, 6)
-      );
-    } catch { /* ignore */ }
-  }, []);
+      const res = await onSearch(q);
+      setSuggestions(res);
+    } catch { setSuggestions([]); }
+  }, [onSearch]);
 
   useEffect(() => {
     const t = setTimeout(() => loadSuggestions(nameInput), 200);
@@ -98,13 +107,10 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
     setSaveError(null);
     setIsAssigning(true);
     try {
-      const result = await api.assignCluster(catalog, {
-        cluster_id: cluster.cluster_id,
-        aluno_id: alunoId,
-        nome_formando: nomeFormando,
-        class_name: selectedStudent?.class_name || '',
-      });
-      onAssigned(result);
+      if (onAssign) {
+        const result = await onAssign(alunoId, nomeFormando);
+        onAssigned(result);
+      }
     } catch (err) {
       console.error('[assignCluster] erro:', err);
       setSaveError('Não foi possível identificar este grupo. Tente novamente.');
@@ -117,12 +123,14 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
   const canAssign = Boolean(selectedStudent?.id || nameInput.trim());
 
   const handleMerge = useCallback(async () => {
-    if (!cluster.unknown_similar_id) return;
+    if (!cluster.unknown_similar_id || !onMerge) return;
     try {
-      await api.mergeCluster(catalog, cluster.cluster_id, cluster.unknown_similar_id);
+      await onMerge();
       onSkip();
-    } catch { /* ignore */ }
-  }, [cluster.cluster_id, cluster.unknown_similar_id, catalog, onSkip]);
+    } catch {
+      setSaveError('Não foi possível mesclar os grupos.');
+    }
+  }, [onMerge, onSkip]);
 
   return (
     <div className={`${styles.hero} ${collapsed ? styles.heroCollapsed : ''} ${isAssigned ? styles.heroAssigned : ''}`}>
@@ -167,29 +175,21 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
           <span className={styles.metaConf}>{cohesionLabel}</span>
         </div>
 
-        {cluster.suggested_student && cluster.suggested_similarity != null && isFinite(cluster.suggested_similarity) && cluster.suggested_similarity >= 0.55 && !isAssigned ? (
-          <div className={styles.suggestionRowStrong}>
-            <Sparkles size={12} />
-            <span><strong>{cluster.suggested_student}</strong> — {fmtSim(cluster.suggested_similarity)}</span>
-          </div>
-        ) : cluster.suggested_student && cluster.suggested_similarity != null && isFinite(cluster.suggested_similarity) && cluster.suggested_similarity >= 0.45 && !isAssigned ? (
-          <div className={styles.suggestionRow}>
-            <Sparkles size={12} />
-            <span>Possível: <strong>{cluster.suggested_student}</strong> — {fmtSim(cluster.suggested_similarity)}</span>
-          </div>
-        ) : cluster.best_student_debug && cluster.best_similarity_debug != null && isFinite(cluster.best_similarity_debug) && cluster.best_similarity_debug >= 0.30 && !isAssigned ? (
-          <div className={styles.suggestionRowDebug}>
-            <span>Fraco: {cluster.best_student_debug} — {fmtSim(cluster.best_similarity_debug)}</span>
-          </div>
-        ) : cluster.unknown_similar_id && cluster.unknown_similar_number && cluster.unknown_similar_similarity != null && isFinite(cluster.unknown_similar_similarity) && cluster.unknown_similar_similarity >= 0.55 && !isAssigned ? (
-          <div className={styles.unknownMatchRow}>
-            <span>Provável mesmo formando que grupo <strong>#{cluster.unknown_similar_number}</strong> — {fmtSim(cluster.unknown_similar_similarity)}</span>
-          </div>
-        ) : !isAssigned ? (
-          <div className={styles.noSuggestionRow}>
-            <span>Sem formandos identificados suficientes</span>
-          </div>
-        ) : null}
+        {(() => {
+          const info = getSuggestionInfo({ ...cluster, isAssigned });
+          switch (info.tier) {
+            case 'strong':
+              return <div className={styles.suggestionRowStrong}><Sparkles size={12} /><span><strong>{info.student}</strong> — {formatSimilarity(info.similarity)}</span></div>;
+            case 'possible':
+              return <div className={styles.suggestionRow}><Sparkles size={12} /><span>Possível: <strong>{info.student}</strong> — {formatSimilarity(info.similarity)}</span></div>;
+            case 'weak':
+              return <div className={styles.suggestionRowDebug}><span>Fraco: {info.student} — {formatSimilarity(info.similarity)}</span></div>;
+            case 'unknown':
+              return <div className={styles.unknownMatchRow}><span>Provável mesmo formando que grupo <strong>#{info.similarNumber}</strong> — {formatSimilarity(info.similarity)}</span></div>;
+            case 'none':
+              return !isAssigned ? <div className={styles.noSuggestionRow}><span>Sem formandos identificados suficientes</span></div> : null;
+          }
+        })()}
 
         {/* Ações ou identify inline */}
         <div className={`${styles.actions} ${identifying ? styles.blockHidden : styles.blockVisible}`}>
@@ -203,27 +203,58 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
               <span>Identificar</span>
             </button>
             {cluster.suggested_student && cluster.suggested_similarity && cluster.suggested_similarity >= 0.55 && !isAssigned && !identifying ? (
-              <button
-                className={styles.btnConfirm}
-                onClick={async () => {
-                  try {
-                    const result = await api.assignCluster(catalog, {
-                      cluster_id: cluster.cluster_id,
-                      aluno_id: cluster.suggested_student!,
-                      nome_formando: cluster.suggested_student!,
-                      class_name: '',
-                    });
-                    if (onAssigned) onAssigned(result);
-                  } catch (err) {
-                    console.error('[assignCluster] erro:', err);
-                    setSaveError('Não foi possível confirmar. Tente novamente.');
-                  }
-                }}
-                type="button"
-              >
-                <Check size={16} />
-                <span>Confirmar como {cluster.suggested_student}</span>
-              </button>
+              <div className={styles.btnConfirmContainer}>
+                <button
+                  className={styles.btnConfirm}
+                  onClick={async () => {
+                    try {
+                      if (onAssign) {
+                        const targetClass = matchPreview?.matched_student_folder || '';
+                        // Prefer suggested_person_key (computed by the cluster pipeline) over
+                        // matchPreview's resolved PK — the preview lookup degrades to a
+                        // case-insensitive name match when no PK was passed, which is
+                        // ambiguous when two formandos share the same display name.
+                        const resolvedPk =
+                          cluster.suggested_person_key
+                          || matchPreview?.matched_student_person_key
+                          || matchPreview?.matched_student_id
+                          || cluster.suggested_student!;
+                        const result = await onAssign(
+                          resolvedPk,
+                          matchPreview?.matched_student_name || cluster.suggested_student!,
+                          targetClass
+                        );
+                        if (onAssigned) onAssigned(result);
+                      }
+                    } catch (err) {
+                      console.error('[assignCluster] erro:', err);
+                      setSaveError('Não foi possível confirmar. Tente novamente.');
+                    }
+                  }}
+                  type="button"
+                >
+                  <Check size={16} />
+                  <span>Confirmar como {cluster.suggested_student}</span>
+                </button>
+                {matchPreview && matchPreview.matched_student_photo_path && (
+                  <div className={styles.previewTooltip}>
+                    <img
+                      src={faceThumb(matchPreview.matched_student_photo_path, matchPreview.matched_student_face_box, 120)}
+                      alt={cluster.suggested_student || ''}
+                      className={styles.previewThumb}
+                      onError={e => {
+                        const el = e.currentTarget as HTMLImageElement;
+                        el.style.display = 'none';
+                      }}
+                    />
+                    <div className={styles.previewMeta}>
+                      <span className={styles.previewName}>{matchPreview.matched_student_name || cluster.suggested_student}</span>
+                      <span className={styles.previewClass}>{matchPreview.matched_student_folder || 'Sem turma'}</span>
+                      <span className={styles.previewSim}>Similaridade: {Math.round((matchPreview.matched_similarity || cluster.suggested_similarity) * 100)}%</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : null}
             {cluster.unknown_similar_id && cluster.unknown_similar_similarity && cluster.unknown_similar_similarity >= 0.55 && !isAssigned && !identifying ? (
               <button
@@ -236,6 +267,16 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
               </button>
             ) : null}
             <button
+              className={styles.btnCompare}
+              onClick={compareEnabled ? onCompare : undefined}
+              type="button"
+              disabled={!compareEnabled}
+              title={compareEnabled && compareStudent ? `Comparar com ${compareStudent}` : 'Comparar grupo'}
+            >
+              <GitCompare size={16} />
+              <span>Comparar</span>
+            </button>
+            <button
               className={`${styles.btnSecondary} ${collapsed ? styles.inlineHidden : styles.inlineFlexVisible}`}
               onClick={onSkip}
               type="button"
@@ -244,18 +285,6 @@ const ClusterHero = forwardRef<ClusterHeroHandle, ClusterHeroProps>(function Clu
               <EyeOff size={16} />
               <span>Ignorar grupo</span>
             </button>
-          {onToggleCollapsed && (
-            <button
-              className={styles.btnIcon}
-              onClick={onToggleCollapsed}
-              type="button"
-              title={collapsed ? 'Expandir detalhes' : 'Recolher detalhes'}
-              disabled={isAssigned}
-            >
-              {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-              <span>{collapsed ? 'Expandir' : 'Recolher'}</span>
-            </button>
-          )}
         </div>
 
         <div className={`${styles.identifyInline} ${identifying ? styles.blockVisible : styles.blockHidden}`}>

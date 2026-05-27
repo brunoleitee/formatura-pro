@@ -10,6 +10,7 @@ export const exportApi = {
     include_quality: boolean,
     include_descarte: boolean,
     organize_by_class: boolean = false,
+    export_format: 'original' | 'jpg' = 'original',
   ) =>
     post(`${API_BASE}/export/check-conflicts`, {
       ids,
@@ -19,6 +20,7 @@ export const exportApi = {
       include_quality,
       include_descarte,
       organize_by_class,
+      export_format,
     }),
   startExport: (
     ids: string[],
@@ -28,6 +30,7 @@ export const exportApi = {
     include_quality: boolean,
     include_descarte: boolean,
     organize_by_class: boolean = false,
+    export_format: 'original' | 'jpg' = 'original',
   ) =>
     post(`${API_BASE}/export/start`, {
       ids,
@@ -37,6 +40,7 @@ export const exportApi = {
       include_quality,
       include_descarte,
       organize_by_class,
+      export_format,
     }),
   getExportStatus: () => fetchJSON<ExportStatus>(`${API_BASE}/export/status`),
   clearExportSummary: () => post(`${API_BASE}/export/clear_summary`, {}),

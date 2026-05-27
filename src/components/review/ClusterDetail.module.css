@@ -8,7 +8,32 @@
 }
 
 .rootAssigned {
-  background: linear-gradient(180deg, rgba(16, 185, 129, 0.04), transparent 18%);
+  background: linear-gradient(180deg, var(--detail-bg), transparent 18%);
+}
+
+.detailFrame {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.mainPane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  gap: 8px;
+  padding: 10px 12px 0;
+}
+
+.inspectorPane {
+  width: 260px;
+  flex-shrink: 0;
+  padding: 12px 12px 12px 14px;
+  border-left: 1px solid color-mix(in srgb, var(--border) 42%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--sidebar) 38%, transparent), transparent 55%);
 }
 
 /* ── Seção superior: hero (esq) + stats (dir) ── */
@@ -16,17 +41,21 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 10px 16px;
+  padding: 0;
   flex-shrink: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: none;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--card) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 16%, transparent);
+  overflow: visible;
 }
 
 .topSectionCollapsed {
-  padding: 6px 16px;
+  padding: 0;
 }
 
 .graduationActionsWrap {
-  padding: 8px 16px 0;
+  padding: 0;
   flex-shrink: 0;
 }
 
@@ -34,7 +63,7 @@
 .gridScroll {
   flex: 1;
   overflow-y: auto;
-  padding: 10px 16px 16px;
+  padding: 4px 6px 18px;
 }
 
 .gridScroll::-webkit-scrollbar {
@@ -46,12 +75,12 @@
 }
 
 .gridScroll::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--detail-bg-hover);
   border-radius: 2px;
 }
 
 .gridScroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--detail-bg-active);
 }
 
 /* ── MODO FOTO: Lightroom Review Style ── */
@@ -68,7 +97,7 @@
 .clusterGridFace {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--grid-item-size, 170px), 1fr));
-  gap: 10px;
+  gap: 12px;
   align-items: start;
   align-content: start;
 }
@@ -78,7 +107,7 @@
   padding: 40px;
   text-align: center;
   font-size: 0.84rem;
-  color: #475569;
+  color: var(--detail-text);
 }
 
 /* ── Grid Wrapper for Drag Selection ── */
@@ -90,8 +119,8 @@
 /* ── Selection Box (Drag Rectangle) ── */
 .selectionBox {
   position: absolute;
-  border: 1px solid rgba(90, 150, 255, 0.95);
-  background: rgba(90, 150, 255, 0.14);
+  border: 1px solid var(--detail-accent-border);
+  background: var(--detail-accent-bg);
   border-radius: 6px;
   pointer-events: none;
   z-index: 20;

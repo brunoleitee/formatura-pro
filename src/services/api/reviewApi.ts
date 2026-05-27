@@ -69,8 +69,8 @@ export const reviewApi = {
     throw lastError instanceof Error ? lastError : new Error('Falha ao ignorar grupo.');
   },
 
-  startGraduationAnalysis: (catalog: string) =>
-    post<{ status: string; catalog: string }>(`${API_BASE}/review/graduation-analysis/start`, { catalog }),
+  startGraduationAnalysis: (catalog: string, use_ai_ultra?: boolean) =>
+    post<{ status: string; catalog: string }>(`${API_BASE}/review/graduation-analysis/start`, { catalog, use_ai_ultra }),
 
   getGraduationAnalysisStatus: (catalog: string) =>
     fetchJSON<GraduationAnalysisStatus>(

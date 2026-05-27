@@ -1,9 +1,9 @@
 import { memo, useState } from 'react';
-import { API_BASE } from '../../services/api/core';
+import { getFaceThumbUrl } from '../../utils/imageUrls';
 import styles from './FaceCard.module.css';
 
 export function faceThumb(path: string, box: [number, number, number, number], size: number) {
-  return `${API_BASE}/thumb?path=${encodeURIComponent(path)}&x1=${box[0]}&y1=${box[1]}&x2=${box[2]}&y2=${box[3]}&size=${size}&expand=0.38`;
+  return getFaceThumbUrl(path, box, size);
 }
 
 export interface FaceCardProps {

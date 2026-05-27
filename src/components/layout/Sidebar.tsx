@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   FolderOpen, ChevronDown, ChevronLeft, ChevronRight, Trash2,
   Image as ImageIcon, Users, UserCheck, Download, LayoutDashboard,
   Settings, Search, ScanLine, Loader, Users as UsersIcon,
-  MoreHorizontal,
+  MoreHorizontal, Sun, Moon, Fingerprint,
 } from 'lucide-react';
 import { useApp, type ViewName } from '../../context/AppContext';
 import { api } from '../../services/api';
@@ -50,15 +50,33 @@ export function Sidebar({
   const [flyout, setFlyout] = useState<{ key: string; y: number } | null>(null);
   const [expandedPaths, setExpandedPaths] = useState<Record<string, boolean>>({});
 
-  const toggleExpand = (e: React.MouseEvent, path: string) => {
+  // Lógica do Tema Claro/Escuro sincronizado
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const saved = localStorage.getItem('theme');
+    if (saved === 'light' || saved === 'dark') return saved;
+    return 'dark'; // Padrão original
+  });
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = useCallback(() => setTheme(prev => prev === 'light' ? 'dark' : 'light'), []);
+
+  const toggleExpand = useCallback((e: React.MouseEvent, path: string) => {
     e.stopPropagation();
     setExpandedPaths(prev => ({
       ...prev,
       [path]: prev[path] === false ? true : false
     }));
-  };
+  }, []);
 
-  const isSubfolderVisible = (path: string) => {
+  const isSubfolderVisible = useCallback((path: string) => {
     const parts = path.split('/');
     for (let i = 1; i < parts.length; i++) {
       const parentPath = parts.slice(0, i).join('/');
@@ -67,7 +85,7 @@ export function Sidebar({
       }
     }
     return true;
-  };
+  }, [expandedPaths]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ name: string; catalog: string }[]>([]);
@@ -86,7 +104,7 @@ export function Sidebar({
       })
       .catch((e) => {
         if (e?.name !== 'AbortError') {
-          // ignore
+          console.debug('[Sidebar] stats load failed:', e);
         }
       });
     return () => { controller.abort(); };
@@ -117,7 +135,7 @@ export function Sidebar({
   const searchAbortRef = useRef<AbortController | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleSearch = (q: string) => {
+  const handleSearch = useCallback((q: string) => {
     setSearchQuery(q);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     if (q.length < 2) {
@@ -138,16 +156,16 @@ export function Sidebar({
         setSearchLoading(false);
       }
     }, 300);
-  };
+  }, []);
 
   const fmtBadge = (n: number) => {
     if (n >= 1000) return `${Math.round(n / 1000)}k`;
     return String(n);
   };
 
-  const toggleSubmenu = (view: string) => {
+  const toggleSubmenu = useCallback((view: string) => {
     setOpenSubmenu(prev => prev === view ? '' : view);
-  };
+  }, []);
 
   const navItems: NavItemDef[] = [
     { view: 'dashboard', icon: <LayoutDashboard size={17} />, label: 'Visão Geral' },
@@ -157,6 +175,7 @@ export function Sidebar({
   ];
 
   const toolItems: { view: ViewName; icon: React.ReactNode; label: string }[] = [
+    { view: 'references', icon: <Fingerprint size={17} />, label: 'Criar Referências' },
     { view: 'export',     icon: <Download size={17} />,  label: 'Exportador' },
     { view: 'settings',   icon: <Settings size={17} />,  label: 'Configurações' },
   ];
@@ -166,7 +185,7 @@ export function Sidebar({
     (item.view === 'people' && activeView === 'person-detail') ||
     (item.view === 'photos' && activeView === 'catalog-settings');
 
-  const folderColor = (isActive: boolean) => isActive ? '#e8a020' : 'var(--text-muted)';
+  const folderColor = (isActive: boolean) => isActive ? 'var(--accent)' : 'var(--text-muted)';
 
   return (
     <div className={`sidebar${collapsed ? ' sidebar-collapsed' : ''}`}>
@@ -456,8 +475,44 @@ export function Sidebar({
         </div>
       )}
 
-      {/* Rodapé: card de usuário */}
+      {/* Rodapé: alternador de tema e card de usuário */}
       <div className="sidebar-user-divider" />
+      
+      <div style={{ padding: collapsed ? '8px' : '4px 14px', display: 'flex', justifyContent: collapsed ? 'center' : 'flex-end', alignItems: 'center' }}>
+        <button 
+          onClick={toggleTheme}
+          title={theme === 'dark' ? 'Ativar Modo Claro' : 'Ativar Modo Escuro'}
+          style={{
+            background: 'var(--bg-tertiary)',
+            border: '1px solid var(--border-default)',
+            borderRadius: 'var(--radius-sm, 6px)',
+            cursor: 'pointer',
+            padding: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--accent-hover, var(--accent))',
+            width: collapsed ? '34px' : '100%',
+            height: '32px',
+            gap: '8px',
+            fontSize: '0.74rem',
+            fontWeight: 600,
+            transition: 'background var(--transition-fast), color var(--transition-fast)'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'var(--accent-soft)';
+            e.currentTarget.style.color = 'var(--accent-hover)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'var(--bg-tertiary)';
+            e.currentTarget.style.color = 'var(--accent-hover, var(--accent))';
+          }}
+        >
+          {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+          {!collapsed && <span>{theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}</span>}
+        </button>
+      </div>
+
       <div className={`sidebar-user-card${collapsed ? ' sidebar-user-card-collapsed' : ''}`}>
         <div className="sidebar-user-avatar">BL</div>
         {!collapsed && (

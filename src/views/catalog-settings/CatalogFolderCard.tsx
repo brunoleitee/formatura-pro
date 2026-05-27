@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Play, Trash2, Power } from 'lucide-react';
 import type { CatalogFolder } from '../../services/api';
 import styles from '../CatalogSettingsView.module.css';
@@ -5,12 +6,12 @@ import folderIcon from '../../assets/folder.svg';
 
 interface Props {
   folder: CatalogFolder;
-  onRemove: () => void;
-  onScan: () => void;
-  onToggle?: () => void;
+  onRemove: (folder: CatalogFolder) => void;
+  onScan: (folder: CatalogFolder) => void;
+  onToggle?: (folder: CatalogFolder) => void;
 }
 
-export function CatalogFolderCard({ folder, onRemove, onScan, onToggle }: Props) {
+export const CatalogFolderCard = memo(function CatalogFolderCard({ folder, onRemove, onScan, onToggle }: Props) {
   const isActive = folder.status === 'active';
   const folderName = folder.path.split(/[\\/]/).filter(Boolean).pop() || folder.path;
   const lastScan = folder.lastScanAt
@@ -56,21 +57,21 @@ export function CatalogFolderCard({ folder, onRemove, onScan, onToggle }: Props)
         </span>
       </div>
       <div className={styles.folderCardActions}>
-        <button className={styles.folderActionBtn} onClick={onScan} title="Escanear">
+        <button className={styles.folderActionBtn} onClick={() => onScan(folder)} title="Escanear">
           <Play size={14} />
         </button>
         <button
           className={`${styles.folderActionBtn} ${!isActive ? styles.folderActionBtnToggleOff : ''}`}
-          onClick={onToggle}
+          onClick={() => onToggle?.(folder)}
           title={isActive ? 'Desativar pasta' : 'Ativar pasta'}
           type="button"
         >
           <Power size={14} />
         </button>
-        <button className={`${styles.folderActionBtn} ${styles.folderActionBtnDanger}`} onClick={onRemove} title="Remover" type="button">
+        <button className={`${styles.folderActionBtn} ${styles.folderActionBtnDanger}`} onClick={() => onRemove(folder)} title="Remover" type="button">
           <Trash2 size={14} />
         </button>
       </div>
     </div>
   );
-}
+});

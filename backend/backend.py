@@ -97,17 +97,31 @@ PORT = args.port
 APP_NAME = "Formatura PRO"
 APP_VERSION = "1.2.0"
 AI_VERSION = "hybrid_v2"
-IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff")
+IMAGE_EXTENSIONS = (
+    ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff",
+    ".cr2", ".cr3", ".nef", ".arw", ".dng", ".orf", ".rw2", ".raf", ".srw", ".x3f",
+)
 EMBEDDING_CACHE_FILE = None
 
 DEBUG_MODE = os.environ.get("FORM_PRO_DEBUG", "0") == "1"
 VERBOSE_LOGGING = DEBUG_MODE or os.environ.get("FORM_PRO_VERBOSE", "0") == "1"
 
+class SanitizedFormatter(logging.Formatter):
+    def format(self, record):
+        message = super().format(record)
+        user_profile = os.environ.get("USERPROFILE") or os.environ.get("HOME")
+        if user_profile:
+            user_profile_norm = os.path.normpath(user_profile)
+            message = message.replace(user_profile, "<USER_PROFILE>")
+            message = message.replace(user_profile_norm, "<USER_PROFILE>")
+            message = message.replace(user_profile.replace("\\", "/"), "<USER_PROFILE>")
+        return message
+
 def setup_logging():
     log_dir = get_writable_app_dir()
     log_file = os.path.join(log_dir, "formaturapro.log")
     rotate_handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=5, encoding='utf-8')
-    rotate_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+    rotate_handler.setFormatter(SanitizedFormatter('%(asctime)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
     root_logger = logging.getLogger()
     if VERBOSE_LOGGING:
         root_logger.setLevel(logging.DEBUG)
@@ -254,7 +268,18 @@ async def block_untrusted_browser_sources(request: Request, call_next):
             return JSONResponse({"detail": "Origem nao autorizada."}, status_code=403)
         if not origin and referer and not is_allowed_browser_source(referer):
             return JSONResponse({"detail": "Origem nao autorizada."}, status_code=403)
-    return await call_next(request)
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self' http://127.0.0.1:8000; "
+        "img-src 'self' data: file: http://127.0.0.1:8000; "
+        "media-src 'self' data: file: http://127.0.0.1:8000; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval';"
+    )
+    return response
 
 app.add_middleware(
     CORSMiddleware,
@@ -601,13 +626,12 @@ qa.configure(
 )
 qa_load_caches_from_disk()
 
-
-
-
-
-
-
-
+_metrics_gpu_once = None
+_metrics_logger = logging.getLogger("metrics")
+_metrics_snapshot = {}
+_metrics_lock = threading.Lock()
+_metrics_interval = 5.0
+_metrics_worker_running = False
 
 def _metrics_collect_gpu_once():
     global _metrics_gpu_once

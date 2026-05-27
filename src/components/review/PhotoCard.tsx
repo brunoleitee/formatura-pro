@@ -5,8 +5,7 @@ import { API_BASE } from '../../services/api/core';
 import { getGridThumbUrl } from '../../utils/imageUrls';
 import styles from './PhotoCard.module.css';
 
-// expand=0.4 → backend adiciona 40% horizontal e 50% vertical ao redor do bbox do rosto
-// resultado: cabeça inteira + ombros, sem mostrar muito fundo
+// O backend expande mais acima do rosto para preservar capelo e cabelo.
 const FACE_EXPAND = 0.4;
 
 function thumbUrl(face: RichClusterFace, size: number, mode: 'photo' | 'face') {

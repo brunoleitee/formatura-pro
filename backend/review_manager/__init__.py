@@ -371,6 +371,70 @@ def _pick_best_reference_candidate(conn, aluno_id: str):
     return ""
 
 
+def _find_physical_reference_photo(conn, catalog: str, aluno_id: str, person_key: str = None) -> str:
+    # 1. Obter pastas de referência do catálogo
+    cur = conn.cursor()
+    cur.execute("SELECT path FROM catalog_folders WHERE folder_type = 'reference'")
+    ref_folders = [r["path"] for r in cur.fetchall() if r["path"] and os.path.isdir(r["path"])]
+    if not ref_folders:
+        return ""
+    
+    extensions = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
+    ref_folder_name = None
+    class_name = None
+    if person_key:
+        cur.execute("SELECT reference_folder, class_name FROM alunos WHERE person_key = ?", (person_key,))
+        row = cur.fetchone()
+        if row:
+            ref_folder_name = row["reference_folder"]
+            class_name = row["class_name"]
+    if not ref_folder_name:
+        cur.execute("SELECT reference_folder, class_name FROM alunos WHERE lower(aluno_id) = lower(?) LIMIT 1", (aluno_id,))
+        row = cur.fetchone()
+        if row:
+            ref_folder_name = row["reference_folder"]
+            class_name = row["class_name"]
+            
+    for ref_dir in ref_folders:
+        paths_to_try = []
+        if ref_folder_name:
+            paths_to_try.append(ref_folder_name)
+        if class_name and class_name not in ("Sem turma", "__SEM_TURMA__"):
+            if ref_folder_name:
+                paths_to_try.append(os.path.join(class_name, ref_folder_name))
+            paths_to_try.append(os.path.join(class_name, aluno_id))
+        paths_to_try.append(aluno_id)
+        
+        for p_try in paths_to_try:
+            for ext in extensions:
+                full_path = os.path.join(ref_dir, p_try + ext)
+                if os.path.exists(full_path):
+                    return full_path
+                
+        # Procura recursiva pelo nome do arquivo (stem)
+        for root, dirs, files in os.walk(ref_dir):
+            for f in files:
+                f_stem, f_ext = os.path.splitext(f)
+                if f_ext.lower() in extensions:
+                    if f_stem.lower() == aluno_id.lower() or (ref_folder_name and f_stem.lower() == ref_folder_name.lower()):
+                        if class_name and class_name not in ("Sem turma", "__SEM_TURMA__"):
+                            rel = os.path.relpath(root, ref_dir)
+                            if class_name.lower() in rel.lower() or rel.lower() in class_name.lower():
+                                return os.path.join(root, f)
+                        return os.path.join(root, f)
+                        
+    # Se não achou com filtro de turma, retorna qualquer um com o mesmo nome
+    for ref_dir in ref_folders:
+        for root, dirs, files in os.walk(ref_dir):
+            for f in files:
+                f_stem, f_ext = os.path.splitext(f)
+                if f_ext.lower() in extensions:
+                    if f_stem.lower() == aluno_id.lower() or (ref_folder_name and f_stem.lower() == ref_folder_name.lower()):
+                        return os.path.join(root, f)
+                        
+    return ""
+
+
 def _ensure_person_reference(conn, catalog: str, aluno_id: str, force: bool = False):
     if not aluno_id or aluno_id == "Desconhecido" or aluno_id.startswith("Pessoa "):
         return ""
@@ -380,9 +444,37 @@ def _ensure_person_reference(conn, catalog: str, aluno_id: str, force: bool = Fa
     if existing and os.path.exists(existing) and not force:
         return existing
 
+    cur = conn.cursor()
+
     candidate = _pick_best_reference_candidate(conn, aluno_id)
     if not candidate:
-        return existing
+        phys_path = _find_physical_reference_photo(conn, catalog, aluno_id)
+        if phys_path:
+            box = None
+            try:
+                # Tentar detectar face usando o motor do scanner_engine
+                image_loader = _get("imread_unicode")
+                img_res = image_loader(phys_path) if callable(image_loader) else None
+                img_np = img_res[0] if isinstance(img_res, tuple) else img_res
+                if img_np is not None:
+                    se = _get("scanner_engine")
+                    app_face = se.app_face if se else None
+                    if app_face:
+                        faces = app_face.get(img_np) or []
+                        if faces:
+                            faces_sorted = sorted(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
+                            box = [int(v) for v in faces_sorted[0].bbox]
+            except Exception as _det_err:
+                logger.warning("[ref-generation] Erro detectando face em %s: %s", phys_path, _det_err)
+
+            candidate = {
+                "path": phys_path,
+                "box": box,
+                "blur_score": 200.0,
+                "blur_status": "sharp"
+            }
+        else:
+            return existing
 
     candidate_path = candidate["path"]
     _, ext = os.path.splitext(candidate_path)
@@ -444,7 +536,7 @@ def _ensure_person_reference(conn, catalog: str, aluno_id: str, force: bool = Fa
         conn.commit()
         return dest
     except Exception as e:
-        print(f"Falha criando referência base para {aluno_id}: {e}")
+        logger.error("Falha criando referência base para %s: %s", aluno_id, e)
         return existing
 
 
@@ -858,6 +950,8 @@ def _ensure_unknown_face_clusters_schema(cur):
             cur.execute("ALTER TABLE unknown_face_clusters ADD COLUMN suggested_student TEXT")
         if "suggested_similarity" not in cols:
             cur.execute("ALTER TABLE unknown_face_clusters ADD COLUMN suggested_similarity REAL")
+        if "suggested_person_key" not in cols:
+            cur.execute("ALTER TABLE unknown_face_clusters ADD COLUMN suggested_person_key TEXT")
         if "unknown_similar_id" not in cols:
             cur.execute("ALTER TABLE unknown_face_clusters ADD COLUMN unknown_similar_id TEXT")
         if "unknown_similar_similarity" not in cols:
@@ -882,6 +976,7 @@ def _sync_unknown_face_clusters(cur, clusters: list[dict]):
     for cluster in clusters:
         ss = cluster.get("suggested_student")
         si = cluster.get("suggested_similarity")
+        spk = cluster.get("suggested_person_key")
         ui = cluster.get("unknown_similar_id")
         us = cluster.get("unknown_similar_similarity")
         bd = cluster.get("best_student_debug")
@@ -897,6 +992,7 @@ def _sync_unknown_face_clusters(cur, clusters: list[dict]):
                     float(cluster.get("cohesion_score") or 0.0),
                     ss,
                     float(si) if si is not None else None,
+                    spk,
                     ui,
                     float(us) if us is not None else None,
                     bd,
@@ -912,12 +1008,12 @@ def _sync_unknown_face_clusters(cur, clusters: list[dict]):
             """
             INSERT INTO unknown_face_clusters
             (cluster_id, face_id, original_path, confidence,
-             suggested_student, suggested_similarity,
+             suggested_student, suggested_similarity, suggested_person_key,
              unknown_similar_id, unknown_similar_similarity,
              best_student_debug, best_similarity_debug,
              is_mixed_cluster, decision_reason,
              created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -1053,6 +1149,8 @@ def _row_to_review_item(row) -> dict:
     if "suggested_similarity" in row.keys():
         ss = row["suggested_similarity"]
         result["suggested_similarity"] = float(ss) if ss is not None else None
+    if "suggested_person_key" in row.keys():
+        result["suggested_person_key"] = row["suggested_person_key"]
     if "unknown_similar_id" in row.keys():
         result["unknown_similar_id"] = row["unknown_similar_id"]
     if "unknown_similar_similarity" in row.keys():
@@ -1095,6 +1193,7 @@ def _build_review_cluster_payload(
     first_item = comp_items[0] if comp_items else {}
     suggested_student = first_item.get("suggested_student")
     suggested_similarity = first_item.get("suggested_similarity")
+    suggested_person_key = first_item.get("suggested_person_key")
     unknown_similar_id = first_item.get("unknown_similar_id")
     unknown_similar_similarity = first_item.get("unknown_similar_similarity")
     best_student_debug = first_item.get("best_student_debug")
@@ -1111,6 +1210,7 @@ def _build_review_cluster_payload(
         "priority_score": round(float(priority_score), 4),
         "suggested_student": suggested_student,
         "suggested_similarity": round(float(suggested_similarity), 4) if suggested_similarity is not None else None,
+        "suggested_person_key": suggested_person_key,
         "best_student_debug": best_student_debug,
         "best_similarity_debug": round(float(best_similarity_debug), 4) if best_similarity_debug is not None else None,
         "unknown_similar_id": unknown_similar_id,
@@ -1765,9 +1865,54 @@ def _clamp01(value: float) -> float:
 GRADUATION_CONFIDENCE_THRESHOLD = 0.30
 
 
-def analyze_graduation_items(photo: dict | str | None = None, enable_heuristics: bool = False) -> dict:
+def analyze_graduation_items(photo: dict | str | None = None, enable_heuristics: bool = False, use_ai_ultra: bool = False) -> dict:
     photo_path = _extract_photo_path(photo)
     face_boxes = _extract_face_boxes(photo)
+    
+    # ── MODO ULTRA: Inteligência Artificial Semântica (Qwen2.5-VL via Ollama) ──
+    if use_ai_ultra and photo_path:
+        try:
+            import services.ollama_service as ollama
+            status = ollama.check_ollama_status()
+            if status.get("running") and status.get("has_model"):
+                res = ollama.analyze_graduation_with_qwen(photo_path)
+                if res and "error" not in res:
+                    tags = []
+                    if res.get("has_gown"): tags.append("beca")
+                    if res.get("has_diploma"): tags.append("canudo")
+                    if res.get("has_sash"): tags.append("faixa")
+                    if res.get("has_cap"): tags.append("capelo")
+                    if res.get("has_jabor"): tags.append("jabor")
+                    
+                    score = (
+                        (40.0 if res.get("has_gown") else 0.0) +
+                        (30.0 if res.get("has_diploma") else 0.0) +
+                        (25.0 if res.get("has_sash") else 0.0) +
+                        (20.0 if res.get("has_cap") else 0.0) +
+                        (18.0 if res.get("has_jabor") else 0.0)
+                    )
+                    
+                    return {
+                        "has_gown": 1 if res.get("has_gown") else 0,
+                        "has_diploma": 1 if res.get("has_diploma") else 0,
+                        "has_sash": 1 if res.get("has_sash") else 0,
+                        "has_cap": 1 if res.get("has_cap") else 0,
+                        "has_jabor": 1 if res.get("has_jabor") else 0,
+                        "graduation_tags": tags,
+                        "ai_graduation_tags": tags,
+                        "graduation_score": score,
+                        "debug": {
+                            "gown_confidence": 1.0 if res.get("has_gown") else 0.0,
+                            "diploma_confidence": 1.0 if res.get("has_diploma") else 0.0,
+                            "sash_confidence": 1.0 if res.get("has_sash") else 0.0,
+                            "cap_confidence": 1.0 if res.get("has_cap") else 0.0,
+                            "jabor_confidence": 1.0 if res.get("has_jabor") else 0.0,
+                        },
+                        "source": "qwen2.5-vl",
+                    }
+        except Exception as _ai_err:
+            logger.warning("[analyze_graduation] Falha na inferência VLM local: %s", _ai_err)
+
     tags: list[str] = []
     normalized_path = unicodedata.normalize("NFKD", photo_path)
     normalized_path = "".join(ch for ch in normalized_path if not unicodedata.combining(ch)).casefold()
@@ -2676,10 +2821,12 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
         print(f"[CLUSTER] clusters finais: {len(clusters_by_root)} (apos {iteration} iteracoes)")
 
         # Load identified students for suggestion matching (with class context)
-        identified_centroids: list[tuple[str, str, np.ndarray]] = []
+        # Centroids are keyed by person_key (unique identity) so homonyms in
+        # different turmas don't get their embeddings mixed into one centroid.
+        identified_centroids: list[tuple[str, str, str, np.ndarray]] = []  # (person_key, aluno_id, class_name, centroid)
         try:
             cur.execute("""
-                SELECT DISTINCT o.aluno_id, o.person_key, fe.embedding
+                SELECT o.aluno_id, o.person_key, fe.embedding
                 FROM ocorrencias o
                 JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
                 WHERE o.x1 IS NOT NULL
@@ -2692,35 +2839,46 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             """)
             id_rows = cur.fetchall()
             id_emb_map: dict[str, list[np.ndarray]] = {}
+            id_name_map: dict[str, str] = {}
             id_class_map: dict[str, str] = {}
             for r in id_rows:
                 name = str(r["aluno_id"])
                 pk = str(r["person_key"] or "")
+                # Use person_key as identity key. Fallback to aluno_id only if PK is missing
+                # (legacy rows) — those get bucketed together by name, which is the old behavior.
+                identity_key = pk or f"__legacy::{name}"
                 emb = np.frombuffer(r["embedding"], dtype="float32")
                 emb = emb / np.linalg.norm(emb) if np.linalg.norm(emb) > 0 else emb
-                id_emb_map.setdefault(name, []).append(emb)
-                if pk and name not in id_class_map:
-                    parts = pk.split("::")
-                    if len(parts) >= 2:
-                        id_class_map[name] = parts[1]
-            for name, embs in id_emb_map.items():
+                id_emb_map.setdefault(identity_key, []).append(emb)
+                if identity_key not in id_name_map:
+                    id_name_map[identity_key] = name
+                if identity_key not in id_class_map:
+                    class_name = ""
+                    if pk:
+                        parts = pk.split("::")
+                        if len(parts) >= 2 and parts[1] not in ("__SEM_TURMA__", ""):
+                            class_name = parts[1]
+                    id_class_map[identity_key] = class_name
+            for identity_key, embs in id_emb_map.items():
                 centroid = np.mean(embs, axis=0)
                 cn = np.linalg.norm(centroid)
                 if cn > 0:
-                    class_name = id_class_map.get(name, "")
-                    identified_centroids.append((name, class_name, centroid / cn))
+                    name = id_name_map.get(identity_key, "")
+                    class_name = id_class_map.get(identity_key, "")
+                    identified_centroids.append((identity_key, name, class_name, centroid / cn))
             print(f"[STUDENT DB] identified_students_count={len(identified_centroids)}")
-            for name, cls, _ in identified_centroids:
-                emb_count = len(id_emb_map.get(name, []))
-                print(f"[STUDENT DB] student={name} class={cls} embeddings={emb_count}")
+            for pk_k, name, cls, _ in identified_centroids:
+                emb_count = len(id_emb_map.get(pk_k, []))
+                print(f"[STUDENT DB] pk={pk_k[:60]} student={name} class={cls} embeddings={emb_count}")
             if not identified_centroids:
                 print(f"[STUDENT DB] nenhum formando identificado com embedding encontrado (query returned {len(id_rows)} rows)")
         except Exception as e:
             print(f"[CLUSTER] erro ao carregar formandos: {e}")
 
-        def _best_student_match(centroid: np.ndarray, cluster_items: list[dict] | None = None) -> tuple[str | None, float]:
+        def _best_student_match(centroid: np.ndarray, cluster_items: list[dict] | None = None) -> tuple[str | None, str | None, float]:
+            """Returns (person_key, aluno_id, similarity)."""
             if not identified_centroids or centroid is None:
-                return None, 0.0
+                return None, None, 0.0
 
             # Inferir turma do cluster a partir dos itens
             cluster_class_names: set[str] = set()
@@ -2731,35 +2889,34 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                         parts = pk.split("::")
                         if len(parts) >= 2 and parts[1] and parts[1] != "__SEM_TURMA__":
                             cluster_class_names.add(parts[1])
-                    aluno_id = item.get("aluno_id", "")
-                    if aluno_id:
-                        for _n, cls_name, _c in identified_centroids:
-                            if cls_name:
-                                cluster_class_names.add(cls_name)
 
-            best_name, best_sim = None, 0.0
-            best_cross_name, best_cross_sim = None, 0.0
-            all_matches: list[tuple[str, str, float]] = []
+            best_pk, best_name, best_sim = None, None, 0.0
+            best_cross_pk, best_cross_name, best_cross_sim = None, None, 0.0
+            all_matches: list[tuple[str, str, str, float]] = []
 
-            for name, class_name, ref_cent in identified_centroids:
+            for identity_key, name, class_name, ref_cent in identified_centroids:
                 sim = float(np.dot(centroid, ref_cent))
-                all_matches.append((name, class_name, sim))
+                all_matches.append((identity_key, name, class_name, sim))
 
                 # Prefer same-class matches when cluster has class context
                 if cluster_class_names:
                     if class_name in cluster_class_names and sim > best_sim:
                         best_sim = sim
+                        best_pk = identity_key
                         best_name = name
                     elif sim > best_cross_sim:
                         best_cross_sim = sim
+                        best_cross_pk = identity_key
                         best_cross_name = name
                 else:
                     if sim > best_sim:
                         best_sim = sim
+                        best_pk = identity_key
                         best_name = name
 
             # If no same-class match found, fall back to best overall
-            if cluster_class_names and best_name is None and best_cross_name is not None:
+            if cluster_class_names and best_pk is None and best_cross_pk is not None:
+                best_pk = best_cross_pk
                 best_name = best_cross_name
                 best_sim = best_cross_sim
                 identity_guard_log(
@@ -2767,18 +2924,18 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                     f"cluster_turma={cluster_class_names} best_cross={best_cross_name} sim={best_cross_sim:.4f}"
                 )
 
-            all_matches.sort(key=lambda x: x[2], reverse=True)
+            all_matches.sort(key=lambda x: x[3], reverse=True)
             top3 = all_matches[:3]
-            if any(s >= 0.40 for _, _, s in top3):
-                print(f"[CLUSTER] TOP MATCHES: {' | '.join(f'{n}({c})={s:.2f}' for n, c, s in top3)}")
-            if best_name and cluster_class_names:
-                matched_class = next((c for n, c, _ in identified_centroids if n == best_name), "")
+            if any(s >= 0.40 for _, _, _, s in top3):
+                print(f"[CLUSTER] TOP MATCHES: {' | '.join(f'{n}({c})={s:.2f}' for _, n, c, s in top3)}")
+            if best_pk and cluster_class_names:
+                matched_class = next((c for pk_k, _, c, _ in identified_centroids if pk_k == best_pk), "")
                 if matched_class and matched_class not in cluster_class_names:
                     identity_guard_log(
                         f"sugestão entre turmas diferentes: sugestao={best_name} "
                         f"turma_sugerida={matched_class} turma_cluster={cluster_class_names} sim={best_sim:.4f}"
                     )
-            return best_name, best_sim
+            return best_pk, best_name, best_sim
 
         import datetime as _dt
 
@@ -2826,8 +2983,8 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             rep_item_meta = priority_meta[comp_items.index(rep_item)]
             graduation_tags = _ordered_cluster_tags(priority_meta)
             debug_graduation_source = _resolve_cluster_graduation_source(priority_meta)
-            suggested_student, suggested_similarity = _best_student_match(centroid, comp_items)
-            
+            suggested_person_key, suggested_student, suggested_similarity = _best_student_match(centroid, comp_items)
+
             # 1. Detecção de "cluster misto"
             is_mixed = False
             if len(comp_items) >= 2:
@@ -2879,8 +3036,9 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             best_debug_name, best_debug_sim = None, 0.0
             if identified_centroids and centroid is not None:
                 for entry in identified_centroids:
-                    name = entry[0]
-                    ref_cent = entry[2]
+                    # entry = (person_key, aluno_id, class_name, centroid)
+                    name = entry[1]
+                    ref_cent = entry[3]
                     sim = float(np.dot(centroid, ref_cent))
                     if sim > best_debug_sim:
                         best_debug_sim = sim
@@ -2904,6 +3062,7 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
                 "priority_score": round(float(priority_score), 4),
                 "suggested_student": suggested_student,
                 "suggested_similarity": round(suggested_similarity, 4) if suggested_student else None,
+                "suggested_person_key": suggested_person_key if suggested_student else None,
                 "best_student_debug": best_debug_name,
                 "best_similarity_debug": round(best_debug_sim, 4) if best_debug_name else None,
                 "is_mixed_cluster": 1 if is_mixed else 0,
@@ -3219,6 +3378,7 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                    MIN(u.id) AS first_id,
                    MAX(u.suggested_student) AS suggested_student,
                    MAX(u.suggested_similarity) AS suggested_similarity,
+                   MAX(u.suggested_person_key) AS suggested_person_key,
                    MAX(u.unknown_similar_id) AS unknown_similar_id,
                    MAX(u.unknown_similar_similarity) AS unknown_similar_similarity,
                    MAX(u.best_student_debug) AS best_student_debug,
@@ -3252,7 +3412,7 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                        o.gown_confidence, o.diploma_confidence, o.sash_confidence, o.cap_confidence, o.jabor_confidence,
                        o.manual_graduation_tags,
                        o.is_foreground, o.foreground_score, o.background_penalty_reason,
-                       u.suggested_student, u.suggested_similarity,
+                       u.suggested_student, u.suggested_similarity, u.suggested_person_key,
                        u.unknown_similar_id, u.unknown_similar_similarity,
                        u.best_student_debug, u.best_similarity_debug
                  FROM unknown_face_clusters u
@@ -3283,10 +3443,11 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
         # Fallback: compute student match directly if missing from DB sync
         if clusters and not clusters[0].get("best_student_debug"):
             print("[PAGE STUDENT PATCH] computando matches...")
-            identified_centroids: list[tuple[str, str, np.ndarray]] = []
+            # (person_key, aluno_id, class_name, centroid)
+            identified_centroids: list[tuple[str, str, str, np.ndarray]] = []
             try:
                 cur.execute("""
-                    SELECT DISTINCT o.aluno_id, o.person_key, fe.embedding
+                    SELECT o.aluno_id, o.person_key, fe.embedding
                     FROM ocorrencias o
                     JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
                     WHERE o.x1 IS NOT NULL
@@ -3296,23 +3457,34 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                       AND fe.embedding IS NOT NULL
                 """)
                 id_emb_map: dict[str, list[np.ndarray]] = {}
+                id_name_map: dict[str, str] = {}
                 id_class_map: dict[str, str] = {}
                 for r in cur.fetchall():
                     name = str(r["aluno_id"])
                     pk = str(r["person_key"] or "")
+                    identity_key = pk or f"__legacy::{name}"
                     emb = np.frombuffer(r["embedding"], dtype="float32")
                     emb = emb / np.linalg.norm(emb) if np.linalg.norm(emb) > 0 else emb
-                    id_emb_map.setdefault(name, []).append(emb)
-                    if pk and name not in id_class_map:
-                        parts = pk.split("::")
-                        if len(parts) >= 2:
-                            id_class_map[name] = parts[1]
-                for name, embs in id_emb_map.items():
+                    id_emb_map.setdefault(identity_key, []).append(emb)
+                    if identity_key not in id_name_map:
+                        id_name_map[identity_key] = name
+                    if identity_key not in id_class_map:
+                        class_name = ""
+                        if pk:
+                            parts = pk.split("::")
+                            if len(parts) >= 2 and parts[1] not in ("__SEM_TURMA__", ""):
+                                class_name = parts[1]
+                        id_class_map[identity_key] = class_name
+                for identity_key, embs in id_emb_map.items():
                     cent = np.mean(embs, axis=0)
                     cn = np.linalg.norm(cent)
                     if cn > 0:
-                        class_name = id_class_map.get(name, "")
-                        identified_centroids.append((name, class_name, cent / cn))
+                        identified_centroids.append((
+                            identity_key,
+                            id_name_map.get(identity_key, ""),
+                            id_class_map.get(identity_key, ""),
+                            cent / cn,
+                        ))
             except Exception as e:
                 print(f"[PAGE STUDENT PATCH] erro: {e}")
 
@@ -3323,8 +3495,8 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                 if not all_rowids:
                     continue
                 try:
-                    best_name, best_sim = None, 0.0
-                    best_cross_name, best_cross_sim = None, 0.0
+                    best_pk, best_name, best_sim = None, None, 0.0
+                    best_cross_pk, best_cross_name, best_cross_sim = None, None, 0.0
 
                     # Inferir turma do cluster
                     cluster_class_names: set[str] = set()
@@ -3334,7 +3506,7 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                             parts = pk.split("::")
                             if len(parts) >= 2 and parts[1] and parts[1] != "__SEM_TURMA__":
                                 cluster_class_names.add(parts[1])
-                    
+
                     ph = ",".join(["?"] * len(all_rowids))
                     cur.execute(f"SELECT occurrence_rowid, embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", all_rowids)
                     embs = []
@@ -3343,48 +3515,28 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                         en = np.linalg.norm(e)
                         if en > 0:
                             embs.append(e / en)
-                    
+
                     if identified_centroids and embs:
                         centroid = np.mean(embs, axis=0)
                         cn = np.linalg.norm(centroid)
                         if cn > 0:
                             centroid = centroid / cn
-                        for name, class_name, rc in identified_centroids:
+                        for identity_key, name, class_name, rc in identified_centroids:
                             sim = float(np.dot(centroid, rc))
                             if cluster_class_names and class_name in cluster_class_names:
                                 if sim > best_sim:
                                     best_sim = sim
+                                    best_pk = identity_key
                                     best_name = name
                             elif sim > best_cross_sim:
                                 best_cross_sim = sim
+                                best_cross_pk = identity_key
                                 best_cross_name = name
-                    
+
                     if best_name is None and best_cross_name is not None:
+                        best_pk = best_cross_pk
                         best_name = best_cross_name
                         best_sim = best_cross_sim
-                    
-                    if not best_name and not embs:
-                        logger.info("[Review] skipping image-load embedding for student match (run Scanner to populate embeddings)")
-                        cur.execute(f"SELECT occurrence_rowid, embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", all_rowids)
-                        embs = []
-                        for er in cur.fetchall():
-                            e = np.frombuffer(er["embedding"], dtype="float32")
-                            en = np.linalg.norm(e)
-                            if en > 0:
-                                embs.append(e / en)
-                        if identified_centroids and embs:
-                            centroid = np.mean(embs, axis=0)
-                            cn = np.linalg.norm(centroid)
-                            if cn > 0:
-                                centroid = centroid / cn
-                            for entry in identified_centroids:
-                                name = entry[0]
-                                rc = entry[2]
-                                sim = float(np.dot(centroid, rc))
-                                if sim > best_sim:
-                                    best_sim = sim
-                                    best_name = name
-                            print(f"[PAGE REGENERATED] {cl['cluster_id']} embs={len(embs)} best={best_name} sim={best_sim:.2f}")
 
                     if not best_name:
                         path_id = _extract_student_from_path(cl.get("preview_image"))
@@ -3399,6 +3551,8 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                         if best_sim >= 0.45:
                             cl["suggested_student"] = best_name
                             cl["suggested_similarity"] = round(best_sim, 4)
+                            if best_pk and not best_pk.startswith("__legacy::"):
+                                cl["suggested_person_key"] = best_pk
                 except Exception as e:
                     print(f"[PAGE STUDENT PATCH] erro: {e}")
 
@@ -3427,7 +3581,7 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
             with get_db(cat) as patch_conn:
                 pc = patch_conn.cursor()
                 pc.execute("""
-                    SELECT DISTINCT o.aluno_id, fe.embedding
+                    SELECT o.aluno_id, o.person_key, fe.embedding
                     FROM ocorrencias o
                     JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
                     WHERE o.x1 IS NOT NULL
@@ -3436,19 +3590,25 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                       AND o.aluno_id NOT LIKE 'pessoa%'
                       AND fe.embedding IS NOT NULL
                 """)
-                patch_students: list[tuple[str, np.ndarray]] = []
-                patch_map: dict[str, list[np.ndarray]] = {}
+                # (identity_key, aluno_id, centroid)
+                patch_students: list[tuple[str, str, np.ndarray]] = []
+                patch_emb_map: dict[str, list[np.ndarray]] = {}
+                patch_name_map: dict[str, str] = {}
                 for r in pc.fetchall():
                     name = str(r["aluno_id"])
+                    pk = str(r["person_key"] or "")
+                    identity_key = pk or f"__legacy::{name}"
                     emb = np.frombuffer(r["embedding"], dtype="float32")
                     n = np.linalg.norm(emb)
                     if n > 0:
-                        patch_map.setdefault(name, []).append(emb / n)
-                for name, embs in patch_map.items():
+                        patch_emb_map.setdefault(identity_key, []).append(emb / n)
+                        if identity_key not in patch_name_map:
+                            patch_name_map[identity_key] = name
+                for identity_key, embs in patch_emb_map.items():
                     cent = np.mean(embs, axis=0)
                     cn = np.linalg.norm(cent)
                     if cn > 0:
-                        patch_students.append((name, cent / cn))
+                        patch_students.append((identity_key, patch_name_map.get(identity_key, ""), cent / cn))
 
                 for c in clusters:
                     if c.get("best_student_debug") is not None:
@@ -3458,8 +3618,8 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                     rowids = [f.get("rowid") for f in comp_items_for_cl if f.get("rowid")]
                     if not rowids:
                         continue
-                    best_name, best_sim = None, 0.0
-                    
+                    best_pk, best_name, best_sim = None, None, 0.0
+
                     ph = ",".join(["?"] * len(rowids))
                     pc.execute(f"SELECT occurrence_rowid, embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", rowids)
                     embs = []
@@ -3468,37 +3628,18 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                         en = np.linalg.norm(e)
                         if en > 0:
                             embs.append(e / en)
-                    
+
                     if embs:
                         centroid = np.mean(embs, axis=0)
                         cn = np.linalg.norm(centroid)
                         if cn > 0:
                             centroid = centroid / cn
-                        for name, ref in patch_students:
+                        for identity_key, name, ref in patch_students:
                             sim = float(np.dot(centroid, ref))
                             if sim > best_sim:
                                 best_sim = sim
+                                best_pk = identity_key
                                 best_name = name
-                    
-                    if not best_name and not embs:
-                        logger.info("[Review] skipping image-load embedding for student match (run Scanner to populate embeddings)")
-                        pc.execute(f"SELECT occurrence_rowid, embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", rowids)
-                        for er in pc.fetchall():
-                            e = np.frombuffer(er["embedding"], dtype="float32")
-                            en = np.linalg.norm(e)
-                            if en > 0:
-                                embs.append(e / en)
-                        if embs:
-                            centroid = np.mean(embs, axis=0)
-                            cn = np.linalg.norm(centroid)
-                            if cn > 0:
-                                centroid = centroid / cn
-                            for name, ref in patch_students:
-                                sim = float(np.dot(centroid, ref))
-                                if sim > best_sim:
-                                    best_sim = sim
-                                    best_name = name
-                            print(f"[FINAL REGENERATED] {c['cluster_id']} embs={len(embs)} best={best_name} sim={best_sim:.2f}")
 
                     if not best_name:
                         path_id = _extract_student_from_path(c.get("preview_image"))
@@ -3513,6 +3654,8 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                         if best_sim >= 0.45:
                             c["suggested_student"] = best_name
                             c["suggested_similarity"] = round(best_sim, 4)
+                            if best_pk and not best_pk.startswith("__legacy::"):
+                                c["suggested_person_key"] = best_pk
                     else:
                         print(f"[FINAL PATCH] {c['cluster_id']} no match found")
         except Exception as e:
@@ -3572,7 +3715,7 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
                    o.gown_confidence, o.diploma_confidence, o.sash_confidence, o.cap_confidence, o.jabor_confidence,
                    o.manual_graduation_tags,
                    o.is_foreground, o.foreground_score, o.background_penalty_reason,
-                   u.suggested_student, u.suggested_similarity,
+                   u.suggested_student, u.suggested_similarity, u.suggested_person_key,
                    u.unknown_similar_id, u.unknown_similar_similarity,
                    u.best_student_debug, u.best_similarity_debug
             FROM unknown_face_clusters u
@@ -3620,7 +3763,7 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
         if cluster.get("best_student_debug") is None:
             try:
                 cur.execute("""
-                    SELECT DISTINCT o.aluno_id, fe.embedding
+                    SELECT o.aluno_id, o.person_key, fe.embedding
                     FROM ocorrencias o
                     JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
                     WHERE o.x1 IS NOT NULL
@@ -3630,22 +3773,28 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
                       AND fe.embedding IS NOT NULL
                 """)
                 rows_st = cur.fetchall()
-                cents = []
+                # (identity_key, aluno_id, centroid)
+                cents: list[tuple[str, str, np.ndarray]] = []
                 if rows_st:
-                    id_map = {}
+                    id_emb: dict[str, list[np.ndarray]] = {}
+                    id_name: dict[str, str] = {}
                     for r in rows_st:
                         n = str(r["aluno_id"])
+                        pk = str(r["person_key"] or "")
+                        identity_key = pk or f"__legacy::{n}"
                         e = np.frombuffer(r["embedding"], dtype="float32")
                         norm = np.linalg.norm(e)
                         if norm > 0:
-                            id_map.setdefault(n, []).append(e / norm)
-                    for name, embs in id_map.items():
+                            id_emb.setdefault(identity_key, []).append(e / norm)
+                            if identity_key not in id_name:
+                                id_name[identity_key] = n
+                    for identity_key, embs in id_emb.items():
                         c = np.mean(embs, axis=0)
                         cn = np.linalg.norm(c)
                         if cn > 0:
-                            cents.append((name, c / cn))
+                            cents.append((identity_key, id_name.get(identity_key, ""), c / cn))
 
-                best_n, best_s = None, 0.0
+                best_pk, best_n, best_s = None, None, 0.0
                 rowids = [f.get("rowid") for f in cluster.get("faces", []) if f.get("rowid")]
                 cl_embs = []
                 if rowids:
@@ -3662,34 +3811,13 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
                     ccn = np.linalg.norm(cluster_centroid)
                     if ccn > 0:
                         cluster_centroid /= ccn
-                    for name, ref in cents:
+                    for identity_key, name, ref in cents:
                         sim = float(np.dot(cluster_centroid, ref))
                         if sim > best_s:
                             best_s = sim
+                            best_pk = identity_key
                             best_n = name
                     print(f"[DETAIL FACIAL MATCH] {cluster_id} best={best_n} sim={best_s:.2f}")
-
-                if not best_n and not cl_embs:
-                    logger.info("[Review] skipping image-load embedding for student match in detail (run Scanner to populate embeddings)")
-                    if rowids:
-                        cur.execute(f"SELECT embedding FROM face_embeddings WHERE occurrence_rowid IN ({ph})", rowids)
-                        cl_embs = []
-                        for er in cur.fetchall():
-                            e = np.frombuffer(er["embedding"], dtype="float32")
-                            en = np.linalg.norm(e)
-                            if en > 0:
-                                cl_embs.append(e / en)
-                        if cents and cl_embs:
-                            cluster_centroid = np.mean(cl_embs, axis=0)
-                            ccn = np.linalg.norm(cluster_centroid)
-                            if ccn > 0:
-                                cluster_centroid /= ccn
-                            for name, ref in cents:
-                                sim = float(np.dot(cluster_centroid, ref))
-                                if sim > best_s:
-                                    best_s = sim
-                                    best_n = name
-                            print(f"[DETAIL REGENERATED] {cluster_id} embs={len(cl_embs)} best={best_n} sim={best_s:.2f}")
 
                 if not best_n:
                     path_id = _extract_student_from_path(cluster.get("preview_image"))
@@ -3704,6 +3832,8 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
                     if best_s >= 0.45:
                         cluster["suggested_student"] = best_n
                         cluster["suggested_similarity"] = round(best_s, 4)
+                        if best_pk and not best_pk.startswith("__legacy::"):
+                            cluster["suggested_person_key"] = best_pk
             except Exception as e:
                 print(f"[DETAIL STUDENT PATCH] erro: {e}")
 
@@ -4113,6 +4243,7 @@ def start_graduation_analysis(req: GraduationAnalysisRequest):
                         detected = analyze_graduation_items(
                             {"foto_path": photo_path, "face_boxes": _load_face_boxes_for_photo(cur, photo_path)},
                             enable_heuristics=True,
+                            use_ai_ultra=req.use_ai_ultra
                         )
                         payload = _build_graduation_analysis_payload(photo_path, detected)
                         rows_updated = _update_graduation_fields_for_photo(cur, photo_path, payload)
@@ -4160,7 +4291,7 @@ def start_graduation_analysis(req: GraduationAnalysisRequest):
                     "processed_files": total,
                     "updated": positive_updates,
                     "updated_faces": positive_updates,
-                    "source": "visual_heuristic",
+                    "source": "qwen2.5-vl" if req.use_ai_ultra else "visual_heuristic",
                 },
                 "error": None,
                 "finished_at": time.time(),
@@ -4337,22 +4468,79 @@ def merge_person_identities(req: MergePersonReq):
     with get_db(catalog) as conn:
         cur = conn.cursor()
 
+        def _resolve_identity(raw: str, want_face_cache: bool = False):
+            """Resolve a person identity from a person_key or aluno_id.
+
+            Tries: (1) exact alunos.person_key, (2) exact alunos.aluno_id,
+            (3) ocorrencias.person_key (the People list pulls from ocorrencias,
+            so it can show identities that never got written to alunos).
+            Returns a row-like dict with aluno_id, person_key, class_name (and
+            face_cache_path when want_face_cache). Returns None if no trace
+            of the identity exists anywhere.
+            """
+            fcp_col = ", face_cache_path" if want_face_cache else ""
+            row = _safe_alunos_fetchone(
+                cur,
+                f"SELECT aluno_id, person_key, class_name{fcp_col} FROM alunos WHERE person_key = ?",
+                (raw,),
+            )
+            if row:
+                return dict(row)
+            row = _safe_alunos_fetchone(
+                cur,
+                f"SELECT aluno_id, person_key, class_name{fcp_col} FROM alunos WHERE aluno_id = ?",
+                (raw,),
+            )
+            if row:
+                return dict(row)
+            # Fallback: identity lives only in ocorrencias (no alunos row).
+            # Treat the raw value as a person_key if it looks like one.
+            if "::" in raw:
+                cur.execute(
+                    "SELECT aluno_id, person_key FROM ocorrencias WHERE person_key = ? LIMIT 1",
+                    (raw,),
+                )
+                occ = cur.fetchone()
+                if occ and occ["aluno_id"]:
+                    pk_parts = raw.split("::")
+                    cls = pk_parts[1] if len(pk_parts) >= 2 and pk_parts[1] not in ("__SEM_TURMA__", "") else "Sem turma"
+                    result = {
+                        "aluno_id": str(occ["aluno_id"]),
+                        "person_key": raw,
+                        "class_name": cls,
+                    }
+                    if want_face_cache:
+                        result["face_cache_path"] = None
+                    return result
+            # Last resort: search ocorrencias by aluno_id (legacy rows w/o PK)
+            cur.execute(
+                "SELECT aluno_id, person_key FROM ocorrencias WHERE aluno_id = ? LIMIT 1",
+                (raw,),
+            )
+            occ = cur.fetchone()
+            if occ and occ["aluno_id"]:
+                result = {
+                    "aluno_id": str(occ["aluno_id"]),
+                    "person_key": str(occ["person_key"] or ""),
+                    "class_name": "Sem turma",
+                }
+                if want_face_cache:
+                    result["face_cache_path"] = None
+                return result
+            return None
+
         # ── Resolver source ──
-        source_row = _safe_alunos_fetchone(cur, "SELECT aluno_id, person_key, class_name FROM alunos WHERE person_key = ?", (source_raw,))
+        source_row = _resolve_identity(source_raw, want_face_cache=False)
         if not source_row:
-            source_row = _safe_alunos_fetchone(cur, "SELECT aluno_id, person_key, class_name FROM alunos WHERE aluno_id = ?", (source_raw,))
-        if not source_row:
-            raise HTTPException(status_code=404, detail=f"source_person_id '{source_raw}' não encontrado na tabela alunos")
+            raise HTTPException(status_code=404, detail=f"source_person_id '{source_raw}' não encontrado")
 
         source_aluno_id = str(source_row["aluno_id"] or "").strip()
         source_pk = str(source_row["person_key"] or "").strip()
 
         # ── Resolver target ──
-        target_row = _safe_alunos_fetchone(cur, "SELECT aluno_id, person_key, class_name, face_cache_path FROM alunos WHERE person_key = ?", (target_raw,))
+        target_row = _resolve_identity(target_raw, want_face_cache=True)
         if not target_row:
-            target_row = _safe_alunos_fetchone(cur, "SELECT aluno_id, person_key, class_name, face_cache_path FROM alunos WHERE aluno_id = ?", (target_raw,))
-        if not target_row:
-            raise HTTPException(status_code=404, detail=f"target_person_id '{target_raw}' não encontrado na tabela alunos")
+            raise HTTPException(status_code=404, detail=f"target_person_id '{target_raw}' não encontrado")
 
         target_aluno_id = str(target_row["aluno_id"] or "").strip()
         target_pk = str(target_row["person_key"] or "").strip()
@@ -5096,7 +5284,6 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
     global _match_preview_cache
     cached = _match_preview_cache.get(cache_key)
     if cached and (time.time() - cached[1]) < _MATCH_PREVIEW_TTL:
-        logger.info("[match-preview] cache=hit cluster=%s student=%s total=%.0fms", cluster_id, target_id, (time.perf_counter() - _t0) * 1000)
         return cached[0]
 
     try:
@@ -5105,30 +5292,40 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
         if not cat:
             raise HTTPException(status_code=400, detail="Catalogo obrigatorio")
 
-        cluster_centroid = None
-        student_faces = None
-        st_embs_norm = None
-        st_valid = None
+        # ── STEP 1: Buscar todos os candidatos com este nome diretamente na tabela 'alunos' ──
+        candidates = []
+        with get_db(cat) as conn:
+            cur = conn.cursor()
+            if "::" in target_id:
+                cur.execute("SELECT aluno_id, class_name, person_key, face_cache_path FROM alunos WHERE person_key = ?", (target_id,))
+            else:
+                cur.execute("SELECT aluno_id, class_name, person_key, face_cache_path FROM alunos WHERE lower(aluno_id) = lower(?)", (target_id,))
+            candidates = [dict(r) for r in cur.fetchall()]
 
-        # Layer 2: cluster centroid cache (TTL 30s)
-        global _cluster_centroid_cache, _student_embed_cache
-        centroid_entry = _cluster_centroid_cache.get(centroid_key)
-        if centroid_entry and (time.time() - centroid_entry[1]) < _CENTROID_CACHE_TTL:
-            cluster_centroid = centroid_entry[0]
+        if not candidates:
+            # Fallback se não encontrou nenhum aluno registrado
+            candidates = [{
+                "aluno_id": target_id,
+                "class_name": "Sem turma",
+                "person_key": "",
+                "face_cache_path": "n/a"
+            }]
 
-        # Layer 3: student embeddings cache (TTL 30s)
-        embed_entry = _student_embed_cache.get(embed_key)
-        if embed_entry and (time.time() - embed_entry[3]) < _STUDENT_EMBED_CACHE_TTL:
-            student_faces, st_embs_norm, st_valid = embed_entry[0], embed_entry[1], embed_entry[2]
+        # ── STEP 2: Vetorização e Similaridade Cosseno baseada em fotos do catálogo ──
+        best_face = None
+        best_sim = 0.0
+        best_candidate = None
 
         with get_db(cat) as conn:
             cur = conn.cursor()
-            _sql_cluster_t = _sql_student_t = _deserialize_cluster_t = _centroid_t = _deserialize_student_t = 0.0
-            _stack_t = _similarity_t = _ref_path_t = 0.0
 
-            # ── STEP 1: Cluster embeddings ──
+            cluster_centroid = None
+            global _cluster_centroid_cache
+            centroid_entry = _cluster_centroid_cache.get(centroid_key)
+            if centroid_entry and (time.time() - centroid_entry[1]) < _CENTROID_CACHE_TTL:
+                cluster_centroid = centroid_entry[0]
+
             if cluster_centroid is None:
-                _sql_cluster_t = time.perf_counter()
                 cur.execute("""
                     SELECT o.rowid, fe.embedding
                     FROM unknown_face_clusters u
@@ -5138,7 +5335,7 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
                     LIMIT 100
                 """, (cluster_id,))
                 cluster_rows = cur.fetchall()
-
+                
                 if not cluster_rows:
                     cur.execute("""
                         SELECT rowid, embedding FROM face_embeddings
@@ -5146,147 +5343,168 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
                         LIMIT 100
                     """, (cluster_id,))
                     cluster_rows = cur.fetchall()
-                _sql_cluster_ms = (time.perf_counter() - _sql_cluster_t) * 1000
 
-                if not cluster_rows:
-                    return {"reference_missing": True, "message": "Nenhuma face/embedding encontrada no cluster"}
+                if cluster_rows:
+                    cluster_embs_norm = []
+                    for r in cluster_rows:
+                        if not r["embedding"]: continue
+                        emb = np.frombuffer(r["embedding"], dtype="float32")
+                        n = np.linalg.norm(emb)
+                        if n > 0:
+                            cluster_embs_norm.append(emb / n)
+                    if cluster_embs_norm:
+                        cluster_centroid = np.mean(cluster_embs_norm, axis=0)
+                        cn = np.linalg.norm(cluster_centroid)
+                        if cn > 0:
+                            cluster_centroid = cluster_centroid / cn
+                        _cluster_centroid_cache[centroid_key] = (cluster_centroid, time.time())
 
-                _deserialize_cluster_t = time.perf_counter()
-                cluster_embs_norm = []
-                for r in cluster_rows:
-                    if not r["embedding"]: continue
-                    emb = np.frombuffer(r["embedding"], dtype="float32")
-                    n = np.linalg.norm(emb)
-                    if n > 0:
-                        cluster_embs_norm.append(emb / n)
-                _deserialize_cluster_ms = (time.perf_counter() - _deserialize_cluster_t) * 1000
+            # 2. Avaliar similaridade de ocorrências para cada candidato
+            for cand in candidates:
+                cand_best_face = None
+                cand_best_sim = 0.0
+                
+                try:
+                    if cluster_centroid is not None:
+                        q_id = cand["person_key"] or cand["aluno_id"]
+                        cur.execute("""
+                            SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, o.person_key, fe.embedding
+                            FROM ocorrencias o
+                            JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
+                            WHERE (o.person_key IS NOT NULL AND o.person_key = ?) OR o.aluno_id = ?
+                            LIMIT 50
+                        """, (q_id, cand["aluno_id"]))
+                        student_faces = cur.fetchall()
 
-                if not cluster_embs_norm:
-                    return {"reference_missing": True, "message": "Nenhum embedding valido no cluster"}
+                        if not student_faces:
+                            cur.execute("""
+                                SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, o.person_key, fe.embedding
+                                FROM ocorrencias o
+                                JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
+                                WHERE o.aluno_id = ?
+                                LIMIT 50
+                            """, (cand["aluno_id"],))
+                            student_faces = cur.fetchall()
 
-                _centroid_t = time.perf_counter()
-                cluster_centroid = np.mean(cluster_embs_norm, axis=0)
-                cn = np.linalg.norm(cluster_centroid)
-                if cn > 0:
-                    cluster_centroid = cluster_centroid / cn
-                _centroid_ms = (time.perf_counter() - _centroid_t) * 1000
+                        if student_faces:
+                            st_embs_norm = []
+                            st_valid = []
+                            for i, f in enumerate(student_faces):
+                                if not f["embedding"]: continue
+                                emb = np.frombuffer(f["embedding"], dtype="float32")
+                                n = np.linalg.norm(emb)
+                                if n > 0:
+                                    st_embs_norm.append(emb / n)
+                                    st_valid.append(i)
+                            
+                            if st_embs_norm:
+                                st_matrix = np.stack(st_embs_norm)
+                                sims = st_matrix @ cluster_centroid
+                                b_idx = int(np.argmax(sims))
+                                cand_best_sim = float(sims[b_idx])
+                                cand_best_face = student_faces[st_valid[b_idx]]
+                except Exception as _calc_err:
+                    logger.warning("[match-preview] Falha ao computar similaridade para candidato %s: %s", cand.get("person_key"), _calc_err)
 
-                _cluster_centroid_cache[centroid_key] = (cluster_centroid, time.time())
-            else:
-                _sql_cluster_ms = _deserialize_cluster_ms = _centroid_ms = 0.0
+                if cand_best_sim > best_sim or best_candidate is None:
+                    best_sim = cand_best_sim
+                    best_face = cand_best_face
+                    best_candidate = cand
 
-            # ── STEP 2: Student faces (filtered by person_key if available) ──
-            if student_faces is None:
-                _sql_student_t = time.perf_counter()
-                cur.execute("""
-                    SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, o.person_key, fe.embedding
-                    FROM ocorrencias o
-                    JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
-                    WHERE o.person_key IS NOT NULL AND o.person_key != ''
-                      AND o.person_key LIKE ? || '::%'
-                    LIMIT 50
-                """, (target_id,))
-                student_faces = cur.fetchall()
-
-                if not student_faces:
+            # 3. Se nenhum candidato tem fotos identificadas (best_face é None),
+            # escolhemos com base no contexto de classe ou na pasta física existente
+            if best_face is None:
+                cluster_classes = set()
+                try:
                     cur.execute("""
-                        SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, o.person_key, fe.embedding
-                        FROM ocorrencias o
-                        JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
-                        WHERE o.aluno_id = ?
-                        LIMIT 50
-                    """, (target_id,))
-                    student_faces = cur.fetchall()
+                        SELECT o.person_key 
+                        FROM unknown_face_clusters u
+                        JOIN ocorrencias o ON o.foto_path IN (
+                            SELECT o2.foto_path FROM unknown_face_clusters u2
+                            JOIN ocorrencias o2 ON o2.rowid = u2.face_id
+                            WHERE u2.cluster_id = ?
+                        )
+                        WHERE o.person_key IS NOT NULL
+                    """, (cluster_id,))
+                    for r in cur.fetchall():
+                        pk = r["person_key"]
+                        if pk:
+                            parts = pk.split("::")
+                            if len(parts) >= 2 and parts[1] and parts[1] not in ("Sem turma", "__SEM_TURMA__"):
+                                cluster_classes.add(parts[1])
+                except Exception:
+                    pass
 
-                if not student_faces:
-                    cur.execute("""
-                        SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, o.person_key, fe.embedding
-                        FROM ocorrencias o
-                        JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
-                        WHERE o.aluno_id = ?
-                        LIMIT 50
-                    """, (target_id, target_id))
-                    student_faces = cur.fetchall()
-                _sql_student_ms = (time.perf_counter() - _sql_student_t) * 1000
+                # Escolher o candidato correspondente à turma provável
+                for cand in candidates:
+                    pk_parts = (cand["person_key"] or "").split("::")
+                    pk_class = pk_parts[1] if len(pk_parts) >= 2 else ""
+                    if pk_class in cluster_classes:
+                        best_candidate = cand
+                        break
 
-                if not student_faces:
-                    return {"reference_missing": True, "message": f"Nenhuma face encontrada para {target_id}"}
+                # Se não bateu com as turmas prováveis, pega o primeiro que tiver uma foto de referência no disco
+                if best_candidate is None:
+                    for cand in candidates:
+                        p_path = cand["face_cache_path"]
+                        if p_path and p_path != "n/a" and os.path.exists(p_path):
+                            best_candidate = cand
+                            break
 
-                _deserialize_student_t = time.perf_counter()
-                st_embs_norm = []
-                st_valid = []
-                for i, f in enumerate(student_faces):
-                    if not f["embedding"]: continue
-                    emb = np.frombuffer(f["embedding"], dtype="float32")
-                    n = np.linalg.norm(emb)
-                    if n > 0:
-                        st_embs_norm.append(emb / n)
-                        st_valid.append(i)
-                _deserialize_student_ms = (time.perf_counter() - _deserialize_student_t) * 1000
+                # Fallback final: primeiro da lista
+                if best_candidate is None and candidates:
+                    best_candidate = candidates[0]
 
-                if not st_embs_norm:
-                    return {"reference_missing": True, "message": f"Nenhuma face valida para {target_id}"}
+        # 4. Processar o candidato eleito
+        student_name_db = best_candidate["aluno_id"]
+        student_folder_db = best_candidate["class_name"] or "Sem turma"
+        student_pk_db = best_candidate["person_key"] or ""
+        ref_path = None
+        
+        p_path = best_candidate["face_cache_path"]
+        if p_path and p_path != "n/a" and os.path.exists(p_path):
+            ref_path = str(p_path)
 
-                _student_embed_cache[embed_key] = (student_faces, st_embs_norm, st_valid, time.time())
-            else:
-                _sql_student_ms = _deserialize_student_ms = 0.0
-
-            # ── STEP 3: Vectorized similarity ──
-            _stack_t = time.perf_counter()
-            st_matrix = np.stack(st_embs_norm)
-            _stack_ms = (time.perf_counter() - _stack_t) * 1000
-
-            _similarity_t = time.perf_counter()
-            sims = st_matrix @ cluster_centroid
-            best_idx = int(np.argmax(sims))
-            best_sim = float(sims[best_idx])
-            best_face = student_faces[st_valid[best_idx]]
-            _similarity_ms = (time.perf_counter() - _similarity_t) * 1000
-
-            if np.isnan(best_sim) or np.isinf(best_sim):
-                best_sim = 0.0
-
-            # ── STEP 4: Reference path (non-blocking) ──
-            _ref_t = time.perf_counter()
-            student_id_real = best_face["aluno_id"]
-            ref_path = ""
+        # Fallback dinâmico de geração de cache de face
+        if not ref_path:
             try:
-                ref_path = get_face_cache_path_cached(cat, student_id_real) or ""
-                if ref_path: ref_path = str(ref_path)
-            except Exception:
-                pass
-            if ref_path and os.path.exists(ref_path):
-                logger.info("[match-preview] ref_path=hit student=%s", student_id_real)
-            else:
-                # Enfileira geração em background — não bloqueia a response
-                _enqueue_ref_generation(cat, student_id_real)
-                ref_path = ""
-                logger.info("[match-preview] ref_path=skipped_bg student=%s", student_id_real)
-            _ref_path_ms = (time.perf_counter() - _ref_t) * 1000
+                with get_db(cat) as conn:
+                    ref_path = _ensure_person_reference(conn, cat, student_name_db, force=True)
+            except Exception as _ref_err:
+                logger.warning("[match-preview] Erro dinâmico gerando cache de referência para %s: %s", student_name_db, _ref_err)
 
+        if np.isnan(best_sim) or np.isinf(best_sim):
+            best_sim = 0.0
+
+        # ── STEP 3: Montar resposta final ──
+        if best_face:
             result = {
                 "matched_student_rowid": int(best_face["rowid"]),
                 "matched_student_photo_path": best_face["foto_path"],
                 "matched_student_face_box": [best_face["x1"], best_face["y1"], best_face["x2"], best_face["y2"]],
                 "matched_similarity": round(best_sim, 4),
-                "matched_student_id": student_id_real,
-                "matched_student_name": student_id_real,
-                "matched_student_folder": student_id_real,
-                "matched_student_label": student_id_real,
-                "reference_path": ref_path if ref_path and os.path.exists(ref_path) else None,
+                "matched_student_id": student_name_db,
+                "matched_student_name": student_name_db,
+                "matched_student_folder": student_folder_db,
+                "matched_student_label": student_name_db,
+                "matched_student_person_key": student_pk_db,
+                "reference_path": ref_path,
+            }
+        else:
+            result = {
+                "matched_student_rowid": -1,
+                "matched_student_photo_path": ref_path or "",
+                "matched_student_face_box": [0, 0, 1, 1],
+                "matched_similarity": 0.0,
+                "matched_student_id": student_name_db,
+                "matched_student_name": student_name_db,
+                "matched_student_folder": student_folder_db,
+                "matched_student_label": student_name_db,
+                "matched_student_person_key": student_pk_db,
+                "reference_path": ref_path,
             }
 
-            _match_preview_cache[cache_key] = (result, time.time())
-
-        _total_ms = (time.perf_counter() - _t0) * 1000
-        logger.info(
-            "[match-preview] cache=miss cluster=%s student=%s"
-            " sql_cluster=%.0fms sql_student=%.0fms deserialize_cluster=%.0fms centroid=%.0fms"
-            " deserialize_student=%.0fms stack=%.0fms similarity=%.0fms ref_path=%.0fms total=%.0fms",
-            cluster_id, target_id,
-            _sql_cluster_ms, _sql_student_ms, _deserialize_cluster_ms, _centroid_ms,
-            _deserialize_student_ms, _stack_ms, _similarity_ms, _ref_path_ms, _total_ms,
-        )
+        _match_preview_cache[cache_key] = (result, time.time())
         return result
 
     except Exception as e:

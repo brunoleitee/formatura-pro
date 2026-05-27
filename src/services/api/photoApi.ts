@@ -1,5 +1,5 @@
 import { API_BASE, fetchJSON, post } from './core';
-import type { ExplorerPhotosResponse, FolderTreeResponse, LiveScannerStatus, Photo, PhotoContextResponse, PhotosPageResponse, PreviewFacesResponse, QualityAuditStatus, ScanStatus, SystemMetrics, ScannerFolderTreeResponse } from './types';
+import type { ExplorerPhotosResponse, FolderTreeResponse, LiveScannerStatus, Photo, PhotoContextResponse, PhotosPageResponse, PreviewFacesResponse, QualityAuditStatus, ScanStatus, SystemMetrics, ScannerFolderTreeResponse, CreateReferencesStatus } from './types';
 
 export const photoApi = {
   getPhotos: (path = '', catalog = '', signal?: AbortSignal) =>
@@ -135,4 +135,10 @@ export const photoApi = {
         body: JSON.stringify({ foto_paths: fotoPaths }),
       }
     ),
+
+  createReferences: (id_folder: string, catalog?: string) =>
+    post<{ status: string; running: boolean }>(`${API_BASE}/scanner/create-references`, { id_folder, catalog }),
+
+  getCreateReferencesStatus: (signal?: AbortSignal) =>
+    fetchJSON<CreateReferencesStatus>(`${API_BASE}/scanner/create-references/status`, { signal }),
 };

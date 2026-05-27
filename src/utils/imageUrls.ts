@@ -27,3 +27,7 @@ export function getViewerPreviewUrl(path: string | null | undefined, size = 1920
   return buildPreviewUrl(path, size);
 }
 
+export function getFaceThumbUrl(path: string, box: [number, number, number, number], size: number, expand = 0.38) {
+  return `${API_BASE}/thumb?path=${encodeURIComponent(path)}&x1=${box[0]}&y1=${box[1]}&x2=${box[2]}&y2=${box[3]}&size=${size}&expand=${expand}`;
+}
+

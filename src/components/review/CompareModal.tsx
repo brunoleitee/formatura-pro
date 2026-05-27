@@ -1,87 +1,63 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Check, X } from 'lucide-react';
 import type { RichCluster, StudentMatchPreviewResponse } from '../../services/api';
 import { api } from '../../services/api';
 import { faceThumb } from './FaceCard';
+import { formatSimilarity } from '../../utils/format';
 import styles from './CompareModal.module.css';
 
 interface CompareModalProps {
   cluster: RichCluster;
-  catalog: string;
   bestName: string;
   bestSim: number;
+  matchData: StudentMatchPreviewResponse | null;
+  isLoading: boolean;
+  error?: string;
   onConfirm: (name: string) => void;
   onReject: (name: string) => void;
   onClose: () => void;
 }
 
-function formatSimilarity(sim: number | null | undefined): string {
-  if (sim == null || !isFinite(sim) || isNaN(sim)) return '--%';
-  return `${Math.round(sim * 100)}%`;
-}
-
 export default function CompareModal({
   cluster,
-  catalog,
   bestName,
   bestSim,
+  matchData,
+  isLoading,
+  error = '',
   onConfirm,
   onReject,
   onClose,
 }: CompareModalProps) {
-  const [matchData, setMatchData] = useState<StudentMatchPreviewResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
   const displayLabel = matchData?.matched_student_label || bestName;
-
   const similarity = matchData?.matched_similarity ?? bestSim;
 
-  useEffect(() => {
-    if (!bestName || !cluster.cluster_id) return;
-    setIsLoading(true);
+  const leftImg = useMemo(
+    () => cluster.representative ? faceThumb(cluster.representative.path, cluster.representative.box, 400) : '',
+    [cluster.representative]
+  );
 
-    api.getStudentMatchPreview(catalog, cluster.cluster_id, bestName)
-      .then(data => {
-        setMatchData(data);
-        if (data?.matched_similarity == null || !isFinite(data.matched_similarity)) {
-          console.warn(`[Review] invalid similarity for reference ${bestName}: ${data?.matched_similarity}`);
-        }
-      })
-      .catch(err => {
-        console.error('[CompareModal] preview error:', err);
-        setMatchData(null);
-      })
-      .finally(() => setIsLoading(false));
-  }, [bestName, cluster.cluster_id]);
-
-  const rep = cluster.representative;
-  const leftImg = rep ? faceThumb(rep.path, rep.box, 400) : '';
-
-  // ── Imagem da referência: usar reference_path ou fallback por face_box ──
-  let rightImg = '';
-  let rightAlt = displayLabel;
-
-  if (matchData) {
-    // Prioridade 1: reference_path (thumb cache da referência)
-    if (matchData.reference_path) {
-      rightImg = `/api/thumb?path=${encodeURIComponent(matchData.reference_path)}&size=400`;
+  const { rightImg, rightPlaceholder } = useMemo(() => {
+    const alt = displayLabel;
+    let img = '';
+    if (matchData) {
+      if (matchData.reference_path) {
+        img = `/api/thumb?path=${encodeURIComponent(matchData.reference_path)}&size=400`;
+      } else if (matchData.matched_student_face_box && matchData.matched_student_photo_path) {
+        const box = matchData.matched_student_face_box;
+        img = api.faceThumbUrl(
+          matchData.matched_student_photo_path,
+          box[0], box[1], box[2], box[3], 400
+        );
+      }
     }
-    // Prioridade 2: face crop da foto do aluno
-    else if (matchData.matched_student_face_box && matchData.matched_student_photo_path) {
-      const box = matchData.matched_student_face_box;
-      rightImg = api.faceThumbUrl(
-        matchData.matched_student_photo_path,
-        box[0], box[1], box[2], box[3],
-        400
-      );
-    }
-  }
-
-  const rightPlaceholder = isLoading
-    ? 'Buscando...'
-    : matchData?.reference_missing
-      ? `Referência ${displayLabel} não encontrada`
-      : 'Sem imagem';
+    const placeholder = isLoading
+      ? 'Buscando...'
+      : matchData?.reference_missing
+        ? `Referência ${displayLabel} não encontrada`
+        : 'Sem imagem';
+    return { rightImg: img, rightPlaceholder: placeholder };
+  }, [matchData, displayLabel, isLoading]);
 
   // Prevenir scroll do body quando modal está aberto
   useEffect(() => {
@@ -107,18 +83,20 @@ export default function CompareModal({
         <div className={styles.content}>
           <div className={styles.side}>
             <div className={styles.imgWrap}>
-              {leftImg ? <img src={leftImg} alt="Grupo atual" className={styles.img} /> : <div className={styles.placeholder}>Sem imagem</div>}
+              {leftImg ? <img src={leftImg} alt="Grupo atual" className={styles.img} loading="lazy" /> : <div className={styles.placeholder}>Sem imagem</div>}
             </div>
             <span className={styles.label}>Este grupo</span>
           </div>
 
           <div className={styles.side}>
             <div className={styles.imgWrap}>
-              {rightImg ? <img src={rightImg} alt={rightAlt} className={styles.img} /> : <div className={styles.placeholder}>{rightPlaceholder}</div>}
+              {rightImg ? <img src={rightImg} alt={displayLabel} className={styles.img} loading="lazy" /> : <div className={styles.placeholder}>{rightPlaceholder}</div>}
             </div>
             <span className={styles.label}>Referência: {displayLabel}</span>
           </div>
         </div>
+
+        {error && <div style={{ textAlign: 'center', color: 'var(--danger)', fontSize: '0.8rem', marginBottom: 12 }}>{error}</div>}
 
         <div className={styles.footer}>
           <button className={styles.btnSecondary} onClick={() => onReject(bestName)}>

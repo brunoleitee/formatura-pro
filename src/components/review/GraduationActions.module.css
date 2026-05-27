@@ -8,10 +8,12 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(255, 255, 255, 0.02);
+  min-height: 42px;
+  padding: 7px 14px;
+  border-radius: 10px;
+  border: none;
+  background: color-mix(in srgb, var(--grad-bg) 72%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--grad-border) 28%, transparent);
 }
 
 .summary {
@@ -25,7 +27,7 @@
 
 .empty {
   font-size: 0.7rem;
-  color: #475569;
+  color: var(--grad-text);
   letter-spacing: 0.02em;
 }
 
@@ -39,22 +41,22 @@
 }
 
 .chipConfirmed {
-  background: rgba(59, 130, 246, 0.12);
-  color: #93c5fd;
-  border: 1px solid rgba(59, 130, 246, 0.22);
+  background: var(--grad-accent-bg);
+  color: var(--grad-accent-text);
+  border: 1px solid var(--grad-accent-border);
 }
 
 .chipPossible {
-  background: rgba(100, 116, 139, 0.08);
-  color: #94a3b8;
-  border: 1px solid rgba(100, 116, 139, 0.18);
+  background: var(--grad-neutral-bg);
+  color: var(--grad-neutral-text);
+  border: 1px solid var(--grad-neutral-border);
   font-weight: 600;
 }
 
 .chipManual {
-  background: rgba(168, 85, 247, 0.14);
-  color: #c084fc;
-  border: 1px solid rgba(168, 85, 247, 0.3);
+  background: var(--grad-purple-bg);
+  color: var(--grad-purple-text);
+  border: 1px solid var(--grad-purple-border);
 }
 
 .manualBadge {
@@ -66,9 +68,9 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  background: rgba(168, 85, 247, 0.12);
-  color: #c084fc;
-  border: 1px solid rgba(168, 85, 247, 0.28);
+  background: var(--grad-purple-soft-bg);
+  color: var(--grad-purple-text);
+  border: 1px solid var(--grad-purple-soft-border);
   border-radius: 4px;
 }
 
@@ -78,9 +80,9 @@
   gap: 5px;
   padding: 5px 10px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  color: #94a3b8;
+  border: 1px solid var(--grad-secondary-border);
+  background: var(--grad-secondary-bg);
+  color: var(--grad-card-text);
   font-size: 0.74rem;
   font-family: inherit;
   cursor: pointer;
@@ -90,15 +92,15 @@
 }
 
 .btnToggle:hover {
-  color: #e2e8f0;
-  border-color: rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.06);
+  color: var(--grad-hover-text);
+  border-color: var(--grad-hover-border);
+  background: var(--grad-hover-bg);
 }
 
 .btnToggleOpen {
-  color: #93c5fd;
-  border-color: rgba(59, 130, 246, 0.3);
-  background: rgba(59, 130, 246, 0.08);
+  color: var(--grad-accent-text);
+  border-color: var(--grad-highlight-border);
+  background: var(--grad-highlight-bg);
 }
 
 .panel {
@@ -108,8 +110,8 @@
   margin-top: 6px;
   padding: 10px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--grad-row-border);
+  background: var(--grad-row-bg);
 }
 
 .row {
@@ -121,7 +123,7 @@
 .itemLabel {
   font-size: 0.76rem;
   font-weight: 600;
-  color: #cbd5e1;
+  color: var(--grad-row-text);
   width: 58px;
   flex-shrink: 0;
 }
@@ -140,30 +142,30 @@
   font-size: 0.7rem;
   font-weight: 500;
   border-radius: 5px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
-  color: #94a3b8;
+  border: 1px solid var(--grad-card-border);
+  background: var(--grad-row-bg);
+  color: var(--grad-card-text);
   cursor: pointer;
   font-family: inherit;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
 .btn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #e2e8f0;
-  border-color: rgba(255, 255, 255, 0.15);
+  background: var(--grad-header-bg);
+  color: var(--grad-hover-text);
+  border-color: var(--grad-header-border);
 }
 
 .btnConfirm.active {
-  background: rgba(16, 185, 129, 0.18);
-  border-color: rgba(16, 185, 129, 0.4);
-  color: #34d399;
+  background: var(--grad-success-bg);
+  border-color: var(--grad-success-border);
+  color: var(--grad-success-text);
 }
 
 .btnRemove.active {
-  background: rgba(239, 68, 68, 0.18);
-  border-color: rgba(239, 68, 68, 0.4);
-  color: #f87171;
+  background: var(--grad-danger-bg);
+  border-color: var(--grad-danger-border);
+  color: var(--grad-danger-text);
 }
 
 .rowManualTag {
@@ -172,7 +174,7 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #c084fc;
+  color: var(--grad-purple-text);
   margin-left: auto;
 }
 

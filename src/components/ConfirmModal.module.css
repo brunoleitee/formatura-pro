@@ -5,7 +5,7 @@
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--confirm-overlay);
   z-index: 2000;
   animation: fadeIn 0.15s ease-out;
 }
@@ -20,10 +20,10 @@
   width: min(100%, 360px);
   border-radius: 12px;
   padding: 24px 20px 18px;
-  background: #0e1017;
-  border: 1px solid #1a1c23;
-  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.5);
-  color: #f8fafc;
+  background: var(--card);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
   animation: slideUp 0.2s ease-out;
 }
 
@@ -44,13 +44,13 @@
   border-radius: 5px;
   border: none;
   background: transparent;
-  color: #4a5568;
+  color: var(--confirm-text-muted);
   cursor: pointer;
   transition: color 0.15s;
 }
 
 .closeBtn:hover {
-  color: #e2e8f0;
+  color: var(--confirm-text);
 }
 
 .iconWrap {
@@ -60,9 +60,9 @@
   display: grid;
   place-items: center;
   border-radius: 10px;
-  background: rgba(245, 158, 11, 0.1);
-  border: 1px solid rgba(245, 158, 11, 0.2);
-  color: #f59e0b;
+  background: var(--confirm-warning-bg);
+  border: 1px solid var(--confirm-warning-border);
+  color: var(--confirm-warning-text);
 }
 
 .title {
@@ -71,7 +71,7 @@
   font-size: 15px;
   line-height: 1.2;
   font-weight: 700;
-  color: #f8fafc;
+  color: var(--text-primary);
 }
 
 .message {
@@ -80,7 +80,7 @@
   text-align: center;
   font-size: 12px;
   line-height: 1.5;
-  color: #7b8698;
+  color: var(--confirm-text-secondary);
 }
 
 .actions {
@@ -94,7 +94,7 @@
 .confirmBtn {
   min-height: 36px;
   border-radius: 8px;
-  border: 1px solid #1f2530;
+  border: 1px solid var(--confirm-border);
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
@@ -102,21 +102,21 @@
 }
 
 .cancelBtn {
-  background: #151922;
-  color: #94a3b8;
+  background: var(--muted);
+  color: var(--text-secondary);
 }
 
 .cancelBtn:hover {
-  background: #1a1f2b;
-  color: #e2e8f0;
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .confirmBtn {
-  background: linear-gradient(180deg, #ef4444, #dc2626);
-  color: #fff;
-  border-color: rgba(239, 68, 68, 0.3);
+  background: linear-gradient(180deg, var(--confirm-danger-bg-start), var(--confirm-danger-bg-end));
+  color: var(--confirm-danger-text);
+  border-color: var(--confirm-danger-border);
 }
 
 .confirmBtn:hover {
-  background: linear-gradient(180deg, #f87171, #ef4444);
+  background: linear-gradient(180deg, var(--confirm-danger-hover-start), var(--confirm-danger-hover-end));
 }

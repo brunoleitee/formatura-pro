@@ -140,3 +140,36 @@ def search_similar_faces(rowid: int, catalog: str = "", limit: int = 50):
 def get_face_thumb(rowid: int, catalog: str = "", size: int = 180):
     import media_manager as mm
     return mm.get_face_thumb(rowid, catalog, size)
+
+
+# ── Ollama e IA de Alta Fidelidade ─────────────────────────────
+
+@router.get("/api/system/ollama/status")
+def get_ollama_status():
+    import services.ollama_service as ollama
+    return ollama.check_ollama_status()
+
+
+@router.post("/api/system/ollama/pull")
+def pull_ollama_model():
+    from fastapi.responses import StreamingResponse
+    import services.ollama_service as ollama
+    
+    def generator():
+        for progress in ollama.pull_qwen_model_stream():
+            yield json.dumps(progress) + "\n"
+            
+    return StreamingResponse(generator(), media_type="application/x-ndjson")
+
+
+@router.post("/api/system/ollama/download-installer")
+def download_ollama_installer():
+    from fastapi.responses import StreamingResponse
+    import services.ollama_service as ollama
+    
+    def generator():
+        for progress in ollama.download_and_run_ollama_installer_stream():
+            yield json.dumps(progress) + "\n"
+            
+    return StreamingResponse(generator(), media_type="application/x-ndjson")
+

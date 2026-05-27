@@ -1,7 +1,7 @@
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--scan-complete-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -16,13 +16,13 @@
 
 .modal {
   position: relative;
-  background: #0e1017;
-  border: 1px solid #1a1c23;
+  background: var(--card);
+  border: 1px solid var(--border-default);
   border-radius: 16px;
   padding: 32px 36px;
   width: 380px;
   max-width: 90vw;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-modal);
   animation: slideUp 0.3s ease-out;
   text-align: center;
 }
@@ -38,7 +38,7 @@
   right: 12px;
   background: none;
   border: none;
-  color: #4a5568;
+  color: var(--scan-complete-text);
   cursor: pointer;
   padding: 4px;
   display: flex;
@@ -47,8 +47,8 @@
   transition: all 0.15s;
 }
 .closeBtn:hover {
-  color: #e2e8f0;
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .iconWrap {
@@ -59,22 +59,22 @@
 }
 
 .icon {
-  color: #10b981;
-  filter: drop-shadow(0 0 12px rgba(16, 185, 129, 0.3));
+  color: var(--scan-complete-success);
+  filter: drop-shadow(0 0 12px var(--scan-complete-success-shadow));
 }
 
 .title {
   margin: 0 0 4px;
   font-size: 20px;
   font-weight: 700;
-  color: #f8fafc;
+  color: var(--text-primary);
   letter-spacing: -0.02em;
 }
 
 .subtitle {
   margin: 0 0 20px;
   font-size: 13px;
-  color: #7b8698;
+  color: var(--text-secondary);
 }
 
 .statsGrid {
@@ -91,28 +91,28 @@
   gap: 4px;
   padding: 14px 10px;
   border-radius: 10px;
-  background: #151820;
-  border: 1px solid #1a1c23;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
 }
 
 .statIcon {
-  color: #3b82f6;
+  color: var(--scan-complete-accent);
 }
 
 .statIconFace {
-  color: #8b5cf6;
+  color: var(--scan-complete-purple);
 }
 
 .statValue {
   font-size: 24px;
   font-weight: 700;
-  color: #f8fafc;
+  color: var(--text-primary);
   line-height: 1;
 }
 
 .statLabel {
   font-size: 11px;
-  color: #7b8698;
+  color: var(--text-muted);
 }
 
 .timeRow {
@@ -125,11 +125,11 @@
 }
 
 .timeLabel {
-  color: #5a6577;
+  color: var(--scan-complete-muted);
 }
 
 .timeValue {
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-weight: 600;
 }
 
@@ -146,9 +146,9 @@
   gap: 6px;
   padding: 10px 16px;
   border-radius: 10px;
-  border: 1px solid #1f2530;
-  background: #151922;
-  color: #e2e8f0;
+  border: 1px solid var(--border-default);
+  background: var(--muted);
+  color: var(--text-primary);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -156,17 +156,17 @@
 }
 
 .actionBtn:hover {
-  background: #1a1f2b;
-  border-color: #2d3440;
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
 }
 
 .actionBtnPrimary {
-  background: linear-gradient(180deg, #2770ff, #1663ea);
-  border-color: #1d4ed8;
-  color: #fff;
-  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.25);
+  background: linear-gradient(180deg, var(--scan-complete-btn-bg-start), var(--scan-complete-btn-bg-end));
+  border-color: var(--scan-complete-btn-border);
+  color: var(--scan-complete-btn-text);
+  box-shadow: 0 8px 20px var(--scan-complete-btn-shadow);
 }
 
 .actionBtnPrimary:hover {
-  background: linear-gradient(180deg, #3b82f6, #2563eb);
+  background: linear-gradient(180deg, var(--scan-complete-btn-bg-alt-start), var(--scan-complete-btn-bg-alt-end));
 }

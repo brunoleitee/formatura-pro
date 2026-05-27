@@ -1,16 +1,20 @@
 import { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useScanner } from '../hooks/useScanner';
 import { 
   FolderOpen, X, Cpu, ScanFace,
   Maximize2, LayoutGrid, Search, AlertTriangle,
-  Check, CheckCircle2, Database, Terminal, Zap, Gauge, Activity, Calendar,
+  Check, CheckCircle2, Terminal, Zap, Gauge, Activity, Calendar,
   Play, Pause, Folder, LoaderCircle, List, SlidersHorizontal,
   HardDrive, Monitor, Eye, ChevronRight as ChevronRightIcon, ChevronLeft, FolderSearch,
-  Image as ImageIcon
+  Image as ImageIcon, Users2
 } from 'lucide-react';
-import { api, type ScanStatus, type ScanRecentFace, type ExplorerPhoto } from '../services/api';
+import { api, type ScanRecentFace, type ExplorerPhoto } from '../services/api';
 import { useApp } from '../context/AppContext';
 import { ScanCompleteModal } from '../components/ScanCompleteModal';
+import CircularGauge from '../components/scanner/CircularGauge';
+import EventFolderItem from '../components/scanner/EventFolderItem';
+import ScannerPhotoCard from '../components/scanner/ScannerPhotoCard';
 import styles from './ScannerWorkspace.module.css';
 
 interface TimelineEntry {
@@ -67,7 +71,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [viewMode, setViewMode] = useLocalStorage<'grid' | 'single' | 'list'>('scanner_view_mode', 'grid');
   const [thumbSize, setThumbSize] = useLocalStorage<number>('scanner_thumb_size', 200);
   const [previewZoom, setPreviewZoom] = useState(0); // 0-100%
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedFolder, setSelectedFolder] = useLocalStorage('scanner_selected_folder', '');
   const [folderPhotos, setFolderPhotos] = useState<ExplorerPhoto[]>([]);
   const [totalFolderPhotos, setTotalFolderPhotos] = useState(0);
@@ -270,12 +273,12 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     };
   }, [selectedPhotoPath]);
 
-  const handlePickEvent = async () => {
+  const handlePickEvent = useCallback(async () => {
     const res = await api.selectFolder().catch(() => null);
     if (res?.path) setEventPath(res.path);
-  };
+  }, []);
 
-  const handlePickRef = async () => {
+  const handlePickRef = useCallback(async () => {
     const res = await api.selectFolder().catch(() => null);
     if (res?.path) {
       setRefPath(res.path);
@@ -298,9 +301,9 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
         setError('Erro ao carregar estatísticas da pasta de referência.');
       }
     }
-  };
+  }, []);
 
-  const handleAddEventFolder = async () => {
+  const handleAddEventFolder = useCallback(async () => {
     const res = await api.selectFolder().catch(() => null);
     if (res?.path) {
       setEventPath(res.path);
@@ -323,19 +326,19 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
         setEventFolderStatuses(prev => ({ ...prev, [res.path]: statuses }));
       } catch { /* tree best-effort */ }
     }
-  };
+  }, [eventFolders]);
 
-  const handleEventFolderStatus = (folderPath: string, subPath: string, status: 'include' | 'ignore' | 'monitor') => {
+  const handleEventFolderStatus = useCallback((folderPath: string, subPath: string, status: 'include' | 'ignore' | 'monitor') => {
     setEventFolderStatuses(prev => {
       const folder = { ...(prev[folderPath] || {}) };
       folder[subPath] = status;
       return { ...prev, [folderPath]: folder };
     });
-  };
+  }, []);
 
-  const handleRemoveEventFolder = (idx: number) => {
+  const handleRemoveEventFolder = useCallback((idx: number) => {
     setEventFolders(prev => prev.filter((_, i) => i !== idx));
-  };
+  }, []);
 
   const pollingWasScanningRef = useRef(false);
 
@@ -423,8 +426,12 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
         }
       } catch {
         pollFails++;
+        if (pollFails === 3) {
+          setTimeline(prev => [...prev.slice(-49), { id: `poll-warn-${Date.now()}`, kind: 'warning', text: 'Perdendo conexão com o servidor...', timestamp: Date.now() }]);
+        }
         if (pollFails >= MAX_POLL_FAILS) {
           setPolling(false);
+          setTimeline(prev => [...prev.slice(-49), { id: `poll-err-${Date.now()}`, kind: 'error', text: 'Não foi possível continuar monitorando o scan.', timestamp: Date.now() }]);
           return;
         }
         pollDelay = Math.min(pollDelay * 1.5, 15000);
@@ -501,7 +508,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
             include_raw: rawEnabled 
           });
           if (res.ok) {
-            let sorted = [...res.photos];
+            const sorted = [...res.photos];
             if (sortBy === 'date') {
               sorted.sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
             } else if (sortBy === 'size') {
@@ -599,7 +606,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
 
 
-  const handleScan = async () => {
+  const handleScan = useCallback(async () => {
     if (!eventPath) { setError('Selecione a pasta de eventos.'); return; }
     const name = newCatalogMode ? newCatalogName.trim() : catalogName;
     if (!name) { setError('Selecione ou crie um catálogo.'); return; }
@@ -622,10 +629,9 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
       setIsScanning(false);
       setStarting(false);
     }
-  };
+  }, [eventPath, newCatalogMode, newCatalogName, catalogName, refPath, setCatalog, refreshCatalogs]);
 
-  const handleStopScan = async () => {
-    // 1. Parar polling IMEDIATAMENTE antes de qualquer chamada
+  const handleStopScan = useCallback(async () => {
     setIsScanning(false);
     setStarting(false);
     setPolling(false);
@@ -637,7 +643,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
       timestamp: Date.now()
     }]);
 
-    // 2. Chamar backend para cancelamento real (não bloquear UI)
     try {
       await api.scannerStop();
     } catch { /* fallback */ }
@@ -647,9 +652,9 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     try {
       await api.scannerCleanup();
     } catch { /* ignore */ }
-  };
+  }, []);
 
-  const handleCreateCatalog = async () => {
+  const handleCreateCatalog = useCallback(async () => {
     const name = newCatalogName.trim();
     if (!name) return;
     try {
@@ -661,7 +666,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     } catch {
       setError('Erro ao criar catálogo.');
     }
-  };
+  }, [newCatalogName, refreshCatalogs]);
 
   const progressPct = scanStatus ? Math.min(100, Math.max(0, ((scanStatus.total_processadas ?? 0) / (scanStatus.total_files || 1)) * 100)) : 0;
   const formatTime = (sec: number) => {
@@ -679,63 +684,30 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     : '';
   const navFileName = activePhotos[activePhotoIndex]?.split(/[\\/]/).pop() || '';
 
-  const navigatePreview = (dir: number) => {
+  const navigatePreview = useCallback((dir: number) => {
     const next = activePhotoIndex + dir;
-    if (next >= 0 && next < activePhotos.length) {
+    if (next >= 0 && next < activePhotosRef.current.length) {
       setPreviewLoaded(false);
       setActivePhotoIndex(next);
       setPreviewZoom(0);
       setDragPos({ x: 0, y: 0 });
     }
-  };
+  }, [activePhotoIndex]);
 
-  const handleDragStart = (e: React.MouseEvent) => {
+  const handleDragStart = useCallback((e: React.MouseEvent) => {
     if (previewZoom <= 0) return;
     setIsDragging(true);
     setDragStart({ x: e.clientX - dragPos.x, y: e.clientY - dragPos.y });
-  };
+  }, [previewZoom, dragPos]);
 
-  const handleDragMove = (e: React.MouseEvent) => {
+  const handleDragMove = useCallback((e: React.MouseEvent) => {
     if (!isDragging) return;
     setDragPos({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
-  };
+  }, [isDragging, dragStart]);
 
-  const handleDragEnd = () => {
+  const handleDragEnd = useCallback(() => {
     setIsDragging(false);
-  };
-
-  const sidebarCollapsedContent = (
-    <div className={styles.sidebarIcons}>
-      <button className={`${styles.sidebarIconBtn} ${isScanning ? styles.sidebarIconStart : ''}`} onClick={handleScan} title="Iniciar Scanner">
-        {starting && isScanning ? <LoaderCircle size={18} className={styles.spin} /> : <Zap size={18} fill="currentColor" />}
-      </button>
-      <div className={styles.sidebarIconDivider} />
-      <button className={styles.sidebarIconBtn} title="IA"><Cpu size={18} /></button>
-    </div>
-  );
-
-  const CircularGauge = ({ pct }: { pct: number }) => {
-    const radius = 38;
-    const circ = 2 * Math.PI * radius;
-    const safePct = Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 0;
-    const offset = circ - (safePct / 100) * circ;
-    return (
-      <div className={styles.gaugeContainer}>
-        <svg width="100" height="100" viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r={radius} fill="none" stroke="#1a1c23" strokeWidth="5" />
-          <circle 
-            cx="50" cy="50" r={radius} fill="none" stroke="#3b82f6" strokeWidth="5" 
-            strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
-            transform="rotate(-90 50 50)"
-            style={{ transition: 'stroke-dashoffset 0.5s ease' }}
-          />
-        </svg>
-        <div className={styles.gaugeText}>
-          <span className={styles.gaugePct}>{Math.round(pct)}%</span>
-        </div>
-      </div>
-    );
-  };
+  }, []);
 
   return (
     <div className={styles.workspace}>
@@ -835,21 +807,13 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
       <div className={styles.mainLayout}>
         {/* ── LEFT PANEL: CONFIG ── */}
-        <div className={`${styles.leftPanel} ${sidebarCollapsed ? styles.leftPanelCollapsed : ''}`}>
-          <div className={styles.leftPanelTop}>
-            <button className={styles.leftPanelToggle} onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
-              {sidebarCollapsed ? <ChevronRightIcon size={14} /> : <ChevronLeft size={14} />}
-            </button>
-          </div>
-
-          {sidebarCollapsed ? sidebarCollapsedContent : (
-            <>
-              <div className={styles.leftPanelScroll}>
+        <div className={styles.leftPanel}>
+          <div className={styles.leftPanelScroll}>
 
                 {/* ── SECTION 1: CATÁLOGO ── */}
                 <div className={styles.refEventSection}>
                   <div className={styles.sectionHeader}>
-                    <Database size={14} className={styles.manageBtnIcon} />
+                    <Users2 size={14} className={styles.manageBtnIcon} />
                     <span className={styles.sectionTitle}>1. Catálogo</span>
                   </div>
 
@@ -861,12 +825,9 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                       value={catalogName}
                       onChange={e => setCatalogName(e.target.value)}
                     />
-                    <button className={styles.actionBtn} onClick={() => setShowNewCatalogInput(true)} title="Ver catálogos existentes">
-                      <Database size={12} /> Selecionar
-                    </button>
                   </div>
                   <p className={styles.fieldDescription}>
-                    Digite o nome para o novo catálogo ou selecione um existente.
+                    Digite o nome para criar um novo catálogo ou selecione um existente.
                   </p>
                 </div>
 
@@ -942,27 +903,25 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     </div>
                   )}
                   {eventPhotosCountStatus === 'none' && (
-                    <div className={styles.refStats} style={{ color: '#5a6577' }}>
+                    <div className={styles.refStats} style={{ color: 'var(--text-muted)' }}>
                       <span>Nenhuma pasta selecionada</span>
                     </div>
                   )}
 
                 </div>
 
-              </div>
+          </div>
 
-              <div className={styles.leftPanelBottom}>
-                <button 
-                  className={`${styles.startBtn} ${!isScanning && eventPath ? styles.startBtnPulse : ''}`} 
-                  onClick={handleScan} 
-                  disabled={isScanning || !eventPath}
-                >
-                  {starting && isScanning ? <LoaderCircle size={16} className={styles.spin} /> : <Zap size={16} fill="currentColor" />}
-                  {isScanning ? 'PROCESSANDO...' : 'INICIAR SCANNER'}
-                </button>
-              </div>
-            </>
-          )}
+          <div className={styles.leftPanelBottom}>
+            <button 
+              className={`${styles.startBtn} ${!isScanning && eventPath ? styles.startBtnPulse : ''}`} 
+              onClick={handleScan} 
+              disabled={isScanning || !eventPath}
+            >
+              {starting && isScanning ? <LoaderCircle size={16} className={styles.spin} /> : <Zap size={16} fill="currentColor" />}
+              {isScanning ? 'Processando...' : 'Iniciar Scanner'}
+            </button>
+          </div>
         </div>
 
         {/* ── CENTER PANEL: PREVIEW / GRID ── */}
@@ -1256,7 +1215,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
               )}
 
               {!isLoadingPhotos && isScanning && filteredProcessedPhotos.map((path, i) => (
-                <PhotoCard 
+                <ScannerPhotoCard 
                   key={`${path}-${i}`} 
                   path={path} 
                   isActive={activePhotos.indexOf(path) === activePhotoIndex}
@@ -1266,7 +1225,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
               ))}
 
               {!isLoadingPhotos && !isScanning && filteredFolderPhotos.map((photo, i) => (
-                <PhotoCard 
+                <ScannerPhotoCard 
                   key={`${photo.path}-${i}`} 
                   path={photo.path} 
                   ext={photo.ext} 
@@ -1528,117 +1487,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
         onGoPeople={() => { setShowCompleteModal(false); navigate('people'); }}
         onGoReview={() => { setShowCompleteModal(false); navigate('review'); }}
       />
-    </div>
-  );
-});
-
-const HIDDEN_DIRS = new Set(['.cache', '.temp', '__pycache__', 'thumbs', 'thumbnails']);
-
-const EventFolderItem = memo(({
-  path: folderPath,
-  statuses,
-  onStatusChange,
-  onRemove,
-}: {
-  path: string;
-  statuses: Record<string, 'include' | 'ignore' | 'monitor'>;
-  onStatusChange: (subPath: string, status: 'include' | 'ignore' | 'monitor') => void;
-  onRemove: () => void;
-}) => {
-  const folderName = folderPath.split(/[\\/]/).filter(Boolean).pop() || folderPath;
-  const entries = Object.entries(statuses).filter(([k]) => !HIDDEN_DIRS.has(k.toLowerCase().split('/').pop() || ''));
-  const included = entries.filter(([, v]) => v === 'include').length;
-  const ignored = entries.filter(([, v]) => v === 'ignore').length;
-
-  return (
-    <div className={styles.eventFolderCard}>
-      <div className={styles.eventFolderHeader}>
-        <Folder size={12} className={styles.eventFolderIcon} />
-        <span className={styles.eventFolderName}>{folderName}</span>
-        <span className={styles.eventFolderCount}>{entries.length} subpastas</span>
-        <button className={styles.eventFolderRemove} onClick={onRemove} title="Remover pasta">
-          <X size={10} />
-        </button>
-      </div>
-      <div className={styles.eventFolderSubList}>
-        {entries.map(([subPath, status]) => (
-          <div key={subPath} className={styles.eventFolderSubRow}>
-            <span className={styles.eventFolderSubName}>{subPath}</span>
-            <div className={styles.eventFolderSubActions}>
-              {(['include', 'ignore', 'monitor'] as const).map(s => (
-                <button
-                  key={s}
-                  className={`${styles.eventSubBtn} ${status === s ? styles[`eventSubBtn${s.charAt(0).toUpperCase() + s.slice(1)}`] : ''}`}
-                  onClick={() => onStatusChange(subPath, s)}
-                  title={s === 'include' ? 'Incluir' : s === 'ignore' ? 'Ignorar' : 'Monitorar'}
-                >
-                  {s === 'include' ? <Check size={10} /> : s === 'ignore' ? <X size={10} /> : <Eye size={10} />}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className={styles.eventFolderFooter}>
-        <Check size={10} className={styles.eventFolderFooterIcon} />
-        <span>{included} incluídas</span>
-        {ignored > 0 && <><X size={10} className={styles.eventFolderFooterIcon} /><span>{ignored} ignoradas</span></>}
-      </div>
-    </div>
-  );
-});
-
-const RAW_EXTENSIONS = ['cr2', 'cr3', 'nef', 'arw', 'orf', 'rw2', 'dng', 'raf'];
-
-const PhotoCard = memo(({ 
-  path, 
-  ext,
-  isActive,
-  onClick,
-  onDoubleClick
-}: { 
-  path: string, 
-  ext?: string,
-  isActive: boolean,
-  onClick: (path: string) => void,
-  onDoubleClick: (path: string) => void
-}) => {
-  const fileExt = (ext || path.split('.').pop() || '').toLowerCase().replace('.', '');
-  const isRawFile = RAW_EXTENSIONS.includes(fileExt);
-  const [imgError, setImgError] = useState(false);
-
-  return (
-    <div 
-      className={`${styles.photoCard} ${isActive ? styles.photoCardActive : ''}`}
-      onClick={() => onClick(path)}
-      onDoubleClick={() => onDoubleClick(path)}
-    >
-      {imgError && isRawFile ? (
-        <div className={styles.rawPlaceholder}>
-          <ImageIcon size={24} className={styles.rawIcon} />
-          <span className={styles.rawLabel}>RAW</span>
-          <span className={styles.rawSub}>sem prévia</span>
-        </div>
-      ) : (
-        <img 
-          src={api.thumbUrl(path, 300)} 
-          alt="Preview" 
-          className={styles.cardThumb} 
-          loading="lazy"
-          onError={() => setImgError(true)}
-        />
-      )}
-      <div className={styles.cardOverlays}>
-        <div className={styles.overlayTop}>
-          <div className={styles.statsBadge}>
-            <div className={styles.statIcon}><ScanFace size={10} /> IA</div>
-          </div>
-          {isRawFile && <div className={`${styles.badge} ${styles.badgeAmber}`} style={{ fontSize: 7, marginLeft: 4 }}>RAW</div>}
-        </div>
-        <div className={styles.overlayBottom}>
-          <div className={styles.extBadge}>{fileExt.toUpperCase() || 'JPG'}</div>
-        </div>
-      </div>
     </div>
   );
 });

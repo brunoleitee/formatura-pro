@@ -5,7 +5,7 @@
   display: flex;
   align-items: center;
   padding: 0 28px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border-default);
   flex-shrink: 0;
 }
 
@@ -29,7 +29,7 @@
 }
 
 .stepDone:hover .stepName {
-  color: #60a5fa;
+  color: var(--export-view-accent);
 }
 
 .stepCircle {
@@ -42,15 +42,15 @@
   font-size: 0.82rem;
   font-weight: 700;
   flex-shrink: 0;
-  background: #2d313a;
-  color: #6b7280;
+  background: var(--border);
+  color: var(--text-muted);
   transition: background 0.2s, color 0.2s;
 }
 
 .stepActive .stepCircle,
 .stepDone .stepCircle {
-  background: #3b82f6;
-  color: #fff;
+  background: var(--accent);
+  color: var(--primary-foreground);
 }
 
 .stepText {
@@ -62,38 +62,38 @@
 .stepName {
   font-size: 0.85rem;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--text-muted);
   transition: color 0.2s;
 }
 
 .stepActive .stepName {
-  color: #fff;
+  color: var(--foreground);
 }
 
 .stepDone .stepName {
-  color: #60a5fa;
+  color: var(--primary);
 }
 
 .stepSub {
   font-size: 0.72rem;
-  color: #4b5563;
+  color: var(--text-secondary);
   transition: color 0.2s;
 }
 
 .stepActive .stepSub {
-  color: #3b82f6;
+  color: var(--primary);
 }
 
 .stepConnector {
   flex: 1;
   height: 1px;
-  background: #2d313a;
+  background: var(--border);
   margin: 0 12px;
   transition: background 0.2s;
 }
 
 .connectorDone {
-  background: #3b82f6;
+  background: var(--primary);
 }
 
 /* ── Split layout (step 1) ── */
@@ -125,7 +125,7 @@
 
 /* ── Selected chips box ── */
 .selectedBox {
-  background: #1a1d24;
+  background: var(--card);
   border-radius: 10px;
   padding: 16px 20px;
   flex-shrink: 0;
@@ -141,13 +141,13 @@
 .selectedTitle {
   font-size: 0.88rem;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--text-primary);
 }
 
 .selectedCount {
   font-size: 0.75rem;
-  color: #9ca3af;
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
   padding: 2px 8px;
   border-radius: 10px;
 }
@@ -158,12 +158,12 @@
   overflow-x: auto;
   padding-bottom: 10px;
   scrollbar-width: thin;
-  scrollbar-color: #2d313a transparent;
+  scrollbar-color: var(--export-view-scrollbar) transparent;
 }
 
 .chipsScroll::-webkit-scrollbar { height: 4px; }
 .chipsScroll::-webkit-scrollbar-track { background: transparent; }
-.chipsScroll::-webkit-scrollbar-thumb { background: #2d313a; border-radius: 2px; }
+.chipsScroll::-webkit-scrollbar-thumb { background: var(--export-view-scrollbar); border-radius: 2px; }
 
 .chip {
   display: flex;
@@ -188,11 +188,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.08);
-  border: 2px solid rgba(59, 130, 246, 0.35);
+  background: var(--bg-tertiary);
+  border: 2px solid var(--accent-soft);
   font-size: 0.9rem;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--text-primary);
 }
 
 .chipX {
@@ -202,9 +202,9 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #374151;
-  border: 1.5px solid #4b5563;
-  color: #d1d5db;
+  background: var(--muted);
+  border: 1.5px solid var(--border-default);
+  color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
   display: flex;
@@ -217,14 +217,14 @@
 }
 
 .chipX:hover {
-  background: #ef4444;
-  border-color: #ef4444;
-  color: #fff;
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--export-view-text-white);
 }
 
 .chipLabel {
   font-size: 0.67rem;
-  color: #9ca3af;
+  color: var(--text-secondary);
   max-width: 62px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -235,7 +235,7 @@
 
 .emptyChips {
   font-size: 0.82rem;
-  color: #4b5563;
+  color: var(--text-muted);
   text-align: center;
   padding: 10px 0;
   font-style: italic;
@@ -249,7 +249,7 @@
 
 /* ── List box ── */
 .listBox {
-  background: #1a1d24;
+  background: var(--card);
   border-radius: 10px;
   padding: 14px 20px;
   flex: 1;
@@ -269,24 +269,24 @@
 .searchInput {
   flex: 1;
   min-width: 0;
-  background: #252932;
-  border: 1px solid #2d313a;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
   border-radius: 8px;
-  color: #fff;
+  color: var(--text-primary);
   font-size: 0.85rem;
   padding: 8px 12px;
   outline: none;
   transition: border-color 0.15s;
 }
 
-.searchInput:focus { border-color: #3b82f6; }
-.searchInput::placeholder { color: #4b5563; }
+.searchInput:focus { border-color: var(--accent); }
+.searchInput::placeholder { color: var(--text-muted); }
 
 .sortSelect {
-  background: #252932;
-  border: 1px solid #2d313a;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
   border-radius: 8px;
-  color: #d1d5db;
+  color: var(--text-primary);
   font-size: 0.82rem;
   padding: 8px 10px;
   outline: none;
@@ -295,14 +295,14 @@
   transition: border-color 0.15s;
 }
 
-.sortSelect:focus { border-color: #3b82f6; }
+.sortSelect:focus { border-color: var(--accent); }
 
 .emptyList {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 40px;
-  color: #6b7280;
+  color: var(--export-view-text-dim);
   flex: 1;
 }
 
@@ -322,7 +322,7 @@
   gap: 10px;
   padding: 9px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-default);
   background: transparent;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
@@ -334,13 +334,13 @@
 }
 
 .personRow:hover {
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
 }
 
 .personRow.selected {
-  background: linear-gradient(180deg, rgba(59, 130, 246, 0.12), rgba(59, 130, 246, 0.05));
-  border-color: rgba(59, 130, 246, 0.35);
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 
 .personCheck {
@@ -352,7 +352,7 @@
 .personCheck input[type="checkbox"] {
   width: 16px;
   height: 16px;
-  accent-color: #3b82f6;
+  accent-color: var(--primary);
   cursor: pointer;
 }
 
@@ -365,9 +365,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.8);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
   font-size: 0.75rem;
   font-weight: 700;
 }
@@ -376,7 +376,7 @@
   flex: 1;
   font-size: 0.88rem;
   font-weight: 600;
-  color: #fff;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -384,7 +384,7 @@
 
 .personPhotos {
   font-size: 0.78rem;
-  color: #6b7280;
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 
@@ -394,9 +394,9 @@
   gap: 4px;
   font-size: 0.75rem;
   font-weight: 600;
-  color: #22c55e;
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.2);
+  color: var(--export-view-success);
+  background: var(--export-view-success-bg);
+  border: 1px solid var(--export-view-success-border);
   padding: 2px 8px;
   border-radius: 10px;
   flex-shrink: 0;
@@ -405,7 +405,7 @@
 /* ── Right column cards ── */
 .summaryCard,
 .quickCard {
-  background: #1a1d24;
+  background: var(--card);
   border-radius: 10px;
   padding: 18px 20px;
 }
@@ -413,7 +413,7 @@
 .cardTitle {
   font-size: 0.88rem;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--text-primary);
   margin-bottom: 14px;
 }
 
@@ -433,35 +433,35 @@
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  background: rgba(59, 130, 246, 0.1);
+  background: var(--accent-soft);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #3b82f6;
+  color: var(--accent);
   flex-shrink: 0;
 }
 
 .summaryLabel {
   flex: 1;
   font-size: 0.82rem;
-  color: #9ca3af;
+  color: var(--text-secondary);
 }
 
 .summaryValue {
   font-size: 1rem;
   font-weight: 700;
-  color: #fff;
+  color: var(--text-primary);
 }
 
 /* ── Quick settings (mantido para compatibilidade) ── */
 .quickFields { display: flex; flex-direction: column; gap: 14px; }
 .quickField { display: flex; flex-direction: column; gap: 6px; }
-.quickLabel { font-size: 0.78rem; color: #9ca3af; font-weight: 500; }
+.quickLabel { font-size: 0.78rem; color: var(--export-view-text-soft); font-weight: 500; }
 .quickSelect {
-  background: #252932;
-  border: 1px solid #2d313a;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
   border-radius: 8px;
-  color: #e5e7eb;
+  color: var(--text-primary);
   font-size: 0.85rem;
   padding: 9px 12px;
   outline: none;
@@ -469,7 +469,7 @@
   width: 100%;
   transition: border-color 0.15s;
 }
-.quickSelect:focus { border-color: #3b82f6; }
+.quickSelect:focus { border-color: var(--accent); }
 .quickToggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
 /* ── Config grid (step 4) ── */
@@ -492,22 +492,22 @@
   gap: 10px;
   padding: 9px 14px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-default);
   background: transparent;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
   font-size: 0.85rem;
-  color: #d1d5db;
+  color: var(--text-secondary);
 }
 
 .radioOpt:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-hover);
 }
 
 .radioActive {
-  border-color: rgba(59, 130, 246, 0.4);
-  background: rgba(59, 130, 246, 0.08);
-  color: #fff;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text-primary);
 }
 
 .radioOpt input[type="radio"] {
@@ -518,14 +518,14 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 2px solid #4b5563;
+  border: 2px solid var(--border-default);
   flex-shrink: 0;
   position: relative;
   transition: border-color 0.15s;
 }
 
 .radioActive .radioDot {
-  border-color: #3b82f6;
+  border-color: var(--accent);
 }
 
 .radioActive .radioDot::after {
@@ -536,7 +536,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #3b82f6;
+  background: var(--primary);
 }
 
 /* ── iOS toggle switch ── */
@@ -558,14 +558,14 @@
   display: block;
   width: 40px;
   height: 22px;
-  background: #374151;
+  background: var(--border-default);
   border-radius: 11px;
   position: relative;
   transition: background 0.2s;
 }
 
 .toggleSwitch input:checked ~ .toggleTrack {
-  background: #3b82f6;
+  background: var(--primary);
 }
 
 .toggleThumb {
@@ -574,10 +574,10 @@
   left: 3px;
   width: 16px;
   height: 16px;
-  background: #fff;
+  background: var(--export-view-text-white);
   border-radius: 50%;
   transition: transform 0.2s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 3px var(--export-view-preview-shadow);
 }
 
 .toggleSwitch input:checked ~ .toggleTrack .toggleThumb {
@@ -593,16 +593,16 @@
   padding: 11px 22px;
   border-radius: 8px;
   border: none;
-  background: #3b82f6;
-  color: #fff;
+  background: var(--accent);
+  color: var(--primary-foreground);
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   transition: background 0.15s, opacity 0.15s;
   width: 100%;
 }
 
-.continueBtn:hover:not(:disabled) { background: #2563eb; }
+.continueBtn:hover:not(:disabled) { background: var(--accent-hover); }
 .continueBtn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ── Export button ── */
@@ -613,15 +613,15 @@
   padding: 10px 24px;
   border-radius: 8px;
   border: none;
-  background: #3b82f6;
-  color: #fff;
+  background: var(--accent);
+  color: var(--primary-foreground);
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   transition: background 0.15s, opacity 0.15s;
 }
 
-.btnExport:hover:not(:disabled) { background: #2563eb; }
+.btnExport:hover:not(:disabled) { background: var(--accent-hover); }
 .btnExport:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ── Step pages (2, 3, 4) ── */
@@ -655,7 +655,7 @@
 
 /* ── Cards ── */
 .card {
-  background: #1a1d24;
+  background: var(--card);
   border-radius: 10px;
   padding: 18px 20px;
   display: flex;
@@ -668,12 +668,12 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .cardValue {
   font-size: 0.92rem;
-  color: #e5e7eb;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -681,10 +681,10 @@
 
 /* ── Inputs ── */
 .input {
-  background: #252932;
-  border: 1px solid #2d313a;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
   border-radius: 8px;
-  color: #fff;
+  color: var(--text-primary);
   font-size: 0.85rem;
   padding: 9px 12px;
   outline: none;
@@ -692,8 +692,8 @@
   width: 100%;
 }
 
-.input:focus { border-color: #3b82f6; }
-.input::placeholder { color: #4b5563; }
+.input:focus { border-color: var(--accent); }
+.input::placeholder { color: var(--text-muted); }
 
 /* ── Toggle rows (steps 3, 4) ── */
 .toggleRow {
@@ -703,13 +703,13 @@
   padding: 6px 0;
   cursor: pointer;
   font-size: 0.85rem;
-  color: #d1d5db;
+  color: var(--text-secondary);
 }
 
 .toggleRow input[type="checkbox"] {
   width: 16px;
   height: 16px;
-  accent-color: #3b82f6;
+  accent-color: var(--primary);
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -723,16 +723,16 @@
   gap: 8px;
   padding: 9px 22px;
   border-radius: 8px;
-  border: 1px solid #3b82f6;
+  border: 1px solid var(--accent);
   background: transparent;
-  color: #3b82f6;
+  color: var(--accent);
   font-size: 0.88rem;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s;
 }
 
-.btnSecondary:hover { background: rgba(59, 130, 246, 0.08); }
+.btnSecondary:hover { background: var(--accent-soft); }
 .btnSecondary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .btnOutline {
@@ -741,9 +741,9 @@
   gap: 6px;
   padding: 9px 14px;
   border-radius: 8px;
-  border: 1px solid #2d313a;
-  background: transparent;
-  color: #d1d5db;
+  border: 1px solid var(--border-default);
+  background: var(--muted);
+  color: var(--text-secondary);
   font-size: 0.82rem;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
@@ -751,7 +751,7 @@
   flex-shrink: 0;
 }
 
-.btnOutline:hover { border-color: #3b82f6; color: #fff; }
+.btnOutline:hover { border-color: var(--accent); color: var(--text-primary); }
 
 .btnGhost {
   display: inline-flex;
@@ -761,11 +761,11 @@
   border-radius: 6px;
   border: none;
   background: transparent;
-  color: #9ca3af;
+  color: var(--text-secondary);
   font-size: 0.78rem;
   cursor: pointer;
   transition: color 0.15s, background 0.15s;
   white-space: nowrap;
 }
 
-.btnGhost:hover { color: #fff; background: rgba(255, 255, 255, 0.05); }
+.btnGhost:hover { color: var(--text-primary); background: var(--bg-hover); }
