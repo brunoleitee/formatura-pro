@@ -128,18 +128,7 @@ def import_catalog_json(req):
     return cdm.import_catalog_json(req)
 
 
-# ── Faces ──────────────────────────────────────────────────────
-
-@router.get("/api/faces/similar")
-def search_similar_faces(rowid: int, catalog: str = "", limit: int = 50):
-    import review_manager as rm
-    return rm.search_similar_faces(rowid, catalog, limit)
-
-
-@router.get("/api/faces/thumb")
-def get_face_thumb(rowid: int, catalog: str = "", size: int = 180):
-    import media_manager as mm
-    return mm.get_face_thumb(rowid, catalog, size)
+# ── Faces (definições em routes/faces.py) ──
 
 
 # ── Ollama e IA de Alta Fidelidade ─────────────────────────────

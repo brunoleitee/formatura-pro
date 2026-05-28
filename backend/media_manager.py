@@ -862,8 +862,8 @@ def get_thumb(path: str, x1: int, y1: int, x2: int, y2: int, size: int = 120, ex
                     y2 = max(y1 + 1, min(y2, h))
                     face_w, face_h = x2 - x1, y2 - y1
 
-                    top_expand = expand + 0.55
-                    bottom_expand = expand + 0.12
+                    top_expand = expand
+                    bottom_expand = expand
                     left = max(0, x1 - int(face_w * expand))
                     top = max(0, y1 - int(face_h * top_expand))
                     right = min(w, x2 + int(face_w * expand))

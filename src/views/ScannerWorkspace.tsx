@@ -1,19 +1,17 @@
 import { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { useScanner } from '../hooks/useScanner';
 import { 
-  FolderOpen, X, Cpu, ScanFace,
+  X, Cpu, ScanFace,
   Maximize2, LayoutGrid, Search, AlertTriangle,
-  Check, CheckCircle2, Terminal, Zap, Gauge, Activity, Calendar,
+  CheckCircle2, Terminal, Zap, Gauge, Activity, Calendar,
   Play, Pause, Folder, LoaderCircle, List, SlidersHorizontal,
-  HardDrive, Monitor, Eye, ChevronRight as ChevronRightIcon, ChevronLeft, FolderSearch,
+  HardDrive, Monitor, ChevronRight as ChevronRightIcon, ChevronLeft,
   Image as ImageIcon, Users2
 } from 'lucide-react';
-import { api, type ScanRecentFace, type ExplorerPhoto } from '../services/api';
+import { api, type ExplorerPhoto } from '../services/api';
 import { useApp } from '../context/AppContext';
 import { ScanCompleteModal } from '../components/ScanCompleteModal';
 import CircularGauge from '../components/scanner/CircularGauge';
-import EventFolderItem from '../components/scanner/EventFolderItem';
 import ScannerPhotoCard from '../components/scanner/ScannerPhotoCard';
 import styles from './ScannerWorkspace.module.css';
 
@@ -32,38 +30,17 @@ interface SelectedPhotoFaceItem {
   badge: 'ia' | 'similar' | 'sem_match';
 }
 
-// Sub-component for Collapsible Sections in Sidebar
-const CollapsibleSection = ({ title, icon: Icon, children, defaultOpen = true }: any) => {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
-  return (
-    <div className={styles.configSection}>
-      <div className={styles.configHeader} onClick={() => setIsOpen(!isOpen)}>
-        <div className={styles.configHeaderLeft}>
-          <ChevronRightIcon size={14} className={`${styles.chevron} ${isOpen ? styles.chevronOpen : ''}`} />
-          <Icon size={14} className={styles.sectionIcon} />
-          <span className={styles.configTitle}>{title}</span>
-        </div>
-      </div>
-      <div className={`${styles.configBody} ${!isOpen ? styles.configBodyCollapsed : ''}`}>
-        {children}
-      </div>
-    </div>
-  );
-};
+
 
 const ScannerWorkspace = memo(function ScannerWorkspace() {
-  const { catalogs, setCatalog, refreshCatalogs, currentCatalog, navigate } = useApp();
+  const { setCatalog, refreshCatalogs, currentCatalog, navigate } = useApp();
   const [eventPath, setEventPath] = useState('');
   const [refPath, setRefPath] = useState('');
   const [refPathInfo, setRefPathInfo] = useState<{ photos: number; subfolders: number } | null>(null);
   const [catalogName, setCatalogName] = useState('');
-  const [newCatalogName, setNewCatalogName] = useState('');
-  const [newCatalogMode, setNewCatalogMode] = useState(false);
-  const [showNewCatalogInput, setShowNewCatalogInput] = useState(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
-  const [polling, setPolling] = useState(false);
   const [isFeedPaused, setIsFeedPaused] = useState(false);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [isScanning, setIsScanning] = useState(false);
@@ -87,13 +64,10 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   
   // UI Options
-  const [gpuEnabled, setGpuEnabled] = useState(true);
-  const [rawEnabled, setRawEnabled] = useState(true);
-  const [recursiveEnabled, setRecursiveEnabled] = useState(true);
+  const rawEnabled = true;
+  const recursiveEnabled = true;
 
   const [eventFolders, setEventFolders] = useState<string[]>([]);
-  const [selectedEventFolders, setSelectedEventFolders] = useState<string[]>([]);
-  const [eventFolderStatuses, setEventFolderStatuses] = useState<Record<string, Record<string, 'include' | 'ignore' | 'monitor'>>>({});
   const [eventPhotosCount, setEventPhotosCount] = useState(0);
   const [eventPhotosCountStatus, setEventPhotosCountStatus] = useState<'none' | 'loading' | 'done' | 'error'>('none');
 
@@ -231,7 +205,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     if (lastSelectedPathRef.current === selectedPhotoPath) return;
     lastSelectedPathRef.current = selectedPhotoPath;
 
-    const fileName = selectedPhotoPath.split(/[\\/]/).pop() || '';
     const controller = new AbortController();
 
     // ── HELPER: Buscar faces (preview em tempo real) ──
@@ -273,10 +246,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     };
   }, [selectedPhotoPath]);
 
-  const handlePickEvent = useCallback(async () => {
-    const res = await api.selectFolder().catch(() => null);
-    if (res?.path) setEventPath(res.path);
-  }, []);
+
 
   const handlePickRef = useCallback(async () => {
     const res = await api.selectFolder().catch(() => null);
@@ -288,7 +258,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           api.exploreTree(res.path, 2),
         ]);
         const subfolderCount = tree.children
-          ? tree.children.reduce((acc: number, n: any) => {
+          ? tree.children.reduce((acc: number, n: { children?: unknown[] }) => {
               const count = (n.children?.length || 0);
               return acc + count;
             }, 0)
@@ -310,35 +280,10 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
       if (!eventFolders.includes(res.path)) {
         setEventFolders(prev => [...prev, res.path]);
       }
-      try {
-        const tree = await api.exploreTree(res.path, 3);
-        const allSub: string[] = [];
-        const flatten = (nodes: any[], parent = '') => {
-          nodes.forEach((n: any) => {
-            const full = parent ? `${parent}/${n.name}` : n.name;
-            allSub.push(full);
-            if (n.children) flatten(n.children, full);
-          });
-        };
-        if (tree.children) flatten(tree.children);
-        const statuses: Record<string, 'include' | 'ignore' | 'monitor'> = {};
-        allSub.forEach(p => { statuses[p] = 'include'; });
-        setEventFolderStatuses(prev => ({ ...prev, [res.path]: statuses }));
-      } catch { /* tree best-effort */ }
     }
   }, [eventFolders]);
 
-  const handleEventFolderStatus = useCallback((folderPath: string, subPath: string, status: 'include' | 'ignore' | 'monitor') => {
-    setEventFolderStatuses(prev => {
-      const folder = { ...(prev[folderPath] || {}) };
-      folder[subPath] = status;
-      return { ...prev, [folderPath]: folder };
-    });
-  }, []);
 
-  const handleRemoveEventFolder = useCallback((idx: number) => {
-    setEventFolders(prev => prev.filter((_, i) => i !== idx));
-  }, []);
 
   const pollingWasScanningRef = useRef(false);
 
@@ -452,7 +397,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     const pollMetrics = async () => {
       if (!metricsActive) return;
       try {
-        const m: any = await api.getSystemMetrics();
+        const m = await api.getSystemMetrics() as { cpuPercent: number | null; ramUsedGb: number | null; ramPercent: number | null; gpuPercent: number | null; temperatureC: number | null; cpuTemperatureC: number | null; status?: string; metricsWarning?: string } | null;
         metricsFails = 0;
         metricsDelay = 2000;
         if (m?.status === 'warming_up') {
@@ -588,27 +533,13 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     fetchInfo();
   }, [eventFolders, recursiveEnabled, rawEnabled]);
 
-  // Sincronizar selectedEventFolders quando a pasta de evento mudar ou o catálogo mudar
-  useEffect(() => {
-    if (eventFolders.length > 0 && catalogName) {
-      const path = eventFolders[eventFolders.length - 1];
-      const key = `scanner:eventFolders:${catalogName}:${path}`;
-      const saved = localStorage.getItem(key);
-      if (saved) {
-        try {
-          setSelectedEventFolders(JSON.parse(saved));
-        } catch (e) {
-          console.error('Erro ao ler pastas selecionadas do cache', e);
-        }
-      }
-    }
-  }, [eventFolders, catalogName]);
+
 
 
 
   const handleScan = useCallback(async () => {
     if (!eventPath) { setError('Selecione a pasta de eventos.'); return; }
-    const name = newCatalogMode ? newCatalogName.trim() : catalogName;
+    const name = catalogName.trim();
     if (!name) { setError('Selecione ou crie um catálogo.'); return; }
     
     setError('');
@@ -624,17 +555,32 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
       await setCatalog(name);
       await refreshCatalogs();
       startPolling();
-    } catch (err) {
-      setError('Erro ao iniciar o scan.');
-      setIsScanning(false);
-      setStarting(false);
+    } catch (err: any) {
+      if (err && err.status === 400 && err.detail && (err.detail.includes('já está em execução') || err.detail.includes('execução') || err.detail.includes('andamento'))) {
+        // O scanner já está rodando. Sincronizamos o estado e iniciamos o polling.
+        setError('');
+        setIsScanning(true);
+        setStarting(false);
+        pollingWasScanningRef.current = true;
+        startPolling();
+        setTimeline(prev => [...prev, {
+          id: `sync-${Date.now()}`,
+          kind: 'system',
+          text: 'Scanner já está em execução. Sincronizando progresso...',
+          timestamp: Date.now()
+        }]);
+      } else {
+        const errorMsg = err && err.detail ? err.detail : 'Erro ao iniciar o scan.';
+        setError(errorMsg);
+        setIsScanning(false);
+        setStarting(false);
+      }
     }
-  }, [eventPath, newCatalogMode, newCatalogName, catalogName, refPath, setCatalog, refreshCatalogs]);
+  }, [eventPath, catalogName, refPath, setCatalog, refreshCatalogs]);
 
   const handleStopScan = useCallback(async () => {
     setIsScanning(false);
     setStarting(false);
-    setPolling(false);
     if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null; }
     setTimeline(prev => [...prev, {
       id: `stop-${Date.now()}`,
@@ -653,20 +599,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
       await api.scannerCleanup();
     } catch { /* ignore */ }
   }, []);
-
-  const handleCreateCatalog = useCallback(async () => {
-    const name = newCatalogName.trim();
-    if (!name) return;
-    try {
-      await api.setCatalog(name);
-      await refreshCatalogs();
-      setCatalogName(name);
-      setNewCatalogName('');
-      setShowNewCatalogInput(false);
-    } catch {
-      setError('Erro ao criar catálogo.');
-    }
-  }, [newCatalogName, refreshCatalogs]);
 
   const progressPct = scanStatus ? Math.min(100, Math.max(0, ((scanStatus.total_processadas ?? 0) / (scanStatus.total_files || 1)) * 100)) : 0;
   const formatTime = (sec: number) => {
@@ -913,6 +845,12 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           </div>
 
           <div className={styles.leftPanelBottom}>
+            {error && (
+              <div style={{ color: '#ef4444', fontSize: '0.8rem', padding: '8px 12px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: 6, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <AlertTriangle size={12} />
+                <span>{error}</span>
+              </div>
+            )}
             <button 
               className={`${styles.startBtn} ${!isScanning && eventPath ? styles.startBtnPulse : ''}`} 
               onClick={handleScan} 
@@ -1051,7 +989,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                         <select 
                           className={styles.inputBase}
                           value={sortBy}
-                          onChange={e => setSortBy(e.target.value as any)}
+                          onChange={e => setSortBy(e.target.value as 'name' | 'date' | 'size')}
                         >
                           <option value="name">Nome (Alfabética/Numérica)</option>
                           <option value="date">Data de Modificação</option>

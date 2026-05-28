@@ -53,8 +53,8 @@ export default function SettingsView() {
       setQuality(q);
       setAppCfg(a);
       if (s) setStats(s as Record<string, unknown>);
-    } catch (e: any) {
-      if (e?.name !== 'AbortError') {
+    } catch (e) {
+      if (e instanceof Error && e.name !== 'AbortError') {
         console.error(e);
       }
     }

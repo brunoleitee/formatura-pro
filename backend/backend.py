@@ -607,6 +607,7 @@ def configure_modules():
         save_embedding_disk_cache=save_embedding_disk_cache,
         get_cached_embedding=get_cached_embedding,
         set_cached_embedding=set_cached_embedding,
+        app_settings=lambda: app_settings,
         det_size=face_det_size,
     )
 
@@ -880,7 +881,37 @@ def _try_load_ai_cache(foto_path: str, local_path: str = "") -> Optional[Dict[st
     return None
 
 
-@ app.post("/api/ai/process-photo")
+class _BatchStatusReq(BaseModel):
+    foto_paths: list[str] = []
+
+
+@app.post("/api/ai/batch-status")
+def ai_batch_status(req: _BatchStatusReq):
+    """
+    Retorna status de processamento AI para múltiplas fotos de uma vez.
+    Body: { "foto_paths": ["path1", "path2", ...] }
+    """
+    try:
+        items = []
+        for fp in req.foto_paths:
+            item: dict = {"foto_path": fp, "status": "unknown"}
+            cached = _try_load_ai_cache(fp)
+            if cached:
+                item["face_detected"] = cached.get("face_detected", False)
+                item["faces_count"] = cached.get("faces_count", 0)
+                item["embedding_ready"] = cached.get("embedding_ready", False)
+                item["final_student"] = cached.get("final_student")
+                item["ocr_text"] = cached.get("ocr_text", "")
+                item["ocr_confidence"] = cached.get("ocr_confidence", 0.0)
+                item["status"] = "completed"
+            items.append(item)
+        return {"items": items}
+    except Exception as e:
+        print(f"[AI-BATCH] erro: {e}")
+        return {"items": []}
+
+
+@app.post("/api/ai/process-photo")
 def ai_process_photo(photo_id: int = 0, catalog: str = "", foto_path: str = "", force: bool = False):
     try:
         from services.ai_processing_queue import ai_processing_queue

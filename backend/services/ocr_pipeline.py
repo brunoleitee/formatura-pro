@@ -2,7 +2,6 @@ import json
 import logging
 import os
 import re
-import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -13,35 +12,19 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-_EASYOCR_READER = None
-_EASYOCR_LOCK = threading.Lock()
-
-def get_easyocr_reader():
-    global _EASYOCR_READER
-    if _EASYOCR_READER is None:
-        with _EASYOCR_LOCK:
-            if _EASYOCR_READER is None:
-                try:
-                    import easyocr
-                    import io
-                    import contextlib
-                    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                        _EASYOCR_READER = easyocr.Reader(['en'], gpu=False)
-                    print("[EasyOCR] Reader inicializado com sucesso")
-                except Exception as e:
-                    print(f"[EasyOCR] Erro ao inicializar: {e}")
-                    _EASYOCR_READER = False
-    return _EASYOCR_READER if _EASYOCR_READER is not False else None
-
-MAX_OCR_SECONDS = 6.0
-OCR_FALLBACK_RESERVE_SECONDS = 1.2
-
+from services.paddle_ocr_service import (
+    run_paddle_ocr,
+    run_paddle_ocr_numeric,
+    run_ocr_safe,
+)
 from services.ocr_engine import (
     get_tesseract_status,
     is_tesseract_available,
     log_tesseract_unavailable_once,
-    run_tesseract_safe,
 )
+
+MAX_OCR_SECONDS = 6.0
+OCR_FALLBACK_RESERVE_SECONDS = 1.2
 
 OCR_DEBUG_ENABLED = os.environ.get("OCR_DEBUG", os.environ.get("FORM_PRO_OCR_DEBUG", os.environ.get("FORM_PRO_DEBUG", "0"))) == "1"
 OCR_DEBUG_DIR = Path(__file__).resolve().parents[1] / "data" / ".cache" / "ocr_debug"
@@ -179,8 +162,12 @@ def _enhance_crop(crop: np.ndarray) -> np.ndarray:
     return gray
 
 
-def _run_tesseract(image: np.ndarray, config: str = "") -> str:
-    return run_tesseract_safe(image, config=config)
+def _ocr_via_paddle(image: np.ndarray, numeric_only: bool = False) -> str:
+    if image.size == 0:
+        return ""
+    if image.ndim == 2:
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    return run_ocr_safe(image, numeric_only=numeric_only)
 
 
 def _extract_number_candidates(text: str) -> List[str]:
@@ -379,16 +366,14 @@ def _save_debug_artifacts(local_path: str, img: np.ndarray, regions: List[Dict[s
 
 
 def _ocr_general(image: np.ndarray) -> Dict[str, Any]:
-    config = "--oem 3 --psm 6"
-    text = _run_tesseract(image, config)
+    text = _ocr_via_paddle(image, numeric_only=False)
     numbers = _extract_number_candidates(text)
     conf = min(0.86, 0.28 + len(numbers) * 0.06) if numbers else 0.0
     return {"text": text, "numbers": numbers, "confidence": conf, "type": "ocr_geral", "label": "OCR geral"}
 
 
 def _ocr_numeric_only(image: np.ndarray) -> Dict[str, Any]:
-    config = "--psm 7 -c tessedit_char_whitelist=0123456789"
-    text = _run_tesseract(image, config)
+    text = _ocr_via_paddle(image, numeric_only=True)
     numbers = _extract_number_candidates(text)
     conf = min(0.97, 0.48 + len(numbers) * 0.08) if numbers else 0.0
     return {"text": text, "numbers": numbers, "confidence": conf, "type": "ficha_numerica", "label": "Ficha numérica"}
@@ -484,10 +469,7 @@ def _ocr_segmented_large_digits(image: np.ndarray) -> Optional[str]:
         x2 = min(w, x + bw + pad)
         y2 = min(h, y + bh + pad)
         roi = binary[y1:y2, x1:x2]
-        text = _run_tesseract(
-            roi,
-            "--oem 3 --psm 13 -c tessedit_char_whitelist=0123456789 -c classify_bln_numeric_mode=1",
-        )
+        text = _ocr_via_paddle(roi, numeric_only=True)
         digit = re.sub(r"\D", "", text or "")
         if len(digit) != 1:
             return None
@@ -772,17 +754,14 @@ def _ocr_single_digit(digit_crop: np.ndarray) -> Optional[str]:
     if max(h, w) < 100:
         scale = 140.0 / max(h, w)
         padded = cv2.resize(padded, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-    variants = [padded]
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-    dilated = cv2.dilate(padded, kernel, iterations=1)
-    variants.append(dilated)
-    for img in variants:
-        for psm in ("10", "13"):
-            config = f"--oem 3 --psm {psm} -c tessedit_char_whitelist=0123456789"
-            text = _run_tesseract(img, config)
-            clean = re.sub(r"\D", "", (text or "").strip())
-            if len(clean) == 1:
-                return clean
+    if padded.ndim == 2:
+        padded_bgr = cv2.cvtColor(padded, cv2.COLOR_GRAY2BGR)
+    else:
+        padded_bgr = padded
+    results = run_paddle_ocr_numeric(padded_bgr)
+    for clean, conf, raw, bbox in results:
+        if len(clean) == 1:
+            return clean
     return None
 
 
@@ -793,16 +772,14 @@ def _ocr_blob_line(blob_crop: np.ndarray) -> Optional[str]:
         if attempt == 1:
             kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
             img = cv2.dilate(img, kernel, iterations=1)
-        ih, iw = img.shape[:2]
-        padded = cv2.copyMakeBorder(img, 6, 6, 6, 6, cv2.BORDER_REPLICATE)
-        if max(ih, iw) < 120:
-            scale = 160.0 / max(ih, iw)
-            padded = cv2.resize(padded, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-        config = "--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789"
-        text = _run_tesseract(padded, config)
-        clean = re.sub(r"\D", "", (text or "").strip())
-        if 2 <= len(clean) <= 3:
-            return clean
+        if img.ndim == 2:
+            img_bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        else:
+            img_bgr = img
+        results = run_paddle_ocr_numeric(img_bgr)
+        for clean, conf, raw, bbox in results:
+            if 2 <= len(clean) <= 3:
+                return clean
     return None
 
 
@@ -913,7 +890,7 @@ def _save_debug_plate(local_path: str, tag: str, img: np.ndarray) -> None:
 def _ocr_crop_fallback(crop: np.ndarray, start: float, candidates: List[Dict[str, Any]]) -> None:
     if time.time() - start > MAX_OCR_SECONDS:
         return
-    text = _run_tesseract(crop, "--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789")
+    text = _ocr_via_paddle(crop, numeric_only=True)
     print(f"[preview-ocr] raw_text={text}")
     clean = re.sub(r"\D", "", (text or "").strip())
     if not re.match(r"^\d{3,5}$", clean):
@@ -968,9 +945,9 @@ def _ocr_plate_number_box_fallback(plate_bgr: np.ndarray, plate_score: float, st
                 for psm in ("7", "6", "13"):
                     if time.time() - start > MAX_OCR_SECONDS:
                         return
-                    text = _run_tesseract(img, f"--oem 3 --psm {psm} -c tessedit_char_whitelist=0123456789")
+                    text = _ocr_via_paddle(img, numeric_only=True)
                     clean = re.sub(r"\D", "", (text or "").strip())
-                    print(f"[OCR-ID] fallback caixa numero {region_name}/{variant_name}/psm{psm}: {clean or 'falhou'}")
+                    print(f"[OCR-ID] PaddleOCR fallback caixa numero {region_name}/{variant_name}: {clean or 'falhou'}")
                     if not re.match(r"^\d{3,6}$", clean):
                         continue
                     score = min(0.96, 0.60 + _digit_length_score(clean) * 0.18 + plate_score * 0.12)
@@ -1008,9 +985,9 @@ def _ocr_plate_line_fallback(plate_bgr: np.ndarray, plate_score: float, start: f
             for psm in ("7", "6", "13"):
                 if time.time() - start > MAX_OCR_SECONDS:
                     return
-                text = _run_tesseract(img, f"--oem 3 --psm {psm} -c tessedit_char_whitelist=0123456789")
+                text = _ocr_via_paddle(img, numeric_only=True)
                 clean = re.sub(r"\D", "", (text or "").strip())
-                print(f"[OCR-ID] fallback linha {var_name}/psm{psm}: {clean or 'falhou'}")
+                print(f"[OCR-ID] PaddleOCR fallback linha {var_name}: {clean or 'falhou'}")
                 if not re.match(r"^\d{3,6}$", clean):
                     continue
                 score = min(0.94, 0.54 + _digit_length_score(clean) * 0.18 + plate_score * 0.12)
@@ -1028,10 +1005,6 @@ def _ocr_plate_line_fallback(plate_bgr: np.ndarray, plate_score: float, start: f
 
 
 def _ocr_plate_subregions(plate_bgr: np.ndarray, plate_score: float, local_path: str, crop_idx: int) -> List[Dict[str, Any]]:
-    """
-    Cria subcrops da placa detectada e tenta OCR em cada região.
-    EasyOCR como primário, Tesseract como fallback.
-    """
     results = []
     h, w = plate_bgr.shape[:2]
     if h < 10 or w < 10:
@@ -1044,8 +1017,6 @@ def _ocr_plate_subregions(plate_bgr: np.ndarray, plate_score: float, local_path:
         ("plate_mid_band", int(w * 0.05), int(h * 0.30), int(w * 0.95), int(h * 0.75)),
     ]
 
-    reader = get_easyocr_reader()
-
     for region_name, rx1, ry1, rx2, ry2 in sub_regions:
         if rx2 <= rx1 or ry2 <= ry1:
             continue
@@ -1053,74 +1024,21 @@ def _ocr_plate_subregions(plate_bgr: np.ndarray, plate_score: float, local_path:
         if sub.size == 0:
             continue
 
-        # ── EasyOCR ──
-        easyocr_found = None
-        easyocr_confidence = 0.0
-
-        if reader is not None:
-            try:
-                results_eo = reader.readtext(sub, detail=1, paragraph=False, allowlist='0123456789')
-                for bbox_eo, text_eo, conf_eo in results_eo:
-                    clean_eo = re.sub(r"\D", "", (text_eo or "").strip())
-                    if re.match(r"^\d{3,5}$", clean_eo):
-                        score_eo = min(0.99, conf_eo * 0.85 + _digit_length_score(clean_eo) * 0.10 + plate_score * 0.05)
-                        print(f"[EasyOCR] text={clean_eo} confidence={conf_eo:.2f}")
-                        if score_eo > easyocr_confidence:
-                            easyocr_confidence = score_eo
-                            easyocr_found = clean_eo
-            except Exception as e:
-                print(f"[EasyOCR] erro no subcrop {region_name}: {e}")
-
-        if easyocr_found and easyocr_confidence >= 0.60:
-            results.append({
-                "numbers": easyocr_found,
-                "confidence": round(easyocr_confidence, 4),
-                "score": round(easyocr_confidence, 4),
-                "source": "easyocr",
-                "psm": "easyocr",
-                "region": region_name,
-            })
-            continue
-
-        # ── Tesseract fallback ──
-        gray = cv2.cvtColor(sub, cv2.COLOR_BGR2GRAY)
-        if max(gray.shape[:2]) < 500:
-            scale = 700.0 / max(gray.shape[:2])
-            gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(4, 4))
-        enhanced = clahe.apply(gray)
-
-        prep_variants = [
-            ("otsu", cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]),
-            ("otsu_inv", cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]),
-            ("adaptive", cv2.adaptiveThreshold(enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 8)),
-        ]
-
-        best_number = None
-        best_score = 0.0
-
-        for vname, prep_img in prep_variants:
-            for psm in ("7", "8", "13"):
-                text = _run_tesseract(prep_img, f"--psm {psm} -c tessedit_char_whitelist=0123456789")
-                clean = re.sub(r"\D", "", (text or "").strip())
-                if clean:
-                    print(f"[OCR-ID] plate_region={region_name} text={clean}")
-                if re.match(r"^\d{3,5}$", clean):
-                    score = min(0.97, 0.55 + _digit_length_score(clean) * 0.18 + plate_score * 0.10)
-                    if score > best_score:
-                        best_score = score
-                        best_number = clean
-
-        if best_number and best_score >= 0.70:
-            results.append({
-                "numbers": best_number,
-                "confidence": round(best_score, 4),
-                "score": round(best_score, 4),
-                "source": "plate_subregion",
-                "psm": "7_8_13",
-                "region": region_name,
-            })
+        paddle_results = run_paddle_ocr_numeric(sub)
+        for clean, conf, raw, bbox in paddle_results:
+            if re.match(r"^\d{3,5}$", clean):
+                score = min(0.99, conf * 0.85 + _digit_length_score(clean) * 0.10 + plate_score * 0.05)
+                print(f"[OCR] PaddleOCR text={clean} confidence={conf:.2f}")
+                if score >= 0.60:
+                    results.append({
+                        "numbers": clean,
+                        "confidence": round(score, 4),
+                        "score": round(score, 4),
+                        "source": "paddleocr",
+                        "psm": "paddleocr",
+                        "region": region_name,
+                    })
+                    break
 
     return results
 
@@ -1177,8 +1095,8 @@ def process_id_card_ocr(local_path: str, img: Optional[np.ndarray] = None, face_
                 _save_debug_plate(local_path, f"debug_ocr_crop.jpg", preprocessed)
                 
                 texts = []
-                texts.append(_run_tesseract(preprocessed, "--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789"))
-                texts.append(_run_tesseract(preprocessed, "--oem 3 --psm 11 -c tessedit_char_whitelist=0123456789"))
+                texts.append(_ocr_via_paddle(preprocessed, numeric_only=True))
+                texts.append(_ocr_via_paddle(preprocessed, numeric_only=True))
                 
                 best_cand = None
                 best_score = 0.0
@@ -1259,7 +1177,9 @@ def process_id_card_ocr(local_path: str, img: Optional[np.ndarray] = None, face_
         return _empty_ocr_result()
 
 
-def _result_from_candidate(candidate: Optional[Dict[str, Any]], regions_found: int, candidates_count: int, tesseract_status: Dict[str, Any]) -> Dict[str, Any]:
+def _result_from_candidate(candidate: Optional[Dict[str, Any]], regions_found: int, candidates_count: int) -> Dict[str, Any]:
+    from services.ocr_engine import get_tesseract_status
+    ocr_status = get_tesseract_status()
     if not candidate:
         return {
             "ocr_text": "",
@@ -1272,7 +1192,7 @@ def _result_from_candidate(candidate: Optional[Dict[str, Any]], regions_found: i
             "regions_found": regions_found,
             "candidates": candidates_count,
             "ocr_available": True,
-            "ocr_status": tesseract_status,
+            "ocr_status": ocr_status,
             "fields": {
                 "nome": None,
                 "curso": None,
@@ -1294,7 +1214,7 @@ def _result_from_candidate(candidate: Optional[Dict[str, Any]], regions_found: i
         "regions_found": regions_found,
         "candidates": candidates_count,
         "ocr_available": True,
-        "ocr_status": tesseract_status,
+        "ocr_status": ocr_status,
         "fields": {
             "nome": None,
             "curso": None,
@@ -1341,7 +1261,7 @@ def _classify_document_type(texts_with_conf: List[Tuple[str, float]]) -> str:
 
 def _extract_fields_from_texts(texts_with_conf: List[Tuple[str, float]], img: np.ndarray) -> Dict[str, Any]:
     """
-    Extrai campos estruturados dos resultados do EasyOCR.
+    Extrai campos estruturados dos resultados do PaddleOCR.
     """
     fields = {
         "nome": None,
@@ -1423,12 +1343,7 @@ def _extract_fields_from_texts(texts_with_conf: List[Tuple[str, float]], img: np
 
 
 def process_hybrid_ocr(img: np.ndarray, local_path: str) -> Dict[str, Any]:
-    """
-    Processa OCR híbrido: classifica tipo de ficha, extrai campos.
-    Retorna dict com raw_text, fields, confidence.
-    """
     h, w = img.shape[:2]
-    reader = get_easyocr_reader()
     result = {
         "raw_text": "",
         "fields": {
@@ -1439,26 +1354,22 @@ def process_hybrid_ocr(img: np.ndarray, local_path: str) -> Dict[str, Any]:
         "doc_type": "unknown",
     }
 
-    if reader is None:
-        return result
-
     try:
-        scale = min(1400 / max(h, w), 1.0)
-        scan_img = cv2.resize(img, None, fx=scale, fy=scale) if scale < 1.0 else img
+        paddle_results = run_paddle_ocr(img)
+        texts_with_conf = [(text, conf) for text, conf, _ in paddle_results]
 
-        easyocr_results = reader.readtext(scan_img, detail=1, paragraph=False)
-        texts_with_conf = [(text.strip(), conf) for _, text, conf in easyocr_results]
+        if not texts_with_conf:
+            print("[OCR] PaddleOCR não retornou resultados no hibrido")
+            return result
 
         doc_type = _classify_document_type(texts_with_conf)
         result["doc_type"] = doc_type
-        print(f"[hybrid-ocr] document_type={doc_type}")
+        print(f"[OCR] PaddleOCR document_type={doc_type}")
 
         if doc_type == "completa":
             fields = _extract_fields_from_texts(texts_with_conf, img)
             result["fields"] = fields
-            raw_parts = []
-            for t, _ in texts_with_conf:
-                raw_parts.append(t)
+            raw_parts = [t for t, _ in texts_with_conf]
             result["raw_text"] = " | ".join(raw_parts)
             if fields["numero"]:
                 result["confidence"] = 0.92
@@ -1470,17 +1381,17 @@ def process_hybrid_ocr(img: np.ndarray, local_path: str) -> Dict[str, Any]:
                 result["confidence"] = 0.0
 
         elif doc_type == "simples":
-            for t, conf in texts_with_conf:
-                clean = re.sub(r"\D", "", t)
+            for text, conf in texts_with_conf:
+                clean = re.sub(r"\D", "", text)
                 if re.match(r"^\d{3,5}$", clean):
                     result["fields"]["numero"] = clean
                     result["raw_text"] = clean
                     result["confidence"] = min(0.97, conf)
-                    print(f"[EasyOCR] text={clean} confidence={conf:.2f}")
+                    print(f"[OCR] PaddleOCR text={clean} confidence={conf:.2f}")
                     break
             if not result["fields"]["numero"]:
-                for t, conf in texts_with_conf:
-                    nums = re.findall(r"\b(\d{3,5})\b", t)
+                for text, conf in texts_with_conf:
+                    nums = re.findall(r"\b(\d{3,5})\b", text)
                     if nums:
                         result["fields"]["numero"] = nums[0]
                         result["raw_text"] = nums[0]
@@ -1488,28 +1399,30 @@ def process_hybrid_ocr(img: np.ndarray, local_path: str) -> Dict[str, Any]:
                         break
 
         else:
-            # pequena/inclinada — upsample + EasyOCR
-            print("[hybrid-ocr] document_type=pequena — aplicando upscale 5x")
+            print("[OCR] PaddleOCR document_type=pequena — aplicando upscale 5x")
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             upscaled = cv2.resize(gray, None, fx=5, fy=5, interpolation=cv2.INTER_CUBIC)
             clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
             enhanced = clahe.apply(upscaled)
+            if enhanced.ndim == 2:
+                enhanced_bgr = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
+            else:
+                enhanced_bgr = enhanced
 
-            small_results = reader.readtext(enhanced, detail=1, paragraph=False, allowlist='0123456789')
-            for _, text, conf in small_results:
-                clean = re.sub(r"\D", "", text.strip())
+            small_results = run_paddle_ocr_numeric(enhanced_bgr)
+            for clean, conf, raw, bbox in small_results:
                 if re.match(r"^\d{3,5}$", clean):
                     result["fields"]["numero"] = clean
                     result["raw_text"] = clean
                     result["confidence"] = min(0.95, conf)
-                    print(f"[EasyOCR] text={clean} confidence={conf:.2f}")
+                    print(f"[OCR] PaddleOCR text={clean} confidence={conf:.2f}")
                     break
 
     except Exception as e:
-        print(f"[hybrid-ocr] error={e}")
+        print(f"[OCR] process_hybrid_ocr error={e}")
 
     if result["fields"]["numero"]:
-        print(f"[EasyOCR] selected_number={result['fields']['numero']}")
+        print(f"[OCR] PaddleOCR selected_number={result['fields']['numero']}")
 
     return result
 
@@ -1522,12 +1435,12 @@ def process_ocr(local_path: str, face_bbox: Optional[Tuple[int, int, int, int]] 
             return {"ocr_text": "", "ocr_confidence": 0.0, "ocr_confidence_pct": 0, "ocr_score": 0.0, "ocr_type": "cancelled", "ocr_label": "OCR cancelado", "ocr_raw": "", "regions_found": 0, "candidates": 0, "error": "OCR cancelado pelo usuario", "ocr_available": True, "fields": {"nome": None, "curso": None, "instituicao": None, "data": None, "tipo": None, "numero": None}}
     except Exception:
         pass
-    print(f"[preview-ocr] engine=Tesseract")
+    print(f"[OCR] engine=PaddleOCR")
     print(f"[preview-ocr] image_path={local_path}")
     if not is_tesseract_available():
         log_tesseract_unavailable_once(logger.info)
         status = get_tesseract_status()
-        print("[preview-ocr] error=Tesseract não instalado ou fora do PATH")
+        print(f"[preview-ocr] error=PaddleOCR indisponível")
         return {
             "ocr_text": "",
             "ocr_confidence": 0.0,
@@ -1538,7 +1451,7 @@ def process_ocr(local_path: str, face_bbox: Optional[Tuple[int, int, int, int]] 
             "ocr_raw": "",
             "regions_found": 0,
             "candidates": 0,
-            "error": "Tesseract não instalado ou fora do PATH",
+            "error": "PaddleOCR indisponível",
             "ocr_available": False,
             "ocr_status": status,
             "fields": {
@@ -1671,7 +1584,7 @@ def process_ocr(local_path: str, face_bbox: Optional[Tuple[int, int, int, int]] 
 
     all_candidates.sort(key=lambda item: (item.get("score", 0.0), len(item.get("numbers", ""))), reverse=True)
     best = all_candidates[0]
-    result = _result_from_candidate(best, len(regions), len(all_candidates), get_tesseract_status())
+    result = _result_from_candidate(best, len(regions), len(all_candidates))
     _save_debug_artifacts(local_path, img, all_candidates, best, result)
     return result
 
@@ -2003,7 +1916,6 @@ def detect_document_number_region(
 
     sub_regions = _generate_doc_number_regions(doc_upscaled)
     candidates: List[Dict[str, Any]] = []
-    reader = get_easyocr_reader()
 
     for region_name, (rx1, ry1, rx2, ry2) in sub_regions:
         if time.time() - start > MAX_OCR_SECONDS:
@@ -2012,60 +1924,21 @@ def detect_document_number_region(
         if sub.size == 0:
             continue
 
-        # EasyOCR
-        if reader:
-            try:
-                eo_results = reader.readtext(
-                    sub, detail=1, paragraph=False,
-                    allowlist='0123456789Nº°IDCOD',
-                )
-                for bbox_eo, text, conf in eo_results:
-                    text = (text or "").strip()
-                    if not text:
-                        continue
-                    print(f"[doc-ocr] raw_text={text}")
-                    num = extract_document_number(text)
-                    if num:
-                        candidates.append({
-                            "text": text,
-                            "number": num,
-                            "confidence": min(0.99, float(conf) * 0.95 + 0.05),
-                            "region": region_name,
-                            "source": "easyocr",
-                            "bbox": bbox_eo,
-                            "image_shape": (doc_upscaled.shape[0], doc_upscaled.shape[1]),
-                        })
-                    else:
-                        for short_num in re.findall(r'\b\d{3}\b', text):
-                            print(f"[doc-ocr] rejected_candidate={short_num} reason=too_short_for_document")
-            except Exception as e:
-                print(f"[doc-ocr] easyocr error on {region_name}: {e}")
-
-        # Tesseract fallback
-        gray_sub = cv2.cvtColor(sub, cv2.COLOR_BGR2GRAY)
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(4, 4))
-        enhanced = clahe.apply(gray_sub)
-        base_conf = 0.50
-        for psm in ("6", "7", "11", "13"):
-            if time.time() - start > MAX_OCR_SECONDS:
-                break
-            text = _run_tesseract(
-                enhanced,
-                f"--psm {psm} -c tessedit_char_whitelist=0123456789NºIDCOD",
-            )
+        paddle_results = run_paddle_ocr(sub)
+        for text, conf, bbox in paddle_results:
             text = (text or "").strip()
             if not text:
                 continue
-            print(f"[doc-ocr] region={region_name} text={text}")
+            print(f"[doc-ocr] raw_text={text}")
             num = extract_document_number(text)
             if num:
                 candidates.append({
                     "text": text,
                     "number": num,
-                    "confidence": base_conf + _digit_length_score(num) * 0.30,
+                    "confidence": min(0.99, float(conf) * 0.95 + 0.05),
                     "region": region_name,
-                    "source": f"tesseract_psm{psm}",
-                    "bbox": None,
+                    "source": "paddleocr",
+                    "bbox": bbox,
                     "image_shape": (doc_upscaled.shape[0], doc_upscaled.shape[1]),
                 })
             else:

@@ -42,7 +42,7 @@ export default function CompareModal({
     let img = '';
     if (matchData) {
       if (matchData.reference_path) {
-        img = `/api/thumb?path=${encodeURIComponent(matchData.reference_path)}&size=400`;
+        img = api.thumbUrl(matchData.reference_path, 400);
       } else if (matchData.matched_student_face_box && matchData.matched_student_photo_path) {
         const box = matchData.matched_student_face_box;
         img = api.faceThumbUrl(

@@ -109,7 +109,7 @@ def _is_valid_formando(aluno_id: str, person_key: str = "") -> bool:
     aid = str(aluno_id or "").strip().lower()
     if not aid:
         return False
-    if aid.startswith("pessoa ") or aid in ("unknown", "desconhecido", "sem_nome", "nao_mapeado", "não_mapeado", "__unknown__", "system_catalog", "base", "referencia", "referência"):
+    if aid.startswith("pessoa ") or aid in ("unknown", "desconhecido", "sem_nome", "nao_mapeado", "não_mapeado", "__unknown__", "system_catalog", "base", "referencia", "referência", "sem rostos", "sem rosto", "sem_rostos", "sem_rosto"):
         return False
     if aid.startswith("#base"):
         return False

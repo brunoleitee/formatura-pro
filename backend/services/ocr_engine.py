@@ -1,62 +1,39 @@
 from __future__ import annotations
 
-import os
-import shutil
 import threading
 from typing import Any, Dict, Optional
+
+import cv2
+import numpy as np
+
+from services.paddle_ocr_service import (
+    get_paddle_ocr,
+    run_paddle_ocr,
+    run_paddle_ocr_numeric,
+    run_ocr_safe as _run_ocr_safe,
+    is_ocr_available as _is_ocr_available,
+    get_ocr_status as _get_ocr_status,
+)
 
 _OCR_STATE: Dict[str, Any] = {
     "checked": False,
     "available": False,
     "message": "OCR não verificado",
-    "warning_logged": False,
-    "cmd": "",
 }
 
 _STATE_LOCK = threading.Lock()
 
 
-def _candidate_tesseract_cmd() -> Optional[str]:
-    env_cmd = os.environ.get("TESSERACT_CMD", "").strip()
-    if env_cmd:
-        return env_cmd
-
-    if os.name == "nt":
-        default_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-        if os.path.exists(default_cmd):
-            return default_cmd
-
-    which_cmd = shutil.which("tesseract")
-    return which_cmd
-
-
-def _configure_tesseract_cmd() -> None:
-    cmd = _candidate_tesseract_cmd()
-    if not cmd:
-        return
-
-    try:
-        import pytesseract
-
-        pytesseract.pytesseract.tesseract_cmd = cmd
-        _OCR_STATE["cmd"] = cmd
-    except Exception:
-        pass
-
-
-def _probe_tesseract() -> bool:
-    _configure_tesseract_cmd()
-    try:
-        import pytesseract
-
-        pytesseract.get_tesseract_version()
+def _probe_ocr() -> bool:
+    reader = get_paddle_ocr()
+    if reader is not None:
         _OCR_STATE["available"] = True
-        _OCR_STATE["message"] = "OCR disponível"
-    except Exception:
+        _OCR_STATE["message"] = "OCR disponível (PaddleOCR)"
+    else:
+        status = _get_ocr_status()
         _OCR_STATE["available"] = False
-        _OCR_STATE["message"] = "Tesseract não instalado ou fora do PATH"
-    finally:
-        _OCR_STATE["checked"] = True
+        _OCR_STATE["message"] = status.get("message", "OCR indisponível")
+    _OCR_STATE["checked"] = True
     return bool(_OCR_STATE["available"])
 
 
@@ -64,38 +41,42 @@ def is_tesseract_available() -> bool:
     if not _OCR_STATE["checked"]:
         with _STATE_LOCK:
             if not _OCR_STATE["checked"]:
-                return _probe_tesseract()
+                return _probe_ocr()
     return bool(_OCR_STATE["available"])
 
 
 def get_tesseract_status() -> Dict[str, Any]:
     if not _OCR_STATE["checked"]:
-        _probe_tesseract()
+        _probe_ocr()
     return {
         "available": bool(_OCR_STATE["available"]),
         "message": _OCR_STATE["message"],
-        "cmd": _OCR_STATE["cmd"],
-        "checked": bool(_OCR_STATE["checked"]),
-        "warning_logged": bool(_OCR_STATE["warning_logged"]),
+        "engine": "paddleocr",
     }
 
 
 def log_tesseract_unavailable_once(log_info=None) -> None:
     if is_tesseract_available():
         return
-    if _OCR_STATE["warning_logged"]:
-        return
-    _OCR_STATE["warning_logged"] = True
     if log_info is not None:
-        log_info("[OCR] Tesseract indisponível. OCR desativado.")
+        log_info("[OCR] PaddleOCR indisponível. OCR desativado.")
 
 
 def run_tesseract_safe(image, config: str = "") -> str:
-    if not is_tesseract_available():
-        return ""
-    try:
-        import pytesseract
+    numeric_only = "whitelist=0123456789" in config
+    if isinstance(image, np.ndarray) and image.ndim == 2:
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    return _run_ocr_safe(image, numeric_only=numeric_only)
 
-        return (pytesseract.image_to_string(image, config=config, lang="por") or "").strip()
-    except Exception:
+
+def run_ocr_text(image: np.ndarray) -> str:
+    results = run_paddle_ocr(image)
+    texts = [t for t, c, b in results]
+    return " ".join(texts)
+
+
+def run_ocr_numeric(image: np.ndarray) -> str:
+    results = run_paddle_ocr_numeric(image)
+    if not results:
         return ""
+    return results[0][0]

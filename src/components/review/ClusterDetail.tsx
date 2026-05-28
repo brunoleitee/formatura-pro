@@ -81,23 +81,29 @@ export default function ClusterDetail({
 
   // Reset ao mudar cluster
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     setSelected(new Set());
     setFilter('all');
     setSort('best_match');
     setLastSelectedRowId(null);
     setMatchedLabel(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [cluster.cluster_id]);
 
   // Resetar selection state ao mudar view mode, filter, ou sort (opcional, mas recomendado)
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     setLastSelectedRowId(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [filter, sort]);
 
   // Ao trocar modo, restaura o zoom salvo para aquele modo (ou o default)
   useEffect(() => {
     const key = viewMode === 'photo' ? 'review_zoom_photo' : 'review_zoom_face';
     const saved = localStorage.getItem(key);
+    /* eslint-disable react-hooks/set-state-in-effect */
     setZoom(saved ? Number(saved) : (viewMode === 'photo' ? ZOOM_PHOTO_DEFAULT : ZOOM_FACE_DEFAULT));
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [viewMode]);
 
   // Persiste zoom no localStorage ao mudar
@@ -215,7 +221,7 @@ export default function ClusterDetail({
   const photoImgH = Math.round(gridZoom * 0.85);
 
   const { compareStudent, compareSimilarity, compareLookupId } = useMemo(() => {
-    const clean = (n: any) => (!n || n === 'null' || n === 'unknown') ? null : n;
+    const clean = (n: string | null | undefined) => (!n || n === 'null' || n === 'unknown') ? null : n;
     const student = clean(cluster.suggested_student) || clean(cluster.best_student_debug);
     const sim = student === clean(cluster.suggested_student)
       ? (cluster.suggested_similarity ?? 0)
@@ -230,7 +236,9 @@ export default function ClusterDetail({
   // Buscar label amigável (nome real) se houver um melhor match
   useEffect(() => {
     if (compareStudent && compareLookupId) {
+      /* eslint-disable react-hooks/set-state-in-effect */
       setMatchLoading(true);
+      /* eslint-enable react-hooks/set-state-in-effect */
       api.getStudentMatchPreview(catalog, cluster.cluster_id, compareLookupId)
         .then(data => {
           setMatchPreview(data);
@@ -266,8 +274,8 @@ export default function ClusterDetail({
               matchPreview={matchPreview}
               onSearch={async (q) => {
                 const res = await api.globalSearch(q);
-                return res.map((r: any) => ({ id: r.name, name: r.name }))
-                  .filter((v: any, i: number, a: any[]) => a.findIndex((item: any) => item.id === v.id) === i)
+                return res.map((r: { name: string }) => ({ id: r.name, name: r.name }))
+                  .filter((v: { id: string }, i: number, a: { id: string }[]) => a.findIndex((item: { id: string }) => item.id === v.id) === i)
                   .slice(0, 6);
               }}
               onAssign={async (alunoId, nomeFormando, className) => {
@@ -390,13 +398,20 @@ export default function ClusterDetail({
           onClose={() => setIsCompareOpen(false)}
           onReject={(name) => {
             setIsCompareOpen(false);
-            if (cluster.suggested_student === name) {
-              cluster.suggested_student = null;
-              cluster.suggested_similarity = null;
+            const nextCluster = { ...cluster };
+            let changed = false;
+            if (nextCluster.suggested_student === name) {
+              nextCluster.suggested_student = null;
+              nextCluster.suggested_similarity = null;
+              changed = true;
             }
-            if (cluster.best_student_debug === name) {
-              cluster.best_student_debug = null;
-              cluster.best_similarity_debug = null;
+            if (nextCluster.best_student_debug === name) {
+              nextCluster.best_student_debug = null;
+              nextCluster.best_similarity_debug = null;
+              changed = true;
+            }
+            if (changed) {
+              onClusterUpdate(nextCluster);
             }
           }}
         />

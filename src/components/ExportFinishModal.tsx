@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CheckCircle2, Copy, FileText, FolderOpen, Loader2 } from 'lucide-react';
 import Modal from './ui/Modal';
 import styles from './ExportFinishModal.module.css';
@@ -27,9 +27,11 @@ export default function ExportFinishModal({
 
   useEffect(() => {
     if (!open) {
+      /* eslint-disable react-hooks/set-state-in-effect */
       setError('');
       setCopyTarget(null);
       setOpenTarget(null);
+      /* eslint-enable react-hooks/set-state-in-effect */
     }
   }, [open]);
 

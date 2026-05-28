@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { X, ChevronLeft, ChevronRight, Search, UserCheck, UserMinus, Plus, ArrowUp, ArrowDown, FolderOpen, Brain, ScanFace } from 'lucide-react';
 import { api, type Photo } from '../../services/api';
-import { isKnownFace } from '../../utils/personIdentity';
+import { isKnownFace, isKnownPersonId } from '../../utils/personIdentity';
 import { useApp } from '../../context/AppContext';
 import { logPerf, perfNow } from '../../utils/perf';
-import { getGridHighThumbUrl, getGridThumbUrl, getViewerPreviewUrl } from '../../utils/imageUrls';
+import { getGridThumbUrl, getViewerPreviewUrl } from '../../utils/imageUrls';
 import { aiQueueManager } from '../../services/AIQueueManager';
 import { aiCacheStore } from '../../services/AICacheStore';
 import { aiApi } from '../../services/aiApi';
@@ -117,7 +117,7 @@ export function PhotoViewerModal({
   const thumbRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const filmstripScrollTimerRef = useRef<number | null>(null);
   const filmstripUserScrollRef = useRef(false);
-  const [aiCacheTick, setAiCacheTick] = useState(0);
+  const [, setAiCacheTick] = useState(0);
   const [faceOnly, setFaceOnly] = useState(false);
   const [actionOverlay, setActionOverlay] = useState<string | null>(null);
   const actionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -299,7 +299,12 @@ export function PhotoViewerModal({
       showFeedbackMsg(`Vinculado: ${renameValue}`);
       setShowRenameModal(null);
       setRenameValue('');
-      onPhotoUpdate?.({ ...visiblePhoto });
+      setDisplayedPhoto(prev => {
+        if (!prev.faces) return prev;
+        const updated = [...prev.faces];
+        if (updated[faceIdx]) updated[faceIdx] = { ...updated[faceIdx], aluno_id: renameValue };
+        return { ...prev, faces: updated };
+      });
     } catch (err) {
       console.error("Erro ao renomear:", err);
       showFeedbackMsg("Erro ao vincular");
@@ -313,7 +318,12 @@ export function PhotoViewerModal({
       await api.bulkManualIdentify(currentCatalog, 'Desconhecido', face.rowid ? [face.rowid] : []);
       showFeedbackMsg("Identificação removida");
       setActiveMenu(null);
-      onPhotoUpdate?.({ ...visiblePhoto });
+      setDisplayedPhoto(prev => {
+        if (!prev.faces) return prev;
+        const updated = [...prev.faces];
+        if (updated[faceIdx]) updated[faceIdx] = { ...updated[faceIdx], aluno_id: 'Desconhecido' };
+        return { ...prev, faces: updated };
+      });
     } catch (err) {
       console.error("Erro ao remover:", err);
     }
@@ -365,10 +375,19 @@ export function PhotoViewerModal({
       setSimilarResults(prev => prev.map(r => 
         rowids.includes(r.rowid) ? { ...r, aluno_id: similarName.trim() } : r
       ));
+
+      setDisplayedPhoto(prev => {
+        if (!prev.faces) return prev;
+        return {
+          ...prev,
+          faces: prev.faces.map(f =>
+            f.rowid && rowids.includes(f.rowid) ? { ...f, aluno_id: similarName.trim() } : f
+          ),
+        };
+      });
       
       setSelectedSimilarIds(new Set());
       setSimilarName('');
-      onPhotoUpdate?.({ ...visiblePhoto });
     } catch (err) {
       console.error("Erro ao aplicar nome em lote:", err);
       showFeedbackMsg("Erro ao aplicar nome");
@@ -408,8 +427,10 @@ export function PhotoViewerModal({
   };
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     setZoom(1);
     setPan(calculateInitialPan(viewSize.w, viewSize.h));
+    /* eslint-enable react-hooks/set-state-in-effect */
     zoomRef.current = 1;
     panRef.current = calculateInitialPan(viewSize.w, viewSize.h);
     setIsWheelZooming(false);
@@ -634,11 +655,17 @@ export function PhotoViewerModal({
       await api.bulkManualIdentify(currentCatalog, suggested.trim(), faceRowids);
       console.log(`[REVIEW] AI confirmed: ${suggested}`);
       showActionOverlay("✓ Confirmado");
-      onPhotoUpdate?.({ ...visiblePhoto });
+      setDisplayedPhoto(prev => {
+        if (!prev.faces) return prev;
+        return {
+          ...prev,
+          faces: prev.faces.map(f => f.aluno_id ? f : { ...f, aluno_id: suggested.trim() }),
+        };
+      });
     } catch {
       showActionOverlay("Erro ao confirmar");
     }
-  }, [visiblePhoto, currentCatalog, showActionOverlay, onPhotoUpdate]);
+  }, [visiblePhoto, currentCatalog, showActionOverlay, setDisplayedPhoto]);
 
   const handleBatchConfirm = useCallback(async () => {
     const aiResult = aiCacheStore.get(visiblePhoto.path);
@@ -664,11 +691,17 @@ export function PhotoViewerModal({
       await api.bulkManualIdentify(currentCatalog, suggested.trim(), allRowids);
       console.log(`[REVIEW-BATCH] ${allRowids.length} fotos confirmadas como ${suggested}`);
       showActionOverlay(`✓ ${allRowids.length} confirmadas`);
-      onPhotoUpdate?.({ ...visiblePhoto });
+      setDisplayedPhoto(prev => {
+        if (!prev.faces) return prev;
+        return {
+          ...prev,
+          faces: prev.faces.map(f => f.aluno_id ? f : { ...f, aluno_id: suggested.trim() }),
+        };
+      });
     } catch {
       showActionOverlay("Erro no lote");
     }
-  }, [visiblePhoto, currentCatalog, navigationPhotos, showActionOverlay, onPhotoUpdate]);
+  }, [visiblePhoto, currentCatalog, navigationPhotos, showActionOverlay, setDisplayedPhoto]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1048,7 +1081,11 @@ export function PhotoViewerModal({
             className={`${styles.headerBtn} ${isDiscarded ? styles.headerBtnDanger : ''}`}
             onClick={(e) => {
               e.stopPropagation();
-              isDiscarded ? handleRestore() : handleDiscard();
+              if (isDiscarded) {
+                handleRestore();
+              } else {
+                handleDiscard();
+              }
             }}
           >
             {isDiscarded ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
@@ -1485,7 +1522,13 @@ export function PhotoViewerModal({
                         )}
                       </div>
                       <div className={styles.similarScore}>
-                        {result.aluno_id ?? 'Desconhecido'} - {(result.score * 100).toFixed(0)}%
+                        <div className={`${styles.identDot} ${isKnownPersonId(result.aluno_id) ? styles.identDotKnown : styles.identDotUnknown}`} />
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {result.aluno_id ?? 'Desconhecido'}
+                        </span>
+                        <span style={{ opacity: 0.6, flexShrink: 0 }}>
+                          - {(result.score * 100).toFixed(0)}%
+                        </span>
                       </div>
                     </div>
                   );

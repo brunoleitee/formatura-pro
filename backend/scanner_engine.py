@@ -219,18 +219,28 @@ def imread_unicode(path):
             pil_img = Image.open(path)
 
         with pil_img:
+            orig_size = pil_img.size
+            orig_max = max(orig_size)
+            if orig_max > 1920:
+                try:
+                    # draft() redimensiona o decoder nativo de JPEG (libjpeg) para economizar processamento e memoria
+                    pil_img.draft("RGB", (1920, 1920))
+                except Exception:
+                    pass
+
             if pil_img.mode != "RGB":
                 pil_img = pil_img.convert("RGB")
             pil_img = ImageOps.exif_transpose(pil_img)
             if pil_img.size[0] < 10 or pil_img.size[1] < 10:
                 _cfg["log_debug"](f"Imagem muito pequena: {path}")
                 return None, 1.0
-            orig_max = max(pil_img.size)
-            if orig_max > 1920:
+            
+            current_max = max(pil_img.size)
+            if current_max > 1920:
                 pil_img.thumbnail((1920, 1920), Image.NEAREST)
-                img_scale = orig_max / 1920.0
+                img_scale = orig_max / max(pil_img.size)
             else:
-                img_scale = 1.0
+                img_scale = orig_max / current_max
             img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
             if img is None or img.size == 0:
                 _cfg["log_debug"](f"Imagem invalida: {path}")
@@ -930,9 +940,15 @@ def run_scanner_worker(req):
                         break
 
                     # Preenche a fila de futures no pool para manter a CPU sempre ocupada lendo
-                    while len(pending_futures) < max_workers * 2 and next_submit_idx < total:
-                        pending_futures.append(executor.submit(_prepare_worker, (next_submit_idx, fotos[next_submit_idx])))
-                        next_submit_idx += 1
+                    try:
+                        while len(pending_futures) < max_workers * 2 and next_submit_idx < total:
+                            pending_futures.append(executor.submit(_prepare_worker, (next_submit_idx, fotos[next_submit_idx])))
+                            next_submit_idx += 1
+                    except RuntimeError as re:
+                        if "cannot schedule new futures" in str(re):
+                            log_info("[Scanner] Executor/Interpretador em processo de encerramento - abortando lote.")
+                            break
+                        raise
 
                     future = pending_futures.pop(0)
                     f_idx, p, img, img_scale, b_score, b_status, t_decode, t_blur = future.result()
@@ -1026,10 +1042,15 @@ def run_scanner_worker(req):
 
                     if not valid_faces:
                         log_info(f"[Face] Nenhum rosto valido em {os.path.basename(p)} (total_detectado={total_faces_in_photo})")
-                        log_info(f"[DB] inserindo foto sem rosto path={p}")
+                        log_info(f"[DB] inserindo foto sem rosto path={p} no descarte")
                         cur.execute(
                             "INSERT OR IGNORE INTO ocorrencias (aluno_id, foto_path, x1, y1, x2, y2, photo_hash, blur_score, blur_status, person_key, reference_folder) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                             ("Sem Rostos", p, None, None, None, None, photo_hash, b_score, b_status, f"__SEM_TURMA__::__SEM_REFERENCIA__::Sem_Rostos::{os.path.basename(p)}", ""),
+                        )
+                        # Auto-discard no-face photos so they go to "Descarte"
+                        cur.execute(
+                            "INSERT OR IGNORE INTO discarded_photos (foto_path) VALUES (?)",
+                            (p,)
                         )
                         rowcount = cur.rowcount
                         if p not in existing_photo_paths:

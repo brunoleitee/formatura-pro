@@ -126,6 +126,9 @@
 
 .nav-item.active {
   background-color: rgba(59, 130, 246, 0.11);
+  color: var(--text-primary);
+}
+.nav-item.active svg {
   color: var(--accent);
 }
 
@@ -230,8 +233,11 @@
 }
 
 .nav-subitem.active {
-  color: var(--accent);
+  color: var(--text-primary);
   background: var(--bg-active);
+}
+.nav-subitem.active svg {
+  color: var(--accent);
 }
 
 .nav-subitem-muted { opacity: 0.5; cursor: default; }
@@ -242,7 +248,8 @@
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   padding-top: 6px;
 }
-.nav-subitem-settings.active { color: var(--accent); background: var(--bg-active); }
+.nav-subitem-settings.active { color: var(--text-primary); background: var(--bg-active); }
+.nav-subitem-settings.active svg { color: var(--accent); }
 
 /* ── Flyout (modo colapsado) ── */
 .sidebar-flyout {
@@ -285,7 +292,8 @@
   transition: background 0.12s, color 0.12s;
 }
 .sidebar-flyout-item:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
-.sidebar-flyout-item.active { color: var(--accent); }
+.sidebar-flyout-item.active { color: var(--text-primary); }
+.sidebar-flyout-item.active svg { color: var(--accent); }
 
 /* Catalog selector in sidebar */
 .catalog-selector-wrap {
@@ -481,9 +489,12 @@
 
 /* ── Sidebar: scanner ── */
 .nav-item.sidebar-scanning {
-  color: var(--accent);
+  color: var(--text-primary);
   background: rgba(59, 130, 246, 0.06);
   cursor: default;
+}
+.nav-item.sidebar-scanning svg {
+  color: var(--accent);
 }
 
 .sidebar-scan-badge {
@@ -895,7 +906,8 @@ input[type="checkbox"], input[type="radio"] {
   height: var(--btn-height-sm);
 }
 .tab-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
-.tab-btn.active { background: var(--bg-active); color: var(--accent); font-weight: 600; }
+.tab-btn.active { background: var(--bg-active); color: var(--text-primary); font-weight: 600; }
+.tab-btn.active svg { color: var(--accent); }
 
 /* ── Cards ── */
 .card-base {
@@ -1333,7 +1345,8 @@ input[type="checkbox"], input[type="radio"] {
   line-height: 1;
 }
 .tab-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
-.tab-btn.active { background: var(--bg-active); color: var(--accent); font-weight: 600; }
+.tab-btn.active { background: var(--bg-active); color: var(--text-primary); font-weight: 600; }
+.tab-btn.active svg { color: var(--accent); }
 
 /* Subfolder filters */
 .subfolder-filters {
@@ -1991,7 +2004,8 @@ html.scrolling-fast .photo-info {
   white-space: nowrap;
 }
 .settings-tabs .tab-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
-.settings-tabs .tab-btn.active { background: var(--bg-active); color: var(--accent); font-weight: 600; }
+.settings-tabs .tab-btn.active { background: var(--bg-active); color: var(--text-primary); font-weight: 600; }
+.settings-tabs .tab-btn.active svg { color: var(--accent); }
 
 .settings-tabs .tab-btn svg {
   flex-shrink: 0;

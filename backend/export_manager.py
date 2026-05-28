@@ -201,8 +201,15 @@ def _clean_student_id(aid: str) -> str:
         return aid
     if aid in ("#BASE", "#DESCARTE"):
         return aid
+    
+    # Se for uma person_key/identidade composta (ex: catalogo::classe::ref::aluno_id)
+    if "::" in aid:
+        parts = aid.split("::")
+        cleaned = parts[-1]
+    else:
+        cleaned = aid
+        
     import re
-    cleaned = aid
     cleaned = re.sub(r'^MAX_+', '', cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r'^SEM_TURMA_+', '', cleaned, flags=re.IGNORECASE)
     
@@ -982,6 +989,45 @@ def _write_reportlab_pdf(path, summary_rows, per_person_rows):
     doc.build(story)
 
 
+def _parse_existing_xlsx_report(xlsx_path: str) -> list[list[str]]:
+    import zipfile
+    import xml.etree.ElementTree as ET
+    try:
+        if not os.path.exists(xlsx_path):
+            return []
+        with zipfile.ZipFile(xlsx_path, 'r') as z:
+            sheet2_xml = z.read('xl/worksheets/sheet2.xml')
+            
+        root = ET.fromstring(sheet2_xml)
+        ns = {'ns': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+        
+        rows = []
+        for row_elem in root.findall('.//ns:row', ns):
+            row_cells = []
+            cells = row_elem.findall('ns:c', ns)
+            cells_sorted = sorted(cells, key=lambda c: c.get('r', ''))
+            for cell in cells_sorted:
+                t_elem = cell.find('.//ns:t', ns)
+                val = t_elem.text if t_elem is not None else ""
+                row_cells.append(val or "")
+            if row_cells:
+                rows.append(row_cells)
+        return rows
+    except Exception as e:
+        print(f"Error parsing existing xlsx report: {e}")
+        return []
+
+
+def _count_image_files(folder_path: str) -> int:
+    if not folder_path or not os.path.isdir(folder_path):
+        return 0
+    image_ext = _get("image_extensions", ())
+    count = 0
+    for root, _dirs, files in os.walk(folder_path):
+        count += sum(1 for name in files if name.lower().endswith(image_ext))
+    return count
+
+
 def run_export_worker(req: ExportReq, catalog_name: str):
     export_state = _get("export_state")
     log_info = _get("log_info", print)
@@ -1021,12 +1067,8 @@ def run_export_worker(req: ExportReq, catalog_name: str):
                     safe_aid = _export_folder_name(aid, sanitize_folder_name)
                     safe_p_al_map[aid] = os.path.join(req.dest_path, safe_aid)
                 else:
-                    if organize_by_class:
-                        safe_p_al_map[aid] = p_al
-                        log_info(f"[export-folder] student={aid} p_al={p_al}")
-                    else:
-                        safe_aid = _export_folder_name(aid, sanitize_folder_name)
-                        safe_p_al_map[aid] = os.path.join(export_base, safe_aid)
+                    safe_p_al_map[aid] = p_al
+                    log_info(f"[export-folder] student={aid} p_al={p_al}")
                 try:
                     os.makedirs(safe_p_al_map[aid], exist_ok=True)
                 except Exception as e:
@@ -1203,15 +1245,66 @@ def run_export_worker(req: ExportReq, catalog_name: str):
 
         try:
             all_reports = export_report_paths(export_base)
-            report_path = _unique_dest_file(export_base, os.path.basename(all_reports[0]), "copy")
-            pdf_report_path = _unique_dest_file(export_base, os.path.basename(all_reports[1]), "copy")
+            
+            # Determinar se vamos mesclar ou sobrescrever o relatório existente
+            incremental_report_merge = (req.conflict_strategy == "skip" and os.path.exists(all_reports[0]))
+            
+            if req.conflict_strategy == "skip":
+                report_path = all_reports[0]
+                pdf_report_path = all_reports[1]
+            elif req.conflict_strategy in ("overwrite", "replace", "recreate"):
+                report_path = all_reports[0]
+                pdf_report_path = all_reports[1]
+            else:
+                # "copy" (Renomear automaticamente) -> gera arquivos com sufixo _2, _3 etc.
+                report_path = _unique_dest_file(export_base, os.path.basename(all_reports[0]), "copy")
+                pdf_report_path = _unique_dest_file(export_base, os.path.basename(all_reports[1]), "copy")
 
-            folder_count = len(exported_folders)
-            destination_photo_total = exported_files
-
-            # Contar fotos base do catálogo usando nova conexão curta e protegida
             base_photos_total = count_base_photos_from_catalog(catalog_name)
-
+            
+            per_person_rows = [["ID Formando", "Pasta Destino", "Qtd Fotos"]]
+            existing_map = {}
+            
+            if incremental_report_merge:
+                # Carregar registros do relatório anterior
+                existing_rows = _parse_existing_xlsx_report(report_path)
+                if len(existing_rows) > 1:
+                    for row in existing_rows[1:]:
+                        if len(row) >= 3:
+                            display_name, folder_display, count_str = row[0], row[1], row[2]
+                            existing_map[folder_display] = {
+                                "display_name": display_name,
+                                "count": int(count_str) if str(count_str).isdigit() else 0
+                            }
+            
+            # Mesclar ou adicionar novos dados desta sessão
+            for aid in per_person_counts.keys():
+                p_al_path = safe_p_al_map.get(aid, aid)
+                display_name = clean_student_display_id(aid, student_name=str(p_al_path).rsplit(os.sep, 1)[-1] if p_al_path else aid)
+                folder_display = str(p_al_path).rsplit(os.sep, 1)[-1] if p_al_path else display_name
+                
+                # Para evitar duplicidade e ter a contagem real, buscamos a contagem no disco se disponível
+                actual_count = _count_image_files(p_al_path) if p_al_path else per_person_counts[aid]
+                existing_map[folder_display] = {
+                    "display_name": display_name,
+                    "count": actual_count
+                }
+                
+            # Atualizar contagem física em disco de TODAS as pastas registradas
+            for folder_display, info in existing_map.items():
+                full_path = os.path.normpath(os.path.join(export_base, folder_display))
+                if os.path.isdir(full_path):
+                    info["count"] = _count_image_files(full_path)
+            
+            # Construir per_person_rows final ordenado por nome do formando
+            for folder_display in sorted(existing_map.keys(), key=lambda x: existing_map[x]["display_name"].lower()):
+                info = existing_map[folder_display]
+                per_person_rows.append([info["display_name"], folder_display, str(info["count"])])
+                
+            # Recalcular totais e construir resumo
+            destination_photo_total = sum(int(row[2]) for row in per_person_rows[1:])
+            folder_count = len(per_person_rows) - 1
+            
             summary_rows = [
                 ["Relatorio de Exportacao", ""],
                 ["Catalogo", catalog_name],
@@ -1223,13 +1316,6 @@ def run_export_worker(req: ExportReq, catalog_name: str):
                 ["Tempo Total", _format_duration(elapsed_total)],
                 ["Destino", req.dest_path],
             ]
-
-            per_person_rows = [["ID Formando", "Pasta Destino", "Qtd Fotos"]]
-            for aid in sorted(per_person_counts.keys(), key=lambda x: x.lower()):
-                p_al_path = safe_p_al_map.get(aid, aid)
-                display_name = clean_student_display_id(aid, student_name=str(p_al_path).rsplit(os.sep, 1)[-1] if p_al_path else aid)
-                folder_display = str(p_al_path).rsplit(os.sep, 1)[-1] if p_al_path else display_name
-                per_person_rows.append([display_name, folder_display, str(per_person_counts[aid])])
 
             try:
                 _write_export_report(report_path, summary_rows, per_person_rows)

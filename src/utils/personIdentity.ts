@@ -15,6 +15,7 @@ export function isTemporaryPersonId(value: any) {
   if (id === 'nao_mapeado') return true;
   if (id === 'não_mapeado') return true;
   if (id === '__unknown__') return true;
+  if (id === 'sem rostos' || id === 'sem rosto' || id === 'sem_rostos' || id === 'sem_rosto') return true;
   if (/^pessoa\s*\d+$/i.test(raw)) return true;
   return false;
 }

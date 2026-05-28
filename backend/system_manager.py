@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from onnx_provider_utils import get_onnx_providers
 from services.ocr_engine import get_tesseract_status
+from services.paddle_ocr_service import get_ocr_status as get_paddle_ocr_status
 
 _cfg = {}
 _stats_cache: dict[str, tuple[dict, float]] = {}
@@ -192,6 +193,7 @@ def system_status():
     history = load_export_history()
     gpu = gpu_diagnostics()
     ocr_status = get_tesseract_status()
+    paddle_status = get_paddle_ocr_status()
     scanner_log = os.path.join(data_dir, "error_scanner.log")
     last_scanner_error = ""
     try:
@@ -212,9 +214,10 @@ def system_status():
         "gpu": gpu,
         "ocr": {
             "available": ocr_status.get("available", False),
-            "message": "OCR indisponível: Tesseract não instalado" if not ocr_status.get("available", False) else "OCR disponível",
+            "message": ocr_status.get("message", "OCR indisponível"),
             "status": "unavailable" if not ocr_status.get("available", False) else "available",
-            "tesseract_cmd": ocr_status.get("cmd", ""),
+            "engine": "paddleocr",
+            "gpu": paddle_status.get("gpu", False),
         },
         "scanner": {
             "is_scanning": scan_state.get("is_scanning", False),

@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode, useState, useEffect, useCallback, useRef } from 'react';
-import { UserCheck, RefreshCw } from 'lucide-react';
+import { UserCheck } from 'lucide-react';
 import { api } from '../services/api';
 import type { AssignClusterResponse, Photo, PhotoContextResponse, GraduationAnalysisStatus, ReviewClusterSummary, RichCluster } from '../services/api';
 import { useApp } from '../context/AppContext';
@@ -120,6 +120,10 @@ function ReviewViewContent() {
   const [assignmentState, setAssignmentState] = useState<{ clusterId: string; studentName: string; className: string; status: string } | null>(null);
   const [assignmentToast, setAssignmentToast] = useState<string | null>(null);
   const [reviewToast, setReviewToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null);
+  const showReviewToast = useCallback((message: string, variant: 'success' | 'error' = 'success') => {
+    setReviewToast({ message, variant });
+    window.setTimeout(() => setReviewToast(null), 1800);
+  }, []);
 const wasGraduationRunningRef = useRef(false);
   const detailRequestRef = useRef(0);
   const clusterCacheRef = useRef<Map<string, { cluster: RichCluster; review_ready: boolean }>>(new Map());
@@ -151,8 +155,8 @@ const wasGraduationRunningRef = useRef(false);
         if (prev && nextClusters.some((cluster) => cluster.cluster_id === prev)) return prev;
         return nextClusters[0].cluster_id;
       });
-    } catch (e: any) {
-      if (e?.name !== 'AbortError') {
+    } catch (e) {
+      if (e instanceof Error && e.name !== 'AbortError') {
         setClusters([]);
         setSelectedId(null);
         setSelected(null);
@@ -189,7 +193,7 @@ const wasGraduationRunningRef = useRef(false);
     } finally {
       setLoadingMore(false);
     }
-  }, [currentCatalog, hasMore, loadingMore, pageOffset, totalClusters]);
+  }, [currentCatalog, hasMore, loadingMore, pageOffset, totalClusters, showReviewToast]);
 
   const loadClusterDetail = useCallback(async (clusterId: string) => {
     if (!currentCatalog || !clusterId) return;
@@ -237,9 +241,11 @@ const wasGraduationRunningRef = useRef(false);
   }, [currentCatalog]);
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     setSelected(null);
     setSelectedId(null);
     setAssignmentState(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
     detailRequestRef.current += 1;
     load();
     refreshGraduationStatus();
@@ -252,7 +258,9 @@ const wasGraduationRunningRef = useRef(false);
 
   useEffect(() => {
     if (!selectedId) {
+      /* eslint-disable react-hooks/set-state-in-effect */
       setSelected(null);
+      /* eslint-enable react-hooks/set-state-in-effect */
       return;
     }
     loadClusterDetail(selectedId);
@@ -287,10 +295,7 @@ const wasGraduationRunningRef = useRef(false);
     };
   }, []);
 
-  const showReviewToast = useCallback((message: string, variant: 'success' | 'error' = 'success') => {
-    setReviewToast({ message, variant });
-    window.setTimeout(() => setReviewToast(null), 1800);
-  }, []);
+
 
   const handleAssigned = useCallback((result: AssignClusterResponse) => {
     const clusterId = result.cluster_id;
@@ -413,8 +418,10 @@ const wasGraduationRunningRef = useRef(false);
   useEffect(() => {
     if (!viewerPhoto?.path || !currentCatalog) {
       if (!viewerPhoto) {
+        /* eslint-disable react-hooks/set-state-in-effect */
         setViewerContext(null);
         setViewerContextLoading(false);
+        /* eslint-enable react-hooks/set-state-in-effect */
       }
       return;
     }
@@ -450,7 +457,7 @@ const wasGraduationRunningRef = useRef(false);
     return () => {
       cancelled = true;
     };
-  }, [currentCatalog, viewerPhoto?.path]);
+  }, [currentCatalog, viewerPhoto?.path, viewerPhoto]);
 
   if (!currentCatalog) {
     return (

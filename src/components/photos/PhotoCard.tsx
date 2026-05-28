@@ -18,12 +18,10 @@ interface PhotoCardProps {
   thumbHeight?: number;
   cardHeight?: number;
   thumbTargetSize?: number;
-  thumbLowTargetSize?: number;
   imgLoading?: 'eager' | 'lazy';
   imgFetchPriority?: 'high' | 'low' | 'auto';
   onClick: (photo: Photo, event: React.MouseEvent) => void;
   onDoubleClick?: (photo: Photo) => void;
-  onOpenDetails: (photo: Photo) => void;
   onDragStart?: (photo: Photo, event: React.PointerEvent) => void;
   onDragEnd?: (photo: Photo, event: React.PointerEvent) => void;
   onFirstThumbLoad?: () => void;
@@ -118,7 +116,7 @@ const CardInfoSection = memo(function CardInfoSection({
   );
 });
 
-export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thumbHeight, cardHeight, thumbTargetSize, thumbLowTargetSize, imgLoading = 'lazy', imgFetchPriority = 'auto', onClick, onDoubleClick, onOpenDetails, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
+export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thumbHeight, cardHeight, thumbTargetSize, imgLoading = 'lazy', imgFetchPriority = 'auto', onClick, onDoubleClick, onDragStart, onDragEnd, onFirstThumbLoad }: PhotoCardProps) {
   const thumbSize = (thumbTargetSize ?? 240) > 0 ? (thumbTargetSize ?? 240) : 0;
   const thumbUrl = useMemo(
     () => thumbSize > 0 ? (getGridThumbUrl(photo.path, thumbSize, 85) ?? '') : '',
@@ -137,7 +135,9 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
 
   useEffect(() => {
     if (cardWidth && thumbHeight) {
+      /* eslint-disable react-hooks/set-state-in-effect */
       setContainerSize({ w: cardWidth, h: thumbHeight });
+      /* eslint-enable react-hooks/set-state-in-effect */
       return;
     }
 
@@ -215,7 +215,7 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
 
   const [aiTick, setAiTick] = useState(0);
   useEffect(() => aiCacheStore.subscribeToPath(photo.path, () => setAiTick((t) => t + 1)), [photo.path]);
-  const [ratingTick, setRatingTick] = useState(0);
+  const [, setRatingTick] = useState(0);
   useEffect(() => ratingCache.subscribeToPath(photo.path, () => setRatingTick((t) => t + 1)), [photo.path]);
   const aiResult = aiCacheStore.get(photo.path);
   const aiOcrFinal = aiResult?.final_student || aiResult?.suggested_id || aiResult?.ocr_text;
@@ -226,8 +226,10 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
   const showFavorite = photoMeta.favorite;
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     setHasError(false);
     setIsLoaded(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [thumbUrl]);
 
   const handlePointerDown = (e: React.PointerEvent) => {

@@ -92,8 +92,10 @@ export function Sidebar({
   const [showSearch, setShowSearch] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const flyoutRef = useRef<HTMLDivElement>(null);
+  const catalogSelectorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!currentCatalog) { setSidebarStats(null); return; }
     const controller = new AbortController();
     api.getStats(currentCatalog, controller.signal)
@@ -131,6 +133,23 @@ export function Sidebar({
     return () => document.removeEventListener('mousedown', handler);
   }, [flyout]);
 
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (catalogSelectorRef.current && !catalogSelectorRef.current.contains(e.target as Node)) {
+        setShowCatalogDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [setShowCatalogDropdown]);
+
+  useEffect(() => {
+    setShowCatalogDropdown(false);
+    if (activeView !== 'photos' && activeView !== 'catalog-settings') {
+      setOpenSubmenu('');
+    }
+  }, [activeView, setShowCatalogDropdown, setOpenSubmenu]);
+
   const [searchLoading, setSearchLoading] = useState(false);
   const searchAbortRef = useRef<AbortController | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -165,7 +184,19 @@ export function Sidebar({
 
   const toggleSubmenu = useCallback((view: string) => {
     setOpenSubmenu(prev => prev === view ? '' : view);
-  }, []);
+  }, [setOpenSubmenu]);
+
+  const treeFolders = useMemo(() => {
+    const allPaths = new Set<string>();
+    for (const folder of catalogSubfolders) {
+      if (!folder) continue;
+      const parts = folder.split('/');
+      for (let i = 1; i <= parts.length; i++) {
+        allPaths.add(parts.slice(0, i).join('/'));
+      }
+    }
+    return Array.from(allPaths).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [catalogSubfolders]);
 
   const navItems: NavItemDef[] = [
     { view: 'dashboard', icon: <LayoutDashboard size={17} />, label: 'Visão Geral' },
@@ -219,7 +250,7 @@ export function Sidebar({
 
       {/* Seletor de catálogo */}
       {!collapsed && (
-        <div className="catalog-selector-wrap">
+        <div className="catalog-selector-wrap" ref={catalogSelectorRef}>
           <div className="catalog-selector" onClick={() => setShowCatalogDropdown(v => !v)}>
             {currentCatalog && <span className="catalog-active-dot" />}
             <FolderOpen size={15} />
@@ -366,17 +397,17 @@ export function Sidebar({
                     <div className="nav-submenu-group">Fotos</div>
                     {isLoadingCatalogPhotos ? (
                       <div className="nav-subitem nav-subitem-muted">Carregando...</div>
-                    ) : catalogSubfolders.length === 0 ? (
+                    ) : treeFolders.length === 0 ? (
                       <div className="nav-subitem nav-subitem-muted">Nenhuma pasta</div>
                     ) : (
-                      catalogSubfolders.map(sub => {
+                      treeFolders.map(sub => {
                         if (!isSubfolderVisible(sub)) return null;
 
                         const subActive = catalogSubfolder === sub && activeView === 'photos';
                         const segments = sub.split('/');
                         const depth = segments.length - 1;
                         const displayName = segments[segments.length - 1];
-                        const isParent = catalogSubfolders.some(other => other.startsWith(sub + '/'));
+                        const isParent = treeFolders.some(other => other.startsWith(sub + '/'));
                         const isExpanded = expandedPaths[sub] !== false;
 
                         return (
@@ -491,24 +522,22 @@ export function Sidebar({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'var(--accent-hover, var(--accent))',
+            color: 'var(--text-primary)',
             width: collapsed ? '34px' : '100%',
             height: '32px',
             gap: '8px',
             fontSize: '0.74rem',
             fontWeight: 600,
-            transition: 'background var(--transition-fast), color var(--transition-fast)'
+            transition: 'background var(--transition-fast)'
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = 'var(--accent-soft)';
-            e.currentTarget.style.color = 'var(--accent-hover)';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.background = 'var(--bg-tertiary)';
-            e.currentTarget.style.color = 'var(--accent-hover, var(--accent))';
           }}
         >
-          {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+          {theme === 'dark' ? <Sun size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} /> : <Moon size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />}
           {!collapsed && <span>{theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}</span>}
         </button>
       </div>
@@ -536,15 +565,15 @@ export function Sidebar({
           style={{ top: flyout.y }}
         >
           <div className="sidebar-flyout-title">Catálogo</div>
-            {catalogSubfolders.map(sub => {
-             if (!isSubfolderVisible(sub)) return null;
+             {treeFolders.map(sub => {
+              if (!isSubfolderVisible(sub)) return null;
 
-             const subActive = catalogSubfolder === sub && activeView === 'photos';
-             const segments = sub.split('/');
-             const depth = segments.length - 1;
-             const displayName = segments[segments.length - 1];
-             const isParent = catalogSubfolders.some(other => other.startsWith(sub + '/'));
-             const isExpanded = expandedPaths[sub] !== false;
+              const subActive = catalogSubfolder === sub && activeView === 'photos';
+              const segments = sub.split('/');
+              const depth = segments.length - 1;
+              const displayName = segments[segments.length - 1];
+              const isParent = treeFolders.some(other => other.startsWith(sub + '/'));
+              const isExpanded = expandedPaths[sub] !== false;
 
              return (
                <div

@@ -50,9 +50,18 @@ export default function ScanModal({ onClose, onScanStarted }: Props) {
       await refreshCatalogs();
       onScanStarted({ catalogName: activeCatalog, oriPath, refPath });
       onClose();
-    } catch {
-      setError('Erro ao iniciar o escaneamento. Verifique o backend.');
-      setStarting(false);
+    } catch (err: any) {
+      if (err && err.status === 400 && err.detail && (err.detail.includes('já está em execução') || err.detail.includes('execução') || err.detail.includes('andamento'))) {
+        // O scanner já está rodando. Vamos apenas sincronizar e prosseguir.
+        await setCatalog(activeCatalog);
+        await refreshCatalogs();
+        onScanStarted({ catalogName: activeCatalog, oriPath, refPath });
+        onClose();
+      } else {
+        const errorMsg = err && err.detail ? err.detail : 'Erro ao iniciar o escaneamento. Verifique o backend.';
+        setError(errorMsg);
+        setStarting(false);
+      }
     }
   };
 
