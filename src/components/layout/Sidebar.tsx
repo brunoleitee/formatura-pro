@@ -206,7 +206,6 @@ export function Sidebar({
   ];
 
   const toolItems: { view: ViewName; icon: React.ReactNode; label: string }[] = [
-    { view: 'references', icon: <Fingerprint size={17} />, label: 'Criar Referências' },
     { view: 'export',     icon: <Download size={17} />,  label: 'Exportador' },
     { view: 'settings',   icon: <Settings size={17} />,  label: 'Configurações' },
   ];
@@ -253,7 +252,6 @@ export function Sidebar({
         <div className="catalog-selector-wrap" ref={catalogSelectorRef}>
           <div className="catalog-selector" onClick={() => setShowCatalogDropdown(v => !v)}>
             {currentCatalog && <span className="catalog-active-dot" />}
-            <FolderOpen size={15} />
             <span className="catalog-selector-name">{currentCatalog || 'Selecionar evento...'}</span>
             <ChevronDown size={14} style={{ marginLeft: 'auto', flexShrink: 0 }} />
           </div>
@@ -394,7 +392,7 @@ export function Sidebar({
                 {/* Accordion submenu — só no modo expandido */}
                 {item.hasSubmenu && !collapsed && currentCatalog && (
                   <div className={`nav-submenu${isOpen ? ' nav-submenu-open' : ''}`}>
-                    <div className="nav-submenu-group">Fotos</div>
+                    <div className="nav-submenu-group" title={currentCatalog}>{currentCatalog || 'Fotos'}</div>
                     {isLoadingCatalogPhotos ? (
                       <div className="nav-subitem nav-subitem-muted">Carregando...</div>
                     ) : treeFolders.length === 0 ? (
@@ -509,37 +507,72 @@ export function Sidebar({
       {/* Rodapé: alternador de tema e card de usuário */}
       <div className="sidebar-user-divider" />
       
-      <div style={{ padding: collapsed ? '8px' : '4px 14px', display: 'flex', justifyContent: collapsed ? 'center' : 'flex-end', alignItems: 'center' }}>
-        <button 
+      <div 
+        style={{ 
+          padding: collapsed ? '8px' : '10px 14px', 
+          display: 'flex', 
+          flexDirection: collapsed ? 'column' : 'row',
+          justifyContent: collapsed ? 'center' : 'space-between', 
+          alignItems: 'center',
+          gap: '8px',
+          flexShrink: 0
+        }}
+      >
+        {!collapsed && (
+          <span 
+            style={{ 
+              fontSize: '0.78rem', 
+              fontWeight: 600, 
+              color: 'var(--text-secondary)',
+              userSelect: 'none'
+            }}
+          >
+            {theme === 'dark' ? 'Modo Escuro' : 'Modo Claro'}
+          </span>
+        )}
+        
+        {/* Switch Toggle deslizante */}
+        <div 
           onClick={toggleTheme}
           title={theme === 'dark' ? 'Ativar Modo Claro' : 'Ativar Modo Escuro'}
           style={{
-            background: 'var(--bg-tertiary)',
+            width: '46px',
+            height: '24px',
+            borderRadius: '12px',
+            background: theme === 'dark' ? 'var(--bg-hover)' : '#e5e7eb',
             border: '1px solid var(--border-default)',
-            borderRadius: 'var(--radius-sm, 6px)',
             cursor: 'pointer',
-            padding: '6px',
+            position: 'relative',
+            transition: 'all 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--text-primary)',
-            width: collapsed ? '34px' : '100%',
-            height: '32px',
-            gap: '8px',
-            fontSize: '0.74rem',
-            fontWeight: 600,
-            transition: 'background var(--transition-fast)'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'var(--accent-soft)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'var(--bg-tertiary)';
+            padding: '0 2px',
+            flexShrink: 0
           }}
         >
-          {theme === 'dark' ? <Sun size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} /> : <Moon size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />}
-          {!collapsed && <span>{theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}</span>}
-        </button>
+          {/* Knob circular com ícone dinâmico */}
+          <div 
+            style={{
+              width: '18px',
+              height: '18px',
+              borderRadius: '50%',
+              background: theme === 'dark' ? 'var(--accent)' : '#ffffff',
+              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+              position: 'absolute',
+              left: theme === 'dark' ? '24px' : '2px',
+              transition: 'left 0.22s cubic-bezier(0.4, 0, 0.2, 1), transform 0.15s',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            {theme === 'dark' ? (
+              <Moon size={11} fill="#ffffff" strokeWidth={1.5} style={{ color: '#ffffff' }} />
+            ) : (
+              <Sun size={11} fill="#f59e0b" strokeWidth={1.5} style={{ color: '#d97706' }} />
+            )}
+          </div>
+        </div>
       </div>
 
       <div className={`sidebar-user-card${collapsed ? ' sidebar-user-card-collapsed' : ''}`}>

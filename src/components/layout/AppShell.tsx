@@ -20,7 +20,6 @@ import { autoCatalogName } from '../../utils/catalogUtils';
 import { lazy } from 'react';
 
 const ScannerWorkspace = lazy(() => import('../../views/ScannerWorkspace'));
-const CreateReferencesView = lazy(() => import('../../views/CreateReferencesView'));
 
 interface ConfirmDialogOptions {
   title: string;
@@ -68,16 +67,6 @@ export function AppShell() {
     navigate('scanner');
   };
 
-  const handleQuickCreate = async () => {
-    const name = autoCatalogName();
-    try {
-      await api.setCatalog(name);
-      await refreshCatalogs();
-    } catch (e) {
-      console.error('Erro ao criar catálogo rápido:', e);
-    }
-  };
-
   const renderEmptyCatalog = () => (
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -92,18 +81,30 @@ export function AppShell() {
       </p>
       <div style={{ display: 'flex', gap: '10px', marginTop: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
         <button
-          onClick={handleQuickCreate}
+          onClick={() => {
+            setShowCatalogModal(true);
+            setTimeout(() => {
+              const input = document.querySelector('.modal-create input') as HTMLInputElement;
+              if (input) input.focus();
+            }, 80);
+          }}
           style={{
             padding: '10px 22px', borderRadius: '10px', border: 'none',
-            background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-            color: '#000', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer',
-            transition: 'box-shadow 0.2s',
-            boxShadow: '0 4px 14px rgba(245,158,11,0.25)',
+            background: 'var(--accent)',
+            color: 'var(--bg-primary, #000)', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer',
+            transition: 'all 0.2s',
+            boxShadow: '0 4px 14px var(--accent-glow)',
           }}
-          onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 6px 20px rgba(245,158,11,0.4)'}
-          onMouseLeave={(e) => e.currentTarget.style.boxShadow = '0 4px 14px rgba(245,158,11,0.25)'}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'var(--accent-hover)';
+            e.currentTarget.style.boxShadow = '0 6px 20px var(--accent-glow)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'var(--accent)';
+            e.currentTarget.style.boxShadow = '0 4px 14px var(--accent-glow)';
+          }}
         >
-          Criar catálogo rápido
+          Criar catálogo
         </button>
         <button
           onClick={() => setShowCatalogModal(true)}
@@ -134,7 +135,6 @@ export function AppShell() {
       case 'export':        return <ExportView />;
       case 'settings':      return <SettingsView />;
       case 'scanner':        return <ScannerWorkspace />;
-      case 'references':     return <CreateReferencesView />;
       case 'catalog-settings': return <CatalogSettingsView onRequestConfirm={requestConfirm} />;
       default:              return <CatalogView />;
     }

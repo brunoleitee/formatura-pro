@@ -91,7 +91,7 @@ export default function PersonDetailView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [detailsPhoto, setDetailsPhoto] = useState<Photo | null>(null);
-  const [personInfo, setPersonInfo] = useState<{ name: string; class_name: string } | null>(null);
+  const [personInfo, setPersonInfo] = useState<{ name: string; class_name: string; person_key?: string } | null>(null);
   const [planeFilter, setPlaneFilter] = useState<'all' | 'foreground' | 'background'>('all');
   const [sortBy, setSortBy] = useState<'name' | 'mtime_desc' | 'mtime_asc' | 'quality_desc'>('name');
 
@@ -105,6 +105,20 @@ export default function PersonDetailView() {
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastScrollPos = useRef(0);
   const lastScrollTime = useRef(0);
+  const personDiscardKey = personInfo?.person_key || (selectedPersonId?.includes('::') ? selectedPersonId : selectedPersonId || '');
+
+  const getLocalFaceRowIds = useCallback((photo: Photo) => {
+    const scopeKey = personDiscardKey.trim();
+    const rowIds = (photo.faces || [])
+      .filter(face => {
+        const faceKey = (face.person_key || '').trim();
+        const faceAluno = (face.aluno_id || '').trim();
+        return !scopeKey || faceKey === scopeKey || faceAluno === selectedPersonId;
+      })
+      .map(face => face.rowid)
+      .filter((rowid): rowid is number => typeof rowid === 'number' && Number.isFinite(rowid));
+    return rowIds;
+  }, [personDiscardKey, selectedPersonId]);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -167,9 +181,11 @@ export default function PersonDetailView() {
       setPersonInfo(matched ? {
         name: matched.name || selectedPersonId,
         class_name: (matched.class_name || 'Sem turma').trim() || 'Sem turma',
+        person_key: matched.person_key || (selectedPersonId.includes('::') ? selectedPersonId : undefined),
       } : {
         name: selectedPersonId.includes('::') ? selectedPersonId.split('::').pop() || selectedPersonId : selectedPersonId,
         class_name: selectedPersonId.includes('::') ? selectedPersonId.split('::')[1] || 'Sem turma' : 'Sem turma',
+        person_key: selectedPersonId.includes('::') ? selectedPersonId : undefined,
       });
     } catch (e: any) {
       if (e?.name !== 'AbortError') {
@@ -201,32 +217,48 @@ export default function PersonDetailView() {
   const handleDiscardSelected = useCallback(async () => {
     if (selectedPaths.size === 0) return;
     const paths = photos.filter(p => selectedPaths.has(getPhotoId(p))).map(p => p.path);
-    paths.forEach(p => updatePhotoStatusLocal(p, { discarded: true }));
+    paths.forEach(p => updatePhotoStatusLocal(p, {
+      discarded: true,
+      discarded_scope: 'person',
+      discarded_global: false,
+      discarded_local: true,
+    }));
+    const rowids = photos
+      .filter(p => selectedPaths.has(getPhotoId(p)))
+      .flatMap(p => getLocalFaceRowIds(p));
     clearSelection();
     try {
-      await api.bulkDiscardPhotos(currentCatalog, paths);
+      await api.bulkDiscardPhotos(currentCatalog, paths, { scope: 'person', person_key: personDiscardKey, rowids });
       load();
     } catch (e) { 
       console.error(e);
       setError('Erro ao descartar fotos.');
       load();
     }
-  }, [selectedPaths, photos, currentCatalog, clearSelection, updatePhotoStatusLocal, load]);
+  }, [selectedPaths, photos, currentCatalog, clearSelection, updatePhotoStatusLocal, load, personDiscardKey, getLocalFaceRowIds]);
 
   const handleRestoreSelected = useCallback(async () => {
     if (selectedPaths.size === 0) return;
     const paths = photos.filter(p => selectedPaths.has(getPhotoId(p))).map(p => p.path);
-    paths.forEach(p => updatePhotoStatusLocal(p, { discarded: false }));
+    paths.forEach(p => updatePhotoStatusLocal(p, {
+      discarded: false,
+      discarded_scope: null,
+      discarded_global: false,
+      discarded_local: false,
+    }));
+    const rowids = photos
+      .filter(p => selectedPaths.has(getPhotoId(p)))
+      .flatMap(p => getLocalFaceRowIds(p));
     clearSelection();
     try {
-      await api.bulkRestorePhotos(currentCatalog, paths);
+      await api.bulkRestorePhotos(currentCatalog, paths, { scope: 'person', person_key: personDiscardKey, rowids });
       load();
     } catch (e) { 
       console.error(e);
       setError('Erro ao restaurar fotos.');
       load();
     }
-  }, [selectedPaths, photos, currentCatalog, clearSelection, updatePhotoStatusLocal, load]);
+  }, [selectedPaths, photos, currentCatalog, clearSelection, updatePhotoStatusLocal, load, personDiscardKey, getLocalFaceRowIds]);
 
   const handleRemoveIdentificationSelected = useCallback(async () => {
     if (selectedPaths.size === 0) return;
@@ -485,8 +517,21 @@ export default function PersonDetailView() {
           allPhotos={photos}
           onClose={() => setViewerPhoto(null)}
           onNavigate={setViewerPhoto}
-          onDiscard={(path) => updatePhotoStatusLocal(path, { discarded: true })}
-          onRestore={(path) => updatePhotoStatusLocal(path, { discarded: false })}
+          discardScope="person"
+          discardPersonKey={personDiscardKey}
+          discardFaceRowIds={getLocalFaceRowIds(viewerPhoto)}
+          onDiscard={(path) => updatePhotoStatusLocal(path, {
+            discarded: true,
+            discarded_scope: 'person',
+            discarded_global: false,
+            discarded_local: true,
+          })}
+          onRestore={(path) => updatePhotoStatusLocal(path, {
+            discarded: false,
+            discarded_scope: null,
+            discarded_global: false,
+            discarded_local: false,
+          })}
         />
       )}
 

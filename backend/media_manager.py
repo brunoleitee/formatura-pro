@@ -410,6 +410,9 @@ def photo_item_from_path(path, faces=None, discarded=False, include_blur=True):
         "ctime": None,
         "faces": faces or [],
         "discarded": discarded,
+        "discarded_scope": "global" if discarded else None,
+        "discarded_global": bool(discarded),
+        "discarded_local": False,
     }
     try:
         stat = os.stat(path)
@@ -1210,6 +1213,9 @@ def explorer_ls(path: str = "", catalog: str = ""):
             "is_identified": is_identified,
             "has_unknown": has_unknown,
             "discarded": db_path in discarded or f in discarded,
+            "discarded_scope": "global" if (db_path in discarded or f in discarded) else None,
+            "discarded_global": db_path in discarded or f in discarded,
+            "discarded_local": False,
             "faces": faces,
         }
         
@@ -1266,6 +1272,9 @@ def get_discard_candidates(catalog: str = ""):
             "mtime": None,
             "ctime": None,
             "discarded": fp in discarded,
+            "discarded_scope": "global" if fp in discarded else None,
+            "discarded_global": fp in discarded,
+            "discarded_local": False,
             "faces": db_map.get(fp, []),
         }
         try:
@@ -1564,3 +1573,8 @@ def explorer_photos(path: str, recursive: bool = False, limit: int = 0, offset: 
         "offset": offset,
         "photos": photos,
     }
+
+
+# Alias de segurança para compatibilidade com rotas do scanner
+scanner_folder_tree = explorer_tree
+

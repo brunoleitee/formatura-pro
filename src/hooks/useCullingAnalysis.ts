@@ -9,8 +9,14 @@ export function useCullingAnalysis(onPhotoUpdate?: (photo: Photo) => void) {
     setLoading(true);
     setError(null);
     try {
-      await api.discardPhoto({ foto_path: photo.path, discard });
-      const updated = { ...photo, discarded: discard };
+      await api.discardPhoto({ foto_path: photo.path, discard, scope: 'catalog' });
+      const updated = {
+        ...photo,
+        discarded: discard,
+        discarded_scope: discard ? 'global' : null,
+        discarded_global: discard,
+        discarded_local: false,
+      };
       if (onPhotoUpdate) onPhotoUpdate(updated);
       return updated;
     } catch (err: unknown) {

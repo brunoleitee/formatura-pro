@@ -8,7 +8,7 @@ import { resolveAvatarUrl } from '../utils/avatarUrl';
 import s from './ExportView.module.css';
 
 type ExportMode = 'copy' | 'move';
-type ConflictStrategy = 'copy' | 'skip' | 'overwrite';
+type ConflictStrategy = 'copy' | 'skip' | 'overwrite' | 'recreate';
 type SortBy = 'az' | 'za' | 'count';
 type ExportFormat = 'original' | 'jpg';
 
@@ -539,12 +539,13 @@ function ExportViewContent() {
 
             {/* Conflito de arquivos */}
             <div className={s.card}>
-              <div className={s.cardLabel}>Conflito de arquivos</div>
+              <div className={s.cardLabel}>Estratégia de Conflito</div>
               <div className={s.radioGroup}>
                 {([
-                  ['copy', 'Renomear automaticamente'],
-                  ['skip', 'Ignorar duplicatas'],
-                  ['overwrite', 'Substituir'],
+                  ['skip', 'Mesclar (Adicionar fotos novas e atualizar relatórios existentes)'],
+                  ['overwrite', 'Substituir (Sobrescrever fotos e relatórios existentes)'],
+                  ['recreate', 'Recriar do zero (Limpar a pasta de destino antes de exportar)'],
+                  ['copy', 'Renomear automaticamente (Duplica arquivos renomeando com sufixo)'],
                 ] as const).map(([val, label]) => (
                   <label key={val} className={`${s.radioOpt} ${conflict === val ? s.radioActive : ''}`}>
                     <input type="radio" value={val} checked={conflict === val} onChange={() => setConflict(val)} />

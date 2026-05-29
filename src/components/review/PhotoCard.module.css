@@ -59,20 +59,16 @@
 
 .photoCardPhotoMode .photoCardImage {
   object-fit: cover;
-  object-position: center 24%;
+  object-position: center 30%;
   background: var(--black-solid);
 }
 
 .photoCardFaceMode .photoCardImage {
   object-fit: cover;
-  object-position: center 20%;
+  object-position: center center;
 }
 
 /* MODO ROSTO: a thumbnail já é o crop do rosto; cover preenche o quadrado sem distorção */
-.photoCardFaceMode .photoCardImage {
-  object-fit: cover;
-  object-position: center 20%;
-}
 
 /* ── Skeleton loader ── */
 .skeleton {

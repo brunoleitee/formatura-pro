@@ -24,6 +24,15 @@ def calculate_final_score(similarity, sharpness, size_score, center_score):
     return (similarity * 0.75) + (sharpness * 0.10) + (size_score * 0.08) + (center_score * 0.07)
 
 
+def folder_face_is_acceptable(similarity, fg_score, threshold=0.60):
+    """Espelha o filtro usado na pasta do formando."""
+    if similarity < threshold:
+        return False
+    if fg_score < 0.45:
+        return False
+    return True
+
+
 class TestIARanking(unittest.TestCase):
     
     def test_center_score_exactly_centered(self):
@@ -73,6 +82,22 @@ class TestIARanking(unittest.TestCase):
         # Face com similaridade inferior (0.55) deve ser rejeitada
         similarity_bad = 0.55
         self.assertFalse(similarity_bad >= threshold)
+
+    def test_folder_face_accepts_side_main_candidate(self):
+        # Mesmo estando mais de lado, o aluno principal não deve ser descartado
+        # se a identidade estiver bem reconhecida.
+        self.assertTrue(folder_face_is_acceptable(
+            similarity=0.81,
+            fg_score=0.58,
+            threshold=0.60,
+        ))
+
+    def test_folder_face_rejects_weak_match(self):
+        self.assertFalse(folder_face_is_acceptable(
+            similarity=0.57,
+            fg_score=0.72,
+            threshold=0.60,
+        ))
 
 
 if __name__ == '__main__':

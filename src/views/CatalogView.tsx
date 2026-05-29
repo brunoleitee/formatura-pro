@@ -13,7 +13,7 @@ import { ZoomControl } from '../components/photos/ZoomControl';
 import PhotoBulkActionsBar from '../components/photos/PhotoBulkActionsBar';
 import { VirtualizedPhotoGrid } from '../components/photos/VirtualizedPhotoGrid';
 import { extractSubfolders } from '../utils/pathUtils';
-import { getPhotoPath, normalizePath, findCommonPrefix } from '../utils/catalogPathUtils';
+import { getPhotoPath } from '../utils/catalogPathUtils';
 import { logPerf, perfNow } from '../utils/perf';
 
 const ZOOM_MIN = 100;
@@ -52,7 +52,7 @@ const HOTKEYS_VIEWER = [
 ];
 
 export default function CatalogView() {
-  const { currentCatalog, catalogSubfolder, setCatalogSubfolders, setIsLoadingCatalogPhotos } = useApp();
+  const { currentCatalog, catalogSubfolder, catalogSubfolders, setCatalogSubfolders, setIsLoadingCatalogPhotos } = useApp();
   const { photos, loading, loadingMore, hasMore, loadPhotos, loadMore, discardPhoto, restorePhoto } = useCatalogPhotos();
   const [hideDiscarded, setHideDiscarded] = useState(false);
   const [zoom, setZoom] = useState(60);
@@ -245,45 +245,16 @@ export default function CatalogView() {
   }, [viewerPhoto, filteredPhotos, selectedPaths, setViewerPhoto, toggleSelection, handleDiscardSelected]);
 
   // Publica subfolders no contexto para a Sidebar mostrar a árvore
+  // Fornece um fallback local de subpastas caso a listagem global via API retorne vazia
   useEffect(() => {
-    if (!currentCatalog) {
-      setCatalogSubfolders([]);
-      return;
-    }
-    
-    catalogApi.getAllSubfolders(currentCatalog).then(res => {
-      if (res && res.ok && Array.isArray(res.subfolders)) {
-        const photoPaths = photos.map(p => getPhotoPath(p));
-        const allPaths = [...res.subfolders, ...photoPaths];
-        const prefix = findCommonPrefix(allPaths);
-        
-        const relativeSubfolders = res.subfolders.map(folder => {
-          const normFolder = normalizePath(folder);
-          const normPrefix = normalizePath(prefix);
-          
-          if (normPrefix && normFolder.toLowerCase().startsWith(normPrefix.toLowerCase() + '/')) {
-            return normFolder.slice(normPrefix.length + 1);
-          } else if (normPrefix && normFolder.toLowerCase() === normPrefix.toLowerCase()) {
-            return '';
-          }
-          return folder.split(/[\\/]/).filter(Boolean).pop() || '';
-        }).filter(Boolean);
-        
-        const sortedUnique = Array.from(new Set(relativeSubfolders))
-          .filter(s => s.length > 0)
-          .sort((a, b) => a.localeCompare(b, 'pt-BR'));
-          
-        setCatalogSubfolders(sortedUnique);
-      } else {
-        const subfolders = extractSubfolders(photos);
-        setCatalogSubfolders(subfolders);
+    if (!currentCatalog) return;
+    if (catalogSubfolders.length === 0 && photos.length > 0) {
+      const fallbackFolders = extractSubfolders(photos);
+      if (fallbackFolders.length > 0) {
+        setCatalogSubfolders(fallbackFolders);
       }
-    }).catch(err => {
-      console.error("[CatalogView] falha ao buscar subpastas:", err);
-      const subfolders = extractSubfolders(photos);
-      setCatalogSubfolders(subfolders);
-    });
-  }, [photos, setCatalogSubfolders, currentCatalog]);
+    }
+  }, [photos, catalogSubfolders.length, currentCatalog, setCatalogSubfolders]);
 
   useEffect(() => {
     if (loading) {

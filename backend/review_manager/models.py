@@ -49,6 +49,9 @@ class RenamePhotoReq(BaseModel):
 class DiscardPhotoReq(BaseModel):
     foto_path: str
     discard: bool = True
+    scope: str = "catalog"
+    person_key: str | None = None
+    rowids: list[int] | None = None
 
 
 class BulkDiscardPhotoReq(BaseModel):
@@ -57,6 +60,8 @@ class BulkDiscardPhotoReq(BaseModel):
     rowids: Optional[list[int]] = None
     photo_ids: Optional[list[int]] = None
     reason: Optional[str] = None
+    scope: str = "catalog"
+    person_key: str | None = None
 
     def ids(self) -> list[int]:
         return self.rowids or self.photo_ids or []
@@ -67,6 +72,8 @@ class BulkRestorePhotoReq(BaseModel):
     foto_paths: Optional[list[str]] = None
     rowids: Optional[list[int]] = None
     photo_ids: Optional[list[int]] = None
+    scope: str = "catalog"
+    person_key: str | None = None
 
     def ids(self) -> list[int]:
         return self.rowids or self.photo_ids or []

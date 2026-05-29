@@ -43,7 +43,7 @@ def _init_paddle_ocr(gpu: Optional[bool] = None) -> None:
 
         from paddleocr import PaddleOCR
 
-        kwargs = dict(use_angle_cls=True, lang='en', show_log=False, use_gpu=use_gpu)
+        kwargs = dict(use_angle_cls=True, lang='en', use_gpu=use_gpu)
         _PPOCR_INSTANCE = PaddleOCR(**kwargs)
         _PPOCR_STATE["available"] = True
         _PPOCR_STATE["gpu"] = use_gpu

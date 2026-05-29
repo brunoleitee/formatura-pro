@@ -13,8 +13,8 @@ from routes.media import get_thumb_slot, release_thumb_slot
 router = APIRouter()
 
 @router.get("/api/faces/similar")
-def search_similar_faces(rowid: int, catalog: str = "", limit: int = 50):
-    print(f"[faces/similar] rowid={rowid} catalog={repr(catalog)} limit={limit}")
+def search_similar_faces(rowid: int, catalog: str = "", limit: int = 50, threshold: float = 0.40):
+    print(f"[faces/similar] rowid={rowid} catalog={repr(catalog)} limit={limit} threshold={threshold}")
     try:
         with get_db(catalog) as conn:
             cur = conn.cursor()
@@ -51,6 +51,8 @@ def search_similar_faces(rowid: int, catalog: str = "", limit: int = 50):
                 if n == 0:
                     continue
                 score = float(np.dot(query_emb, emb / n))
+                if score < threshold:
+                    continue
                 path = r["foto_path"] or ""
                 x1 = int(r["x1"] or 0)
                 y1 = int(r["y1"] or 0)

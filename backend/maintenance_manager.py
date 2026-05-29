@@ -95,12 +95,41 @@ def discard_photo(req):
     get_db = _get("get_db")
     current_catalog = _value("get_current_catalog")
     backup_catalog_db(current_catalog, "antes_descarte")
+    scope = str(getattr(req, "scope", "catalog") or "catalog").strip().lower()
+    person_key = str(getattr(req, "person_key", "") or "").strip()
     with get_db(current_catalog) as conn:
         cur = conn.cursor()
-        if req.discard:
-            cur.execute("INSERT OR IGNORE INTO discarded_photos (foto_path) VALUES (?)", (req.foto_path,))
+        if scope == "person" and person_key:
+            rowids = list(getattr(req, "rowids", None) or [])
+            if not rowids and req.foto_path:
+                cur.execute(
+                    "SELECT rowid FROM ocorrencias WHERE foto_path = ? AND (person_key = ? OR ? = '')",
+                    (req.foto_path, person_key, person_key),
+                )
+                rowids = [int(r["rowid"]) for r in cur.fetchall()]
+            if req.discard:
+                for rid in rowids:
+                    cur.execute(
+                        "INSERT OR IGNORE INTO discarded_local_faces (face_rowid, scope_key, foto_path) VALUES (?, ?, ?)",
+                        (rid, person_key, req.foto_path),
+                    )
+            else:
+                if rowids:
+                    placeholders = ",".join(["?"] * len(rowids))
+                    cur.execute(
+                        f"DELETE FROM discarded_local_faces WHERE scope_key = ? AND face_rowid IN ({placeholders})",
+                        (person_key, *rowids),
+                    )
+                else:
+                    cur.execute(
+                        "DELETE FROM discarded_local_faces WHERE scope_key = ? AND foto_path = ?",
+                        (person_key, req.foto_path),
+                    )
         else:
-            cur.execute("DELETE FROM discarded_photos WHERE foto_path = ?", (req.foto_path,))
+            if req.discard:
+                cur.execute("INSERT OR IGNORE INTO discarded_photos (foto_path) VALUES (?)", (req.foto_path,))
+            else:
+                cur.execute("DELETE FROM discarded_photos WHERE foto_path = ?", (req.foto_path,))
         conn.commit()
     return {"status": "ok", "discarded": req.discard}
 
@@ -115,6 +144,7 @@ def clear_db():
         cur.execute("DELETE FROM ocorrencias")
         cur.execute("DELETE FROM alunos")
         cur.execute("DELETE FROM discarded_photos")
+        cur.execute("DELETE FROM discarded_local_faces")
         conn.commit()
     return {"status": "ok"}
 

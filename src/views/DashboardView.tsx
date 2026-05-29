@@ -420,19 +420,74 @@ export default function DashboardView() {
   }
 
   /* ── Empty state ── */
-  if (!hasCatalog || !hasData) {
+  if (!hasCatalog) {
     return (
       <div className={styles.page}>
         <div className={styles.pageHeader}>
           <div>
             <h1 className={styles.pageTitle}>Visão Geral</h1>
-            <p className={styles.pageSubtitle}>{currentCatalog || 'Nenhum catálogo carregado'}</p>
+            <p className={styles.pageSubtitle}>Nenhum catálogo carregado</p>
           </div>
         </div>
         <div className={styles.emptyState}>
           <Sparkles size={32} />
           <h2>Nenhum catálogo carregado</h2>
           <p>Selecione ou crie um evento para ver a visão geral do catálogo.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasData) {
+    return (
+      <div className={styles.page}>
+        <div className={styles.pageHeader}>
+          <div>
+            <h1 className={styles.pageTitle}>Visão Geral</h1>
+            <p className={styles.pageSubtitle}>{currentCatalog}</p>
+          </div>
+        </div>
+        <div className={styles.emptyState} style={{ padding: '60px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            borderRadius: '50%',
+            background: 'var(--accent-soft)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: '20px',
+            color: 'var(--accent)',
+          }}>
+            <ScanLine size={28} />
+          </div>
+          <h2 style={{ fontSize: '1.35rem', fontWeight: 700, marginBottom: '10px' }}>Catálogo Vazio</h2>
+          <p style={{ color: 'var(--text-muted)', maxWidth: '480px', textAlign: 'center', marginBottom: '24px', fontSize: '0.9rem', lineHeight: 1.5 }}>
+            O evento <strong>{currentCatalog}</strong> está ativo, mas ainda não possui nenhuma foto processada. Inicie o scanner de detecção de rostos de IA para começar!
+          </p>
+          <button
+            onClick={() => navigate('scanner')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 24px',
+              background: 'var(--accent)',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              fontWeight: 600,
+              fontSize: '0.92rem',
+              cursor: 'pointer',
+              boxShadow: '0 4px 12px var(--accent-soft)',
+              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+            }}
+            onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
+            onMouseOut={(e) => e.currentTarget.style.transform = 'none'}
+          >
+            <ScanLine size={15} />
+            <span>Escanear</span>
+          </button>
         </div>
       </div>
     );

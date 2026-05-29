@@ -3,7 +3,6 @@ import traceback
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
 import review_manager as rm
 import media_manager as mm
@@ -16,27 +15,8 @@ AssignUnknownClusterRequest = rm.AssignUnknownClusterRequest
 IgnoreUnknownClusterRequest = rm.IgnoreUnknownClusterRequest
 GraduationAnalysisRequest = rm.GraduationAnalysisRequest
 GraduationManualOverrideRequest = rm.GraduationManualOverrideRequest
-
-
-class BulkDiscardPhotoReq(BaseModel):
-    catalog: str = ""
-    photo_ids: Optional[List[int]] = None
-    rowids: Optional[List[int]] = None
-    foto_paths: Optional[List[str]] = None
-    reason: Optional[str] = None
-
-    def ids(self) -> List[int]:
-        return self.photo_ids or self.rowids or []
-
-
-class BulkRestorePhotoReq(BaseModel):
-    catalog: str = ""
-    photo_ids: Optional[List[int]] = None
-    rowids: Optional[List[int]] = None
-    foto_paths: Optional[List[str]] = None
-
-    def ids(self) -> List[int]:
-        return self.photo_ids or self.rowids or []
+BulkDiscardPhotoReq = rm.BulkDiscardPhotoReq
+BulkRestorePhotoReq = rm.BulkRestorePhotoReq
 
 
 @router.get("/api/pendencies")

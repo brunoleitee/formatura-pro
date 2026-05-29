@@ -19,6 +19,9 @@ interface PhotoViewerModalProps {
   contextPhotos?: Photo[];
   contextBadge?: string | null;
   contextLoading?: boolean;
+  discardScope?: 'catalog' | 'person';
+  discardPersonKey?: string;
+  discardFaceRowIds?: number[];
   onClose: () => void;
   onNavigate: (photo: Photo) => void;
   onPhotoUpdate?: (photo: Photo) => void;
@@ -65,6 +68,9 @@ export function PhotoViewerModal({
   contextPhotos,
   contextBadge,
   contextLoading = false,
+  discardScope = 'catalog',
+  discardPersonKey = '',
+  discardFaceRowIds = [],
   onClose,
   onNavigate,
   onPhotoUpdate,
@@ -172,7 +178,30 @@ export function PhotoViewerModal({
   const displayIndex = navigationPhotos.findIndex((p) => p.path === visiblePhoto.path);
   const displayCounter = displayIndex >= 0 ? displayIndex + 1 : 1;
   const isDiscarded = visiblePhoto.discarded;
+  const discardStateScope = visiblePhoto.discarded_scope || (visiblePhoto.discarded_global ? 'global' : visiblePhoto.discarded_local ? 'person' : null);
+  const discardLabel = discardStateScope === 'person' ? 'Descartada nesta pasta' : discardStateScope === 'global' ? 'Descartada no catálogo' : 'Descartada';
+  const discardClassName = discardStateScope === 'person' ? styles.discardBadgeLocal : styles.discardBadgeGlobal;
   const currentPhotoKey = (visiblePhoto as ViewerPhoto).original_path ?? visiblePhoto.path;
+
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setDisplayedPhoto((current) => {
+      if (current.path !== photo.path) return photo;
+
+      const currentFaces = current.faces?.length ?? 0;
+      const incomingFaces = photo.faces?.length ?? 0;
+      const currentHasSize = Boolean(current.width && current.height);
+      const incomingHasSize = Boolean(photo.width && photo.height);
+
+      if (incomingFaces > currentFaces || (incomingHasSize && !currentHasSize)) {
+        return photo;
+      }
+
+      return current;
+    });
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [photo]);
+
   const facePreviewUrl = useMemo(() => {
     if (!faceOnly || !visiblePhoto.faces || visiblePhoto.faces.length === 0) return null;
     const face = visiblePhoto.faces[0];
@@ -266,7 +295,20 @@ export function PhotoViewerModal({
 
   const handleDiscard = async () => {
     try {
-      await api.discardPhoto({ foto_path: visiblePhoto.path, discard: true });
+      if (discardScope === 'person' && discardFaceRowIds.length > 0) {
+        await api.bulkDiscardPhotos('', [visiblePhoto.path], {
+          scope: 'person',
+          person_key: discardPersonKey || undefined,
+          rowids: discardFaceRowIds,
+        });
+      } else {
+        await api.discardPhoto({
+          foto_path: visiblePhoto.path,
+          discard: true,
+          scope: discardScope,
+          person_key: discardPersonKey || undefined,
+        });
+      }
       showFeedbackMsg("Foto descartada");
       onDiscard?.(visiblePhoto.path);
       if (currentIndex < total - 1) onNavigate(navigationPhotos[currentIndex + 1]);
@@ -277,7 +319,20 @@ export function PhotoViewerModal({
 
   const handleRestore = async () => {
     try {
-      await api.discardPhoto({ foto_path: visiblePhoto.path, discard: false });
+      if (discardScope === 'person' && discardFaceRowIds.length > 0) {
+        await api.bulkRestorePhotos('', [visiblePhoto.path], {
+          scope: 'person',
+          person_key: discardPersonKey || undefined,
+          rowids: discardFaceRowIds,
+        });
+      } else {
+        await api.discardPhoto({
+          foto_path: visiblePhoto.path,
+          discard: false,
+          scope: discardScope,
+          person_key: discardPersonKey || undefined,
+        });
+      }
       showFeedbackMsg("Foto restaurada");
       onRestore?.(visiblePhoto.path);
     } catch (err) {
@@ -1199,7 +1254,7 @@ export function PhotoViewerModal({
                   }}
                 />
 
-                {isDiscarded && <div className={styles.discardBadge}>DESCARTADA</div>}
+        {isDiscarded && <div className={`${styles.discardBadge} ${discardClassName}`}>{discardLabel}</div>}
 
                 {isLoaded && viewSize.w > 0 && visiblePhoto.width && visiblePhoto.height && (visiblePhoto.faces || []).map((face, faceIdx) => {
                   const isKnown = isKnownFace(face);

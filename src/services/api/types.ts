@@ -74,6 +74,9 @@ export interface Photo {
   faces: PhotoFace[];
   total_faces_in_db: number;
   discarded: boolean;
+  discarded_scope?: 'global' | 'person' | null;
+  discarded_global?: boolean;
+  discarded_local?: boolean;
   blur_score: number | null;
   blur_status: string | null;
   blur_label: string | null;
@@ -541,14 +544,3 @@ export interface MergePersonResponse {
   reason?: string;
 }
 
-export interface CreateReferencesStatus {
-  is_running: boolean;
-  progress: number;
-  processed: number;
-  total: number;
-  status_text: string;
-  error: string | null;
-  result: {
-    created_count: number;
-  } | null;
-}

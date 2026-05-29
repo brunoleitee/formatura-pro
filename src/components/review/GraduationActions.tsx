@@ -48,12 +48,27 @@ function getItemState(cluster: RichCluster, item: GraduationItem): ItemState {
   const manualTags = cluster.manual_graduation_tags ?? [];
   if (manualTags.includes(tag)) return 'manual_confirm';
   if (manualTags.includes(`!${tag}`)) return 'manual_remove';
+
+  // Tenta confidence primeiro
   const conf = (cluster[ITEM_CONFIDENCE_KEY[item]] as number | undefined)
-    ?? ((cluster[ITEM_HAS_KEY[item]] as boolean | undefined) ? 1 : 0);
-  if (conf >= CONF_CONFIRMED) return 'ai_confirmed';
-  if (conf >= CONF_POSSIBLE) return 'ai_possible';
+    ?? ((cluster[ITEM_HAS_KEY[item]] as boolean | undefined) ? 1 : undefined);
+
+  if (conf !== undefined) {
+    if (conf >= CONF_CONFIRMED) return 'ai_confirmed';
+    if (conf >= CONF_POSSIBLE) return 'ai_possible';
+    return 'none';
+  }
+
+  // Fallback: verifica graduation_tags e ai_graduation_tags (vindos do backend sem confidence)
+  const allTags = [
+    ...(cluster.graduation_tags ?? []),
+    ...(cluster.ai_graduation_tags ?? []),
+  ].map(t => t.toLowerCase());
+
+  if (allTags.includes(tag.toLowerCase())) return 'ai_confirmed';
   return 'none';
 }
+
 
 function applyOverrideLocally(cluster: RichCluster, item: GraduationItem, action: 'confirm' | 'remove'): RichCluster {
   const tag = ITEM_TAG[item];

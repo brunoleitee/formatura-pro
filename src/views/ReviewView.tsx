@@ -11,6 +11,11 @@ import { PhotoViewerModal } from '../components/photos/PhotoViewerModal';
 import { isKnownFace } from '../utils/personIdentity';
 import styles from './ReviewView.module.css';
 
+// Mapeamento de nome de tag para chave de item de formatura
+const TAG_TO_ITEM: Record<string, 'gown' | 'diploma' | 'sash' | 'cap' | 'jabor'> = {
+  beca: 'gown', canudo: 'diploma', faixa: 'sash', capelo: 'cap', jabor: 'jabor',
+};
+
 const REVIEW_PAGE_SIZE = 30;
 
 function createViewerStub(path: string): Photo {
@@ -125,6 +130,8 @@ function ReviewViewContent() {
     window.setTimeout(() => setReviewToast(null), 1800);
   }, []);
 const wasGraduationRunningRef = useRef(false);
+  // Snapshot das correções manuais capturado antes de cada reanálise
+  const manualTagsSnapshotRef = useRef<Map<string, string[]>>(new Map());
   const detailRequestRef = useRef(0);
   const clusterCacheRef = useRef<Map<string, { cluster: RichCluster; review_ready: boolean }>>(new Map());
 
@@ -144,7 +151,14 @@ const wasGraduationRunningRef = useRef(false);
       const data = await api.getReviewClusters(currentCatalog, REVIEW_PAGE_SIZE, 0, controller.signal);
       if (controller.signal.aborted) return;
       const nextClusters = data?.clusters ?? [];
-      setClusters(nextClusters);
+      // Mescla snapshot de tags manuais caso o backend as tenha perdido após reanálise
+      setClusters(nextClusters.map(c => {
+        const saved = manualTagsSnapshotRef.current.get(c.cluster_id);
+        if (saved?.length && !(c.manual_graduation_tags?.length)) {
+          return { ...c, manual_graduation_tags: saved };
+        }
+        return c;
+      }));
       setTotalClusters(data?.total ?? nextClusters.length);
       setHasMore(Boolean(data?.has_more));
       setPageOffset(nextClusters.length);
@@ -213,10 +227,38 @@ const wasGraduationRunningRef = useRef(false);
       const data = await api.getReviewClusterDetail(currentCatalog, clusterId);
       if (detailRequestRef.current !== requestId) return;
       if (data?.cluster) {
-        clusterCacheRef.current.set(clusterId, { cluster: data.cluster, review_ready: data.review_ready ?? true });
+        // Verifica se o backend perdeu as correções manuais após reanálise
+        const savedTags = manualTagsSnapshotRef.current.get(clusterId);
+        const hasManualInDB = (data.cluster.manual_graduation_tags?.length ?? 0) > 0;
+        const mergedCluster: RichCluster = (savedTags?.length && !hasManualInDB)
+          ? { ...data.cluster, manual_graduation_tags: savedTags }
+          : data.cluster;
+
+        // Re-persiste as tags manuais no banco (fire and forget)
+        if (savedTags?.length && !hasManualInDB) {
+          const rowids = mergedCluster.faces
+            .map(f => f.rowid)
+            .filter((r): r is number => Number.isFinite(r));
+          if (rowids.length > 0) {
+            savedTags.forEach(tag => {
+              const action = tag.startsWith('!') ? 'remove' : 'confirm';
+              const rawTag = tag.startsWith('!') ? tag.slice(1) : tag;
+              const item = TAG_TO_ITEM[rawTag];
+              if (item) {
+                api.graduationManualOverride(currentCatalog, { rowids, action, item })
+                  .catch(err => console.error('[manual-restore] erro ao re-persistir tag:', err));
+              }
+            });
+          }
+        }
+
+        clusterCacheRef.current.set(clusterId, { cluster: mergedCluster, review_ready: data.review_ready ?? true });
+        setSelected(mergedCluster);
+        setReviewReady(Boolean(data.review_ready ?? true));
+      } else {
+        setSelected(null);
+        setReviewReady(Boolean(data?.review_ready ?? true));
       }
-      setSelected(data?.cluster ?? null);
-      setReviewReady(Boolean(data?.review_ready ?? true));
     } catch {
       if (detailRequestRef.current !== requestId) return;
       setSelected(null);
@@ -396,6 +438,18 @@ const wasGraduationRunningRef = useRef(false);
 
   const handleStartGraduationAnalysis = useCallback(async (useAiUltra: boolean) => {
     if (!currentCatalog || graduationStatus?.is_running || isStartingGraduationAnalysis) return;
+
+    // Captura snapshot das correções manuais antes de reanalisar
+    const snapshot = new Map<string, string[]>();
+    clusters.forEach(c => {
+      if (c.manual_graduation_tags?.length) {
+        snapshot.set(c.cluster_id, [...c.manual_graduation_tags]);
+      }
+    });
+    manualTagsSnapshotRef.current = snapshot;
+    // Invalida cache de detalhes para forçar re-fetch após análise
+    clusterCacheRef.current.clear();
+
     setIsStartingGraduationAnalysis(true);
     try {
       // Gerar embeddings antes da análise de formatura
@@ -407,7 +461,7 @@ const wasGraduationRunningRef = useRef(false);
     } finally {
       setIsStartingGraduationAnalysis(false);
     }
-  }, [currentCatalog, graduationStatus?.is_running, isStartingGraduationAnalysis, refreshGraduationStatus]);
+  }, [currentCatalog, clusters, graduationStatus?.is_running, isStartingGraduationAnalysis, refreshGraduationStatus]);
 
   const openViewerForPath = useCallback((path: string) => {
     setViewerPhoto(createViewerStub(path));
@@ -416,13 +470,12 @@ const wasGraduationRunningRef = useRef(false);
   }, []);
 
   useEffect(() => {
-    if (!viewerPhoto?.path || !currentCatalog) {
-      if (!viewerPhoto) {
-        /* eslint-disable react-hooks/set-state-in-effect */
-        setViewerContext(null);
-        setViewerContextLoading(false);
-        /* eslint-enable react-hooks/set-state-in-effect */
-      }
+    const viewerPath = viewerPhoto?.path;
+    if (!viewerPath || !currentCatalog) {
+      /* eslint-disable react-hooks/set-state-in-effect */
+      setViewerContext(null);
+      setViewerContextLoading(false);
+      /* eslint-enable react-hooks/set-state-in-effect */
       return;
     }
 
@@ -430,13 +483,13 @@ const wasGraduationRunningRef = useRef(false);
 
     const loadContext = async () => {
       try {
-        const context = await api.getPhotoContext(viewerPhoto.path, currentCatalog);
+        const context = await api.getPhotoContext(viewerPath, currentCatalog);
         if (cancelled) return;
         setViewerContext(context);
-        setViewerPhoto(context.current ?? createViewerStub(viewerPhoto.path));
+        setViewerPhoto(context.current ?? createViewerStub(viewerPath));
       } catch {
         if (cancelled) return;
-        const fallback = createViewerStub(viewerPhoto.path);
+        const fallback = createViewerStub(viewerPath);
         setViewerContext({
           current: fallback,
           previous: null,
@@ -457,7 +510,7 @@ const wasGraduationRunningRef = useRef(false);
     return () => {
       cancelled = true;
     };
-  }, [currentCatalog, viewerPhoto?.path, viewerPhoto]);
+  }, [currentCatalog, viewerPhoto?.path]);
 
   if (!currentCatalog) {
     return (

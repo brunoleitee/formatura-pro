@@ -381,6 +381,14 @@ class DbConnection:
             )
         """)
         c.execute("""
+            CREATE TABLE IF NOT EXISTS discarded_local_faces (
+                face_rowid INTEGER PRIMARY KEY,
+                scope_key TEXT NOT NULL,
+                foto_path TEXT NOT NULL,
+                created_at REAL DEFAULT (strftime('%s','now'))
+            )
+        """)
+        c.execute("""
             CREATE TABLE IF NOT EXISTS face_embeddings (
                 occurrence_rowid INTEGER PRIMARY KEY,
                 foto_path TEXT, x1 INTEGER, y1 INTEGER, x2 INTEGER, y2 INTEGER,
@@ -405,6 +413,8 @@ class DbConnection:
             c.execute("CREATE INDEX IF NOT EXISTS idx_ocor_photo_hash ON ocorrencias(photo_hash)")
         except Exception as e:
             logger.warning("Falha ao criar indice idx_ocor_photo_hash: %s", e)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_discarded_local_scope ON discarded_local_faces(scope_key)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_discarded_local_foto ON discarded_local_faces(foto_path)")
         c.execute("""
             CREATE TABLE IF NOT EXISTS export_history (
                 uuid TEXT PRIMARY KEY, dest_path TEXT,

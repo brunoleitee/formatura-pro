@@ -439,6 +439,20 @@ def _resolve_photo_name(path, cloud_names):
     return os.path.basename(path)
 
 
+def _load_discarded_photo_sets(cur, local_scope_key: str | None = None):
+    cur.execute("SELECT foto_path FROM discarded_photos")
+    global_discarded = {r["foto_path"] for r in cur.fetchall()}
+    local_discarded_rows = set()
+    scope_key = str(local_scope_key or "").strip()
+    if scope_key:
+        try:
+            cur.execute("SELECT face_rowid FROM discarded_local_faces WHERE scope_key = ?", (scope_key,))
+            local_discarded_rows = {int(r["face_rowid"]) for r in cur.fetchall() if r["face_rowid"] is not None}
+        except Exception:
+            local_discarded_rows = set()
+    return global_discarded, local_discarded_rows
+
+
 def get_photos(aluno_id: str, catalog: str = ""):
     get_db = _get("get_db")
     get_blur_label = _get("get_blur_label")
@@ -448,8 +462,6 @@ def get_photos(aluno_id: str, catalog: str = ""):
         return []
     with get_db(cat) as conn:
         cur = conn.cursor()
-        cur.execute("SELECT foto_path FROM discarded_photos")
-        discarded = {r["foto_path"] for r in cur.fetchall()}
 
         # Tentar buscar pela person_key (se tabela alunos existir)
         person_key_filter = ""
@@ -464,6 +476,9 @@ def get_photos(aluno_id: str, catalog: str = ""):
                     class_name = str(row["class_name"] or "").strip() or "Sem turma"
         except Exception:
             pass
+
+        discard_scope_key = person_key_filter or str(aluno_id or "").strip()
+        global_discarded, local_discarded_rows = _load_discarded_photo_sets(cur, discard_scope_key)
 
         if person_key_filter:
             cur.execute("""
@@ -497,7 +512,10 @@ def get_photos(aluno_id: str, catalog: str = ""):
                     "ctime": None,
                     "faces": [],
                     "total_faces_in_db": 1,
-                    "discarded": p in discarded,
+                    "discarded": (p in global_discarded) or False,
+                    "discarded_scope": "global" if p in global_discarded else None,
+                    "discarded_global": p in global_discarded,
+                    "discarded_local": False,
                     "blur_score": r["blur_score"],
                     "blur_status": r["blur_status"],
                     "blur_label": get_blur_label(r["blur_score"], load_quality_settings()),
@@ -530,6 +548,10 @@ def get_photos(aluno_id: str, catalog: str = ""):
                 if _r_pk:
                     face_data["person_key"] = str(_r_pk)
                 unique_photos[p]["faces"].append(face_data)
+                if p not in global_discarded and r["rowid"] in local_discarded_rows:
+                    unique_photos[p]["discarded"] = True
+                    unique_photos[p]["discarded_scope"] = "person"
+                    unique_photos[p]["discarded_local"] = True
 
         if unique_photos:
             paths = list(unique_photos.keys())
@@ -584,8 +606,7 @@ def get_photos_by_person_key(person_key: str, catalog: str = ""):
                     person_key, _total_pk, _by_name,
                 )
 
-            cur.execute("SELECT foto_path FROM discarded_photos")
-            discarded = {r["foto_path"] for r in cur.fetchall()}
+            global_discarded, local_discarded_rows = _load_discarded_photo_sets(cur, person_key)
 
             # ── Estratégia 1: match exato ──
             rows = _fetch_photos(cur, "person_key = ?", (person_key,))
@@ -653,11 +674,14 @@ def get_photos_by_person_key(person_key: str, catalog: str = ""):
                         "type": os.path.splitext(p)[1].lower().lstrip(".") or "img",
                         "size": None,
                         "mtime": None,
-                        "ctime": None,
-                        "faces": [],
-                        "total_faces_in_db": 1,
-                        "discarded": p in discarded,
-                        "blur_score": r["blur_score"],
+                    "ctime": None,
+                    "faces": [],
+                    "total_faces_in_db": 1,
+                    "discarded": (p in global_discarded) or False,
+                    "discarded_scope": "global" if p in global_discarded else None,
+                    "discarded_global": p in global_discarded,
+                    "discarded_local": False,
+                    "blur_score": r["blur_score"],
                         "blur_status": r["blur_status"],
                         "blur_label": get_blur_label(r["blur_score"], load_quality_settings()),
                         "closed_eyes": bool(r["closed_eyes"]),
@@ -685,10 +709,14 @@ def get_photos_by_person_key(person_key: str, catalog: str = ""):
                         "foreground_score": r["foreground_score"],
                         "background_penalty_reason": r["background_penalty_reason"],
                     }
-                    _r_pk2 = r["person_key"] if "person_key" in r.keys() else ""
-                    if _r_pk2:
-                        face_data["person_key"] = str(_r_pk2)
-                    unique_photos[p]["faces"].append(face_data)
+                _r_pk2 = r["person_key"] if "person_key" in r.keys() else ""
+                if _r_pk2:
+                    face_data["person_key"] = str(_r_pk2)
+                unique_photos[p]["faces"].append(face_data)
+                if p not in global_discarded and r["rowid"] in local_discarded_rows:
+                    unique_photos[p]["discarded"] = True
+                    unique_photos[p]["discarded_scope"] = "person"
+                    unique_photos[p]["discarded_local"] = True
 
             if unique_photos:
                 paths = list(unique_photos.keys())
@@ -774,40 +802,13 @@ def get_photos_page(catalog="", limit=100, offset=0, subfolder=None):
         with get_db(cat) as conn:
             cur = conn.cursor()
 
-            if subfolder:
-                subfolder_clean = subfolder.replace("\\", "/").strip("/")
-                cur.execute(
-                    "SELECT COUNT(DISTINCT foto_path) FROM ocorrencias WHERE REPLACE(foto_path, char(92), '/') LIKE '%/' || ? || '/%'",
-                    (subfolder_clean,)
-                )
-                main_total = cur.fetchone()[0]
-            else:
-                cur.execute("SELECT COUNT(DISTINCT foto_path) FROM ocorrencias")
-                main_total = cur.fetchone()[0]
-
-            cur.execute("SELECT foto_path FROM discarded_photos")
-            discarded = {r["foto_path"] for r in cur.fetchall()}
-
-            cur.execute("SELECT path FROM catalog_folders WHERE catalog_name = ? AND status = 'inactive'", (cat,))
-            inactive_folders = [os.path.normpath(r["path"]).lower() for r in cur.fetchall()]
-
-            if subfolder:
-                subfolder_clean = subfolder.replace("\\", "/").strip("/")
-                base_query = """
-                    SELECT foto_path,
-                           MAX(blur_score) as blur_score,
-                           MAX(blur_status) as blur_status,
-                           MAX(closed_eyes) as closed_eyes,
-                           COUNT(CASE WHEN x1 IS NOT NULL THEN 1 END) as face_count
-                    FROM ocorrencias
-                    WHERE REPLACE(foto_path, char(92), '/') LIKE '%/' || ? || '/%'
-                    GROUP BY foto_path
-                    ORDER BY foto_path
-                    LIMIT ? OFFSET ?
-                """
-                cur.execute(base_query, (subfolder_clean, limit, offset))
-            else:
-                base_query = """
+            # 1. Carregar as ocorrências reais do banco de dados
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ocorrencias'")
+            has_ocorrencias = cur.fetchone() is not None
+            
+            db_photos_map = {}
+            if has_ocorrencias:
+                cur.execute("""
                     SELECT foto_path,
                            MAX(blur_score) as blur_score,
                            MAX(blur_status) as blur_status,
@@ -815,18 +816,92 @@ def get_photos_page(catalog="", limit=100, offset=0, subfolder=None):
                            COUNT(CASE WHEN x1 IS NOT NULL THEN 1 END) as face_count
                     FROM ocorrencias
                     GROUP BY foto_path
-                    ORDER BY foto_path
-                    LIMIT ? OFFSET ?
-                """
-                cur.execute(base_query, (limit, offset))
-            rows = cur.fetchall()
+                """)
+                db_rows = cur.fetchall()
+                db_photos_map = {r["foto_path"]: dict(r) for r in db_rows}
+
+            # 2. Carregar as pastas cadastradas
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='catalog_folders'")
+            has_folders = cur.fetchone() is not None
+            
+            event_folders = []
+            inactive_folders = []
+            if has_folders:
+                cur.execute("SELECT path, status FROM catalog_folders WHERE catalog_name = ? AND folder_type = 'event'", (cat,))
+                event_folders_rows = cur.fetchall()
+                event_folders = [r["path"] for r in event_folders_rows]
+                inactive_folders = [os.path.normpath(r["path"]).lower() for r in event_folders_rows if r["status"] == "inactive"]
+
+            # 3. Buscar fotos físicas no disco para catalogar as não-processadas/não-mapeadas
+            physical_photos = set()
+            valid_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+            for event_dir in event_folders:
+                if event_dir and os.path.isdir(event_dir):
+                    for root, _, files in os.walk(event_dir):
+                        for fname in files:
+                            ext = os.path.splitext(fname)[1].lower()
+                            if ext in valid_exts:
+                                p = os.path.normpath(os.path.join(root, fname))
+                                physical_photos.add(p)
+
+            # 4. Mesclar dados: para cada foto física que não está no banco, adicionamos um registro virtual
+            all_photos_list = []
+            
+            # Fotos com ocorrências no banco
+            for fp, r in db_photos_map.items():
+                all_photos_list.append({
+                    "path": fp,
+                    "blur_score": r["blur_score"],
+                    "blur_status": r["blur_status"],
+                    "closed_eyes": r["closed_eyes"],
+                    "face_count": r["face_count"],
+                    "virtual": False
+                })
+
+            # Fotos físicas virtuais (que não estão no banco ainda)
+            db_paths_lower = {os.path.normpath(fp).lower() for fp in db_photos_map.keys()}
+            for fp in physical_photos:
+                if os.path.normpath(fp).lower() not in db_paths_lower:
+                    all_photos_list.append({
+                        "path": fp,
+                        "blur_score": None,
+                        "blur_status": None,
+                        "closed_eyes": 0,
+                        "face_count": 0,
+                        "virtual": True
+                    })
+
+            # 5. Filtrar por subfolder se especificado
+            if subfolder:
+                subfolder_clean = subfolder.replace("\\", "/").strip("/").lower()
+                all_photos_list = [
+                    x for x in all_photos_list
+                    if f"/{subfolder_clean}/" in x["path"].replace("\\", "/").lower() or x["path"].replace("\\", "/").lower().endswith(f"/{subfolder_clean}")
+                ]
+
+            # 6. Ordenar consistentemente (por caminho do arquivo)
+            all_photos_list.sort(key=lambda x: x["path"])
+
+            # 7. Total geral de fotos unificadas
+            total = len(all_photos_list)
+
+            # 8. Paginação
+            paginated = all_photos_list[offset:offset + limit]
+
+            # 9. Montar a resposta completa com detalhes (avatar, faces, etc.)
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='discarded_photos'")
+            has_discarded_table = cur.fetchone() is not None
+            discarded = set()
+            if has_discarded_table:
+                cur.execute("SELECT foto_path FROM discarded_photos")
+                discarded = {r["foto_path"] for r in cur.fetchall()}
 
             qs = load_quality_settings()
             cloud_names = _get_cloud_names_map(cur)
-            
+
             unique_photos = {}
-            for r in rows:
-                p = r["foto_path"]
+            for x in paginated:
+                p = x["path"]
                 p_norm = os.path.normpath(p).lower()
                 is_inactive = any(p_norm.startswith(inf + os.sep) or p_norm.startswith(inf + "/") for inf in inactive_folders)
                 entry = {
@@ -835,12 +910,12 @@ def get_photos_page(catalog="", limit=100, offset=0, subfolder=None):
                     "type": os.path.splitext(p)[1].lower().lstrip(".") or "img",
                     "size": None, "mtime": None, "ctime": None,
                     "faces": [],
-                    "total_faces_in_db": r["face_count"],
+                    "total_faces_in_db": x["face_count"],
                     "discarded": p in discarded,
-                    "blur_score": r["blur_score"],
-                    "blur_status": r["blur_status"],
-                    "blur_label": get_blur_label(r["blur_score"], qs),
-                    "closed_eyes": bool(r["closed_eyes"]),
+                    "blur_score": x["blur_score"],
+                    "blur_status": x["blur_status"],
+                    "blur_label": get_blur_label(x["blur_score"], qs) if x["blur_score"] is not None else "",
+                    "closed_eyes": bool(x["closed_eyes"]),
                     "source": "event",
                     "folder_active": not is_inactive,
                 }
@@ -856,10 +931,11 @@ def get_photos_page(catalog="", limit=100, offset=0, subfolder=None):
                     entry["height"] = None
                 unique_photos[p] = entry
 
-            if unique_photos:
-                paths = list(unique_photos.keys())
-                for i in range(0, len(paths), 900):
-                    chunk = paths[i:i + 900]
+            # Buscar faces para as fotos que pertencem ao banco e estão na página atual
+            non_virtual_paths = [x["path"] for x in paginated if not x["virtual"]]
+            if non_virtual_paths and has_ocorrencias:
+                for i in range(0, len(non_virtual_paths), 900):
+                    chunk = non_virtual_paths[i:i + 900]
                     placeholders = ",".join(["?"] * len(chunk))
                     cur.execute(
                         f"SELECT rowid, foto_path, aluno_id, x1, y1, x2, y2 FROM ocorrencias WHERE foto_path IN ({placeholders})",
@@ -875,26 +951,25 @@ def get_photos_page(catalog="", limit=100, offset=0, subfolder=None):
                                 "x2": c["x2"], "y2": c["y2"],
                             })
 
-        # Add ref photos (only on first page, they are typically few)
-        if offset == 0:
-            ref_photos = _collect_ref_photos(cat, discarded)
-            for p, photo in ref_photos.items():
-                if p not in unique_photos:
-                    if subfolder:
-                        p_norm = p.replace("\\", "/")
-                        sub_clean = subfolder.replace("\\", "/").strip("/")
-                        if f"/{sub_clean}/" not in p_norm:
-                            continue
-                    unique_photos[p] = photo
+            # Adicionar fotos de referência (apenas no primeiro offset)
+            if offset == 0:
+                ref_photos = _collect_ref_photos(cat, discarded)
+                for p, photo in ref_photos.items():
+                    if p not in unique_photos:
+                        if subfolder:
+                            p_norm = p.replace("\\", "/")
+                            sub_clean = subfolder.replace("\\", "/").strip("/")
+                            if f"/{sub_clean}/" not in p_norm:
+                                continue
+                        unique_photos[p] = photo
 
-        total = main_total
-        return {
-            "photos": list(unique_photos.values()),
-            "total": total,
-            "limit": limit,
-            "offset": offset,
-            "hasMore": (offset + limit) < total,
-        }
+            return {
+                "photos": list(unique_photos.values()),
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "hasMore": (offset + limit) < total,
+            }
     except Exception:
         logging.getLogger(__name__).exception("[get_photos_page] erro inesperado")
         return {"photos": [], "total": 0, "limit": limit, "offset": offset, "hasMore": False}

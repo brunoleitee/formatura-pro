@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
-import { api } from '../services/api';
+import { api, catalogApi } from '../services/api';
+import { findCommonPrefix, normalizePath } from '../utils/catalogPathUtils';
 
 export type ViewName =
   | 'dashboard'
@@ -11,8 +12,13 @@ export type ViewName =
   | 'settings'
   | 'catalog-settings'
   | 'scanner'
-  | 'references'
   ;
+
+export interface PendingScanConfig {
+  eventPath: string;
+  refPath: string;
+  catalogName: string;
+}
 
 interface AppContextValue {
   currentCatalog: string;
@@ -25,6 +31,8 @@ interface AppContextValue {
   catalogSubfolders: string[];
   isLoadingCatalogPhotos: boolean;
   isBackendOnline: boolean;
+  catalogRootPath: string;
+  pendingScanConfig: PendingScanConfig | null;
   setCatalogSubfolder: (s: string | null) => void;
   setCatalogSubfolders: (folders: string[]) => void;
   setIsLoadingCatalogPhotos: (loading: boolean) => void;
@@ -34,6 +42,7 @@ interface AppContextValue {
   navigate: (view: ViewName, personId?: string) => void;
   accentColor: string;
   setAccentColor: (color: string) => void;
+  setPendingScanConfig: (cfg: PendingScanConfig | null) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -49,6 +58,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [catalogSubfolders, setCatalogSubfolders] = useState<string[]>([]);
   const [isLoadingCatalogPhotos, setIsLoadingCatalogPhotos] = useState(false);
   const [isBackendOnline, setIsBackendOnline] = useState(true);
+  const [catalogRootPath, setCatalogRootPath] = useState('');
+  const [pendingScanConfig, setPendingScanConfig] = useState<PendingScanConfig | null>(null);
   const [accentColor, setAccentColor] = useState(() => localStorage.getItem('accent_color') || 'blue');
 
   useEffect(() => {
@@ -95,11 +106,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setCatalogs(data.catalogs);
       if (data.current) {
         setCurrentCatalog(data.current);
+        try {
+          const settings = await catalogApi.getCatalogSettings(data.current);
+          setCatalogRootPath(settings.root_path || '');
+        } catch {
+          setCatalogRootPath('');
+        }
       } else if (data.catalogs.length > 0) {
-        // Backend reiniciou e perdeu o catálogo selecionado — re-afirmar
         const toSelect = data.catalogs[0];
         await api.setCatalog(toSelect);
         setCurrentCatalog(toSelect);
+        try {
+          const settings = await catalogApi.getCatalogSettings(toSelect);
+          setCatalogRootPath(settings.root_path || '');
+        } catch {
+          setCatalogRootPath('');
+        }
+      } else {
+        setCurrentCatalog('');
+        setCatalogRootPath('');
       }
     } catch (e) {
       console.error('Erro ao carregar catálogos:', e);
@@ -140,12 +165,56 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setCurrentCatalog(name);
       setCatalogSubfolder(null);
       setCatalogSubfolders([]);
+      try {
+        const settings = await catalogApi.getCatalogSettings(name);
+        setCatalogRootPath(settings.root_path || '');
+      } catch {
+        setCatalogRootPath('');
+      }
     } catch (e) {
       console.error('Erro ao definir catálogo:', e);
     }
   }, []);
 
   const bumpRefresh = useCallback(() => setRefreshKey(k => k + 1), []);
+
+  // Polling e sincronização global de subpastas do catálogo
+  useEffect(() => {
+    if (!currentCatalog) {
+      setCatalogSubfolders([]);
+      return;
+    }
+    
+    setIsLoadingCatalogPhotos(true);
+    catalogApi.getAllSubfolders(currentCatalog).then(res => {
+      if (res && res.ok && Array.isArray(res.subfolders)) {
+        // Calcula o prefixo comum apenas a partir das subpastas mapeadas no disco
+        const prefix = findCommonPrefix(res.subfolders);
+        
+        const relativeSubfolders = res.subfolders.map(folder => {
+          const normFolder = normalizePath(folder);
+          const normPrefix = normalizePath(prefix);
+          
+          if (normPrefix && normFolder.toLowerCase().startsWith(normPrefix.toLowerCase() + '/')) {
+            return normFolder.slice(normPrefix.length + 1);
+          } else if (normPrefix && normFolder.toLowerCase() === normPrefix.toLowerCase()) {
+            return '';
+          }
+          return folder.split(/[\\/]/).filter(Boolean).pop() || '';
+        }).filter(Boolean);
+        
+        const sortedUnique = Array.from(new Set(relativeSubfolders))
+          .filter(s => s.length > 0)
+          .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+          
+        setCatalogSubfolders(sortedUnique);
+      }
+    }).catch(err => {
+      console.warn('[AppContext] falha ao buscar subpastas de forma global:', err);
+    }).finally(() => {
+      setIsLoadingCatalogPhotos(false);
+    });
+  }, [currentCatalog, refreshKey]);
 
   const navigate = useCallback((view: ViewName, personId?: string) => {
     setActiveView(view);
@@ -164,6 +233,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       catalogSubfolders,
       isLoadingCatalogPhotos,
       isBackendOnline,
+      catalogRootPath,
+      pendingScanConfig,
       setCatalogSubfolder,
       setCatalogSubfolders,
       setIsLoadingCatalogPhotos,
@@ -173,6 +244,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       navigate,
       accentColor,
       setAccentColor,
+      setPendingScanConfig,
     }}>
       {children}
     </AppContext.Provider>

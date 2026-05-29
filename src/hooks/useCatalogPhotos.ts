@@ -84,11 +84,11 @@ export function useCatalogPhotos() {
   }, []);
 
   const discardPhoto = useCallback((path: string) => {
-    updatePhotoStatus(path, { discarded: true });
+    updatePhotoStatus(path, { discarded: true, discarded_scope: 'global', discarded_global: true, discarded_local: false });
   }, [updatePhotoStatus]);
 
   const restorePhoto = useCallback((path: string) => {
-    updatePhotoStatus(path, { discarded: false });
+    updatePhotoStatus(path, { discarded: false, discarded_scope: null, discarded_global: false, discarded_local: false });
   }, [updatePhotoStatus]);
 
   return { photos, total, hasMore, loading, loadingMore, error, loadPhotos, loadMore, updatePhotoStatus, discardPhoto, restorePhoto };

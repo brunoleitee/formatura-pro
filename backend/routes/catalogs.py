@@ -8,6 +8,7 @@ import logging
 import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from typing import Optional, List
 
 import catalog_manager as cm
 import catalog_data_manager as cdm
@@ -132,12 +133,14 @@ class AddCatalogFolderReq(BaseModel):
 
 class RemoveFolderReq(BaseModel):
     catalog: str
-    path: str
+    path: Optional[str] = None
+    folder_id: Optional[int] = None
 
 
 class ToggleFolderReq(BaseModel):
     catalog: str
-    path: str
+    path: Optional[str] = None
+    folder_id: Optional[int] = None
 
 
 class ScanFolderReq(BaseModel):
@@ -193,7 +196,12 @@ def remove_catalog_folder(req: RemoveFolderReq):
     try:
         with get_db(req.catalog) as conn:
             cur = conn.cursor()
-            cur.execute("DELETE FROM catalog_folders WHERE catalog_name = ? AND path = ?", (req.catalog, req.path))
+            if req.folder_id is not None:
+                cur.execute("DELETE FROM catalog_folders WHERE catalog_name = ? AND id = ?", (req.catalog, req.folder_id))
+            elif req.path:
+                cur.execute("DELETE FROM catalog_folders WHERE catalog_name = ? AND path = ?", (req.catalog, req.path))
+            else:
+                raise HTTPException(status_code=400, detail="Informe folder_id ou path para exclusao.")
             conn.commit()
         return {"success": True}
     except Exception as e:
@@ -205,7 +213,12 @@ def toggle_catalog_folder(req: ToggleFolderReq):
     try:
         with get_db(req.catalog) as conn:
             cur = conn.cursor()
-            cur.execute("UPDATE catalog_folders SET status = CASE WHEN status = 'active' THEN 'inactive' ELSE 'active' END WHERE catalog_name = ? AND path = ?", (req.catalog, req.path))
+            if req.folder_id is not None:
+                cur.execute("UPDATE catalog_folders SET status = CASE WHEN status = 'active' THEN 'inactive' ELSE 'active' END WHERE catalog_name = ? AND id = ?", (req.catalog, req.folder_id))
+            elif req.path:
+                cur.execute("UPDATE catalog_folders SET status = CASE WHEN status = 'active' THEN 'inactive' ELSE 'active' END WHERE catalog_name = ? AND path = ?", (req.catalog, req.path))
+            else:
+                raise HTTPException(status_code=400, detail="Informe folder_id ou path para alterar.")
             conn.commit()
         return {"success": True}
     except Exception as e:

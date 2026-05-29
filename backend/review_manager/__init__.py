@@ -791,12 +791,42 @@ def bulk_discard_photos(req: BulkDiscardPhotoReq):
     get_db = _get("get_db")
     backup_catalog_db = _get("backup_catalog_db")
     backup_catalog_db(req.catalog, "antes_descarte_lote")
+    scope = str(getattr(req, "scope", "catalog") or "catalog").strip().lower()
+    person_key = str(getattr(req, "person_key", "") or "").strip()
 
     paths = list(req.foto_paths) if req.foto_paths else []
     ids = req.ids()
+    scope = str(getattr(req, "scope", "catalog") or "catalog").strip().lower()
+    person_key = str(getattr(req, "person_key", "") or "").strip()
     
     with get_db(req.catalog) as conn:
         cur = conn.cursor()
+        if scope == "person" and person_key:
+            face_rowids = list(ids)
+            if not face_rowids and paths:
+                placeholders = ",".join(["?"] * len(paths))
+                cur.execute(
+                    f"SELECT rowid, foto_path FROM ocorrencias WHERE foto_path IN ({placeholders}) AND (person_key = ? OR ? = '')",
+                    (*paths, person_key, person_key),
+                )
+                face_rows = cur.fetchall()
+                for row in face_rows:
+                    face_rowids.append(int(row["rowid"]))
+                    if row["foto_path"] not in paths:
+                        paths.append(row["foto_path"])
+            unique_face_rowids = set(r for r in face_rowids if r is not None)
+            for rid in unique_face_rowids:
+                cur.execute("SELECT foto_path FROM ocorrencias WHERE rowid = ? LIMIT 1", (rid,))
+                row = cur.fetchone()
+                if not row:
+                    continue
+                cur.execute(
+                    "INSERT OR IGNORE INTO discarded_local_faces (face_rowid, scope_key, foto_path) VALUES (?, ?, ?)",
+                    (int(rid), person_key, row["foto_path"]),
+                )
+            conn.commit()
+            return {"ok": True, "count": len(unique_face_rowids)}
+
         if ids:
             placeholders = ",".join(["?"] * len(ids))
             cur.execute(f"SELECT DISTINCT foto_path FROM ocorrencias WHERE rowid IN ({placeholders})", ids)
@@ -813,12 +843,34 @@ def bulk_restore_photos(req: BulkRestorePhotoReq):
     get_db = _get("get_db")
     backup_catalog_db = _get("backup_catalog_db")
     backup_catalog_db(req.catalog, "antes_restauro_lote")
+    scope = str(getattr(req, "scope", "catalog") or "catalog").strip().lower()
+    person_key = str(getattr(req, "person_key", "") or "").strip()
 
     paths = list(req.foto_paths) if req.foto_paths else []
     ids = req.ids()
+    scope = str(getattr(req, "scope", "catalog") or "catalog").strip().lower()
+    person_key = str(getattr(req, "person_key", "") or "").strip()
 
     with get_db(req.catalog) as conn:
         cur = conn.cursor()
+        if scope == "person" and person_key:
+            face_rowids = list(ids)
+            if not face_rowids and paths:
+                placeholders = ",".join(["?"] * len(paths))
+                cur.execute(
+                    f"SELECT rowid FROM ocorrencias WHERE foto_path IN ({placeholders}) AND (person_key = ? OR ? = '')",
+                    (*paths, person_key, person_key),
+                )
+                face_rowids = [int(row["rowid"]) for row in cur.fetchall()]
+            if face_rowids:
+                placeholders = ",".join(["?"] * len(face_rowids))
+                cur.execute(
+                    f"DELETE FROM discarded_local_faces WHERE scope_key = ? AND face_rowid IN ({placeholders})",
+                    (person_key, *face_rowids),
+                )
+            conn.commit()
+            return {"ok": True, "count": len(face_rowids)}
+
         if ids:
             placeholders = ",".join(["?"] * len(ids))
             cur.execute(f"SELECT DISTINCT foto_path FROM ocorrencias WHERE rowid IN ({placeholders})", ids)
@@ -1865,54 +1917,10 @@ def _clamp01(value: float) -> float:
 GRADUATION_CONFIDENCE_THRESHOLD = 0.30
 
 
-def analyze_graduation_items(photo: dict | str | None = None, enable_heuristics: bool = False, use_ai_ultra: bool = False) -> dict:
+def analyze_graduation_items(photo: dict | str | None = None, enable_heuristics: bool = True, use_ai_ultra: bool = False) -> dict:
     photo_path = _extract_photo_path(photo)
     face_boxes = _extract_face_boxes(photo)
     
-    # ── MODO ULTRA: Inteligência Artificial Semântica (Qwen2.5-VL via Ollama) ──
-    if use_ai_ultra and photo_path:
-        try:
-            import services.ollama_service as ollama
-            status = ollama.check_ollama_status()
-            if status.get("running") and status.get("has_model"):
-                res = ollama.analyze_graduation_with_qwen(photo_path)
-                if res and "error" not in res:
-                    tags = []
-                    if res.get("has_gown"): tags.append("beca")
-                    if res.get("has_diploma"): tags.append("canudo")
-                    if res.get("has_sash"): tags.append("faixa")
-                    if res.get("has_cap"): tags.append("capelo")
-                    if res.get("has_jabor"): tags.append("jabor")
-                    
-                    score = (
-                        (40.0 if res.get("has_gown") else 0.0) +
-                        (30.0 if res.get("has_diploma") else 0.0) +
-                        (25.0 if res.get("has_sash") else 0.0) +
-                        (20.0 if res.get("has_cap") else 0.0) +
-                        (18.0 if res.get("has_jabor") else 0.0)
-                    )
-                    
-                    return {
-                        "has_gown": 1 if res.get("has_gown") else 0,
-                        "has_diploma": 1 if res.get("has_diploma") else 0,
-                        "has_sash": 1 if res.get("has_sash") else 0,
-                        "has_cap": 1 if res.get("has_cap") else 0,
-                        "has_jabor": 1 if res.get("has_jabor") else 0,
-                        "graduation_tags": tags,
-                        "ai_graduation_tags": tags,
-                        "graduation_score": score,
-                        "debug": {
-                            "gown_confidence": 1.0 if res.get("has_gown") else 0.0,
-                            "diploma_confidence": 1.0 if res.get("has_diploma") else 0.0,
-                            "sash_confidence": 1.0 if res.get("has_sash") else 0.0,
-                            "cap_confidence": 1.0 if res.get("has_cap") else 0.0,
-                            "jabor_confidence": 1.0 if res.get("has_jabor") else 0.0,
-                        },
-                        "source": "qwen2.5-vl",
-                    }
-        except Exception as _ai_err:
-            logger.warning("[analyze_graduation] Falha na inferência VLM local: %s", _ai_err)
-
     tags: list[str] = []
     normalized_path = unicodedata.normalize("NFKD", photo_path)
     normalized_path = "".join(ch for ch in normalized_path if not unicodedata.combining(ch)).casefold()
@@ -1923,6 +1931,7 @@ def analyze_graduation_items(photo: dict | str | None = None, enable_heuristics:
     path_has_sash = False
     path_has_cap = False
     path_has_jabor = False
+    qwen_flags: dict[str, bool] | None = None
 
     if enable_heuristics and normalized_path:
         if "beca" in normalized_path:
@@ -1937,6 +1946,22 @@ def analyze_graduation_items(photo: dict | str | None = None, enable_heuristics:
             path_has_jabor = True
         if any((path_has_gown, path_has_diploma, path_has_sash, path_has_cap, path_has_jabor)):
             source_parts.append("path")
+
+    if use_ai_ultra and photo_path:
+        try:
+            from services.ollama_service import analyze_graduation_with_qwen
+            qwen_result = analyze_graduation_with_qwen(photo_path) or {}
+            if not qwen_result.get("error"):
+                qwen_flags = {
+                    "has_gown": bool(qwen_result.get("has_gown")),
+                    "has_diploma": bool(qwen_result.get("has_diploma")),
+                    "has_sash": bool(qwen_result.get("has_sash")),
+                    "has_cap": bool(qwen_result.get("has_cap")),
+                    "has_jabor": bool(qwen_result.get("has_jabor")),
+                }
+                source_parts.append("qwen2.5-vl")
+        except Exception:
+            qwen_flags = None
 
     img_bgr = None
     gown_confidence = 0.0
@@ -2142,6 +2167,77 @@ def analyze_graduation_items(photo: dict | str | None = None, enable_heuristics:
         if visual_tags:
             tags.extend(visual_tags)
             source_parts.append("visual")
+
+    def _fuse_confidence(
+        raw_confidence: float,
+        path_hint: bool,
+        qwen_flag: bool | None,
+        strong_threshold: float,
+        soft_threshold: float,
+    ) -> float:
+        if raw_confidence <= 0.0:
+            return 0.0
+
+        confidence = _clamp01(raw_confidence)
+        if path_hint and face_present:
+            confidence = max(confidence, min(0.55, strong_threshold * 0.72))
+
+        if qwen_flag is True:
+            if confidence >= strong_threshold:
+                return _clamp01(max(confidence, (confidence * 0.9) + 0.08))
+            if confidence >= soft_threshold:
+                return _clamp01((confidence * 0.84) + 0.05)
+            return 0.0
+        if qwen_flag is False:
+            if confidence >= strong_threshold:
+                return _clamp01(confidence * 0.38)
+            if confidence >= soft_threshold:
+                return 0.0
+            return 0.0
+
+        if confidence >= strong_threshold:
+            return confidence
+        if path_hint and face_present and confidence >= soft_threshold:
+            return _clamp01(confidence * 0.84)
+        if confidence >= soft_threshold:
+            return _clamp01(confidence * 0.72)
+        return 0.0
+
+    gown_confidence = _fuse_confidence(
+        gown_confidence,
+        path_has_gown,
+        qwen_flags.get("has_gown") if qwen_flags else None,
+        strong_threshold=0.68,
+        soft_threshold=0.48,
+    )
+    diploma_confidence = _fuse_confidence(
+        diploma_confidence,
+        path_has_diploma,
+        qwen_flags.get("has_diploma") if qwen_flags else None,
+        strong_threshold=0.70,
+        soft_threshold=0.50,
+    )
+    sash_confidence = _fuse_confidence(
+        sash_confidence,
+        path_has_sash,
+        qwen_flags.get("has_sash") if qwen_flags else None,
+        strong_threshold=0.76,
+        soft_threshold=0.58,
+    )
+    cap_confidence = _fuse_confidence(
+        cap_confidence,
+        path_has_cap,
+        qwen_flags.get("has_cap") if qwen_flags else None,
+        strong_threshold=0.66,
+        soft_threshold=0.50,
+    )
+    jabor_confidence = _fuse_confidence(
+        jabor_confidence,
+        path_has_jabor,
+        qwen_flags.get("has_jabor") if qwen_flags else None,
+        strong_threshold=0.62,
+        soft_threshold=0.46,
+    )
 
     tags = _normalize_saved_graduation_tags(tags)
     has_gown = bool(gown_confidence >= GRADUATION_CONFIDENCE_THRESHOLD)
@@ -4773,6 +4869,31 @@ def get_cached_occurrence_embedding(conn, occ):
         (occ["rowid"], stat.st_mtime_ns, stat.st_size),
     )
     cached = cur.fetchone()
+    
+    if not cached:
+        # Fallback 1: Se mtime_ns falhou por causa da imprecisão de float na conversão (float * 1e9),
+        # tentamos buscar apenas por occurrence_rowid e size (já que o size em bytes é exato e seguro)
+        cur.execute(
+            """
+            SELECT embedding FROM face_embeddings
+            WHERE occurrence_rowid = ? AND size = ?
+            """,
+            (occ["rowid"], stat.st_size),
+        )
+        cached = cur.fetchone()
+
+    if not cached:
+        # Fallback 2: Se ainda assim não encontrar, tentamos buscar apenas por occurrence_rowid.
+        # Como o occurrence_rowid é único para a ocorrência da face na foto, isso é extremamente seguro.
+        cur.execute(
+            """
+            SELECT embedding FROM face_embeddings
+            WHERE occurrence_rowid = ?
+            """,
+            (occ["rowid"],),
+        )
+        cached = cur.fetchone()
+
     if cached and cached["embedding"]:
         emb = np.frombuffer(cached["embedding"], dtype="float32")
         if emb.size > 0:
@@ -5235,6 +5356,10 @@ def rename_photo(req: RenamePhotoReq):
                 f"UPDATE {table} SET foto_path = ? WHERE foto_path COLLATE NOCASE = ?",
                 (new_path, old_path),
             )
+        cur.execute(
+            "UPDATE discarded_local_faces SET foto_path = ? WHERE foto_path COLLATE NOCASE = ?",
+            (new_path, old_path),
+        )
         conn.commit()
 
     return {"status": "ok", "old_path": old_path, "new_path": new_path}

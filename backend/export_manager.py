@@ -652,7 +652,7 @@ def _next_available_dest_file(folder, filename):
 
 def _unique_dest_file(folder, filename, conflict_strategy):
     dest = os.path.join(folder, filename)
-    if conflict_strategy == "replace":
+    if conflict_strategy in ("replace", "overwrite", "recreate", "skip"):
         return dest
     if not os.path.exists(dest):
         return dest
@@ -1117,18 +1117,14 @@ def run_export_worker(req: ExportReq, catalog_name: str):
                     output_filename = _export_output_filename(f, req)
                     with state_lock:
                         dest_file = _unique_dest_file(p_al, output_filename, req.conflict_strategy)
-                        dest_existed_before_export = dest_file.lower() in existing_dest_keys
-
-                        if dest_existed_before_export and req.conflict_strategy == "replace":
-                            return idx, aid, output_filename, f, dest_file, "Ja existia", None, False, True
-                        elif incremental_mode and os.path.exists(dest_file):
-                            return idx, aid, output_filename, f, dest_file, "Ja existia (incremental)", None, False, True
-                        else:
-                            if req.conflict_strategy == "replace" and os.path.exists(dest_file):
-                                dest_file = _next_available_dest_file(p_al, output_filename)
-                            existing_dest_keys.add(dest_file.lower())
-                            copied_path = dest_file
-                            file_copied = True
+                        
+                        # Se for estratégia skip (mesclar) e o arquivo já existe no destino, pulamos a cópia
+                        if (req.conflict_strategy == "skip" or incremental_mode) and os.path.exists(dest_file):
+                            return idx, aid, output_filename, f, dest_file, "Ignorado (mesclar)", None, False, True
+                            
+                        existing_dest_keys.add(dest_file.lower())
+                        copied_path = dest_file
+                        file_copied = True
 
                     export_format = _normalized_export_format(req)
                     is_copy_only = aid == "#BASE" or export_format == "jpg"

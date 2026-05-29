@@ -101,15 +101,6 @@ quality_audit_state = {
     "message": "Quality audit não iniciado",
 }
 
-create_references_state = {
-    "is_running": False,
-    "progress": 0.0,
-    "processed": 0,
-    "total": 0,
-    "status_text": "Pronto",
-    "error": None,
-    "result": None,
-}
 
 min_face_area = 500
 ref_match_threshold = 0.50

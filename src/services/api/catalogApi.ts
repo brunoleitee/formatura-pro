@@ -13,7 +13,7 @@ export const catalogApi = {
 
   // Catalog Folders
   listFolders: (catalog: string) =>
-    fetchJSON<CatalogFolder[]>(`${API_BASE}/catalogs/folders?catalog=${encodeURIComponent(catalog)}`),
+    fetchJSON<{ folders: CatalogFolder[] }>(`${API_BASE}/catalogs/folders?catalog=${encodeURIComponent(catalog)}`),
   getAllSubfolders: (catalog: string) =>
     fetchJSON<{ ok: boolean; subfolders: string[] }>(`${API_BASE}/catalogs/all-subfolders?catalog=${encodeURIComponent(catalog)}`),
 

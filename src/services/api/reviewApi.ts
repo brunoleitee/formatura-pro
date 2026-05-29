@@ -93,14 +93,14 @@ export const reviewApi = {
     { catalog, ...payload }
   ),
 
-  discardPhoto: (payload: { foto_path: string; discard: boolean }) =>
+  discardPhoto: (payload: { foto_path: string; discard: boolean; scope?: 'catalog' | 'person'; person_key?: string; rowids?: number[] }) =>
     post(`${API_BASE}/discard-photo`, payload),
 
-  bulkDiscardPhotos: (catalog: string, foto_paths: string[]) =>
-    post(`${API_BASE}/review/bulk-discard`, { catalog, foto_paths }),
+  bulkDiscardPhotos: (catalog: string, foto_paths: string[], opts?: { scope?: 'catalog' | 'person'; person_key?: string; rowids?: number[] }) =>
+    post(`${API_BASE}/review/bulk-discard`, { catalog, foto_paths, ...opts }),
 
-  bulkRestorePhotos: (catalog: string, foto_paths: string[]) =>
-    post(`${API_BASE}/review/bulk-restore`, { catalog, foto_paths }),
+  bulkRestorePhotos: (catalog: string, foto_paths: string[], opts?: { scope?: 'catalog' | 'person'; person_key?: string; rowids?: number[] }) =>
+    post(`${API_BASE}/review/bulk-restore`, { catalog, foto_paths, ...opts }),
 
   bulkManualIdentify: (catalog: string, new_name: string, rowids: number[]) =>
     post(`${API_BASE}/review/bulk-manual-identify`, { catalog, new_name, rowids }),

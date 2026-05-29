@@ -58,6 +58,12 @@ const FaceOverlayBox = memo(function FaceOverlayBox({
   const widthPx = ((face.x2 - face.x1) / photoWidth) * renderedW;
   const heightPx = ((face.y2 - face.y1) / photoHeight) * renderedH;
   const color = isKnown ? 'rgba(34, 197, 94, 0.8)' : 'rgba(255, 255, 255, 0.4)';
+  const placeBelow = y1 < 28 && (containerSize.h - (y1 + heightPx)) > 28;
+  const labelStyle = placeBelow
+    ? { top: 'calc(100% + 4px)', bottom: 'auto' }
+    : y1 < 28
+      ? { top: '2px', bottom: 'auto' }
+      : undefined;
 
   return (
     <div
@@ -76,12 +82,18 @@ const FaceOverlayBox = memo(function FaceOverlayBox({
       }}
     >
       {(face.is_foreground === 1 || (face.foreground_score && face.foreground_score >= 0.65)) && (
-        <div className={`${styles.faceLabel} ${styles.faceLabelFg}`}>
+        <div
+          className={`${styles.faceLabel} ${styles.faceLabelFg}`}
+          style={labelStyle}
+        >
           1º plano
         </div>
       )}
       {(face.is_foreground === 0 || (face.foreground_score !== undefined && face.foreground_score !== null && face.foreground_score < 0.45)) && (
-        <div className={`${styles.faceLabel} ${styles.faceLabelBg}`}>
+        <div
+          className={`${styles.faceLabel} ${styles.faceLabelBg}`}
+          style={labelStyle}
+        >
           2º plano {face.background_penalty_reason ? `(${face.background_penalty_reason})` : ''}
         </div>
       )}
@@ -207,6 +219,9 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
 
   const isMapped = isPhotoMapped(photo);
   const isDiscarded = photo.discarded === true;
+  const discardScope = photo.discarded_scope || (photo.discarded_global ? 'global' : photo.discarded_local ? 'person' : null);
+  const discardLabel = discardScope === 'person' ? 'Descartada nesta pasta' : discardScope === 'global' ? 'Descartada no catálogo' : 'Descartada';
+  const discardClassName = discardScope === 'person' ? styles.discardBadgeLocal : styles.discardBadgeGlobal;
   const knownNames = (photo.faces ?? [])
     .filter(isKnownFace)
     .map((f) => f.aluno_id)
@@ -400,7 +415,7 @@ export function PhotoCard({ photo, isSelected, getSelectionCount, cardWidth, thu
           <div data-scroll-hide className={`${styles.blurBadge} ${styles.blurBadgeAttention}`} title="Atenção">Verificar foco</div>
         )}
         {isDiscarded && (
-          <div data-scroll-hide className={styles.discardBadge}>Descartada</div>
+          <div data-scroll-hide className={`${styles.discardBadge} ${discardClassName}`}>{discardLabel}</div>
         )}
         {isAiProcessing && (
           <div data-scroll-hide className={`${styles.aiBadge} ${styles.aiProcessing}`}>IA...</div>

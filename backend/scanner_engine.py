@@ -185,6 +185,19 @@ def calc_foreground_score(x1, y1, x2, y2, area, img_shape, face, blur_score):
     return fg_score, is_foreground, face_area_ratio, center_score, bg_reason
 
 
+def is_acceptable_folder_face(similarity, fg_score, threshold):
+    """
+    Na pasta do formando, a identidade do rosto principal deve ter prioridade.
+    A centralidade ajuda a ranquear, mas não pode veto rígido quando o aluno
+    principal está bem reconhecido mesmo aparecendo mais de lado.
+    """
+    if similarity < threshold:
+        return False, "similaridade abaixo do limiar"
+    if fg_score < 0.45:
+        return False, "qualidade facial insuficiente"
+    return True, ""
+
+
 def quiet_external_output():
     return _cfg["quiet_external_output"]()
 
@@ -473,26 +486,73 @@ def load_references(ref_path):
         _cfg["log_info"]("[reference-loader] ref_path invalido ou inexistente: %s", ref_path)
         return
     _cfg["log_info"](f"[reference-loader] Carregando referências de: {ref_path}")
+    
+    get_cached_embedding = _cfg.get("get_cached_embedding")
+    set_cached_embedding = _cfg.get("set_cached_embedding")
+    save_embedding_disk_cache = _cfg.get("save_embedding_disk_cache")
+    cache_updated = False
+
     for r, d, files in os.walk(ref_path):
         for f in files:
             if not f.lower().endswith(_cfg["image_extensions"]):
                 continue
             full = os.path.join(r, f)
-            img, _ = imread_unicode(full)
-            if img is None:
-                continue
+            
+            # Obter mtime e size do arquivo de referência para chave do cache
             try:
-                with FACE_INFERENCE_LOCK:
-                    faces = _cfg["app_face"].get(img) or []
+                stat = os.stat(full)
+                mtime_ns = stat.st_mtime_ns
+                size = stat.st_size
             except Exception:
-                continue
-            if len(faces) != 1 or not hasattr(faces[0], "embedding") or faces[0].embedding is None:
-                continue
-            emb = faces[0].embedding.astype("float32")
-            norm = np.linalg.norm(emb)
-            if norm == 0:
-                continue
-            emb = emb / norm
+                mtime_ns = 0
+                size = 0
+
+            emb = None
+
+            # Tenta obter o embedding já pré-calculado do cache (usando bbox 0,0,0,0 especial para referências)
+            if get_cached_embedding and mtime_ns > 0:
+                cached_bytes = get_cached_embedding(full, 0, 0, 0, 0, mtime_ns, size)
+                if cached_bytes is not None:
+                    try:
+                        emb = np.frombuffer(cached_bytes, dtype="float32").copy()
+                        norm = np.linalg.norm(emb)
+                        if norm > 0:
+                            emb = emb / norm
+                    except Exception as cache_err:
+                        _cfg["log_info"](f"[reference-loader] falha ao ler do cache foto={f}: {cache_err}")
+                        emb = None
+
+            # Se não estava no cache ou falhou, realiza a detecção e extração normal
+            if emb is None:
+                img, _ = imread_unicode(full)
+                if img is None:
+                    continue
+                try:
+                    with FACE_INFERENCE_LOCK:
+                        faces = _cfg["app_face"].get(img) or []
+                except Exception:
+                    continue
+                if len(faces) < 1:
+                    continue
+                # Ordenar faces por area de bounding box decrescente para pegar a maior face
+                faces_sorted = sorted(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
+                best_face = faces_sorted[0]
+                if not hasattr(best_face, "embedding") or best_face.embedding is None:
+                    continue
+                emb = best_face.embedding.astype("float32")
+                norm = np.linalg.norm(emb)
+                if norm == 0:
+                    continue
+                emb = emb / norm
+                
+                # Salva o novo embedding gerado no cache em disco
+                if set_cached_embedding and mtime_ns > 0:
+                    try:
+                        set_cached_embedding(full, 0, 0, 0, 0, mtime_ns, size, emb.tobytes())
+                        cache_updated = True
+                    except Exception as cache_save_err:
+                        _cfg["log_info"](f"[reference-loader] falha ao salvar em cache foto={f}: {cache_save_err}")
+
             file_stem = Path(f).stem
 
             # Validar nome da pessoa: não pode ser vazio, ".", ou inválido
@@ -559,6 +619,13 @@ def load_references(ref_path):
         ref_class_to_ids[cls].append(i)
     _cfg["ref_class_to_ids"] = ref_class_to_ids
     _cfg["refs"] = refs
+
+    if cache_updated and save_embedding_disk_cache:
+        try:
+            save_embedding_disk_cache()
+            _cfg["log_info"]("[reference-loader] Cache de embeddings de referencia salvo em disco com sucesso.")
+        except Exception as e:
+            _cfg["log_info"](f"[reference-loader] Erro ao salvar cache em disco: {e}")
 
 
 def find_best_reference(emb):
@@ -844,7 +911,16 @@ def run_scanner_worker(req):
         scan_state["status_text"] = "Carregando Referências..."
         load_references(req.ref_path)
 
-        scan_roots = [req.event_path]
+        scan_roots = []
+        if req.selected_folders and len(req.selected_folders) > 0:
+            for folder in req.selected_folders:
+                if folder and os.path.isdir(folder):
+                    scan_roots.append(folder)
+        
+        # Se nenhuma subpasta especifica foi selecionada, usamos a pasta de eventos padrao
+        if not scan_roots:
+            scan_roots = [req.event_path]
+
         for extra in (req.extra_paths or []):
             if extra and os.path.isdir(extra):
                 scan_roots.append(extra)
@@ -1082,7 +1158,11 @@ def run_scanner_worker(req):
                                     similarity = max((float(np.dot(face_emb, ref_emb)) for ref_emb in current_student_embs), default=0.0)
                                 else:
                                     similarity = 0.0
-                                    
+
+                                fg_score, is_fg, face_area_ratio, center_score, bg_reason = calc_foreground_score(
+                                    x1, y1, x2, y2, area, img.shape, face, b_score
+                                )
+
                                 # Qualidade
                                 sharpness_score = 0.5
                                 if b_score is not None:
@@ -1091,21 +1171,10 @@ def run_scanner_worker(req):
                                         sharpness_score = min(1.0, max(0.0, val / 100.0))
                                     except:
                                         pass
-                                        
+
                                 # Tamanho
-                                face_area_ratio = area / (img_h * img_w) if (img_h * img_w) > 0 else 0
                                 tamanho_da_face = min(1.0, face_area_ratio / 0.05)
-                                
-                                # Centralidade
-                                face_cx = (x1 + x2) / 2.0
-                                face_cy = (y1 + y2) / 2.0
-                                img_cx = img_w / 2.0
-                                img_cy = img_h / 2.0
-                                dist_x = abs(face_cx - img_cx) / img_w
-                                dist_y = abs(face_cy - img_cy) / img_h
-                                dist = (dist_x**2 + dist_y**2)**0.5
-                                center_score = max(0.0, 1.0 - (dist * 2.0))
-                                
+
                                 # Score Final Ponderado
                                 final_score = (similarity * 0.75) + (sharpness_score * 0.10) + (tamanho_da_face * 0.08) + (center_score * 0.07)
                                 
@@ -1113,14 +1182,19 @@ def run_scanner_worker(req):
                                     "face": face, "x1": x1, "y1": y1, "x2": x2, "y2": y2, "area": area,
                                     "similarity": similarity, "sharpness_score": sharpness_score,
                                     "tamanho_da_face": tamanho_da_face, "center_score": center_score,
+                                    "fg_score": fg_score, "bg_reason": bg_reason,
                                     "final_score": final_score, "f_idx_local": f_idx_local,
                                     "decisao": "Pendente",
                                     "ref_person_key": folder_person_key,
                                     "student_name": folder_student_name
                                 })
                                 
-                            # Ordenar faces em ordem decrescente de final_score
-                            scored_folder_faces.sort(key=lambda x: x["final_score"], reverse=True)
+                            # Ordenar por similaridade primeiro: a pasta deve proteger o aluno principal
+                            # mesmo quando há outras pessoas mais centrais na cena.
+                            scored_folder_faces.sort(
+                                key=lambda x: (x["similarity"], x["fg_score"], x["center_score"], x["final_score"]),
+                                reverse=True,
+                            )
                             
                             # 3. Decidir atribuições
                             match_found = False
@@ -1129,11 +1203,16 @@ def run_scanner_worker(req):
                             if scored_folder_faces:
                                 # A primeira face ordenada é a candidata principal
                                 best_face = scored_folder_faces[0]
-                                if best_face["similarity"] >= threshold:
+                                best_ok, best_reason = is_acceptable_folder_face(
+                                    best_face["similarity"],
+                                    best_face["fg_score"],
+                                    threshold,
+                                )
+                                if best_ok:
                                     best_face["decisao"] = f"Aceito como formando da pasta ({folder_student_name})"
                                     match_found = True
                                 else:
-                                    best_face["decisao"] = "Abaixo do limiar - Enviado para Revisão IA"
+                                    best_face["decisao"] = f"Rejeitado para pasta: {best_reason}"
                                     
                                 # Se a primeira face bater com o formando, as outras faces secundárias serão enviadas para cluster local
                                 for other_face in scored_folder_faces[1:]:
@@ -1147,6 +1226,7 @@ def run_scanner_worker(req):
                                     f"similarity={fd['similarity']:.4f} | "
                                     f"bbox={bbox_str} | "
                                     f"area={fd['area']} | "
+                                    f"fg_score={fd['fg_score']:.4f} | "
                                     f"center_score={fd['center_score']:.4f} | "
                                     f"final_score={fd['final_score']:.4f} | "
                                     f"decisão={fd['decisao']}"
@@ -1185,7 +1265,7 @@ def run_scanner_worker(req):
                                     ref_class_name = ""
                                     ref_folder = ""
                                     is_fg = 0
-                                    bg_reason = "Revisão IA (Pasta de Formando)"
+                                    bg_reason = "Revisão IA (Pasta de Formando)" if match_found else (fd["bg_reason"] or "Revisão IA (Pasta de Formando)")
                                     
                                 if not ref_person_key:
                                     ref_person_key = make_person_key(

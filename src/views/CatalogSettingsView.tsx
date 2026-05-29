@@ -41,10 +41,11 @@ export default function CatalogSettingsView({ onRequestConfirm }: Props) {
     setLoading(true);
     setErr('');
     try {
-      const [f, s] = await Promise.all([
+      const [fData, s] = await Promise.all([
         catalogApi.listFolders(currentCatalog),
         catalogApi.getFolderStats(currentCatalog),
       ]);
+      const f = fData.folders || [];
       console.log('[CatalogSettings] folders:', f.length, 'stats:', s);
       setFolders(f);
       setStats(s);

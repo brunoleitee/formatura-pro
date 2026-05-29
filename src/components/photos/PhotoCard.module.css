@@ -113,6 +113,16 @@
   box-shadow: 0 2px 8px var(--black-light);
 }
 
+.discardBadgeGlobal {
+  background: rgba(185, 28, 28, 0.98);
+  color: var(--photo-badge-error-text);
+}
+
+.discardBadgeLocal {
+  background: rgba(217, 119, 6, 0.98);
+  color: #fff7ed;
+}
+
 .faceLabel {
   position: absolute;
   top: -22px;

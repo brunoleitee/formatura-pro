@@ -397,6 +397,14 @@
   pointer-events: none;
 }
 
+.discardBadgeGlobal {
+  background: rgba(185, 28, 28, 1);
+}
+
+.discardBadgeLocal {
+  background: rgba(217, 119, 6, 1);
+}
+
 .navBtn {
   position: absolute;
   top: 50%;

@@ -331,6 +331,40 @@ def start_scan(req: ScanRequest):
             raise HTTPException(400, f"Nome de catálogo inválido: {e}")
         if not req.event_path or not os.path.isdir(req.event_path):
             raise HTTPException(status_code=400, detail="Selecione uma pasta válida de fotos brutas.")
+        # Autodetectar ref_path se vier vazio
+        if not req.ref_path or not req.ref_path.strip():
+            # 1. Tentar buscar no banco de dados se há alguma pasta 'reference' ativa para esse catálogo
+            try:
+                get_db = _get("get_db")
+                if get_db and req.project_name:
+                    with get_db(req.project_name) as conn:
+                        cur = conn.cursor()
+                        cur.execute(
+                            "SELECT path FROM catalog_folders WHERE catalog_name = ? AND folder_type = 'reference' AND status = 'active' LIMIT 1",
+                            (req.project_name,)
+                        )
+                        row = cur.fetchone()
+                        if row and row["path"]:
+                            req.ref_path = row["path"]
+                            log_info(f"[SCAN] Pasta de referencia carregada do banco de dados: {req.ref_path}")
+            except Exception as _db_err:
+                log_info(f"[SCAN] Erro ao carregar ref_path do banco de dados: {_db_err}")
+
+        # 2. Se ainda estiver vazio, tentar escanear subpastas comuns no event_path
+        if not req.ref_path or not req.ref_path.strip():
+            common_ref_names = ["#referencia", "#referencias", "referencia", "referencias", "base", "bases", "ref", "refs", "#ref", "fotos de referencia", "fotos de referência", "fotos_referencia"]
+            if req.event_path and os.path.isdir(req.event_path):
+                try:
+                    for entry in os.scandir(req.event_path):
+                        if entry.is_dir():
+                            name_lower = entry.name.lower()
+                            if name_lower in common_ref_names:
+                                req.ref_path = entry.path
+                                log_info(f"[SCAN] Pasta de referencia autodetectada na subpasta: {req.ref_path}")
+                                break
+                except Exception as _scan_err:
+                    log_info(f"[SCAN] Erro ao varrer subpastas atras de referencia: {_scan_err}")
+
         _log_memory("before scanner start")
         scan_state["is_scanning"] = True
         scan_state["stopped"] = False
@@ -372,8 +406,8 @@ def start_scan(req: ScanRequest):
                                                 (ftype, existing["id"]))
                             else:
                                 cur.execute("""
-                                    INSERT INTO catalog_folders (catalog_name, path, include_subfolders, photo_count, folder_type)
-                                    VALUES (?, ?, 1, 0, ?)
+                                    INSERT OR IGNORE INTO catalog_folders (catalog_name, path, include_subfolders, status, folder_type)
+                                    VALUES (?, ?, 1, 'active', ?)
                                 """, (req.project_name, path, ftype))
                     conn.commit()
                     print(f"[CatalogFolders] saved event={req.event_path} reference={req.ref_path}", flush=True)
