@@ -62,10 +62,11 @@ def ensure_graduation_columns(conn):
         for col in ("has_gown", "has_diploma", "has_sash", "has_cap",
                      "gown_confidence", "diploma_confidence", "sash_confidence",
                      "cap_confidence", "jabor_confidence", "has_jabor",
-                     "manual_graduation_tags", "ai_graduation_tags",
+                     "manual_graduation_tags", "ai_graduation_tags", "graduation_scores",
                      "foreground_score", "is_foreground", "face_area_ratio",
                      "center_score", "background_penalty_reason"):
-            _safe_add_column(conn, "ocorrencias", col, "REAL" if "confidence" in col or "score" in col or "ratio" in col else "TEXT")
+            definition = "TEXT" if col == "graduation_scores" else ("REAL" if "confidence" in col or "score" in col or "ratio" in col else "TEXT")
+            _safe_add_column(conn, "ocorrencias", col, definition)
         _safe_add_column(conn, "ocorrencias", "is_foreground", "INTEGER DEFAULT 1")
         _safe_add_column(conn, "ocorrencias", "face_area_ratio", "REAL")
         _safe_add_column(conn, "ocorrencias", "center_score", "REAL")
@@ -123,6 +124,8 @@ def ensure_identity_columns(conn):
             cur.execute("ALTER TABLE ocorrencias ADD COLUMN graduation_reviewed INTEGER DEFAULT 0")
         if "manual_graduation_tags" not in cols:
             cur.execute("ALTER TABLE ocorrencias ADD COLUMN manual_graduation_tags TEXT DEFAULT ''")
+        if "graduation_scores" not in cols:
+            cur.execute("ALTER TABLE ocorrencias ADD COLUMN graduation_scores TEXT DEFAULT '{}'")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_ocor_person_key ON ocorrencias(person_key)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_ocor_person_key_aluno ON ocorrencias(person_key, aluno_id)")
         _ensure_ocorrencias_unique(cur)
@@ -345,6 +348,7 @@ class DbConnection:
                 blur_score REAL, blur_status TEXT, closed_eyes INTEGER,
                 has_gown INTEGER, has_diploma INTEGER, has_sash INTEGER, has_cap INTEGER,
                 face_front_score REAL, graduation_score REAL,
+                graduation_scores TEXT DEFAULT '{}',
                 graduation_tags TEXT DEFAULT '[]',
                 graduation_analyzed_at TEXT,
                 foreground_score REAL, is_foreground INTEGER DEFAULT 1,

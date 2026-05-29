@@ -36,32 +36,41 @@ const ClusterItem = memo(function ClusterItem({
 }) {
   const rep = cluster.representative;
   const pct = Math.round(cluster.cohesion_score * 100);
+  const scoreMap = cluster.graduation_scores ?? {};
+  const getScore = (key: 'beca' | 'canudo' | 'faixa' | 'capelo' | 'jabor') =>
+    scoreMap[key] ?? (
+      key === 'beca' ? (cluster.gown_confidence ?? (cluster.has_gown ? 1 : 0)) :
+      key === 'canudo' ? (cluster.diploma_confidence ?? (cluster.has_diploma ? 1 : 0)) :
+      key === 'faixa' ? (cluster.sash_confidence ?? (cluster.has_sash ? 1 : 0)) :
+      key === 'capelo' ? (cluster.cap_confidence ?? (cluster.has_cap ? 1 : 0)) :
+      (cluster.jabor_confidence ?? (cluster.has_jabor ? 1 : 0))
+    );
   function gownBadge() {
-    const conf = cluster.gown_confidence ?? (cluster.has_gown ? 1 : 0);
+    const conf = getScore('beca');
     if (conf >= CONF_CONFIRMED) return { id: 'beca', label: 'Beca', variant: 'tag' as const };
     if (conf >= CONF_POSSIBLE) return { id: 'beca_possible', label: 'Possível beca', variant: 'tagMuted' as const };
     return null;
   }
   function diplomaBadge() {
-    const conf = cluster.diploma_confidence ?? (cluster.has_diploma ? 1 : 0);
+    const conf = getScore('canudo');
     if (conf >= CONF_CONFIRMED) return { id: 'canudo', label: 'Canudo', variant: 'tag' as const };
     if (conf >= CONF_POSSIBLE) return { id: 'canudo_possible', label: 'Possível canudo', variant: 'tagMuted' as const };
     return null;
   }
   function sashBadge() {
-    const conf = cluster.sash_confidence ?? (cluster.has_sash ? 1 : 0);
+    const conf = getScore('faixa');
     if (conf >= CONF_CONFIRMED) return { id: 'faixa', label: 'Faixa', variant: 'tag' as const };
     if (conf >= CONF_POSSIBLE) return { id: 'faixa_possible', label: 'Possível faixa', variant: 'tagMuted' as const };
     return null;
   }
   function capBadge() {
-    const conf = cluster.cap_confidence ?? (cluster.has_cap ? 1 : 0);
+    const conf = getScore('capelo');
     if (conf >= CONF_CONFIRMED) return { id: 'capelo', label: 'Capelo', variant: 'tag' as const };
     if (conf >= CONF_POSSIBLE) return { id: 'capelo_possible', label: 'Possível capelo', variant: 'tagMuted' as const };
     return null;
   }
   function jaborBadge() {
-    const conf = cluster.jabor_confidence ?? (cluster.has_jabor ? 1 : 0);
+    const conf = getScore('jabor');
     if (conf >= CONF_CONFIRMED) return { id: 'jabor', label: 'Jabor', variant: 'tag' as const };
     if (conf >= CONF_POSSIBLE) return { id: 'jabor_possible', label: 'Possível jabor', variant: 'tagMuted' as const };
     return null;
@@ -178,11 +187,11 @@ export default function ReviewSidebar({
     : `${total || loadedCount} grupo${(total || loadedCount) !== 1 ? 's' : ''} pendente${(total || loadedCount) !== 1 ? 's' : ''}`;
   const hasGraduationAnalysis = clusters.some((cluster) =>
     Boolean(
-      (cluster.gown_confidence ?? (cluster.has_gown ? 1 : 0)) >= CONF_POSSIBLE ||
-      (cluster.diploma_confidence ?? (cluster.has_diploma ? 1 : 0)) >= CONF_POSSIBLE ||
-      (cluster.sash_confidence ?? (cluster.has_sash ? 1 : 0)) >= CONF_POSSIBLE ||
-      (cluster.cap_confidence ?? (cluster.has_cap ? 1 : 0)) >= CONF_POSSIBLE ||
-      (cluster.jabor_confidence ?? (cluster.has_jabor ? 1 : 0)) >= CONF_POSSIBLE ||
+      (cluster.graduation_scores?.beca ?? cluster.gown_confidence ?? (cluster.has_gown ? 1 : 0)) >= CONF_POSSIBLE ||
+      (cluster.graduation_scores?.canudo ?? cluster.diploma_confidence ?? (cluster.has_diploma ? 1 : 0)) >= CONF_POSSIBLE ||
+      (cluster.graduation_scores?.faixa ?? cluster.sash_confidence ?? (cluster.has_sash ? 1 : 0)) >= CONF_POSSIBLE ||
+      (cluster.graduation_scores?.capelo ?? cluster.cap_confidence ?? (cluster.has_cap ? 1 : 0)) >= CONF_POSSIBLE ||
+      (cluster.graduation_scores?.jabor ?? cluster.jabor_confidence ?? (cluster.has_jabor ? 1 : 0)) >= CONF_POSSIBLE ||
       (cluster.graduation_tags?.length ?? 0) > 0
     )
   );
@@ -196,27 +205,27 @@ export default function ReviewSidebar({
         : [];
 
       if (graduationFilter === 'gown') {
-        const conf = cluster.gown_confidence ?? (cluster.has_gown ? 1 : 0);
+        const conf = cluster.graduation_scores?.beca ?? cluster.gown_confidence ?? (cluster.has_gown ? 1 : 0);
         return conf >= CONF_POSSIBLE || tags.includes('beca');
       }
 
       if (graduationFilter === 'diploma') {
-        const conf = cluster.diploma_confidence ?? (cluster.has_diploma ? 1 : 0);
+        const conf = cluster.graduation_scores?.canudo ?? cluster.diploma_confidence ?? (cluster.has_diploma ? 1 : 0);
         return conf >= CONF_POSSIBLE || tags.includes('canudo') || tags.includes('diploma');
       }
 
       if (graduationFilter === 'sash') {
-        const conf = cluster.sash_confidence ?? (cluster.has_sash ? 1 : 0);
+        const conf = cluster.graduation_scores?.faixa ?? cluster.sash_confidence ?? (cluster.has_sash ? 1 : 0);
         return conf >= CONF_POSSIBLE || tags.includes('faixa');
       }
 
       if (graduationFilter === 'cap') {
-        const conf = cluster.cap_confidence ?? (cluster.has_cap ? 1 : 0);
+        const conf = cluster.graduation_scores?.capelo ?? cluster.cap_confidence ?? (cluster.has_cap ? 1 : 0);
         return conf >= CONF_POSSIBLE || tags.includes('capelo');
       }
 
       if (graduationFilter === 'jabor') {
-        const conf = cluster.jabor_confidence ?? (cluster.has_jabor ? 1 : 0);
+        const conf = cluster.graduation_scores?.jabor ?? cluster.jabor_confidence ?? (cluster.has_jabor ? 1 : 0);
         return conf >= CONF_POSSIBLE || tags.includes('jabor');
       }
 

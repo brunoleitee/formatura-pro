@@ -308,6 +308,7 @@ export interface RichCluster {
   priority_score?: number;
   graduation_tags?: string[];
   ai_graduation_tags?: string[];
+  graduation_scores?: Partial<Record<'beca' | 'faixa' | 'capelo' | 'canudo' | 'jabor', number>>;
   has_gown?: boolean;
   has_diploma?: boolean;
   has_sash?: boolean;
@@ -354,6 +355,7 @@ export interface ReviewClusterSummary {
   best_similarity_debug?: number | null;
   graduation_tags?: string[];
   ai_graduation_tags?: string[];
+  graduation_scores?: Partial<Record<'beca' | 'faixa' | 'capelo' | 'canudo' | 'jabor', number>>;
   has_gown?: boolean;
   has_diploma?: boolean;
   has_sash?: boolean;

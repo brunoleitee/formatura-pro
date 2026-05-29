@@ -1,4 +1,4 @@
-import { useState, memo, useMemo } from 'react';
+import { useState, memo, useMemo, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { CheckCircle2, GitCompare, HelpCircle, Sparkles, X } from 'lucide-react';
 import type { RichCluster } from '../../services/api';
@@ -121,16 +121,21 @@ export default memo(function ClusterStatsPanel({
     return Object.entries(reasons).sort((a, b) => b[1] - a[1]);
   }, [cluster.faces]);
 
+  const scoreMap = useMemo(() => cluster.graduation_scores ?? {}, [cluster.graduation_scores]);
+  const getScore = useCallback((item: GraduationItem) => {
+    const key = item === 'gown' ? 'beca' : item === 'diploma' ? 'canudo' : item === 'sash' ? 'faixa' : item === 'cap' ? 'capelo' : 'jabor';
+    return scoreMap[key] ?? ((cluster[ITEM_CONFIDENCE_KEY[item]] as number | undefined) ?? ((cluster[ITEM_HAS_KEY[item]] as boolean | undefined) ? 1 : 0));
+  }, [cluster, scoreMap]);
+
   const detectedItems = useMemo(() => ITEMS.map(item => {
-    const conf = (cluster[ITEM_CONFIDENCE_KEY[item]] as number | undefined)
-      ?? ((cluster[ITEM_HAS_KEY[item]] as boolean | undefined) ? 1 : 0);
+    const conf = getScore(item);
     return {
       item,
       label: ITEM_LABEL[item],
       confidence: Math.round(Math.max(0, Math.min(1, conf || 0)) * 100),
       visible: (conf || 0) > 0 || Boolean(cluster[ITEM_HAS_KEY[item]]),
     };
-  }).filter(item => item.visible), [cluster]);
+  }).filter(item => item.visible), [cluster, getScore]);
 
   const qualityLabel = useMemo(() => {
     if (qualityStats.sharp >= Math.max(1, Math.ceil(cluster.face_count * 0.65))) return 'Alta';

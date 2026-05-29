@@ -1139,7 +1139,7 @@ def _load_review_occurrence_rows(cur) -> list:
         SELECT rowid, aluno_id, foto_path, x1, y1, x2, y2,
                blur_status, blur_score, closed_eyes,
                has_gown, has_diploma, has_sash, has_cap, has_jabor,
-               face_front_score, graduation_score, graduation_tags,
+               face_front_score, graduation_score, graduation_tags, graduation_scores,
                ai_graduation_tags,
                gown_confidence, diploma_confidence, sash_confidence, cap_confidence, jabor_confidence,
                manual_graduation_tags,
@@ -1272,10 +1272,18 @@ def _build_review_cluster_payload(
         "has_diploma": any(meta["has_diploma"] for meta in priority_meta),
         "has_sash": any(meta["has_sash"] for meta in priority_meta),
         "has_cap": any(meta["has_cap"] for meta in priority_meta),
+        "graduation_scores": {
+            "beca": round(max((meta.get("graduation_scores", {}).get("beca", 0.0) for meta in priority_meta), default=0.0), 4),
+            "faixa": round(max((meta.get("graduation_scores", {}).get("faixa", 0.0) for meta in priority_meta), default=0.0), 4),
+            "capelo": round(max((meta.get("graduation_scores", {}).get("capelo", 0.0) for meta in priority_meta), default=0.0), 4),
+            "canudo": round(max((meta.get("graduation_scores", {}).get("canudo", 0.0) for meta in priority_meta), default=0.0), 4),
+            "jabor": round(max((meta.get("graduation_scores", {}).get("jabor", 0.0) for meta in priority_meta), default=0.0), 4),
+        },
         "gown_confidence": round(max((meta["gown_confidence"] for meta in priority_meta), default=0.0), 4),
         "diploma_confidence": round(max((meta["diploma_confidence"] for meta in priority_meta), default=0.0), 4),
         "sash_confidence": round(max((meta["sash_confidence"] for meta in priority_meta), default=0.0), 4),
         "cap_confidence": round(max((meta["cap_confidence"] for meta in priority_meta), default=0.0), 4),
+        "jabor_confidence": round(max((meta.get("jabor_confidence", 0.0) for meta in priority_meta), default=0.0), 4),
         "manual_graduation_tags": cluster_manual_tags,
         "debug_graduation_source": _resolve_cluster_graduation_source(priority_meta),
         "preview_image": rep_item["foto_path"],
@@ -1292,6 +1300,7 @@ def _build_review_cluster_payload(
             "has_diploma": rep_item_meta["has_diploma"],
             "has_sash": rep_item_meta["has_sash"],
             "has_cap": rep_item_meta["has_cap"],
+            "graduation_scores": rep_item_meta.get("graduation_scores"),
             "face_front_score": rep_item_meta["face_front_score"],
             "graduation_score": rep_item_meta["graduation_score"],
             "is_representative": True,
@@ -1914,381 +1923,115 @@ def _clamp01(value: float) -> float:
     return float(max(0.0, min(1.0, value)))
 
 
-GRADUATION_CONFIDENCE_THRESHOLD = 0.30
+GRADUATION_CONFIDENCE_THRESHOLD = 0.75
+GRADUATION_REVIEW_THRESHOLD = 0.45
+GRADUATION_SCORE_LABELS = {
+    "beca": "gown",
+    "faixa": "sash",
+    "capelo": "cap",
+    "canudo": "diploma",
+    "jabor": "jabor",
+}
+
+
+def _default_graduation_scores() -> dict[str, float]:
+    return {
+        "beca": 0.0,
+        "faixa": 0.0,
+        "capelo": 0.0,
+        "canudo": 0.0,
+        "jabor": 0.0,
+    }
+
+
+def _normalize_graduation_scores(value) -> dict[str, float]:
+    scores = _default_graduation_scores()
+    raw = value
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except Exception:
+            raw = {}
+    if isinstance(raw, dict):
+        for key in scores.keys():
+            try:
+                scores[key] = round(_clamp01(float(raw.get(key) or 0.0)), 4)
+            except Exception:
+                scores[key] = 0.0
+    return scores
+
+
+def _scores_to_item_flags(scores: dict[str, float]) -> dict[str, bool]:
+    return {
+        "has_gown": bool(scores.get("beca", 0.0) >= GRADUATION_CONFIDENCE_THRESHOLD),
+        "has_diploma": bool(scores.get("canudo", 0.0) >= GRADUATION_CONFIDENCE_THRESHOLD),
+        "has_sash": bool(scores.get("faixa", 0.0) >= GRADUATION_CONFIDENCE_THRESHOLD),
+        "has_cap": bool(scores.get("capelo", 0.0) >= GRADUATION_CONFIDENCE_THRESHOLD),
+        "has_jabor": bool(scores.get("jabor", 0.0) >= GRADUATION_CONFIDENCE_THRESHOLD),
+    }
+
+
+def _build_graduation_detection_result(scores: dict[str, float], *, face_present: bool = False, source: str = "graduation_classifier") -> dict:
+    normalized_scores = _normalize_graduation_scores(scores)
+    flags = _scores_to_item_flags(normalized_scores)
+    review_flags = {
+        "beca": bool(normalized_scores["beca"] >= GRADUATION_REVIEW_THRESHOLD),
+        "faixa": bool(normalized_scores["faixa"] >= GRADUATION_REVIEW_THRESHOLD),
+        "capelo": bool(normalized_scores["capelo"] >= GRADUATION_REVIEW_THRESHOLD),
+        "canudo": bool(normalized_scores["canudo"] >= GRADUATION_REVIEW_THRESHOLD),
+        "jabor": bool(normalized_scores["jabor"] >= GRADUATION_REVIEW_THRESHOLD),
+    }
+    confirmed_tags = []
+    if flags["has_gown"]:
+        confirmed_tags.append("beca")
+    if flags["has_diploma"]:
+        confirmed_tags.append("canudo")
+    if flags["has_sash"]:
+        confirmed_tags.append("faixa")
+    if flags["has_cap"]:
+        confirmed_tags.append("capelo")
+    if flags["has_jabor"]:
+        confirmed_tags.append("jabor")
+
+    return {
+        **flags,
+        "graduation_scores": normalized_scores,
+        "graduation_tags": _normalize_saved_graduation_tags(confirmed_tags),
+        "graduation_score": round(float(sum(normalized_scores.values()) / max(1, len(normalized_scores)) * 100.0), 4),
+        "source": source,
+        "debug": {
+            "gown_confidence": round(float(normalized_scores["beca"]), 4),
+            "diploma_confidence": round(float(normalized_scores["canudo"]), 4),
+            "sash_confidence": round(float(normalized_scores["faixa"]), 4),
+            "cap_confidence": round(float(normalized_scores["capelo"]), 4),
+            "jabor_confidence": round(float(normalized_scores["jabor"]), 4),
+            "face_present": face_present,
+            "review_threshold": GRADUATION_REVIEW_THRESHOLD,
+            "confirmed_threshold": GRADUATION_CONFIDENCE_THRESHOLD,
+            "review_flags": review_flags,
+            "source": source,
+        },
+    }
 
 
 def analyze_graduation_items(photo: dict | str | None = None, enable_heuristics: bool = True, use_ai_ultra: bool = False) -> dict:
     photo_path = _extract_photo_path(photo)
     face_boxes = _extract_face_boxes(photo)
-    
-    tags: list[str] = []
-    normalized_path = unicodedata.normalize("NFKD", photo_path)
-    normalized_path = "".join(ch for ch in normalized_path if not unicodedata.combining(ch)).casefold()
-    source_parts: list[str] = []
-    run_visual_analysis = bool(enable_heuristics or (isinstance(photo, dict) and photo.get("force_visual_analysis")))
-    path_has_gown = False
-    path_has_diploma = False
-    path_has_sash = False
-    path_has_cap = False
-    path_has_jabor = False
-    qwen_flags: dict[str, bool] | None = None
+    face_present = bool(face_boxes)
 
-    if enable_heuristics and normalized_path:
-        if "beca" in normalized_path:
-            path_has_gown = True
-        if "canudo" in normalized_path or "diploma" in normalized_path:
-            path_has_diploma = True
-        if "faixa" in normalized_path:
-            path_has_sash = True
-        if "capelo" in normalized_path:
-            path_has_cap = True
-        if "jabor" in normalized_path or "vest" in normalized_path:
-            path_has_jabor = True
-        if any((path_has_gown, path_has_diploma, path_has_sash, path_has_cap, path_has_jabor)):
-            source_parts.append("path")
+    from ai.graduation_classifier import get_graduation_classifier
 
-    if use_ai_ultra and photo_path:
+    classifier = get_graduation_classifier()
+    scores = _default_graduation_scores()
+    if photo_path and face_present:
         try:
-            from services.ollama_service import analyze_graduation_with_qwen
-            qwen_result = analyze_graduation_with_qwen(photo_path) or {}
-            if not qwen_result.get("error"):
-                qwen_flags = {
-                    "has_gown": bool(qwen_result.get("has_gown")),
-                    "has_diploma": bool(qwen_result.get("has_diploma")),
-                    "has_sash": bool(qwen_result.get("has_sash")),
-                    "has_cap": bool(qwen_result.get("has_cap")),
-                    "has_jabor": bool(qwen_result.get("has_jabor")),
-                }
-                source_parts.append("qwen2.5-vl")
+            scores = classifier.predict({"photo_path": photo_path, "face_boxes": face_boxes}) or scores
         except Exception:
-            qwen_flags = None
-
-    img_bgr = None
-    gown_confidence = 0.0
-    sash_confidence = 0.0
-    cap_confidence = 0.0
-    diploma_confidence = 0.0
-    jabor_confidence = 0.0
-    face_present = False
-
-    if run_visual_analysis:
-        img_bgr = _load_photo_bgr(photo_path)
-        img_bgr, face_boxes = _resize_for_analysis(img_bgr, face_boxes)
-
-    if img_bgr is not None and img_bgr.ndim == 3:
-        h, w = img_bgr.shape[:2]
-        primary_face = _pick_primary_face(face_boxes, w, h)
-        face_present = primary_face is not None
-        regions = _build_analysis_regions(primary_face, w, h)
-        hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
-        torso_hsv = _extract_roi(hsv, regions["torso"])
-        head_hsv = _extract_roi(hsv, regions["head"])
-        hands_hsv = _extract_roi(hsv, regions["hands"])
-
-        if torso_hsv is not None and torso_hsv.size > 0:
-            torso_h = torso_hsv[:, :, 0]
-            torso_s = torso_hsv[:, :, 1]
-            torso_v = torso_hsv[:, :, 2]
-            dark_mask = ((torso_v < 72) & (torso_s < 150)).astype(np.uint8) * 255
-            dark_mask = cv2.morphologyEx(dark_mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
-            dark_ratio = _mask_ratio(dark_mask)
-            lower_slice = dark_mask[int(dark_mask.shape[0] * 0.35):, :]
-            lower_dark_ratio = _mask_ratio(lower_slice)
-            central_band = dark_mask[:, int(dark_mask.shape[1] * 0.2):int(dark_mask.shape[1] * 0.8)]
-            central_dark_ratio = _mask_ratio(central_band)
-            lower_central = dark_mask[int(dark_mask.shape[0] * 0.45):, int(dark_mask.shape[1] * 0.24):int(dark_mask.shape[1] * 0.76)]
-            lower_central_ratio = _mask_ratio(lower_central)
-            edge_cols = max(1, int(dark_mask.shape[1] * 0.14))
-            side_mask = np.concatenate((dark_mask[:, :edge_cols], dark_mask[:, -edge_cols:]), axis=1)
-            side_dark_ratio = _mask_ratio(side_mask)
-            background_penalty = max(0.0, side_dark_ratio - central_dark_ratio)
-            upper_torso = torso_hsv[:max(1, int(torso_hsv.shape[0] * 0.34)), :, :]
-            upper_s = upper_torso[:, :, 1]
-            upper_v = upper_torso[:, :, 2]
-            collar_mask = ((upper_s > 82) & (upper_v > 74)).astype(np.uint8) * 255
-            collar_mask = cv2.morphologyEx(collar_mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-            collar_ratio = _mask_ratio(collar_mask)
-            face_bonus = 0.06 if face_present else 0.0
-            collar_present = collar_ratio > 0.045
-            if (
-                face_present and
-                dark_ratio > 0.38 and
-                lower_dark_ratio > 0.52 and
-                central_dark_ratio > 0.5 and
-                lower_central_ratio > 0.56 and
-                collar_present
-            ):
-                gown_confidence = _clamp01(
-                    0.42 * dark_ratio +
-                    0.72 * lower_dark_ratio +
-                    0.55 * central_dark_ratio +
-                    0.5 * lower_central_ratio +
-                    0.48 * collar_ratio +
-                    face_bonus -
-                    1.05 * background_penalty
-                )
-                if path_has_gown:
-                    gown_confidence = _clamp01(gown_confidence + 0.03)
-
-            vivid_mask = (
-                (torso_s > 108) &
-                (torso_v > 88) &
-                ~((torso_h > 4) & (torso_h < 28) & (torso_v > 118))
-            ).astype(np.uint8) * 255
-            vivid_mask = cv2.morphologyEx(vivid_mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-            vivid_mask = cv2.morphologyEx(vivid_mask, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
-            best_sash = _best_component(vivid_mask, min_area_ratio=0.014, min_aspect=2.0)
-            if best_sash:
-                center_x = best_sash["x"] + (best_sash["w"] / 2.0)
-                center_y = best_sash["y"] + (best_sash["h"] / 2.0)
-                touches_center = 1.0 if vivid_mask.shape[1] * 0.26 <= center_x <= vivid_mask.shape[1] * 0.74 else 0.0
-                torso_mid = 1.0 if vivid_mask.shape[0] * 0.18 <= center_y <= vivid_mask.shape[0] * 0.76 else 0.0
-                band_width = best_sash["w"] / max(1.0, vivid_mask.shape[1])
-                band_height = best_sash["h"] / max(1.0, vivid_mask.shape[0])
-                orientation_score = 1.0 if band_width > 0.34 or band_height > 0.25 else 0.0
-                diagonal_bias = abs((center_x / max(1.0, vivid_mask.shape[1])) - (center_y / max(1.0, vivid_mask.shape[0])))
-                diagonal_score = 1.0 if diagonal_bias > 0.12 else 0.0
-                compact_penalty = 0.26 if best_sash["area_ratio"] > 0.16 else 0.0
-                edge_penalty = 0.18 if (center_x < vivid_mask.shape[1] * 0.18 or center_x > vivid_mask.shape[1] * 0.82) else 0.0
-                if touches_center and torso_mid and orientation_score:
-                    sash_confidence = _clamp01(
-                        best_sash["score"] * 3.7 +
-                        best_sash["fill_ratio"] * 0.28 +
-                        touches_center * 0.16 +
-                        torso_mid * 0.16 +
-                        orientation_score * 0.18 +
-                        diagonal_score * 0.12 -
-                        compact_penalty -
-                        edge_penalty
-                    )
-                    if path_has_sash:
-                        sash_confidence = _clamp01(sash_confidence + 0.03)
-
-        if head_hsv is not None and head_hsv.size > 0:
-            head_s = head_hsv[:, :, 1]
-            head_v = head_hsv[:, :, 2]
-            head_dark = ((head_v < 72) & (head_s < 140)).astype(np.uint8) * 255
-            head_dark = cv2.morphologyEx(head_dark, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
-            best_cap = _best_component(head_dark, min_area_ratio=0.024, min_aspect=1.25)
-            if face_present and best_cap and best_cap["fill_ratio"] > 0.42:
-                center_y = best_cap["y"] + (best_cap["h"] / 2.0)
-                center_x = best_cap["x"] + (best_cap["w"] / 2.0)
-                top_bias = 1.0 if center_y <= head_dark.shape[0] * 0.4 else 0.0
-                central_bias = 1.0 if head_dark.shape[1] * 0.24 <= center_x <= head_dark.shape[1] * 0.76 else 0.0
-                flat_shape = 1.0 if best_cap["w"] >= best_cap["h"] * 1.5 else 0.0
-                triangular_hint = 1.0 if best_cap["fill_ratio"] < 0.72 else 0.0
-                tall_penalty = 0.3 if best_cap["h"] > head_dark.shape[0] * 0.46 else 0.0
-                if top_bias and central_bias and (flat_shape or triangular_hint):
-                    cap_confidence = _clamp01(
-                        best_cap["score"] * 3.6 +
-                        best_cap["fill_ratio"] * 0.18 +
-                        top_bias * 0.24 +
-                        central_bias * 0.16 +
-                        flat_shape * 0.16 +
-                        triangular_hint * 0.08 -
-                        tall_penalty
-                    )
-                    if path_has_cap:
-                        cap_confidence = _clamp01(cap_confidence + 0.03)
-
-        if hands_hsv is not None and hands_hsv.size > 0:
-            hand_h = hands_hsv[:, :, 0]
-            hand_s = hands_hsv[:, :, 1]
-            hand_v = hands_hsv[:, :, 2]
-            light_mask = ((hand_v > 188) & (hand_s < 64)).astype(np.uint8) * 255
-            green_mask = ((hand_h > 42) & (hand_h < 84) & (hand_s > 100) & (hand_v > 84)).astype(np.uint8) * 255
-            diploma_mask = cv2.bitwise_or(light_mask, green_mask)
-            diploma_mask = cv2.morphologyEx(diploma_mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-            diploma_mask = cv2.morphologyEx(diploma_mask, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
-            best_diploma = _best_component(diploma_mask, min_area_ratio=0.007, min_aspect=2.5)
-            if best_diploma and best_diploma["fill_ratio"] > 0.24:
-                center_x = best_diploma["x"] + (best_diploma["w"] / 2.0)
-                center_y = best_diploma["y"] + (best_diploma["h"] / 2.0)
-                torso_adjacent = 1.0 if hands_hsv.shape[0] * 0.18 <= center_y <= hands_hsv.shape[0] * 0.72 else 0.0
-                central_bias = 1.0 if hands_hsv.shape[1] * 0.18 <= center_x <= hands_hsv.shape[1] * 0.82 else 0.0
-                small_object = 1.0 if 0.01 <= best_diploma["area_ratio"] <= 0.072 else 0.0
-                long_shape = 1.0 if best_diploma["aspect"] >= 2.8 else 0.0
-                large_penalty = 0.36 if best_diploma["area_ratio"] > 0.09 else 0.0
-                if torso_adjacent and central_bias and small_object and long_shape:
-                    diploma_confidence = _clamp01(
-                        best_diploma["score"] * 4.1 +
-                        best_diploma["fill_ratio"] * 0.16 +
-                        torso_adjacent * 0.18 +
-                        central_bias * 0.12 +
-                        small_object * 0.12 +
-                        long_shape * 0.12 -
-                        large_penalty
-                    )
-                    if path_has_diploma:
-                        diploma_confidence = _clamp01(diploma_confidence + 0.03)
-
-        # Jabor detection: vestimenta de formatura (tecido amplo no torso)
-        if torso_hsv is not None and torso_hsv.size > 0:
-            jab_h = torso_hsv[:, :, 0]
-            jab_s = torso_hsv[:, :, 1]
-            jab_v = torso_hsv[:, :, 2]
-            # Jabor typically has moderate saturation, covers large torso area
-            fabric_mask = ((jab_s > 30) & (jab_s < 180) & (jab_v > 50) & (jab_v < 200)).astype(np.uint8) * 255
-            fabric_mask = cv2.morphologyEx(fabric_mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
-            fabric_mask = cv2.morphologyEx(fabric_mask, cv2.MORPH_CLOSE, np.ones((11, 11), np.uint8))
-            fabric_ratio = float(np.count_nonzero(fabric_mask)) / max(1, fabric_mask.size)
-            # Jabor covers a large portion of the torso
-            if fabric_ratio > 0.35:
-                # Check for wide, flowing shape (low aspect ratio components)
-                contours, _ = cv2.findContours(fabric_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                if contours:
-                    largest = max(contours, key=cv2.contourArea)
-                    area = cv2.contourArea(largest)
-                    x, y, w, h = cv2.boundingRect(largest)
-                    aspect = w / max(1, h)
-                    fill = area / max(1, w * h)
-                    # Jabor: wide garment, fills most of torso, moderate aspect
-                    if fill > 0.5 and aspect > 0.6:
-                        jabor_confidence = _clamp01(
-                            fabric_ratio * 0.4 +
-                            fill * 0.3 +
-                            min(aspect, 1.5) * 0.2 +
-                            (0.1 if face_present else 0.0)
-                        )
-                        if path_has_jabor:
-                            jabor_confidence = _clamp01(jabor_confidence + 0.03)
-
-        visual_tags = []
-        if gown_confidence >= GRADUATION_CONFIDENCE_THRESHOLD:
-            visual_tags.append("beca")
-        if sash_confidence >= GRADUATION_CONFIDENCE_THRESHOLD:
-            visual_tags.append("faixa")
-        if cap_confidence >= GRADUATION_CONFIDENCE_THRESHOLD:
-            visual_tags.append("capelo")
-        if diploma_confidence >= GRADUATION_CONFIDENCE_THRESHOLD:
-            visual_tags.append("canudo")
-        if jabor_confidence >= GRADUATION_CONFIDENCE_THRESHOLD:
-            visual_tags.append("jabor")
-        if visual_tags:
-            tags.extend(visual_tags)
-            source_parts.append("visual")
-
-    def _fuse_confidence(
-        raw_confidence: float,
-        path_hint: bool,
-        qwen_flag: bool | None,
-        strong_threshold: float,
-        soft_threshold: float,
-    ) -> float:
-        if raw_confidence <= 0.0:
-            return 0.0
-
-        confidence = _clamp01(raw_confidence)
-        if path_hint and face_present:
-            confidence = max(confidence, min(0.55, strong_threshold * 0.72))
-
-        if qwen_flag is True:
-            if confidence >= strong_threshold:
-                return _clamp01(max(confidence, (confidence * 0.9) + 0.08))
-            if confidence >= soft_threshold:
-                return _clamp01((confidence * 0.84) + 0.05)
-            return 0.0
-        if qwen_flag is False:
-            if confidence >= strong_threshold:
-                return _clamp01(confidence * 0.38)
-            if confidence >= soft_threshold:
-                return 0.0
-            return 0.0
-
-        if confidence >= strong_threshold:
-            return confidence
-        if path_hint and face_present and confidence >= soft_threshold:
-            return _clamp01(confidence * 0.84)
-        if confidence >= soft_threshold:
-            return _clamp01(confidence * 0.72)
-        return 0.0
-
-    gown_confidence = _fuse_confidence(
-        gown_confidence,
-        path_has_gown,
-        qwen_flags.get("has_gown") if qwen_flags else None,
-        strong_threshold=0.68,
-        soft_threshold=0.48,
-    )
-    diploma_confidence = _fuse_confidence(
-        diploma_confidence,
-        path_has_diploma,
-        qwen_flags.get("has_diploma") if qwen_flags else None,
-        strong_threshold=0.70,
-        soft_threshold=0.50,
-    )
-    sash_confidence = _fuse_confidence(
-        sash_confidence,
-        path_has_sash,
-        qwen_flags.get("has_sash") if qwen_flags else None,
-        strong_threshold=0.76,
-        soft_threshold=0.58,
-    )
-    cap_confidence = _fuse_confidence(
-        cap_confidence,
-        path_has_cap,
-        qwen_flags.get("has_cap") if qwen_flags else None,
-        strong_threshold=0.66,
-        soft_threshold=0.50,
-    )
-    jabor_confidence = _fuse_confidence(
-        jabor_confidence,
-        path_has_jabor,
-        qwen_flags.get("has_jabor") if qwen_flags else None,
-        strong_threshold=0.62,
-        soft_threshold=0.46,
-    )
-
-    tags = _normalize_saved_graduation_tags(tags)
-    has_gown = bool(gown_confidence >= GRADUATION_CONFIDENCE_THRESHOLD)
-    has_diploma = bool(diploma_confidence >= GRADUATION_CONFIDENCE_THRESHOLD)
-    has_sash = bool(sash_confidence >= GRADUATION_CONFIDENCE_THRESHOLD)
-    has_cap = bool(cap_confidence >= GRADUATION_CONFIDENCE_THRESHOLD)
-    has_jabor = bool(jabor_confidence >= GRADUATION_CONFIDENCE_THRESHOLD)
-    resolved_tags = list(tags)
-    if has_gown:
-        resolved_tags.append("beca")
-    if has_diploma:
-        resolved_tags.append("canudo")
-    if has_sash:
-        resolved_tags.append("faixa")
-    if has_cap:
-        resolved_tags.append("capelo")
-    if has_jabor:
-        resolved_tags.append("jabor")
-    tags = _normalize_saved_graduation_tags(resolved_tags)
-    graduation_score = 0.0
-    if has_gown:
-        graduation_score += 22.0 + gown_confidence * 18.0
-    if has_diploma:
-        graduation_score += 16.0 + diploma_confidence * 14.0
-    if has_sash:
-        graduation_score += 14.0 + sash_confidence * 11.0
-    if has_cap:
-        graduation_score += 12.0 + cap_confidence * 10.0
-    if has_jabor:
-        graduation_score += 10.0 + jabor_confidence * 8.0
-    if not any((has_gown, has_diploma, has_sash, has_cap, has_jabor)):
-        graduation_score = 0.0
-
-    return {
-        "has_gown": has_gown,
-        "has_diploma": has_diploma,
-        "has_sash": has_sash,
-        "has_cap": has_cap,
-        "has_jabor": has_jabor,
-        "graduation_tags": tags,
-        "graduation_score": round(float(graduation_score), 4),
-        "source": "+".join(source_parts) if source_parts else "none",
-        "debug": {
-            "gown_confidence": round(float(gown_confidence), 4),
-            "diploma_confidence": round(float(diploma_confidence), 4),
-            "sash_confidence": round(float(sash_confidence), 4),
-            "cap_confidence": round(float(cap_confidence), 4),
-            "jabor_confidence": round(float(jabor_confidence), 4),
-            "face_present": face_present,
-        },
-    }
+            scores = _default_graduation_scores()
+    elif photo_path:
+        # Sem rosto detectado, mantemos compatibilidade sem inventar um sinal falso.
+        scores = _default_graduation_scores()
+    return _build_graduation_detection_result(scores, face_present=face_present, source="graduation_classifier")
 
 
 def _build_face_priority_meta(item: dict, cohesion_hint: float, allow_fallback: bool = True) -> dict:
@@ -2298,35 +2041,35 @@ def _build_face_priority_meta(item: dict, cohesion_hint: float, allow_fallback: 
     raw_has_cap = item.get("has_cap")
     raw_has_jabor = item.get("has_jabor")
     raw_score = item.get("graduation_score")
+    raw_scores = _normalize_graduation_scores(item.get("graduation_scores"))
 
-    # Merge ai_graduation_tags + manual_graduation_tags for display
     ai_tags = _normalize_saved_graduation_tags(item.get("ai_graduation_tags"))
     saved_tags = _normalize_saved_graduation_tags(item.get("graduation_tags"))
-    # Use ai_tags if available, otherwise fall back to saved_tags
     display_tags = ai_tags or saved_tags
 
     has_saved_fields = any(
         value is not None
-        for value in (raw_has_gown, raw_has_diploma, raw_has_sash, raw_has_cap, raw_has_jabor, raw_score, item.get("graduation_tags"), item.get("ai_graduation_tags"))
+        for value in (raw_has_gown, raw_has_diploma, raw_has_sash, raw_has_cap, raw_has_jabor, raw_score, item.get("graduation_tags"), item.get("ai_graduation_tags"), item.get("graduation_scores"))
     )
 
-    # Only run expensive visual analysis when no saved data exists
     fallback = analyze_graduation_items(item, enable_heuristics=True) if allow_fallback and not has_saved_fields else {}
     fallback_tags = _normalize_saved_graduation_tags(fallback.get("graduation_tags"))
+    fallback_scores = _normalize_graduation_scores(fallback.get("graduation_scores"))
     resolved_tags = display_tags or fallback_tags
+    resolved_scores = raw_scores if item.get("graduation_scores") is not None else fallback_scores
 
-    has_gown = _coerce_flag(raw_has_gown) if raw_has_gown is not None else (_coerce_flag(fallback.get("has_gown")) or ("beca" in resolved_tags))
-    has_diploma = _coerce_flag(raw_has_diploma) if raw_has_diploma is not None else (_coerce_flag(fallback.get("has_diploma")) or ("canudo" in resolved_tags))
-    has_sash = _coerce_flag(raw_has_sash) if raw_has_sash is not None else (_coerce_flag(fallback.get("has_sash")) or ("faixa" in resolved_tags))
-    has_cap = _coerce_flag(raw_has_cap) if raw_has_cap is not None else (_coerce_flag(fallback.get("has_cap")) or ("capelo" in resolved_tags))
-    has_jabor = _coerce_flag(raw_has_jabor) if raw_has_jabor is not None else (_coerce_flag(fallback.get("has_jabor")) or ("jabor" in resolved_tags))
+    has_gown = _coerce_flag(raw_has_gown) if raw_has_gown is not None else (bool(resolved_scores.get("beca", 0.0) >= GRADUATION_CONFIDENCE_THRESHOLD) or ("beca" in resolved_tags))
+    has_diploma = _coerce_flag(raw_has_diploma) if raw_has_diploma is not None else (bool(resolved_scores.get("canudo", 0.0) >= GRADUATION_CONFIDENCE_THRESHOLD) or ("canudo" in resolved_tags))
+    has_sash = _coerce_flag(raw_has_sash) if raw_has_sash is not None else (bool(resolved_scores.get("faixa", 0.0) >= GRADUATION_CONFIDENCE_THRESHOLD) or ("faixa" in resolved_tags))
+    has_cap = _coerce_flag(raw_has_cap) if raw_has_cap is not None else (bool(resolved_scores.get("capelo", 0.0) >= GRADUATION_CONFIDENCE_THRESHOLD) or ("capelo" in resolved_tags))
+    has_jabor = _coerce_flag(raw_has_jabor) if raw_has_jabor is not None else (bool(resolved_scores.get("jabor", 0.0) >= GRADUATION_CONFIDENCE_THRESHOLD) or ("jabor" in resolved_tags))
 
     fallback_debug = fallback.get("debug") or {}
-    gown_confidence = float(item["gown_confidence"]) if item.get("gown_confidence") is not None else float(fallback_debug.get("gown_confidence") or 0.0)
-    diploma_confidence = float(item["diploma_confidence"]) if item.get("diploma_confidence") is not None else float(fallback_debug.get("diploma_confidence") or 0.0)
-    sash_confidence = float(item["sash_confidence"]) if item.get("sash_confidence") is not None else float(fallback_debug.get("sash_confidence") or 0.0)
-    cap_confidence = float(item["cap_confidence"]) if item.get("cap_confidence") is not None else float(fallback_debug.get("cap_confidence") or 0.0)
-    jabor_confidence = float(item["jabor_confidence"]) if item.get("jabor_confidence") is not None else float(fallback_debug.get("jabor_confidence") or 0.0)
+    gown_confidence = float(item["gown_confidence"]) if item.get("gown_confidence") is not None else float(resolved_scores.get("beca", fallback_debug.get("gown_confidence") or 0.0))
+    diploma_confidence = float(item["diploma_confidence"]) if item.get("diploma_confidence") is not None else float(resolved_scores.get("canudo", fallback_debug.get("diploma_confidence") or 0.0))
+    sash_confidence = float(item["sash_confidence"]) if item.get("sash_confidence") is not None else float(resolved_scores.get("faixa", fallback_debug.get("sash_confidence") or 0.0))
+    cap_confidence = float(item["cap_confidence"]) if item.get("cap_confidence") is not None else float(resolved_scores.get("capelo", fallback_debug.get("cap_confidence") or 0.0))
+    jabor_confidence = float(item["jabor_confidence"]) if item.get("jabor_confidence") is not None else float(resolved_scores.get("jabor", fallback_debug.get("jabor_confidence") or 0.0))
 
     try:
         raw_manual = item.get("manual_graduation_tags") or "[]"
@@ -2371,16 +2114,16 @@ def _build_face_priority_meta(item: dict, cohesion_hint: float, allow_fallback: 
     sharpness_score = _derive_sharpness_score(item)
 
     computed_graduation_score = (
-        (40.0 if has_gown else 0.0) +
-        (30.0 if has_diploma else 0.0) +
-        (25.0 if has_sash else 0.0) +
-        (20.0 if has_cap else 0.0) +
-        (18.0 if has_jabor else 0.0) +
-        face_front_score * 15.0 +
-        sharpness_score * 10.0
+        (resolved_scores.get("beca", 0.0) * 24.0) +
+        (resolved_scores.get("canudo", 0.0) * 20.0) +
+        (resolved_scores.get("faixa", 0.0) * 18.0) +
+        (resolved_scores.get("capelo", 0.0) * 16.0) +
+        (resolved_scores.get("jabor", 0.0) * 14.0) +
+        face_front_score * 10.0 +
+        sharpness_score * 8.0
     )
     graduation_score = float(raw_score) if raw_score is not None else computed_graduation_score
-    debug_graduation_source = "saved_fields" if has_saved_fields else str(fallback.get("source") or "none")
+    debug_graduation_source = "saved_fields" if has_saved_fields else str(fallback.get("source") or "graduation_classifier")
 
     tags = list(resolved_tags)
     if has_gown:
@@ -2409,6 +2152,13 @@ def _build_face_priority_meta(item: dict, cohesion_hint: float, allow_fallback: 
         "sash_confidence": round(_clamp01(sash_confidence), 4),
         "cap_confidence": round(_clamp01(cap_confidence), 4),
         "jabor_confidence": round(_clamp01(jabor_confidence), 4),
+        "graduation_scores": {
+            "beca": round(_clamp01(resolved_scores.get("beca", 0.0)), 4),
+            "faixa": round(_clamp01(resolved_scores.get("faixa", 0.0)), 4),
+            "capelo": round(_clamp01(resolved_scores.get("capelo", 0.0)), 4),
+            "canudo": round(_clamp01(resolved_scores.get("canudo", 0.0)), 4),
+            "jabor": round(_clamp01(resolved_scores.get("jabor", 0.0)), 4),
+        },
         "manual_graduation_tags": list(manual_list),
         "face_front_score": round(face_front_score, 4),
         "sharpness_score": round(sharpness_score, 4),
@@ -2652,7 +2402,7 @@ def get_unknown_clusters(catalog: str = "", min_score: float = 0.58, min_cluster
             SELECT rowid, aluno_id, foto_path, x1, y1, x2, y2,
                    blur_status, blur_score, closed_eyes,
                    has_gown, has_diploma, has_sash, has_cap, has_jabor,
-                   face_front_score, graduation_score, graduation_tags,
+                   face_front_score, graduation_score, graduation_tags, graduation_scores,
                    ai_graduation_tags,
                    gown_confidence, diploma_confidence, sash_confidence, cap_confidence, jabor_confidence,
                    manual_graduation_tags,
@@ -3976,14 +3726,11 @@ def _build_graduation_analysis_payload(photo_path: str, detected: dict) -> dict:
     has_sash = _coerce_flag(detected.get("has_sash")) or ("faixa" in tags)
     has_cap = _coerce_flag(detected.get("has_cap")) or ("capelo" in tags)
     has_jabor = _coerce_flag(detected.get("has_jabor")) or ("jabor" in tags)
+    scores = _normalize_graduation_scores(detected.get("graduation_scores"))
     score = detected.get("graduation_score")
     if score is None:
         score = (
-            (40.0 if has_gown else 0.0) +
-            (30.0 if has_diploma else 0.0) +
-            (25.0 if has_sash else 0.0) +
-            (20.0 if has_cap else 0.0) +
-            (18.0 if has_jabor else 0.0)
+            ((scores.get("beca", 0.0) + scores.get("canudo", 0.0) + scores.get("faixa", 0.0) + scores.get("capelo", 0.0) + scores.get("jabor", 0.0)) / 5.0) * 100.0
         )
     debug = detected.get("debug") or {}
     return {
@@ -3994,6 +3741,7 @@ def _build_graduation_analysis_payload(photo_path: str, detected: dict) -> dict:
         "has_jabor": 1 if has_jabor else 0,
         "graduation_tags": json.dumps(tags, ensure_ascii=False),
         "ai_graduation_tags": json.dumps(tags, ensure_ascii=False),
+        "graduation_scores": json.dumps(scores, ensure_ascii=False),
         "graduation_score": float(score or 0.0),
         "graduation_analyzed_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         "gown_confidence": round(float(debug.get("gown_confidence") or 0.0), 4),
@@ -4124,6 +3872,7 @@ def _update_graduation_fields_for_photo(cur, photo_path: str, payload: dict) -> 
     cap_conf = payload.get("cap_confidence", 0.0)
     jabor_conf = payload.get("jabor_confidence", 0.0)
     ai_tags = payload.get("ai_graduation_tags", "[]")
+    graduation_scores = payload.get("graduation_scores", "{}")
 
     updated = 0
     if _table_exists(cur, "photos"):
@@ -4136,12 +3885,12 @@ def _update_graduation_fields_for_photo(cur, photo_path: str, payload: dict) -> 
                     """
                     UPDATE photos
                     SET has_gown = ?, has_diploma = ?, has_sash = ?, has_cap = ?, has_jabor = ?,
-                        graduation_tags = ?, ai_graduation_tags = ?, graduation_score = ?, graduation_analyzed_at = ?,
+                        graduation_tags = ?, ai_graduation_tags = ?, graduation_scores = ?, graduation_score = ?, graduation_analyzed_at = ?,
                         gown_confidence = ?, diploma_confidence = ?, sash_confidence = ?, cap_confidence = ?, jabor_confidence = ?
                     WHERE original_path = ?
                     """,
                     (payload["has_gown"], payload["has_diploma"], payload["has_sash"], payload["has_cap"], payload.get("has_jabor", 0),
-                     payload["graduation_tags"], ai_tags, payload["graduation_score"], payload["graduation_analyzed_at"],
+                     payload["graduation_tags"], ai_tags, graduation_scores, payload["graduation_score"], payload["graduation_analyzed_at"],
                      gown_conf, diploma_conf, sash_conf, cap_conf, jabor_conf, photo_path),
                 )
             elif has_conf_cols:
@@ -4149,12 +3898,12 @@ def _update_graduation_fields_for_photo(cur, photo_path: str, payload: dict) -> 
                     """
                     UPDATE photos
                     SET has_gown = ?, has_diploma = ?, has_sash = ?, has_cap = ?,
-                        graduation_tags = ?, graduation_score = ?, graduation_analyzed_at = ?,
+                        graduation_tags = ?, graduation_scores = ?, graduation_score = ?, graduation_analyzed_at = ?,
                         gown_confidence = ?, diploma_confidence = ?, sash_confidence = ?, cap_confidence = ?
                     WHERE original_path = ?
                     """,
                     (payload["has_gown"], payload["has_diploma"], payload["has_sash"], payload["has_cap"],
-                     payload["graduation_tags"], payload["graduation_score"], payload["graduation_analyzed_at"],
+                     payload["graduation_tags"], graduation_scores, payload["graduation_score"], payload["graduation_analyzed_at"],
                      gown_conf, diploma_conf, sash_conf, cap_conf, photo_path),
                 )
             else:
@@ -4162,11 +3911,11 @@ def _update_graduation_fields_for_photo(cur, photo_path: str, payload: dict) -> 
                     """
                     UPDATE photos
                     SET has_gown = ?, has_diploma = ?, has_sash = ?, has_cap = ?,
-                        graduation_tags = ?, graduation_score = ?, graduation_analyzed_at = ?
+                        graduation_tags = ?, graduation_scores = ?, graduation_score = ?, graduation_analyzed_at = ?
                     WHERE original_path = ?
                     """,
                     (payload["has_gown"], payload["has_diploma"], payload["has_sash"], payload["has_cap"],
-                     payload["graduation_tags"], payload["graduation_score"], payload["graduation_analyzed_at"], photo_path),
+                     payload["graduation_tags"], graduation_scores, payload["graduation_score"], payload["graduation_analyzed_at"], photo_path),
                 )
             updated += int(cur.rowcount or 0)
 
@@ -4181,12 +3930,12 @@ def _update_graduation_fields_for_photo(cur, photo_path: str, payload: dict) -> 
                     f"""
                     UPDATE fotos
                     SET has_gown = ?, has_diploma = ?, has_sash = ?, has_cap = ?, has_jabor = ?,
-                        graduation_tags = ?, ai_graduation_tags = ?, graduation_score = ?, graduation_analyzed_at = ?,
+                        graduation_tags = ?, ai_graduation_tags = ?, graduation_scores = ?, graduation_score = ?, graduation_analyzed_at = ?,
                         gown_confidence = ?, diploma_confidence = ?, sash_confidence = ?, cap_confidence = ?, jabor_confidence = ?
                     WHERE {path_col} = ?
                     """,
                     (payload["has_gown"], payload["has_diploma"], payload["has_sash"], payload["has_cap"], payload.get("has_jabor", 0),
-                     payload["graduation_tags"], ai_tags, payload["graduation_score"], payload["graduation_analyzed_at"],
+                     payload["graduation_tags"], ai_tags, graduation_scores, payload["graduation_score"], payload["graduation_analyzed_at"],
                      gown_conf, diploma_conf, sash_conf, cap_conf, jabor_conf, photo_path),
                 )
             elif has_conf_cols:
@@ -4194,12 +3943,12 @@ def _update_graduation_fields_for_photo(cur, photo_path: str, payload: dict) -> 
                     f"""
                     UPDATE fotos
                     SET has_gown = ?, has_diploma = ?, has_sash = ?, has_cap = ?,
-                        graduation_tags = ?, graduation_score = ?, graduation_analyzed_at = ?,
+                        graduation_tags = ?, graduation_scores = ?, graduation_score = ?, graduation_analyzed_at = ?,
                         gown_confidence = ?, diploma_confidence = ?, sash_confidence = ?, cap_confidence = ?
                     WHERE {path_col} = ?
                     """,
                     (payload["has_gown"], payload["has_diploma"], payload["has_sash"], payload["has_cap"],
-                     payload["graduation_tags"], payload["graduation_score"], payload["graduation_analyzed_at"],
+                     payload["graduation_tags"], graduation_scores, payload["graduation_score"], payload["graduation_analyzed_at"],
                      gown_conf, diploma_conf, sash_conf, cap_conf, photo_path),
                 )
             else:
@@ -4207,11 +3956,11 @@ def _update_graduation_fields_for_photo(cur, photo_path: str, payload: dict) -> 
                     f"""
                     UPDATE fotos
                     SET has_gown = ?, has_diploma = ?, has_sash = ?, has_cap = ?,
-                        graduation_tags = ?, graduation_score = ?, graduation_analyzed_at = ?
+                        graduation_tags = ?, graduation_scores = ?, graduation_score = ?, graduation_analyzed_at = ?
                     WHERE {path_col} = ?
                     """,
                     (payload["has_gown"], payload["has_diploma"], payload["has_sash"], payload["has_cap"],
-                     payload["graduation_tags"], payload["graduation_score"], payload["graduation_analyzed_at"], photo_path),
+                     payload["graduation_tags"], graduation_scores, payload["graduation_score"], payload["graduation_analyzed_at"], photo_path),
                 )
             updated += int(cur.rowcount or 0)
 
@@ -4223,12 +3972,12 @@ def _update_graduation_fields_for_photo(cur, photo_path: str, payload: dict) -> 
             """
             UPDATE ocorrencias
             SET has_gown = ?, has_diploma = ?, has_sash = ?, has_cap = ?, has_jabor = ?,
-                graduation_tags = ?, ai_graduation_tags = ?, graduation_score = ?, graduation_analyzed_at = ?,
+                graduation_tags = ?, ai_graduation_tags = ?, graduation_scores = ?, graduation_score = ?, graduation_analyzed_at = ?,
                 gown_confidence = ?, diploma_confidence = ?, sash_confidence = ?, cap_confidence = ?, jabor_confidence = ?
             WHERE foto_path = ?
             """,
             (payload["has_gown"], payload["has_diploma"], payload["has_sash"], payload["has_cap"], payload.get("has_jabor", 0),
-             payload["graduation_tags"], ai_tags, payload["graduation_score"], payload["graduation_analyzed_at"],
+             payload["graduation_tags"], ai_tags, graduation_scores, payload["graduation_score"], payload["graduation_analyzed_at"],
              gown_conf, diploma_conf, sash_conf, cap_conf, jabor_conf, photo_path),
         )
     elif has_conf_cols:
@@ -4236,12 +3985,12 @@ def _update_graduation_fields_for_photo(cur, photo_path: str, payload: dict) -> 
             """
             UPDATE ocorrencias
             SET has_gown = ?, has_diploma = ?, has_sash = ?, has_cap = ?,
-                graduation_tags = ?, graduation_score = ?, graduation_analyzed_at = ?,
+                graduation_tags = ?, graduation_scores = ?, graduation_score = ?, graduation_analyzed_at = ?,
                 gown_confidence = ?, diploma_confidence = ?, sash_confidence = ?, cap_confidence = ?
             WHERE foto_path = ?
             """,
             (payload["has_gown"], payload["has_diploma"], payload["has_sash"], payload["has_cap"],
-             payload["graduation_tags"], payload["graduation_score"], payload["graduation_analyzed_at"],
+             payload["graduation_tags"], graduation_scores, payload["graduation_score"], payload["graduation_analyzed_at"],
              gown_conf, diploma_conf, sash_conf, cap_conf, photo_path),
         )
     else:
@@ -4249,24 +3998,25 @@ def _update_graduation_fields_for_photo(cur, photo_path: str, payload: dict) -> 
             """
             UPDATE ocorrencias
             SET has_gown = ?, has_diploma = ?, has_sash = ?, has_cap = ?,
-                graduation_tags = ?, graduation_score = ?, graduation_analyzed_at = ?
+                graduation_tags = ?, graduation_scores = ?, graduation_score = ?, graduation_analyzed_at = ?
             WHERE foto_path = ?
             """,
             (payload["has_gown"], payload["has_diploma"], payload["has_sash"], payload["has_cap"],
-             payload["graduation_tags"], payload["graduation_score"], payload["graduation_analyzed_at"], photo_path),
+             payload["graduation_tags"], graduation_scores, payload["graduation_score"], payload["graduation_analyzed_at"], photo_path),
         )
     updated += int(cur.rowcount or 0)
     return updated
 
 
 def _payload_has_graduation_signal(payload: dict) -> bool:
+    scores = _normalize_graduation_scores(payload.get("graduation_scores"))
     return bool(
         payload.get("has_gown") or
         payload.get("has_diploma") or
         payload.get("has_sash") or
         payload.get("has_cap") or
         payload.get("has_jabor") or
-        float(payload.get("graduation_score") or 0.0) > 0.0
+        any(score >= GRADUATION_REVIEW_THRESHOLD for score in scores.values())
     )
 
 
@@ -4326,53 +4076,68 @@ def start_graduation_analysis(req: GraduationAnalysisRequest):
                             "updated": 0,
                             "updated_faces": 0,
                             "source_table": source_table,
-                            "source": "visual_heuristic",
+                            "source": "graduation_classifier",
                         },
                         "finished_at": time.time(),
                     })
                     return
 
-                for idx, photo_path in enumerate(photo_paths, start=1):
-                    try:
-                        if callable(log_info):
-                            log_info(f"[GRAD ANALYSIS] photo={photo_path}")
-                        detected = analyze_graduation_items(
-                            {"foto_path": photo_path, "face_boxes": _load_face_boxes_for_photo(cur, photo_path)},
-                            enable_heuristics=True,
-                            use_ai_ultra=req.use_ai_ultra
-                        )
-                        payload = _build_graduation_analysis_payload(photo_path, detected)
-                        rows_updated = _update_graduation_fields_for_photo(cur, photo_path, payload)
-                        updated_rows += rows_updated
-                        has_signal = _payload_has_graduation_signal(payload)
-                        if has_signal:
-                            positive_updates += 1
-                        debug = detected.get("debug") or {}
-                        detected_tags = detected.get("graduation_tags") or []
-                        if callable(log_info):
-                            log_info(
-                                f"[GRAD ANALYSIS] detected_tags={detected_tags} "
-                                f"confidences={{"
-                                f"gown:{debug.get('gown_confidence', 0.0):.3f}, "
-                                f"diploma:{debug.get('diploma_confidence', 0.0):.3f}, "
-                                f"sash:{debug.get('sash_confidence', 0.0):.3f}, "
-                                f"cap:{debug.get('cap_confidence', 0.0):.3f}"
-                                f"}} "
-                                f"rows_updated={rows_updated} "
-                                f"source={detected.get('source', 'none')}"
+                from ai.graduation_classifier import get_graduation_classifier
+                classifier = get_graduation_classifier()
+                batch_size = max(1, int(getattr(classifier.config, "batch_size", 32) or 32))
+                for batch_start in range(0, total, batch_size):
+                    batch_paths = photo_paths[batch_start:batch_start + batch_size]
+                    batch_items = []
+                    for photo_path in batch_paths:
+                        batch_items.append({
+                            "photo_path": photo_path,
+                            "face_boxes": _load_face_boxes_for_photo(cur, photo_path),
+                        })
+                    batch_scores = classifier.predict_batch(batch_items)
+
+                    for rel_idx, (photo_path, item, scores) in enumerate(zip(batch_paths, batch_items, batch_scores), start=1):
+                        idx = batch_start + rel_idx
+                        try:
+                            if callable(log_info):
+                                log_info(f"[GRAD ANALYSIS] photo={photo_path}")
+                            detected = _build_graduation_detection_result(
+                                scores,
+                                face_present=bool(item.get("face_boxes")),
+                                source="graduation_classifier",
                             )
-                    except Exception as photo_error:
-                        if callable(log_info):
-                            log_info(f"[GRAD ANALYSIS] ERRO photo={photo_path} :: {photo_error}")
-                    if idx % 25 == 0 or idx == total:
-                        conn.commit()
-                    graduation_analysis_state.update({
-                        "processed": idx,
-                        "total": total,
-                        "updated": positive_updates,
-                        "progress": idx / total,
-                        "status_text": f"Analisando {idx} de {total} fotos...",
-                    })
+                            payload = _build_graduation_analysis_payload(photo_path, detected)
+                            rows_updated = _update_graduation_fields_for_photo(cur, photo_path, payload)
+                            updated_rows += rows_updated
+                            has_signal = _payload_has_graduation_signal(payload)
+                            if has_signal:
+                                positive_updates += 1
+                            debug = detected.get("debug") or {}
+                            detected_tags = detected.get("graduation_tags") or []
+                            if callable(log_info):
+                                log_info(
+                                    f"[GRAD ANALYSIS] detected_tags={detected_tags} "
+                                    f"confidences={{"
+                                    f"gown:{debug.get('gown_confidence', 0.0):.3f}, "
+                                    f"diploma:{debug.get('diploma_confidence', 0.0):.3f}, "
+                                    f"sash:{debug.get('sash_confidence', 0.0):.3f}, "
+                                    f"cap:{debug.get('cap_confidence', 0.0):.3f}"
+                                    f"}} "
+                                    f"rows_updated={rows_updated} "
+                                    f"source={detected.get('source', 'none')}"
+                                )
+                        except Exception as photo_error:
+                            if callable(log_info):
+                                log_info(f"[GRAD ANALYSIS] ERRO photo={photo_path} :: {photo_error}")
+
+                        if idx % 25 == 0 or idx == total:
+                            conn.commit()
+                        graduation_analysis_state.update({
+                            "processed": idx,
+                            "total": total,
+                            "updated": positive_updates,
+                            "progress": idx / total,
+                            "status_text": f"Analisando {idx} de {total} fotos...",
+                        })
 
                 conn.commit()
             graduation_analysis_state.update({
@@ -4387,7 +4152,7 @@ def start_graduation_analysis(req: GraduationAnalysisRequest):
                     "processed_files": total,
                     "updated": positive_updates,
                     "updated_faces": positive_updates,
-                    "source": "qwen2.5-vl" if req.use_ai_ultra else "visual_heuristic",
+                    "source": "graduation_classifier",
                 },
                 "error": None,
                 "finished_at": time.time(),
