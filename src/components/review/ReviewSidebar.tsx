@@ -45,42 +45,27 @@ const ClusterItem = memo(function ClusterItem({
       key === 'capelo' ? (cluster.cap_confidence ?? (cluster.has_cap ? 1 : 0)) :
       (cluster.jabor_confidence ?? (cluster.has_jabor ? 1 : 0))
     );
-  function gownBadge() {
-    const conf = getScore('beca');
-    if (conf >= CONF_CONFIRMED) return { id: 'beca', label: 'Beca', variant: 'tag' as const };
-    if (conf >= CONF_POSSIBLE) return { id: 'beca_possible', label: 'Possível beca', variant: 'tagMuted' as const };
-    return null;
-  }
-  function diplomaBadge() {
-    const conf = getScore('canudo');
-    if (conf >= CONF_CONFIRMED) return { id: 'canudo', label: 'Canudo', variant: 'tag' as const };
-    if (conf >= CONF_POSSIBLE) return { id: 'canudo_possible', label: 'Possível canudo', variant: 'tagMuted' as const };
-    return null;
-  }
-  function sashBadge() {
-    const conf = getScore('faixa');
-    if (conf >= CONF_CONFIRMED) return { id: 'faixa', label: 'Faixa', variant: 'tag' as const };
-    if (conf >= CONF_POSSIBLE) return { id: 'faixa_possible', label: 'Possível faixa', variant: 'tagMuted' as const };
-    return null;
-  }
-  function capBadge() {
-    const conf = getScore('capelo');
-    if (conf >= CONF_CONFIRMED) return { id: 'capelo', label: 'Capelo', variant: 'tag' as const };
-    if (conf >= CONF_POSSIBLE) return { id: 'capelo_possible', label: 'Possível capelo', variant: 'tagMuted' as const };
-    return null;
-  }
-  function jaborBadge() {
-    const conf = getScore('jabor');
-    if (conf >= CONF_CONFIRMED) return { id: 'jabor', label: 'Jabor', variant: 'tag' as const };
-    if (conf >= CONF_POSSIBLE) return { id: 'jabor_possible', label: 'Possível jabor', variant: 'tagMuted' as const };
-    return null;
-  }
-  const badgeLabels: Array<{ id: string; label: string; variant: 'ia' | 'success' | 'tag' | 'tagMuted' }> = [
+  const graduationItems: Array<{ id: string; key: 'beca' | 'canudo' | 'faixa' | 'capelo' | 'jabor'; label: string }> = [
+    { id: 'beca', key: 'beca', label: 'Beca' },
+    { id: 'canudo', key: 'canudo', label: 'Canudo' },
+    { id: 'faixa', key: 'faixa', label: 'Faixa' },
+    { id: 'capelo', key: 'capelo', label: 'Capelo' },
+    { id: 'jabor', key: 'jabor', label: 'Jabor' },
+  ];
+  const badgeLabels: Array<{ id: string; label: string; variant: 'ia' | 'success' | 'tag' | 'tagMuted'; score?: number }> = [
     { id: 'ia', label: 'IA', variant: 'ia' as const },
     ...(cluster.status === 'identified' || cluster.status === 'confirmed'
       ? [{ id: 'identified', label: 'Identificado', variant: 'success' as const }]
       : []),
-    ...([gownBadge(), diplomaBadge(), sashBadge(), capBadge(), jaborBadge()].filter(Boolean) as { id: string; label: string; variant: 'tag' | 'tagMuted' }[]),
+    ...graduationItems.map(({ id, key, label }) => {
+      const conf = getScore(key);
+      return {
+        id,
+        label,
+        score: conf,
+        variant: conf >= CONF_CONFIRMED ? 'tag' as const : 'tagMuted' as const,
+      };
+    }),
   ];
   const photoCount = cluster.total_photos ?? cluster.photo_count ?? cluster.face_count;
   const photoCountLabel = `${photoCount} foto${photoCount !== 1 ? 's' : ''}`;
@@ -156,7 +141,10 @@ const ClusterItem = memo(function ClusterItem({
                 styles.tagBadge
               }
             >
-              {badge.label}
+              <span>{badge.label}</span>
+              {badge.score != null && (
+                <strong>{Math.round(Math.max(0, Math.min(1, badge.score)) * 100)}%</strong>
+              )}
             </span>
           ))}
         </span>
