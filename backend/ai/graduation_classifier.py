@@ -24,12 +24,16 @@ except Exception:  # pragma: no cover - runtime opcional
 
 from onnx_provider_utils import get_onnx_providers, get_session_providers, mark_cuda_failed
 
+from .graduation_checkpoint import GraduationCheckpoint
+from .graduation_features import extract_graduation_features, pick_primary_box, prepare_graduation_crop
+
 GRADUATION_LABELS: tuple[str, ...] = ("beca", "faixa", "capelo", "canudo", "jabor")
 
 
 @dataclass(slots=True)
 class GraduationClassifierConfig:
     model_path: str | None = None
+    checkpoint_path: str | None = None
     models_dir: str | None = None
     image_size: int = 224
     batch_size: int = 32
@@ -50,7 +54,9 @@ class GraduationClassifier:
         self._log_info = log_info or (lambda msg: None)
         self._log_debug = log_debug or (lambda msg: None)
         self._session = None
+        self._checkpoint_model = None
         self._session_lock = threading.Lock()
+        self._checkpoint_lock = threading.Lock()
         self._runtime_ready = False
         self._fallback_logged = False
 
@@ -66,20 +72,29 @@ class GraduationClassifier:
             self.config.model_path = configured_model
         else:
             candidates = [
+                os.path.join(base_dir, "ai", "models", "graduation_classifier.json"),
+                os.path.join(base_dir, "backend", "ai", "models", "graduation_classifier.json"),
+                os.path.join(base_dir, "models", "graduation_classifier.json"),
                 os.path.join(base_dir, "ai", "models", "graduation_classifier.onnx"),
                 os.path.join(base_dir, "backend", "ai", "models", "graduation_classifier.onnx"),
                 os.path.join(base_dir, "models", "graduation_classifier.onnx"),
             ]
             for candidate in candidates:
                 if os.path.exists(candidate):
-                    self.config.model_path = candidate
+                    if candidate.lower().endswith(".json"):
+                        self.config.checkpoint_path = candidate
+                    else:
+                        self.config.model_path = candidate
                     break
 
         self.config.models_dir = settings.get("graduation_classifier_models_dir") or self.config.models_dir
         if not self.config.models_dir and self.config.model_path:
             self.config.models_dir = os.path.dirname(self.config.model_path)
+        if not self.config.models_dir and self.config.checkpoint_path:
+            self.config.models_dir = os.path.dirname(self.config.checkpoint_path)
 
         self._session = None
+        self._checkpoint_model = None
         self._runtime_ready = True
 
     def _resolve_model_path(self) -> str | None:
@@ -90,6 +105,35 @@ class GraduationClassifier:
             if os.path.exists(candidate):
                 return candidate
         return None
+
+    def _resolve_checkpoint_path(self) -> str | None:
+        if self.config.checkpoint_path and os.path.exists(self.config.checkpoint_path):
+            return self.config.checkpoint_path
+        if self.config.models_dir:
+            candidate = os.path.join(self.config.models_dir, "graduation_classifier.json")
+            if os.path.exists(candidate):
+                return candidate
+        return None
+
+    def _load_checkpoint_model(self) -> GraduationCheckpoint | None:
+        checkpoint_path = self._resolve_checkpoint_path()
+        if not checkpoint_path:
+            return None
+        try:
+            model = GraduationCheckpoint.load(checkpoint_path)
+            self._log_info(f"[GraduationClassifier] checkpoint carregado: {checkpoint_path}")
+            return model
+        except Exception as exc:
+            self._log_debug(f"Falha ao carregar checkpoint GraduationClassifier '{checkpoint_path}': {exc}")
+            return None
+
+    def _ensure_checkpoint_model(self):
+        if self._checkpoint_model is not None:
+            return self._checkpoint_model
+        with self._checkpoint_lock:
+            if self._checkpoint_model is None:
+                self._checkpoint_model = self._load_checkpoint_model()
+        return self._checkpoint_model
 
     def _load_session(self):
         model_path = self._resolve_model_path()
@@ -121,7 +165,7 @@ class GraduationClassifier:
             return None
 
     def _ensure_session(self):
-        if self._session is not None or self._runtime_ready:
+        if self._session is not None:
             return self._session
         with self._session_lock:
             if self._session is None:
@@ -143,19 +187,7 @@ class GraduationClassifier:
             return None
 
     def _pick_primary_box(self, boxes: Sequence[Sequence[float]] | None) -> tuple[float, float, float, float] | None:
-        if not boxes:
-            return None
-        best = None
-        best_area = -1.0
-        for box in boxes:
-            if len(box) < 4:
-                continue
-            x1, y1, x2, y2 = [float(v) for v in box[:4]]
-            area = max(0.0, x2 - x1) * max(0.0, y2 - y1)
-            if area > best_area:
-                best_area = area
-                best = (x1, y1, x2, y2)
-        return best
+        return pick_primary_box(boxes)
 
     def _expand_box(self, box: tuple[float, float, float, float], width: int, height: int) -> tuple[int, int, int, int]:
         x1, y1, x2, y2 = box
@@ -174,17 +206,7 @@ class GraduationClassifier:
         )
 
     def _prepare_crop(self, image: Image.Image, box: tuple[float, float, float, float] | None) -> Image.Image:
-        width, height = image.size
-        if box is None:
-            left = int(width * 0.18)
-            top = int(height * 0.04)
-            right = int(width * 0.82)
-            bottom = int(height * 0.86)
-        else:
-            left, top, right, bottom = self._expand_box(box, width, height)
-        if right <= left or bottom <= top:
-            left, top, right, bottom = 0, 0, width, height
-        return image.crop((left, top, right, bottom))
+        return prepare_graduation_crop(image, box, crop_expand=self.config.crop_expand)
 
     def _normalize_batch(self, images: Iterable[Image.Image]) -> np.ndarray:
         arrays = []
@@ -202,55 +224,7 @@ class GraduationClassifier:
         return np.stack(arrays, axis=0).astype(np.float32)
 
     def _fallback_features(self, crop: Image.Image) -> np.ndarray:
-        gray = ImageOps.grayscale(crop)
-        arr = np.asarray(gray, dtype=np.float32) / 255.0
-        h, w = arr.shape
-        top = arr[: max(1, h // 3), :]
-        mid = arr[h // 3: max(h // 3 + 1, (2 * h) // 3), :]
-        bottom = arr[max(1, (2 * h) // 3):, :]
-        upper = arr[: max(1, h // 2), :]
-        lower = arr[max(1, h // 2):, :]
-        left = arr[:, : max(1, w // 2)]
-        right = arr[:, max(1, w // 2):]
-        top_left = arr[: max(1, h // 2), : max(1, w // 2)]
-        top_right = arr[: max(1, h // 2), max(1, w // 2):]
-        bottom_left = arr[max(1, h // 2):, : max(1, w // 2)]
-        bottom_right = arr[max(1, h // 2):, max(1, w // 2):]
-        center = arr[h // 4: max(h // 4 + 1, (3 * h) // 4), w // 4: max(w // 4 + 1, (3 * w) // 4)]
-        dx = np.abs(np.diff(arr, axis=1)).mean() if w > 1 else 0.0
-        dy = np.abs(np.diff(arr, axis=0)).mean() if h > 1 else 0.0
-        lap = np.abs(np.diff(arr, n=2, axis=0)).mean() if h > 2 else 0.0
-        contrast = float(arr.max() - arr.min())
-        top_mean = float(top.mean()) if top.size else 0.0
-        mid_mean = float(mid.mean()) if mid.size else 0.0
-        bottom_mean = float(bottom.mean()) if bottom.size else 0.0
-        upper_mean = float(upper.mean()) if upper.size else 0.0
-        lower_mean = float(lower.mean()) if lower.size else 0.0
-        left_mean = float(left.mean()) if left.size else 0.0
-        right_mean = float(right.mean()) if right.size else 0.0
-        top_left_mean = float(top_left.mean()) if top_left.size else 0.0
-        top_right_mean = float(top_right.mean()) if top_right.size else 0.0
-        bottom_left_mean = float(bottom_left.mean()) if bottom_left.size else 0.0
-        bottom_right_mean = float(bottom_right.mean()) if bottom_right.size else 0.0
-        center_std = float(center.std()) if center.size else 0.0
-        edge_like = float((dx + dy + lap) / 3.0)
-        return np.array(
-            [
-                float(arr.mean()),
-                float(arr.std()),
-                edge_like,
-                top_mean - bottom_mean,
-                mid_mean - top_mean,
-                contrast,
-                center_std,
-                float(w) / max(1.0, float(h)),
-                upper_mean - lower_mean,
-                left_mean - right_mean,
-                (top_left_mean + bottom_right_mean) - (top_right_mean + bottom_left_mean),
-                float((top_mean + top_left_mean + top_right_mean) / 3.0 - (bottom_mean + bottom_left_mean + bottom_right_mean) / 3.0),
-            ],
-            dtype=np.float32,
-        )
+        return extract_graduation_features(crop)
 
     def _fallback_scores(self, crop: Image.Image) -> dict[str, float]:
         features = self._fallback_features(crop)
@@ -306,6 +280,10 @@ class GraduationClassifier:
     def predict_batch(self, items: Sequence[dict[str, Any]]) -> list[dict[str, float]]:
         if not items:
             return []
+        checkpoint_model = self._ensure_checkpoint_model()
+        if checkpoint_model is not None:
+            return checkpoint_model.predict_batch(items, crop_expand=float(self.config.crop_expand))
+
         images: list[Image.Image] = []
         fallback_indexes: list[int] = []
         fallback_results: list[dict[str, float] | None] = [None] * len(items)
