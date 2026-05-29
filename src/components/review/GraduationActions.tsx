@@ -33,6 +33,14 @@ const ITEM_CONFIDENCE_KEY: Record<GraduationItem, keyof RichCluster> = {
   jabor: 'jabor_confidence',
 };
 
+const ITEM_SCORE_KEY: Record<GraduationItem, keyof NonNullable<RichCluster['graduation_scores']>> = {
+  gown: 'beca',
+  diploma: 'canudo',
+  sash: 'faixa',
+  cap: 'capelo',
+  jabor: 'jabor',
+};
+
 const ITEM_HAS_KEY: Record<GraduationItem, keyof RichCluster> = {
   gown: 'has_gown',
   diploma: 'has_diploma',
@@ -43,17 +51,26 @@ const ITEM_HAS_KEY: Record<GraduationItem, keyof RichCluster> = {
 
 type ItemState = 'manual_confirm' | 'manual_remove' | 'ai_confirmed' | 'ai_possible' | 'none';
 
+function getItemScore(cluster: RichCluster, item: GraduationItem): number | null {
+  const score = cluster.graduation_scores?.[ITEM_SCORE_KEY[item]];
+  if (typeof score === 'number' && Number.isFinite(score)) return score;
+
+  const conf = cluster[ITEM_CONFIDENCE_KEY[item]];
+  if (typeof conf === 'number' && Number.isFinite(conf)) return conf;
+  if (typeof cluster[ITEM_HAS_KEY[item]] === 'boolean' && cluster[ITEM_HAS_KEY[item]]) return 1;
+
+  return null;
+}
+
 function getItemState(cluster: RichCluster, item: GraduationItem): ItemState {
   const tag = ITEM_TAG[item];
   const manualTags = cluster.manual_graduation_tags ?? [];
   if (manualTags.includes(tag)) return 'manual_confirm';
   if (manualTags.includes(`!${tag}`)) return 'manual_remove';
 
-  // Tenta confidence primeiro
-  const conf = (cluster[ITEM_CONFIDENCE_KEY[item]] as number | undefined)
-    ?? ((cluster[ITEM_HAS_KEY[item]] as boolean | undefined) ? 1 : undefined);
+  const conf = getItemScore(cluster, item);
 
-  if (conf !== undefined) {
+  if (conf != null) {
     if (conf >= CONF_CONFIRMED) return 'ai_confirmed';
     if (conf >= CONF_POSSIBLE) return 'ai_possible';
     return 'none';
@@ -132,11 +149,15 @@ export const GraduationActions = forwardRef<GraduationActionsHandle, GraduationA
     useImperativeHandle(ref, () => ({ toggle }), [toggle]);
 
     const summary = useMemo(
-      () => ITEMS.map(item => ({ item, state: getItemState(cluster, item) })),
+      () => ITEMS.map(item => ({
+        item,
+        state: getItemState(cluster, item),
+        score: getItemScore(cluster, item),
+      })),
       [cluster]
     );
     const visible = useMemo(
-      () => summary.filter(({ state }) => state !== 'none' && state !== 'manual_remove'),
+      () => summary.filter(({ state, score }) => state !== 'manual_remove' && (state !== 'none' || score !== null)),
       [summary]
     );
     const hasManual = useMemo(
@@ -151,18 +172,23 @@ export const GraduationActions = forwardRef<GraduationActionsHandle, GraduationA
             {visible.length === 0 ? (
               <span className={styles.empty}>Nenhum item detectado</span>
             ) : (
-              visible.map(({ item, state }) => (
-                <span
-                  key={item}
-                  className={`${styles.chip} ${
-                    state === 'manual_confirm' ? styles.chipManual :
-                    state === 'ai_confirmed' ? styles.chipConfirmed :
-                    styles.chipPossible
-                  }`}
-                >
-                  {ITEM_LABEL[item]}
-                </span>
-              ))
+              visible.map(({ item, state, score }) => {
+                const pct = Math.round((score ?? 0) * 100);
+                return (
+                  <span
+                    key={item}
+                    className={`${styles.chip} ${
+                      state === 'manual_confirm' ? styles.chipManual :
+                      state === 'ai_confirmed' ? styles.chipConfirmed :
+                      state === 'ai_possible' ? styles.chipPossible :
+                      styles.chipMuted
+                    }`}
+                  >
+                    <span>{ITEM_LABEL[item]}</span>
+                    <strong>{pct}%</strong>
+                  </span>
+                );
+              })
             )}
             {hasManual && (
               <span className={styles.manualBadge}>

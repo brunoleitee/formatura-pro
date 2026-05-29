@@ -235,18 +235,18 @@ class GraduationClassifier:
     def _fallback_scores(self, crop: Image.Image) -> dict[str, float]:
         features = self._fallback_features(crop)
         weights = {
-            "beca": np.array([0.8, 0.9, 1.1, -0.4, 0.35, 0.7, 0.5, -0.15], dtype=np.float32),
-            "faixa": np.array([0.25, 0.5, 0.4, 0.95, 0.7, 0.2, 0.1, 0.1], dtype=np.float32),
-            "capelo": np.array([0.2, 0.45, 0.6, -0.15, 0.85, 0.25, 0.4, -0.05], dtype=np.float32),
-            "canudo": np.array([0.1, 0.25, 0.15, -0.05, -0.1, 0.2, 0.05, -0.4], dtype=np.float32),
-            "jabor": np.array([0.45, 0.35, 0.2, -0.1, 0.55, 0.15, 0.2, -0.15], dtype=np.float32),
+            "beca": np.array([0.18, 0.12, 0.10, 0.05, 0.08, 0.12, 0.06, -0.04], dtype=np.float32),
+            "faixa": np.array([0.08, 0.10, 0.08, 0.14, 0.10, 0.06, 0.04, 0.02], dtype=np.float32),
+            "capelo": np.array([0.06, 0.09, 0.12, -0.01, 0.16, 0.08, 0.05, -0.02], dtype=np.float32),
+            "canudo": np.array([0.03, 0.05, 0.03, 0.00, -0.02, 0.04, 0.02, -0.05], dtype=np.float32),
+            "jabor": np.array([0.10, 0.08, 0.06, -0.02, 0.08, 0.05, 0.03, -0.03], dtype=np.float32),
         }
         bias = {
-            "beca": -0.4,
-            "faixa": -0.2,
-            "capelo": -0.6,
-            "canudo": -1.2,
-            "jabor": -0.35,
+            "beca": -1.8,
+            "faixa": -1.9,
+            "capelo": -1.95,
+            "canudo": -2.1,
+            "jabor": -1.85,
         }
         scores: dict[str, float] = {}
         for label in GRADUATION_LABELS:
@@ -328,4 +328,3 @@ def get_graduation_classifier() -> GraduationClassifier:
             if _CLASSIFIER_INSTANCE is None:
                 _CLASSIFIER_INSTANCE = GraduationClassifier()
     return _CLASSIFIER_INSTANCE
-
