@@ -208,6 +208,14 @@ class GraduationClassifier:
         top = arr[: max(1, h // 3), :]
         mid = arr[h // 3: max(h // 3 + 1, (2 * h) // 3), :]
         bottom = arr[max(1, (2 * h) // 3):, :]
+        upper = arr[: max(1, h // 2), :]
+        lower = arr[max(1, h // 2):, :]
+        left = arr[:, : max(1, w // 2)]
+        right = arr[:, max(1, w // 2):]
+        top_left = arr[: max(1, h // 2), : max(1, w // 2)]
+        top_right = arr[: max(1, h // 2), max(1, w // 2):]
+        bottom_left = arr[max(1, h // 2):, : max(1, w // 2)]
+        bottom_right = arr[max(1, h // 2):, max(1, w // 2):]
         center = arr[h // 4: max(h // 4 + 1, (3 * h) // 4), w // 4: max(w // 4 + 1, (3 * w) // 4)]
         dx = np.abs(np.diff(arr, axis=1)).mean() if w > 1 else 0.0
         dy = np.abs(np.diff(arr, axis=0)).mean() if h > 1 else 0.0
@@ -216,6 +224,14 @@ class GraduationClassifier:
         top_mean = float(top.mean()) if top.size else 0.0
         mid_mean = float(mid.mean()) if mid.size else 0.0
         bottom_mean = float(bottom.mean()) if bottom.size else 0.0
+        upper_mean = float(upper.mean()) if upper.size else 0.0
+        lower_mean = float(lower.mean()) if lower.size else 0.0
+        left_mean = float(left.mean()) if left.size else 0.0
+        right_mean = float(right.mean()) if right.size else 0.0
+        top_left_mean = float(top_left.mean()) if top_left.size else 0.0
+        top_right_mean = float(top_right.mean()) if top_right.size else 0.0
+        bottom_left_mean = float(bottom_left.mean()) if bottom_left.size else 0.0
+        bottom_right_mean = float(bottom_right.mean()) if bottom_right.size else 0.0
         center_std = float(center.std()) if center.size else 0.0
         edge_like = float((dx + dy + lap) / 3.0)
         return np.array(
@@ -228,6 +244,10 @@ class GraduationClassifier:
                 contrast,
                 center_std,
                 float(w) / max(1.0, float(h)),
+                upper_mean - lower_mean,
+                left_mean - right_mean,
+                (top_left_mean + bottom_right_mean) - (top_right_mean + bottom_left_mean),
+                float((top_mean + top_left_mean + top_right_mean) / 3.0 - (bottom_mean + bottom_left_mean + bottom_right_mean) / 3.0),
             ],
             dtype=np.float32,
         )
@@ -235,22 +255,22 @@ class GraduationClassifier:
     def _fallback_scores(self, crop: Image.Image) -> dict[str, float]:
         features = self._fallback_features(crop)
         weights = {
-            "beca": np.array([0.18, 0.12, 0.10, 0.05, 0.08, 0.12, 0.06, -0.04], dtype=np.float32),
-            "faixa": np.array([0.08, 0.10, 0.08, 0.14, 0.10, 0.06, 0.04, 0.02], dtype=np.float32),
-            "capelo": np.array([0.06, 0.09, 0.12, -0.01, 0.16, 0.08, 0.05, -0.02], dtype=np.float32),
-            "canudo": np.array([0.03, 0.05, 0.03, 0.00, -0.02, 0.04, 0.02, -0.05], dtype=np.float32),
-            "jabor": np.array([0.10, 0.08, 0.06, -0.02, 0.08, 0.05, 0.03, -0.03], dtype=np.float32),
+            "beca": np.array([0.42, 0.20, 0.10, 0.22, 0.05, 0.16, 0.08, -0.06, 0.28, 0.04, 0.08, 0.30], dtype=np.float32),
+            "faixa": np.array([0.16, 0.18, 0.12, 0.38, 0.24, 0.10, 0.12, 0.04, 0.18, 0.02, 0.10, 0.14], dtype=np.float32),
+            "capelo": np.array([0.10, 0.20, 0.30, 0.04, 0.10, 0.12, 0.18, -0.02, 0.12, -0.04, 0.22, 0.20], dtype=np.float32),
+            "canudo": np.array([0.04, 0.08, 0.18, -0.02, -0.04, 0.08, 0.05, -0.08, 0.02, 0.10, -0.02, 0.06], dtype=np.float32),
+            "jabor": np.array([0.18, 0.12, 0.10, 0.02, 0.12, 0.08, 0.05, -0.04, 0.10, 0.00, 0.05, 0.16], dtype=np.float32),
         }
         bias = {
-            "beca": -1.8,
-            "faixa": -1.9,
-            "capelo": -1.95,
-            "canudo": -2.1,
-            "jabor": -1.85,
+            "beca": -0.38,
+            "faixa": -0.48,
+            "capelo": -0.55,
+            "canudo": -0.72,
+            "jabor": -0.44,
         }
         scores: dict[str, float] = {}
         for label in GRADUATION_LABELS:
-            raw = float(np.dot(features, weights[label]) + bias[label])
+            raw = float((np.dot(features, weights[label]) * 1.15) + bias[label])
             scores[label] = round(_clamp01(_sigmoid(raw)), 4)
         return scores
 

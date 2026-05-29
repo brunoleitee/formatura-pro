@@ -133,8 +133,9 @@ export default memo(function ClusterStatsPanel({
       item,
       label: ITEM_LABEL[item],
       confidence: Math.round(Math.max(0, Math.min(1, conf || 0)) * 100),
+      visible: (conf || 0) > 0 || Boolean(cluster[ITEM_HAS_KEY[item]]),
     };
-  }), [getScore]);
+  }).filter(item => item.visible), [cluster, getScore]);
 
   const qualityLabel = useMemo(() => {
     if (qualityStats.sharp >= Math.max(1, Math.ceil(cluster.face_count * 0.65))) return 'Alta';
