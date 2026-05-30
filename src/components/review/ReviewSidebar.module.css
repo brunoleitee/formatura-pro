@@ -1,18 +1,25 @@
-/* ReviewSidebar — painel lateral premium */
+/* ═══════════════════════════════════════════
+   ReviewSidebar — Impeccable Style Sidebar
+   Quiet Luxury Aesthetic · Fine Layout & Types
+   ═══════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700;800&display=swap');
 
 .sidebar {
-  width: 232px;
+  width: 240px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--sidebar);
-  border-right: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  background: rgba(18, 18, 18, 0.3);
+  backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(255, 255, 255, 0.03);
   overflow: hidden;
+  font-family: 'Outfit', sans-serif;
 }
 
 /* ── Header ── */
 .header {
-  padding: 15px 12px 10px;
+  padding: 20px 16px 12px;
   flex-shrink: 0;
 }
 
@@ -37,56 +44,62 @@
 }
 
 .titleText {
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.5);
   line-height: 1.2;
 }
 
 .titleCount {
-  font-size: 0.72rem;
-  font-weight: 700;
-  background: var(--accent-soft);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: rgba(59, 130, 246, 0.08);
   color: var(--accent);
-  border-radius: 20px;
-  padding: 1px 7px;
+  border-radius: var(--radius-full);
+  padding: 2px 8px;
   min-width: 22px;
   text-align: center;
+  border: 1px solid rgba(59, 130, 246, 0.15);
 }
 
 .headerSub {
+  font-family: 'Outfit', sans-serif;
   font-size: 0.78rem;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.4);
   margin: 0;
   line-height: 1.4;
+  font-weight: 300;
 }
 
 .refreshBtn {
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  border: 1px solid transparent;
-  background: color-mix(in srgb, var(--card) 48%, transparent);
-  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.01);
+  color: rgba(255, 255, 255, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   flex-shrink: 0;
   margin-left: 10px;
 }
 
 .refreshBtn:hover {
-  color: var(--sidebar-text);
-  border-color: var(--border-strong);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .divider {
   height: 1px;
-  background: color-mix(in srgb, var(--border) 62%, transparent);
+  background: rgba(255, 255, 255, 0.03);
   flex-shrink: 0;
 }
 
@@ -94,25 +107,25 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 10px 12px 8px;
-  height: 34px;
-  padding: 0 10px;
+  margin: 10px 16px 8px;
+  height: 36px;
+  padding: 0 12px;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--card) 46%, transparent);
-  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid rgba(255, 255, 255, 0.04);
   flex-shrink: 0;
-  transition: background 0.16s ease, border-color 0.16s ease;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .searchWrap:focus-within {
-  background: color-mix(in srgb, var(--card) 72%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.05);
 }
 
 .searchIcon {
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.35);
   flex-shrink: 0;
-  opacity: 0.85;
 }
 
 .searchInput {
@@ -121,13 +134,14 @@
   border: 0;
   outline: 0;
   background: transparent;
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: 0.76rem;
+  color: #ffffff;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 300;
 }
 
 .searchInput::placeholder {
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.35);
 }
 
 .searchClear {
@@ -139,58 +153,60 @@
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.35);
   cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .searchClear:hover {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
 }
 
 .filterWrap {
-  margin: 0 12px 10px;
+  margin: 0 16px 12px;
   flex-shrink: 0;
 }
 
 .filterSelect {
   width: 100%;
   appearance: none;
-  background: color-mix(in srgb, var(--card) 42%, transparent);
-  border: 1px solid transparent;
-  border-radius: 9px;
-  padding: 0 var(--space-3);
-  height: 34px;
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  padding: 0 12px;
+  height: 36px;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.6);
   outline: none;
-  font-family: inherit;
   cursor: pointer;
-  transition: border-color var(--transition-fast), color var(--transition-fast);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .filterSelect option {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
+  background: #121212;
+  color: #ffffff;
 }
 
 .filterSelect:hover {
-  border-color: var(--border-strong);
-  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .filterSelect:focus {
-  border-color: var(--accent);
+  border-color: rgba(59, 130, 246, 0.3);
 }
 
 /* ── List ── */
 .list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 7px 14px;
+  padding: 4px 10px 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .list::-webkit-scrollbar {
@@ -200,20 +216,11 @@
   background: transparent;
 }
 .list::-webkit-scrollbar-thumb {
-  background: var(--white-mid-soft);
+  background: rgba(255, 255, 255, 0.05);
   border-radius: 2px;
 }
 .list::-webkit-scrollbar-thumb:hover {
-  background: var(--white-strong);
-}
-
-.list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.list::-webkit-scrollbar-thumb {
-  background: var(--white-default);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .listState {
@@ -222,32 +229,35 @@
   justify-content: center;
   gap: 8px;
   padding: 32px 16px;
+  font-family: 'Outfit', sans-serif;
   font-size: 0.8rem;
-  color: var(--sidebar-text-secondary);
+  color: rgba(255, 255, 255, 0.45);
   flex-direction: column;
 }
 
 .loadMoreButton {
-  margin: 10px 6px 0;
-  min-height: 34px;
-  border-radius: 8px;
-  border: 1px solid var(--white-default);
-  background: var(--white-light);
-  color: var(--sidebar-text-muted);
-  font-size: 0.76rem;
-  font-weight: 600;
-  font-family: inherit;
+  margin: 12px 6px 0;
+  min-height: 36px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.01);
+  color: rgba(255, 255, 255, 0.7);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .loadMoreButton:hover:not(:disabled) {
-  border-color: var(--border-accent);
-  background: var(--accent-soft);
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.15);
 }
 
 .loadMoreButton:disabled {
-  opacity: 0.65;
+  opacity: 0.4;
   cursor: default;
 }
 
@@ -255,58 +265,61 @@
 .item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 7px 9px 9px;
+  gap: 12px;
+  padding: 10px 10px 10px 14px;
   border-radius: 12px;
-  background: transparent;
-  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.005);
+  border: 1px solid rgba(255, 255, 255, 0.02);
   cursor: pointer;
   width: 100%;
   text-align: left;
   position: relative;
-  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
 }
 
 .item::before {
   content: '';
   position: absolute;
-  left: 0;
-  top: 18px;
-  bottom: 18px;
-  width: 2px;
+  left: 6px;
+  top: 14px;
+  bottom: 14px;
+  width: 3px;
   border-radius: 999px;
   background: var(--danger);
   opacity: 0.75;
+  transition: all 0.3s ease;
 }
 
 .item:hover {
-  background: color-mix(in srgb, var(--card) 42%, transparent);
-  border-color: var(--border-default);
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.06);
   transform: translateY(-1px);
 }
 
 .itemActive {
-  background: color-mix(in srgb, var(--accent) 9%, var(--card)) !important;
-  border-color: color-mix(in srgb, var(--accent) 24%, transparent) !important;
-  box-shadow: 0 14px 34px color-mix(in srgb, var(--accent) 11%, transparent), 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent) inset;
+  background: rgba(59, 130, 246, 0.03) !important;
+  border-color: rgba(59, 130, 246, 0.3) !important;
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.04), inset 0 0 0 1px rgba(59, 130, 246, 0.05) !important;
 }
 
 /* ── Avatar circular ── */
 .avatar {
-  width: 66px;
-  height: 66px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
   overflow: visible;
   flex-shrink: 0;
-  background: var(--muted);
+  background: rgba(255, 255, 255, 0.01);
   position: relative;
-  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
-  transition: border-color 0.15s, transform 0.2s ease, box-shadow 0.2s ease;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .item:hover .avatar {
   transform: scale(1.035);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.24);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
 }
 
 .itemMatchStrong::before {
@@ -322,8 +335,8 @@
 }
 
 .itemActive .avatar {
-  border-color: color-mix(in srgb, var(--accent) 52%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: rgba(59, 130, 246, 0.4);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 .avatarImg {
@@ -340,8 +353,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  font-family: 'Outfit', sans-serif;
   font-size: 1.1rem;
-  color: var(--sidebar-text-secondary);
+  color: rgba(255, 255, 255, 0.35);
   border-radius: 50%;
   overflow: hidden;
 }
@@ -352,20 +366,21 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 .itemName {
-  font-size: 0.91rem;
-  font-weight: 700;
-  color: var(--sidebar-text-muted);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .itemActive .itemName {
-  color: var(--sidebar-text);
+  color: #ffffff;
 }
 
 .suggestionRow {
@@ -380,13 +395,11 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 2px 8px;
-  border-radius: 7px;
+  font-family: 'Outfit', sans-serif;
   font-size: 0.62rem;
-  font-weight: 800;
-  letter-spacing: 0;
+  font-weight: 600;
   background: transparent;
-  color: var(--sidebar-success);
+  color: var(--success);
   border: 0;
   padding: 0;
   white-space: nowrap;
@@ -400,13 +413,11 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 2px 8px;
-  border-radius: 7px;
+  font-family: 'Outfit', sans-serif;
   font-size: 0.62rem;
-  font-weight: 800;
-  letter-spacing: 0;
+  font-weight: 600;
   background: transparent;
-  color: var(--sidebar-warning);
+  color: var(--warning);
   border: 0;
   padding: 0;
   white-space: nowrap;
@@ -422,13 +433,11 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 2px 8px;
-  border-radius: 7px;
+  font-family: 'Outfit', sans-serif;
   font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0;
+  font-weight: 500;
   background: transparent;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.4);
   border: 0;
   padding: 0;
   white-space: nowrap;
@@ -442,13 +451,11 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 2px 8px;
-  border-radius: 7px;
+  font-family: 'Outfit', sans-serif;
   font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0;
+  font-weight: 500;
   background: transparent;
-  color: var(--sidebar-danger);
+  color: #ef4444;
   border: 0;
   padding: 0;
   white-space: nowrap;
@@ -458,25 +465,24 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 2px 8px;
-  border-radius: 7px;
+  font-family: 'Outfit', sans-serif;
   font-size: 0.62rem;
-  font-weight: 800;
-  letter-spacing: 0;
+  font-weight: 600;
   background: transparent;
-  color: var(--sidebar-purple);
+  color: #a78bfa;
   border: 0;
   padding: 0;
   white-space: nowrap;
 }
 
 .itemActive .itemMeta {
-  color: var(--sidebar-text-muted);
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .itemMeta {
-  font-size: 0.76rem;
-  color: var(--text-muted);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.74rem;
+  color: rgba(255, 255, 255, 0.4);
   display: flex;
   align-items: center;
   gap: 4px;
@@ -491,60 +497,61 @@
 }
 
 .dot {
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
 .confidence {
-  color: var(--text-secondary);
-  font-weight: 600;
+  font-family: 'Outfit', sans-serif;
+  color: rgba(255, 255, 255, 0.75);
+  font-weight: 500;
 }
 
 /* ── IA badge ── */
 .iaBadge {
+  font-family: 'Outfit', sans-serif;
   font-size: 0.6rem;
-  font-weight: 800;
-  letter-spacing: 0;
-  background: color-mix(in srgb, var(--success) 12%, transparent);
-  color: var(--sidebar-success-strong);
-  border: 1px solid color-mix(in srgb, var(--success) 20%, transparent);
-  border-radius: 6px;
-  padding: 2px 6px;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.03);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.12);
+  border-radius: 4px;
+  padding: 1px 5px;
   flex-shrink: 0;
 }
 
 .successBadge {
+  font-family: 'Outfit', sans-serif;
   font-size: 0.6rem;
-  font-weight: 800;
-  letter-spacing: 0;
-  background: color-mix(in srgb, var(--success) 10%, transparent);
-  color: var(--sidebar-success);
-  border: 1px solid rgba(52, 211, 153, 0.22);
-  border-radius: 6px;
-  padding: 2px 6px;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.03);
+  color: #10b981;
+  border: 1px solid rgba(52, 211, 153, 0.15);
+  border-radius: 4px;
+  padding: 1px 5px;
   flex-shrink: 0;
 }
 
 .tagBadge {
+  font-family: 'Outfit', sans-serif;
   font-size: 0.6rem;
-  font-weight: 800;
-  letter-spacing: 0;
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
-  color: color-mix(in srgb, var(--accent) 84%, var(--text-primary));
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
-  border-radius: 6px;
-  padding: 2px 6px;
+  font-weight: 600;
+  background: rgba(59, 130, 246, 0.03);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.15);
+  border-radius: 4px;
+  padding: 1px 5px;
   flex-shrink: 0;
 }
 
 .tagBadgeMuted {
+  font-family: 'Outfit', sans-serif;
   font-size: 0.6rem;
-  font-weight: 600;
-  letter-spacing: 0;
-  background: color-mix(in srgb, var(--muted) 42%, transparent);
-  color: var(--sidebar-text-soft);
-  border: 1px solid rgba(100, 116, 139, 0.15);
-  border-radius: 6px;
-  padding: 2px 6px;
+  font-weight: 400;
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  padding: 1px 5px;
   flex-shrink: 0;
 }
 
