@@ -6,6 +6,7 @@ use tauri_plugin_shell::process::CommandChild;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let backend_process: Arc<Mutex<Option<CommandChild>>> = Arc::new(Mutex::new(None));
+  #[allow(unused_variables)]
   let backend_process_clone = Arc::clone(&backend_process);
 
   tauri::Builder::default()
