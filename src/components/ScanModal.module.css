@@ -215,6 +215,11 @@
   cursor: pointer;
 }
 
+.inputSelect option {
+  background: #141a25;
+  color: var(--scan-text-warm);
+}
+
 .folderBtn,
 .cancelNewBtn {
   width: 42px;

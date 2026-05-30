@@ -779,6 +779,12 @@
   width: 100%;
 }
 
+.input option {
+  background: #121212;
+  color: #ffffff;
+}
+
+
 .input:focus {
   border-color: rgba(59, 130, 246, 0.3);
   background: rgba(255, 255, 255, 0.03);

@@ -404,6 +404,11 @@
   transition: background 0.18s, border-color 0.18s;
 }
 
+.inputBase option {
+  background: var(--bg-elevated, #1a1e2e);
+  color: var(--text-primary);
+}
+
 .inputBase:focus {
   background: color-mix(in srgb, currentColor 8%, transparent);
   border-color: color-mix(in srgb, var(--accent) 35%, transparent);
