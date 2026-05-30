@@ -15,31 +15,10 @@ class CentralAIPipeline:
         self.face_engine_provider = face_engine_provider
         self.get_db = get_db
         self.mm = mm
-        self._paddle_ocr = None
-        self._vlm = None
-        
-    def _get_paddle_ocr(self):
-        if self._paddle_ocr is None:
-            from services.paddle_ocr_service import get_paddle_ocr
-            self._paddle_ocr = get_paddle_ocr()
-        return self._paddle_ocr
-    
-    def _run_ocr_on_image(self, img: np.ndarray) -> Tuple[str, float]:
-        from services.paddle_ocr_service import run_paddle_ocr
-        results = run_paddle_ocr(img)
-        texts = [t for t, c, b in results]
-        combined = " ".join(texts)
-        conf = max([c for t, c, b in results]) if results else 0.0
-        return combined, conf
-    
-    def _run_vlm_analysis(self, img: np.ndarray) -> Optional[Dict[str, Any]]:
-        from services.qwen_vlm_service import analyze_graduation_image
-        return analyze_graduation_image(img)
         
     def process_photo(self, photo_id: int, catalog: str, photo_data: Optional[Dict[str, Any]] = None) -> bool:
         """
-        Executa o pipeline completo para uma única foto.
-        Pipeline: InsightFace -> PaddleOCR -> Qwen2.5-VL -> Metadados -> Ranking IA
+        Executa o pipeline simplificado para uma única foto (focado puramente em Reconhecimento Facial).
         """
         try:
             with self.get_db(catalog) as db:
@@ -104,40 +83,11 @@ class CentralAIPipeline:
                     idx = faces_found.index(best_face) + 1
                     metadata.main_subject = f"face_{idx}"
 
-                # 2. PaddleOCR
-                ocr_text, ocr_conf = self._run_ocr_on_image(img)
-                metadata.merge_ocr(ocr_text, ocr_conf)
-                if ocr_text:
-                    print(f"[OCR] text detected: {ocr_text}")
-                else:
-                    print(f"[OCR] no text detected")
+                # Metadados de OCR e VLM limpos por padrão (removidos do pipeline)
+                metadata.vlm_analyzed = False
+                metadata.ocr_confidence = 0.0
 
-                # 3. Qwen2.5-VL (apenas para contexto seletivo)
-                needs_vlm = (
-                    metadata.group_photo
-                    or metadata.ocr_confidence < 0.5
-                    or len(faces_found) == 0
-                )
-
-                if needs_vlm:
-                    print(f"[VLM] Qwen analysis started (reason: group={metadata.group_photo}, low_conf={metadata.ocr_confidence < 0.5}, no_faces={len(faces_found)==0})")
-                    vlm_result = self._run_vlm_analysis(img)
-                    if vlm_result:
-                        metadata.merge_vlm(vlm_result)
-                        if vlm_result.get("graduation_context"):
-                            print(f"[VLM] graduation items detected")
-                        if metadata.main_subject:
-                            print(f"[VLM] probable main subject: {metadata.main_subject}")
-                else:
-                    metadata.vlm_analyzed = False
-                    print(f"[VLM] Skipped (high confidence OCR, single/small group)")
-
-                # 4. Salvar metadados
-                c.execute("""
-                    INSERT INTO ocr_results (photo_id, raw_text, confidence)
-                    VALUES (?, ?, ?)
-                """, (photo_id, ocr_text, ocr_conf))
-
+                # Salvar metadados atualizados na tabela photos
                 metadata_dict = metadata.to_dict()
                 c.execute("""
                     UPDATE photos SET status = 'processed', metadata_json = ?
@@ -145,7 +95,7 @@ class CentralAIPipeline:
                 """, (json.dumps(metadata_dict), photo_id))
 
                 db.commit()
-                print(f"[CentralPipeline] photo {photo_id} processed: OCR={ocr_conf:.2f} VLM={metadata.vlm_analyzed}")
+                print(f"[CentralPipeline] foto {photo_id} processada com sucesso via Reconhecimento Facial (0% OCR / 0% Qwen)")
                 return True
 
         except Exception as e:

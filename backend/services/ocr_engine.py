@@ -25,14 +25,9 @@ _STATE_LOCK = threading.Lock()
 
 
 def _probe_ocr() -> bool:
-    reader = get_paddle_ocr()
-    if reader is not None:
-        _OCR_STATE["available"] = True
-        _OCR_STATE["message"] = "OCR disponível (PaddleOCR)"
-    else:
-        status = _get_ocr_status()
-        _OCR_STATE["available"] = False
-        _OCR_STATE["message"] = status.get("message", "OCR indisponível")
+    status = _get_ocr_status()
+    _OCR_STATE["available"] = bool(status.get("available", False))
+    _OCR_STATE["message"] = status.get("message", "OCR indisponível")
     _OCR_STATE["checked"] = True
     return bool(_OCR_STATE["available"])
 

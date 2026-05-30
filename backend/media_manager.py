@@ -1364,21 +1364,26 @@ def _scan_tree(path, depth=0, max_depth=2):
                 reached_limit = max_depth is not None and (depth + 1) >= max_depth
 
                 if reached_limit:
-                    # At depth limit: shallow scan to get counts for THIS folder
+                    # At depth limit: recursive walk scan to get counts for ALL files in this folder branch
                     sub_has = False
                     sub_direct = 0
                     sub_counts = {"RAW": 0, "JPG": 0, "PNG": 0, "HEIC": 0, "MOV": 0}
                     try:
-                        with os.scandir(e.path) as sub_entries:
-                            for s in sub_entries:
-                                if s.is_dir():
-                                    sub_has = True
-                                elif s.is_file():
-                                    ext = os.path.splitext(s.name)[1].lower()
-                                    if ext in RAW_EXTENSIONS: sub_counts["RAW"] += 1; sub_direct += 1
-                                    elif ext in IMAGE_EXT: sub_counts["JPG"] += 1; sub_direct += 1
-                                    elif ext in HEIC_EXT: sub_counts["HEIC"] += 1; sub_direct += 1
-                                    elif ext in VIDEO_EXTENSIONS: sub_counts["MOV"] += 1; sub_direct += 1
+                        for root, subdirs, filenames in os.walk(e.path):
+                            if _is_ignored_dir(os.path.basename(root)):
+                                continue
+                            if len(subdirs) > 0:
+                                sub_has = True
+                            for s_name in filenames:
+                                if s_name.startswith(".") or s_name.startswith("~"):
+                                    continue
+                                if _is_ignored_file(s_name):
+                                    continue
+                                ext = os.path.splitext(s_name)[1].lower()
+                                if ext in RAW_EXTENSIONS: sub_counts["RAW"] += 1; sub_direct += 1
+                                elif ext in IMAGE_EXT: sub_counts["JPG"] += 1; sub_direct += 1
+                                elif ext in HEIC_EXT: sub_counts["HEIC"] += 1; sub_direct += 1
+                                elif ext in VIDEO_EXTENSIONS: sub_counts["MOV"] += 1; sub_direct += 1
                     except Exception: pass
 
                     children.append({

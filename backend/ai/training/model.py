@@ -28,6 +28,8 @@ class TrainingReport:
     samples: int
     losses: list[float] = field(default_factory=list)
     positives: dict[str, int] = field(default_factory=dict)
+    active_labels: tuple[str, ...] = field(default_factory=tuple)
+    inactive_labels: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(slots=True)
@@ -87,36 +89,43 @@ class GraduationModelTrainer:
         weights = rng.normal(0.0, 0.02, size=(len(self.labels), x_norm.shape[1])).astype(np.float32)
         bias = np.zeros(len(self.labels), dtype=np.float32)
 
-        known_mask = targets != -1
         positives = {label: int(np.sum(targets[:, idx] == 1)) for idx, label in enumerate(self.labels)}
-        positive_weight = np.ones(len(self.labels), dtype=np.float32)
-        for idx, label in enumerate(self.labels):
-            pos = max(1, positives[label])
+        active_indices = [idx for idx, label in enumerate(self.labels) if positives[label] > 0]
+        inactive_indices = [idx for idx in range(len(self.labels)) if idx not in active_indices]
+        if not active_indices:
+            raise ValueError("Nenhuma classe positiva encontrada para treino.")
+
+        active_labels = tuple(self.labels[idx] for idx in active_indices)
+        active_targets = targets[:, active_indices].astype(np.float32)
+        known_mask = active_targets != -1
+        positive_weight = np.ones(len(active_labels), dtype=np.float32)
+        for idx, label in enumerate(active_labels):
+            pos = max(1, int(np.sum(active_targets[:, idx] == 1)))
             neg = max(1, int(np.sum(known_mask[:, idx])) - pos)
             positive_weight[idx] = float(neg / pos)
 
         losses: list[float] = []
         normalizer = max(1, int(np.sum(known_mask)))
         for epoch in range(self.epochs):
-            logits = x_norm @ weights.T + bias
+            logits = x_norm @ weights[active_indices].T + bias[active_indices]
             probs = _sigmoid(logits)
 
-            target = np.where(known_mask, targets, probs)
-            pos_mask = (targets == 1).astype(np.float32)
+            target = np.where(known_mask, active_targets, probs)
+            pos_mask = (active_targets == 1).astype(np.float32)
             sample_weight = np.where(pos_mask > 0, positive_weight, 1.0).astype(np.float32)
             sample_weight = np.where(known_mask, sample_weight, 0.0)
 
             diff = (probs - target) * sample_weight
-            grad_w = (diff.T @ x_norm) / normalizer + (self.l2 * weights)
+            grad_w = (diff.T @ x_norm) / normalizer + (self.l2 * weights[active_indices])
             grad_b = diff.sum(axis=0) / normalizer
 
-            weights -= self.learning_rate * grad_w
-            bias -= self.learning_rate * grad_b
+            weights[active_indices] -= self.learning_rate * grad_w
+            bias[active_indices] -= self.learning_rate * grad_b
 
             clipped = np.clip(probs, 1e-6, 1.0 - 1e-6)
             loss_matrix = np.where(
                 known_mask,
-                -(targets * np.log(clipped) + (1.0 - targets) * np.log(1.0 - clipped)),
+                -(active_targets * np.log(clipped) + (1.0 - active_targets) * np.log(1.0 - clipped)),
                 0.0,
             )
             weighted_loss = float(np.sum(loss_matrix * np.where(pos_mask > 0, positive_weight, 1.0)) / normalizer)
@@ -131,6 +140,8 @@ class GraduationModelTrainer:
             samples=int(features.shape[0]),
             losses=losses,
             positives=positives,
+            active_labels=active_labels,
+            inactive_labels=tuple(self.labels[idx] for idx in inactive_indices),
         )
         return model, report
 
@@ -148,7 +159,8 @@ class GraduationModelTrainer:
             "epochs": report.epochs,
             "loss_final": report.losses[-1] if report.losses else None,
             "positives": report.positives,
+            "active_labels": list(report.active_labels),
+            "inactive_labels": list(report.inactive_labels),
             "labels": list(GRADUATION_LABELS),
             "feature_names": list(GRADUATION_FEATURE_NAMES),
         }
-

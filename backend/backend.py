@@ -200,10 +200,16 @@ async def lifespan(app: FastAPI):
     for route in app.routes:
         path = getattr(route, "path", "")
         print(path, flush=True)
-    try:
-        se.ensure_face_engine()
-    except Exception as e:
-        print(f"[AI] warmup InsightFace adiado: {e}", flush=True)
+    # O warmup da InsightFace é caro e não é necessário para a tela inicial.
+    # Mantemos o carregamento preguiçoso no primeiro uso para acelerar a abertura.
+    if os.environ.get("FORM_PRO_WARMUP_AI", "0") == "1":
+        def warmup_ai():
+            try:
+                se.ensure_face_engine()
+            except Exception as e:
+                print(f"[AI] warmup InsightFace adiado: {e}", flush=True)
+
+        threading.Thread(target=warmup_ai, daemon=True).start()
     _start_metrics_worker()
     print("[metrics] background worker iniciado", flush=True)
     yield
@@ -1363,11 +1369,14 @@ if __name__ == "__main__":
                         else:
                             break
                     except (OSError, ProcessLookupError):
-                        # No Windows, o getppid() pode ser instável se iniciado por scripts.
-                        # Vamos apenas logar em vez de matar o processo agora para restaurar a conexão.
-                        log_info(f"[WATCHDOG] Processo pai {parent_pid} não detectado, mas mantendo servidor ativo para estabilidade.")
-                        # os._exit(0)  # Desativado temporariamente
-                        break # Sai do loop do watchdog mas mantém o servidor vivo
+                        # No Windows, o getppid() pode ser instável se iniciado por scripts de dev (start.ps1).
+                        # Em produção (frozen=True), o processo pai é o Tauri (estável), então se ele sumir, matamos o zumbi na hora!
+                        if getattr(sys, "frozen", False):
+                            log_info(f"[WATCHDOG] Processo pai {parent_pid} encerrado em producao. Finalizando backend...")
+                            os._exit(0)
+                        else:
+                            log_info(f"[WATCHDOG] Processo pai {parent_pid} nao detectado em dev. Mantendo ativo para estabilidade.")
+                            break
                     except (SystemError, Exception) as e:
                         # Se for um erro do sistema ou desconhecido, logamos mas não matamos o watchdog ainda
                         # pois o processo pai pode ainda estar vivo.

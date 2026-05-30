@@ -9,4 +9,4 @@ try {
     $pythonCmd = "python.exe"
 }
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$root'; $pythonCmd backend/backend.py"
-npm run dev
+npm run tauri

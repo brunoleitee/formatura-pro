@@ -27,9 +27,9 @@ face_cache_path_cache = {}
 cache_lock = threading.Lock()
 _CACHE_MAX_SIZE = 2000
 
-def get_face_cache_path_cached(catalog_name, aluno_id):
+def get_face_cache_path_cached(catalog_name, aluno_id, person_key=None):
     """Obtém face_cache_path com cache para evitar queries repetidas."""
-    cache_key = f"{catalog_name}:{aluno_id}"
+    cache_key = f"{catalog_name}:{person_key or aluno_id}"
     with cache_lock:
         if cache_key in face_cache_path_cache:
             return face_cache_path_cache[cache_key]
@@ -40,7 +40,10 @@ def get_face_cache_path_cached(catalog_name, aluno_id):
 
     with get_db(catalog_name) as conn:
         cur = conn.cursor()
-        row = _safe_alunos_fetchone(cur, "SELECT face_cache_path FROM alunos WHERE aluno_id = ?", (aluno_id,))
+        if person_key:
+            row = _safe_alunos_fetchone(cur, "SELECT face_cache_path FROM alunos WHERE person_key = ?", (person_key,))
+        else:
+            row = _safe_alunos_fetchone(cur, "SELECT face_cache_path FROM alunos WHERE aluno_id = ?", (aluno_id,))
         path = row["face_cache_path"] if row else None
     
     with cache_lock:
@@ -286,7 +289,7 @@ def _base_reference_max_side() -> int:
         return 512
 
 
-def _catalog_base_ref_path(catalog: str, aluno_id: str, ext: str) -> str:
+def _catalog_base_ref_path(catalog: str, aluno_id: str, ext: str, person_key: str = None) -> str:
     thumb_cache_dir = _get("thumb_cache_dir")
     if not thumb_cache_dir:
         return ""
@@ -299,7 +302,12 @@ def _catalog_base_ref_path(catalog: str, aluno_id: str, ext: str) -> str:
     safe_ext = (ext or ".jpg").lower()
     if not safe_ext.startswith("."):
         safe_ext = f".{safe_ext}"
-    return os.path.join(thumb_cache_dir, cname, f"{_safe_filename(aluno_id)}{safe_ext}")
+    if person_key:
+        safe_name = person_key.replace("::", "__").replace(" ", "_")
+        safe_name = "".join([c for c in safe_name if c.isalnum() or c in ("-", "_")])
+    else:
+        safe_name = _safe_filename(aluno_id)
+    return os.path.join(thumb_cache_dir, cname, f"{safe_name}{safe_ext}")
 
 
 def _save_resized_reference(dest: str, img_np):
@@ -323,29 +331,51 @@ def _save_resized_reference(dest: str, img_np):
         return False
 
 
-def _pick_best_reference_candidate(conn, aluno_id: str):
+def _pick_best_reference_candidate(conn, aluno_id: str, person_key: str = None):
     get_blur_info = _get("get_blur_info")
     cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT foto_path, x1, y1, x2, y2, blur_score, blur_status,
-               foreground_score, is_foreground, face_area_ratio, center_score
-        FROM ocorrencias
-        WHERE aluno_id = ?
-          AND foto_path IS NOT NULL
-          AND x1 IS NOT NULL
-        ORDER BY
-          COALESCE(is_foreground, 0) DESC,
-          (
-              COALESCE(foreground_score, 0) * 0.40 +
-              COALESCE(center_score, 0) * 0.20 +
-              MIN(COALESCE(blur_score, 0) / 300.0, 1.0) * 0.20 +
-              MIN(COALESCE(face_area_ratio, 0) / 0.15, 1.0) * 0.20
-          ) DESC,
-          COALESCE(blur_score, 0) DESC
-        """,
-        (aluno_id,),
-    )
+    if person_key:
+        cur.execute(
+            """
+            SELECT foto_path, x1, y1, x2, y2, blur_score, blur_status,
+                   foreground_score, is_foreground, face_area_ratio, center_score
+            FROM ocorrencias
+            WHERE person_key = ?
+              AND foto_path IS NOT NULL
+              AND x1 IS NOT NULL
+            ORDER BY
+              COALESCE(is_foreground, 0) DESC,
+              (
+                  COALESCE(foreground_score, 0) * 0.40 +
+                  COALESCE(center_score, 0) * 0.20 +
+                  MIN(COALESCE(blur_score, 0) / 300.0, 1.0) * 0.20 +
+                  MIN(COALESCE(face_area_ratio, 0) / 0.15, 1.0) * 0.20
+              ) DESC,
+              COALESCE(blur_score, 0) DESC
+            """,
+            (person_key,),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT foto_path, x1, y1, x2, y2, blur_score, blur_status,
+                   foreground_score, is_foreground, face_area_ratio, center_score
+            FROM ocorrencias
+            WHERE aluno_id = ?
+              AND foto_path IS NOT NULL
+              AND x1 IS NOT NULL
+            ORDER BY
+              COALESCE(is_foreground, 0) DESC,
+              (
+                  COALESCE(foreground_score, 0) * 0.40 +
+                  COALESCE(center_score, 0) * 0.20 +
+                  MIN(COALESCE(blur_score, 0) / 300.0, 1.0) * 0.20 +
+                  MIN(COALESCE(face_area_ratio, 0) / 0.15, 1.0) * 0.20
+              ) DESC,
+              COALESCE(blur_score, 0) DESC
+            """,
+            (aluno_id,),
+        )
     rows = cur.fetchall()
     if not rows:
         return ""
@@ -435,50 +465,69 @@ def _find_physical_reference_photo(conn, catalog: str, aluno_id: str, person_key
     return ""
 
 
-def _ensure_person_reference(conn, catalog: str, aluno_id: str, force: bool = False):
+def _ensure_person_reference(conn, catalog: str, aluno_id: str, force: bool = False, person_key: str = None):
     if not aluno_id or aluno_id == "Desconhecido" or aluno_id.startswith("Pessoa "):
         return ""
 
-    existing = get_face_cache_path_cached(catalog, aluno_id)
+    existing = get_face_cache_path_cached(catalog, aluno_id, person_key)
     existing = str(existing) if existing else ""
     if existing and os.path.exists(existing) and not force:
         return existing
 
     cur = conn.cursor()
 
-    candidate = _pick_best_reference_candidate(conn, aluno_id)
-    if not candidate:
-        phys_path = _find_physical_reference_photo(conn, catalog, aluno_id)
-        if phys_path:
-            box = None
-            try:
-                # Tentar detectar face usando o motor do scanner_engine
-                image_loader = _get("imread_unicode")
-                img_res = image_loader(phys_path) if callable(image_loader) else None
-                img_np = img_res[0] if isinstance(img_res, tuple) else img_res
-                if img_np is not None:
-                    se = _get("scanner_engine")
-                    app_face = se.app_face if se else None
-                    if app_face:
-                        faces = app_face.get(img_np) or []
-                        if faces:
-                            faces_sorted = sorted(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
-                            box = [int(v) for v in faces_sorted[0].bbox]
-            except Exception as _det_err:
-                logger.warning("[ref-generation] Erro detectando face em %s: %s", phys_path, _det_err)
+    # 1. Tentar primeiro a foto física oficial de referência (retrato de estúdio de alta qualidade)
+    phys_path = _find_physical_reference_photo(conn, catalog, aluno_id, person_key)
+    candidate = None
+    
+    if phys_path:
+        box = None
+        try:
+            # Tentar detectar face usando o motor do scanner_engine
+            image_loader = _get("imread_unicode")
+            img_res = image_loader(phys_path) if callable(image_loader) else None
+            img_np = img_res[0] if isinstance(img_res, tuple) else img_res
+            if img_np is not None:
+                se = _get("scanner_engine")
+                app_face = se.app_face if se else None
+                if app_face:
+                    faces = app_face.get(img_np) or []
+                    if faces:
+                        faces_sorted = sorted(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
+                        box = [int(v) for v in faces_sorted[0].bbox]
+        except Exception as _det_err:
+            logger.warning("[ref-generation] Erro detectando face em %s: %s", phys_path, _det_err)
 
+        # Apenas se a detecção de face funcionou e achou caixa delimitadora na foto de estúdio.
+        # Caso contrário, mantemos candidate como None para que caia no fallback de buscar no catálogo ocorrencia já detectada,
+        # garantindo que tenhamos um crop focado na face em formato vertical (retrato) perfeito.
+        if box:
             candidate = {
                 "path": phys_path,
                 "box": box,
                 "blur_score": 200.0,
                 "blur_status": "sharp"
             }
-        else:
-            return existing
+
+    # 2. Fallback secundário: buscar no catálogo a melhor face identificada (com caixa e EXIF rotacionado já pronto)
+    if not candidate:
+        candidate = _pick_best_reference_candidate(conn, aluno_id, person_key)
+
+    # 3. Fallback final: usar a foto física oficial inteira caso o catálogo não tenha ocorrências
+    if not candidate and phys_path:
+        candidate = {
+            "path": phys_path,
+            "box": None,
+            "blur_score": 200.0,
+            "blur_status": "sharp"
+        }
+
+    if not candidate:
+        return existing
 
     candidate_path = candidate["path"]
     _, ext = os.path.splitext(candidate_path)
-    dest = _catalog_base_ref_path(catalog, aluno_id, ext)
+    dest = _catalog_base_ref_path(catalog, aluno_id, ext, person_key)
     if not dest:
         return existing
     try:
@@ -498,9 +547,25 @@ def _ensure_person_reference(conn, catalog: str, aluno_id: str, force: bool = Fa
                     except Exception:
                         pass
         os.makedirs(os.path.dirname(dest), exist_ok=True)
-        image_loader = _get("imread_unicode")
-        img_res = image_loader(candidate_path) if callable(image_loader) else None
-        img_np = img_res[0] if isinstance(img_res, tuple) else img_res
+        
+        # Corrigir a orientação EXIF se for uma foto do disco para o crop bater perfeitamente
+        load_pil_with_orientation = _get("load_pil_with_orientation")
+        img_np = None
+        if callable(load_pil_with_orientation):
+            try:
+                pil_img = load_pil_with_orientation(candidate_path)
+                if pil_img:
+                    img_np = np.array(pil_img)
+                    if len(img_np.shape) == 3 and img_np.shape[2] == 3:
+                        img_np = img_np[:, :, ::-1] # RGB to BGR
+            except Exception as _exif_err:
+                logger.warning("[ref-generation] Falha ao corrigir EXIF via PIL para %s: %s", candidate_path, _exif_err)
+
+        if img_np is None:
+            image_loader = _get("imread_unicode")
+            img_res = image_loader(candidate_path) if callable(image_loader) else None
+            img_np = img_res[0] if isinstance(img_res, tuple) else img_res
+
         if img_np is not None and candidate.get("box"):
             x1, y1, x2, y2 = [int(v) for v in candidate["box"]]
             h, w = img_np.shape[:2]
@@ -519,21 +584,40 @@ def _ensure_person_reference(conn, catalog: str, aluno_id: str, force: bool = Fa
             else:
                 shutil.copy2(candidate_path, dest)
         else:
-            if not _save_resized_reference(dest, img_np):
+            if img_np is not None:
+                if not _save_resized_reference(dest, img_np):
+                    shutil.copy2(candidate_path, dest)
+            else:
                 shutil.copy2(candidate_path, dest)
+
         if _alunos_exists(cur):
-            existing_pk = ""
-            pk_row = _safe_alunos_fetchone(cur, "SELECT person_key FROM alunos WHERE aluno_id = ? LIMIT 1", (aluno_id,))
-            if pk_row:
-                existing_pk = str(pk_row["person_key"] or "")
+            existing_pk = person_key
+            if not existing_pk:
+                pk_row = _safe_alunos_fetchone(cur, "SELECT person_key FROM alunos WHERE aluno_id = ? LIMIT 1", (aluno_id,))
+                if pk_row:
+                    existing_pk = str(pk_row["person_key"] or "")
             if not existing_pk:
                 existing_pk = make_person_key(catalog=catalog, student_id=aluno_id)
-            _safe_alunos_execute(
-                cur,
-                "INSERT OR REPLACE INTO alunos (person_key, aluno_id, face_cache_path, class_name) VALUES (?, ?, ?, ?)",
-                (existing_pk, aluno_id, dest, "Sem turma"),
-            )
+            
+            # Se for homônimo, atualizar estritamente a linha correspondente à person_key
+            if person_key:
+                cur.execute(
+                    "UPDATE alunos SET face_cache_path = ? WHERE person_key = ?",
+                    (dest, person_key)
+                )
+            else:
+                cur.execute(
+                    "UPDATE alunos SET face_cache_path = ? WHERE aluno_id = ?",
+                    (dest, aluno_id)
+                )
         conn.commit()
+        
+        # Invalidar cache de RAM após alteração para forçar atualização imediata
+        with cache_lock:
+            cache_key = f"{catalog}:{person_key or aluno_id}"
+            if cache_key in face_cache_path_cache:
+                del face_cache_path_cache[cache_key]
+
         return dest
     except Exception as e:
         logger.error("Falha criando referência base para %s: %s", aluno_id, e)
@@ -1183,13 +1267,17 @@ def _row_to_review_item(row) -> dict:
         "has_diploma": row["has_diploma"],
         "has_sash": row["has_sash"],
         "has_cap": row["has_cap"],
+        "has_jabor": row["has_jabor"] if "has_jabor" in row.keys() else 0,
         "face_front_score": row["face_front_score"],
         "graduation_score": row["graduation_score"],
         "graduation_tags": row["graduation_tags"],
+        "ai_graduation_tags": row["ai_graduation_tags"] if "ai_graduation_tags" in row.keys() else "[]",
+        "graduation_scores": row["graduation_scores"] if "graduation_scores" in row.keys() else "{}",
         "gown_confidence": row["gown_confidence"],
         "diploma_confidence": row["diploma_confidence"],
         "sash_confidence": row["sash_confidence"],
         "cap_confidence": row["cap_confidence"],
+        "jabor_confidence": row["jabor_confidence"] if "jabor_confidence" in row.keys() else 0.0,
         "manual_graduation_tags": row["manual_graduation_tags"],
         "is_foreground": row["is_foreground"],
         "foreground_score": row["foreground_score"],
@@ -1272,6 +1360,7 @@ def _build_review_cluster_payload(
         "has_diploma": any(meta["has_diploma"] for meta in priority_meta),
         "has_sash": any(meta["has_sash"] for meta in priority_meta),
         "has_cap": any(meta["has_cap"] for meta in priority_meta),
+        "has_jabor": any(meta["has_jabor"] for meta in priority_meta),
         "graduation_scores": {
             "beca": round(max((meta.get("graduation_scores", {}).get("beca", 0.0) for meta in priority_meta), default=0.0), 4),
             "faixa": round(max((meta.get("graduation_scores", {}).get("faixa", 0.0) for meta in priority_meta), default=0.0), 4),
@@ -1300,6 +1389,7 @@ def _build_review_cluster_payload(
             "has_diploma": rep_item_meta["has_diploma"],
             "has_sash": rep_item_meta["has_sash"],
             "has_cap": rep_item_meta["has_cap"],
+            "has_jabor": rep_item_meta["has_jabor"],
             "graduation_scores": rep_item_meta.get("graduation_scores"),
             "face_front_score": rep_item_meta["face_front_score"],
             "graduation_score": rep_item_meta["graduation_score"],
@@ -1323,6 +1413,7 @@ def _build_review_cluster_payload(
                 "has_diploma": meta["has_diploma"],
                 "has_sash": meta["has_sash"],
                 "has_cap": meta["has_cap"],
+                "has_jabor": meta.get("has_jabor", False),
                 "face_front_score": meta["face_front_score"],
                 "graduation_score": meta["graduation_score"],
                 "is_representative": item["rowid"] == rep_item["rowid"],
@@ -3233,7 +3324,7 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
             JOIN ocorrencias o ON o.rowid = u.face_id
             WHERE {ignored_filter_sql}
             GROUP BY u.cluster_id
-            ORDER BY max_graduation_score DESC, avg_confidence DESC, face_count DESC, first_id ASC
+            ORDER BY photo_count DESC, face_count DESC, max_graduation_score DESC, avg_confidence DESC, first_id ASC
             LIMIT ? OFFSET ?
             """,
             ignored_filter_params + [limit, offset],
@@ -3254,7 +3345,7 @@ def get_review_clusters_page(catalog: str = "", limit: int = 30, offset: int = 0
                        o.blur_status, o.blur_score, o.closed_eyes,
                        o.has_gown, o.has_diploma, o.has_sash, o.has_cap, o.has_jabor,
                        o.face_front_score, o.graduation_score, o.graduation_tags,
-                       o.ai_graduation_tags,
+                       o.ai_graduation_tags, o.graduation_scores,
                        o.gown_confidence, o.diploma_confidence, o.sash_confidence, o.cap_confidence, o.jabor_confidence,
                        o.manual_graduation_tags,
                        o.is_foreground, o.foreground_score, o.background_penalty_reason,
@@ -3557,7 +3648,7 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
                    o.blur_status, o.blur_score, o.closed_eyes,
                    o.has_gown, o.has_diploma, o.has_sash, o.has_cap, o.has_jabor,
                    o.face_front_score, o.graduation_score, o.graduation_tags,
-                   o.ai_graduation_tags,
+                   o.ai_graduation_tags, o.graduation_scores,
                    o.gown_confidence, o.diploma_confidence, o.sash_confidence, o.cap_confidence, o.jabor_confidence,
                    o.manual_graduation_tags,
                    o.is_foreground, o.foreground_score, o.background_penalty_reason,
@@ -3586,9 +3677,10 @@ def get_review_cluster_detail(catalog: str = "", cluster_id: str = ""):
             WHERE {ignored_filter_sql}
             GROUP BY u.cluster_id
             ORDER BY
+                COUNT(DISTINCT o.foto_path) DESC,
+                COUNT(*) DESC,
                 MAX(COALESCE(o.graduation_score, 0)) DESC,
                 AVG(COALESCE(u.confidence, 0)) DESC,
-                COUNT(*) DESC,
                 MIN(u.id) ASC
             """,
             ignored_filter_params,
@@ -5249,24 +5341,72 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
                             cluster_centroid = cluster_centroid / cn
                         _cluster_centroid_cache[centroid_key] = (cluster_centroid, time.time())
 
+            # Coletar turmas prováveis das fotos vizinhas e caminhos das fotos no cluster
+            cluster_classes = set()
+            cluster_photos = []
+            try:
+                # 1. Classes de outras ocorrências identificadas nas mesmas fotos
+                cur.execute("""
+                    SELECT o.person_key 
+                    FROM unknown_face_clusters u
+                    JOIN ocorrencias o ON o.foto_path IN (
+                        SELECT o2.foto_path FROM unknown_face_clusters u2
+                        JOIN ocorrencias o2 ON o2.rowid = u2.face_id
+                        WHERE u2.cluster_id = ?
+                    )
+                    WHERE o.person_key IS NOT NULL AND o.person_key != ''
+                """, (cluster_id,))
+                for r in cur.fetchall():
+                    pk = r["person_key"]
+                    if pk:
+                        parts = pk.split("::")
+                        if len(parts) >= 2 and parts[1] and parts[1] not in ("Sem turma", "__SEM_TURMA__"):
+                            cluster_classes.add(parts[1].strip().lower())
+            except Exception as _ctx_err:
+                logger.warning("[match-preview] Erro obtendo turmas vizinhas do cluster %s: %s", cluster_id, _ctx_err)
+
+            try:
+                # 2. Fotos que compõem o próprio cluster desconhecido sob teste
+                cur.execute("""
+                    SELECT o.foto_path 
+                    FROM unknown_face_clusters u
+                    JOIN ocorrencias o ON o.rowid = u.face_id
+                    WHERE u.cluster_id = ?
+                """, (cluster_id,))
+                cluster_photos = [r["foto_path"] for r in cur.fetchall() if r["foto_path"]]
+            except Exception as _photo_err:
+                logger.warning("[match-preview] Erro obtendo fotos do cluster %s: %s", cluster_id, _photo_err)
+
+            def normalize_string(s):
+                import re
+                return re.sub(r'[^a-z0-9]', '', s.lower()) if s else ""
+
             # 2. Avaliar similaridade de ocorrências para cada candidato
+            best_face = None
+            best_sim = 0.0
+            best_score = -999.0
+            best_candidate = None
+
             for cand in candidates:
                 cand_best_face = None
                 cand_best_sim = 0.0
                 
                 try:
                     if cluster_centroid is not None:
-                        q_id = cand["person_key"] or cand["aluno_id"]
-                        cur.execute("""
-                            SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, o.person_key, fe.embedding
-                            FROM ocorrencias o
-                            JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
-                            WHERE (o.person_key IS NOT NULL AND o.person_key = ?) OR o.aluno_id = ?
-                            LIMIT 50
-                        """, (q_id, cand["aluno_id"]))
-                        student_faces = cur.fetchall()
+                        # Busca de faces conhecidas isolada por person_key se disponível
+                        if cand.get("person_key"):
+                            cur.execute("""
+                                SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, o.person_key, fe.embedding
+                                FROM ocorrencias o
+                                JOIN face_embeddings fe ON fe.occurrence_rowid = o.rowid
+                                WHERE o.person_key = ?
+                                LIMIT 50
+                            """, (cand["person_key"],))
+                            student_faces = cur.fetchall()
+                        else:
+                            student_faces = []
 
-                        if not student_faces:
+                        if not student_faces and cand.get("aluno_id"):
                             cur.execute("""
                                 SELECT o.rowid, o.foto_path, o.x1, o.y1, o.x2, o.y2, o.aluno_id, o.person_key, fe.embedding
                                 FROM ocorrencias o
@@ -5296,40 +5436,45 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
                 except Exception as _calc_err:
                     logger.warning("[match-preview] Falha ao computar similaridade para candidato %s: %s", cand.get("person_key"), _calc_err)
 
-                if cand_best_sim > best_sim or best_candidate is None:
+                # Calcular a pontuação da eleição com o bônus contextual
+                pk_parts = (cand["person_key"] or "").split("::")
+                cand_class = pk_parts[1].strip() if len(pk_parts) >= 2 else (cand["class_name"] or "")
+                cand_class_lower = cand_class.strip().lower()
+
+                score = cand_best_sim
+                if len(candidates) > 1 and cand_class_lower:
+                    has_context = False
+                    
+                    # Heurística 1: turma compatível com faces conhecidas na mesma foto
+                    if cand_class_lower in cluster_classes:
+                        has_context = True
+                        
+                    # Heurística 2: nome da turma contido no caminho do arquivo físico da foto
+                    if not has_context and cluster_photos:
+                        norm_cand_class = normalize_string(cand_class)
+                        if norm_cand_class:
+                            for photo in cluster_photos:
+                                if norm_cand_class in normalize_string(photo):
+                                    has_context = True
+                                    break
+                                    
+                    if has_context:
+                        score += 10.0  # Bônus maciço para desambiguação contextual
+
+                if score > best_score or best_candidate is None:
+                    best_score = score
                     best_sim = cand_best_sim
                     best_face = cand_best_face
                     best_candidate = cand
 
             # 3. Se nenhum candidato tem fotos identificadas (best_face é None),
-            # escolhemos com base no contexto de classe ou na pasta física existente
+            # escolhemos com base no contexto de classe ou na pasta física existente (como fallback robusto)
             if best_face is None:
-                cluster_classes = set()
-                try:
-                    cur.execute("""
-                        SELECT o.person_key 
-                        FROM unknown_face_clusters u
-                        JOIN ocorrencias o ON o.foto_path IN (
-                            SELECT o2.foto_path FROM unknown_face_clusters u2
-                            JOIN ocorrencias o2 ON o2.rowid = u2.face_id
-                            WHERE u2.cluster_id = ?
-                        )
-                        WHERE o.person_key IS NOT NULL
-                    """, (cluster_id,))
-                    for r in cur.fetchall():
-                        pk = r["person_key"]
-                        if pk:
-                            parts = pk.split("::")
-                            if len(parts) >= 2 and parts[1] and parts[1] not in ("Sem turma", "__SEM_TURMA__"):
-                                cluster_classes.add(parts[1])
-                except Exception:
-                    pass
-
-                # Escolher o candidato correspondente à turma provável
+                # Escolher o candidato correspondente à turma provável detectada
                 for cand in candidates:
                     pk_parts = (cand["person_key"] or "").split("::")
-                    pk_class = pk_parts[1] if len(pk_parts) >= 2 else ""
-                    if pk_class in cluster_classes:
+                    pk_class = pk_parts[1].strip() if len(pk_parts) >= 2 else ""
+                    if pk_class.lower() in cluster_classes:
                         best_candidate = cand
                         break
 
@@ -5352,14 +5497,26 @@ def get_student_match_preview(catalog: str, cluster_id: str, student_id: str):
         ref_path = None
         
         p_path = best_candidate["face_cache_path"]
+        
+        # Validar se o cache físico existente é isolado por person_key para evitar colisão de homônimos legados
+        is_path_valid = False
         if p_path and p_path != "n/a" and os.path.exists(p_path):
+            if student_pk_db:
+                safe_pk_part = student_pk_db.replace("::", "__").replace(" ", "_")
+                safe_pk_part = "".join([c for c in safe_pk_part if c.isalnum() or c in ("-", "_")])
+                if safe_pk_part in os.path.basename(p_path):
+                    is_path_valid = True
+            else:
+                is_path_valid = True
+                
+        if is_path_valid:
             ref_path = str(p_path)
 
         # Fallback dinâmico de geração de cache de face
         if not ref_path:
             try:
                 with get_db(cat) as conn:
-                    ref_path = _ensure_person_reference(conn, cat, student_name_db, force=True)
+                    ref_path = _ensure_person_reference(conn, cat, student_name_db, force=True, person_key=student_pk_db)
             except Exception as _ref_err:
                 logger.warning("[match-preview] Erro dinâmico gerando cache de referência para %s: %s", student_name_db, _ref_err)
 

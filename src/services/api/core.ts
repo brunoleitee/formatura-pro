@@ -15,8 +15,12 @@ export class HTTPError extends Error {
 }
 
 // Em dev, o Vite proxy /api -> http://127.0.0.1:8000 (sem CORS).
-// Em produção o FastAPI serve o frontend e /api fica no mesmo origin.
-export const API_BASE = '/api';
+// Em produção, apontamos direto para o localhost absoluto na porta 8000,
+// onde o sidecar Python roda. `import.meta.env.DEV` é mais confiável que
+// inferir o ambiente pelo protocol/hostname da janela.
+export const API_BASE = import.meta.env.DEV
+  ? '/api'
+  : 'http://127.0.0.1:8000/api';
 
 // Deduplicação de requests GET idênticas em curto intervalo
 const inflightRequests = new Map<string, { promise: Promise<unknown>; timestamp: number }>();

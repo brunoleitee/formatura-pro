@@ -73,6 +73,8 @@ def main(argv: list[str] | None = None) -> int:
         "epochs": report.epochs,
         "loss_final": report.losses[-1] if report.losses else None,
         "positives": report.positives,
+        "active_labels": list(report.active_labels),
+        "inactive_labels": list(report.inactive_labels),
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0

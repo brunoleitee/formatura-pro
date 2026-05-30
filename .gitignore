@@ -90,3 +90,11 @@ htmlcov/
 .eslintcache
 *.tsbuildinfo
 tsconfig.tsbuildinfo
+
+# ── Tauri Binaries / Sidecar ──────────────────────────────
+src-tauri/bin/
+src-tauri/binaries/
+scratch/
+build-tauri-backend/
+
+

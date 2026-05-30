@@ -48,6 +48,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [eventPath, setEventPath] = useState('');
   const [refPath, setRefPath] = useState('');
   const [refPathInfo, setRefPathInfo] = useState<{ photos: number; subfolders: number } | null>(null);
+  const [eventPathInfo, setEventPathInfo] = useState<{ photos: number; subfolders: number } | null>(null);
   const [catalogName, setCatalogName] = useState('');
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
@@ -76,14 +77,20 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
               }));
             setEventSubfolders(subs);
             setSelectedSubfolders(subs.map(s => s.path));
+            
+            const totalPhotos = res.total_photos || res.total_files || 0;
+            const subfoldersCount = subs.length;
+            setEventPathInfo({ photos: totalPhotos, subfolders: subfoldersCount });
           } else {
             setEventSubfolders([]);
             setSelectedSubfolders([]);
+            setEventPathInfo(null);
           }
         })
         .catch(() => {
           setEventSubfolders([]);
           setSelectedSubfolders([]);
+          setEventPathInfo(null);
         })
         .finally(() => {
           setLoadingSubfolders(false);
@@ -91,6 +98,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     } else {
       setEventSubfolders([]);
       setSelectedSubfolders([]);
+      setEventPathInfo(null);
     }
   }, [eventPath]);
 
@@ -739,7 +747,14 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     {eventPath || 'Clique para selecionar a pasta com as fotos do evento...'}
                   </p>
                   {eventPath && (
-                    <span className={styles.folderSuccessBadge}>✓ Pasta de fotos vinculada</span>
+                    <div className={styles.refInfoRow}>
+                      <span className={styles.folderSuccessBadge}>✓ Pasta de fotos vinculada</span>
+                      {eventPathInfo && (
+                        <span className={styles.refStatsDetail}>
+                          ({eventPathInfo.photos} fotos{eventPathInfo.subfolders > 0 ? ` em ${eventPathInfo.subfolders} subpastas` : ''})
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -1434,7 +1449,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                   <span className={styles.processTitle}><Gauge size={11} /> Processamento</span>
                   {isScanning && <span className={`${styles.badge} ${styles.badgeAmber}`}>Ativo</span>}
                 </div>
-                <div className={styles.gaugeContainer}>
+                <div className={styles.gaugeWrap}>
                   <CircularGauge pct={progressPct} />
                 </div>
                 <div className={styles.progressInfo}>

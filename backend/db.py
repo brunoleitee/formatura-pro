@@ -305,7 +305,8 @@ class DbConnection:
 
         db_path = None
         try:
-            base_dir = Path(__file__).resolve().parents[1]
+            base_dir = Path(__file__).resolve().parent
+            catalog_dir = os.path.abspath(_state.CATALOG_DIR or str(base_dir / "catalogos"))
             cloud_db_path = base_dir / "data" / "cloud" / "cloud_events.db"
             if cloud_db_path.exists():
                 with sqlite3.connect(str(cloud_db_path)) as cloud_conn:
@@ -323,9 +324,8 @@ class DbConnection:
             logger.error(f"[get_db] Error checking cloud catalog redirect for '{use_cat}': {e}")
 
         if not db_path:
-            db_path = os.path.join(_state.CATALOG_DIR, f"{use_cat}.db")
-            from utils import sanitize_catalog_name as _scn
-            if os.path.commonpath([_state.CATALOG_DIR, os.path.abspath(db_path)]) != _state.CATALOG_DIR:
+            db_path = os.path.join(catalog_dir, f"{use_cat}.db")
+            if os.path.commonpath([catalog_dir, os.path.abspath(db_path)]) != catalog_dir:
                 raise HTTPException(400, "Nome de catalogo invalido")
         try:
             self.conn = sqlite3.connect(db_path, timeout=30)
@@ -525,7 +525,7 @@ def catalog_db_path(cat=None):
     if not use_cat:
         return ""
     try:
-        base_dir = Path(__file__).resolve().parents[1]
+        base_dir = Path(__file__).resolve().parent
         cloud_db_path = base_dir / "data" / "cloud" / "cloud_events.db"
         if cloud_db_path.exists():
             with sqlite3.connect(str(cloud_db_path)) as cloud_conn:
@@ -540,7 +540,9 @@ def catalog_db_path(cat=None):
                         return str(candidate_path)
     except Exception:
         pass
-    return os.path.join(_state.CATALOG_DIR, f"{use_cat}.db")
+    base_dir = Path(__file__).resolve().parent
+    catalog_dir = os.path.abspath(_state.CATALOG_DIR or str(base_dir / "catalogos"))
+    return os.path.join(catalog_dir, f"{use_cat}.db")
 
 
 def backup_catalog_db(cat=None, reason="backup"):

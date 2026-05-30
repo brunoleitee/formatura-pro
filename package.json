@@ -8,7 +8,9 @@
     "dev:all": "powershell -ExecutionPolicy Bypass -File ./start.ps1",
     "dev:tauri": "powershell -ExecutionPolicy Bypass -File ./start.ps1",
     "tauri": "npx tauri dev",
-    "build": "vite build",
+    "build": "vite build --configLoader native",
+    "build:backend": "powershell -ExecutionPolicy Bypass -File ./backend/scripts/tauri-prebuild.ps1",
+    "build:tauri": "npm run build:backend && npm run build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "preview": "vite preview"

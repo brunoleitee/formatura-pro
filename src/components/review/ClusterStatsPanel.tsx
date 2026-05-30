@@ -221,22 +221,7 @@ export default memo(function ClusterStatsPanel({
               </div>
             </Section>
 
-            <Section title="Itens detectados">
-              {detectedItems.length > 0 ? (
-                <div className={styles.itemPills}>
-                  {detectedItems.map(item => (
-                    <span key={item.item} className={styles.itemPill}>
-                      <span>{item.label}</span>
-                      <strong className={item.confidence >= 70 ? styles.green : item.confidence >= 40 ? styles.yellow : styles.red}>
-                        {item.confidence}%
-                      </strong>
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <span className={styles.emptyLine}>Nenhum item detectado</span>
-              )}
-            </Section>
+
 
             <Section title="Ações rápidas">
               <div className={styles.actionGrid}>

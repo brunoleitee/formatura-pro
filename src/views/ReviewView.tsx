@@ -542,11 +542,6 @@ const wasGraduationRunningRef = useRef(false);
 
       {/* Área principal */}
       <div className={`${styles.main}`}>
-        <GraduationAnalysisPanel
-          status={graduationStatus}
-          isStarting={isStartingGraduationAnalysis}
-          onStart={handleStartGraduationAnalysis}
-        />
         {selected ? (
           <ClusterDetail
             key={selected.cluster_id}

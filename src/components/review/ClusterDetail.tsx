@@ -7,7 +7,6 @@ import ClusterToolbar from './ClusterToolbar';
 import CompareModal from './CompareModal';
 import type { FilterOption, SortOption, ViewMode } from './ClusterToolbar';
 import { PhotoCard } from './PhotoCard';
-import { GraduationActions, type GraduationActionsHandle, type GraduationItem } from './GraduationActions';
 import styles from './ClusterDetail.module.css';
 
 const ZOOM_FACE_DEFAULT = 170;
@@ -76,7 +75,6 @@ export default function ClusterDetail({
   const [matchPreview, setMatchPreview] = useState<StudentMatchPreviewResponse | null>(null);
   const [matchLoading, setMatchLoading] = useState(false);
   const heroRef = useRef<ClusterHeroHandle>(null);
-  const graduationRef = useRef<GraduationActionsHandle>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   // Reset ao mudar cluster
@@ -127,13 +125,6 @@ export default function ClusterDetail({
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const k = e.key.toLowerCase();
-      const map: Record<string, GraduationItem> = { b: 'gown', c: 'diploma', f: 'sash', k: 'cap', j: 'jabor' };
-      if (map[k]) {
-        e.preventDefault();
-        graduationRef.current?.toggle(map[k]);
-        return;
-      }
       if (e.key === 'Delete') {
         e.preventDefault();
         onSkip();
@@ -255,8 +246,6 @@ export default function ClusterDetail({
 
   const displayCompareName = matchedLabel || compareStudent;
 
-
-
   return (
     <div className={`${styles.root} ${assignmentState?.clusterId === cluster.cluster_id ? styles.rootAssigned : ''}`} key={cluster.cluster_id}>
       <div className={styles.detailFrame}>
@@ -292,16 +281,6 @@ export default function ClusterDetail({
               compareStudent={displayCompareName}
               compareSimilarity={compareSimilarity}
               onCompare={() => setIsCompareOpen(true)}
-            />
-          </div>
-
-          {/* ── Linha pequena: badges + Corrigir itens ── */}
-          <div className={styles.graduationActionsWrap}>
-            <GraduationActions
-              ref={graduationRef}
-              cluster={cluster}
-              catalog={catalog}
-              onUpdate={onClusterUpdate}
             />
           </div>
 
