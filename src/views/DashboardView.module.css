@@ -61,12 +61,12 @@
 }
 
 .pageTitle {
-  font-family: 'Playfair Display', Georgia, serif;
-  font-size: 2.2rem;
-  font-weight: 400;
+  font-family: 'Outfit', sans-serif;
+  font-size: 2rem;
+  font-weight: 600;
   color: #ffffff;
   margin: 0;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   line-height: 1.1;
 }
 
@@ -232,11 +232,11 @@
 
 .sectionTitle {
   margin: 0;
-  font-family: 'Playfair Display', Georgia, serif;
-  font-size: 1.35rem;
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.25rem;
   font-weight: 500;
   color: #ffffff;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
 }
 
 .sectionSubtitle {
