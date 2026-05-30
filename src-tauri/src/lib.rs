@@ -1,9 +1,11 @@
-use tauri_plugin_shell::ShellExt;
 use std::sync::{Arc, Mutex};
+#[cfg(not(debug_assertions))]
+use tauri_plugin_shell::ShellExt;
+use tauri_plugin_shell::process::CommandChild;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  let backend_process = Arc::new(Mutex::new(None));
+  let backend_process: Arc<Mutex<Option<CommandChild>>> = Arc::new(Mutex::new(None));
   let backend_process_clone = Arc::clone(&backend_process);
 
   tauri::Builder::default()
