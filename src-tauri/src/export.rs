@@ -821,7 +821,7 @@ fn run_export_worker(
                 let output_filename = get_export_output_filename(&item.source_path, &rq);
                 let dest_file = unique_dest_file(&item.dest_dir, &output_filename, &rq.conflict_strategy);
 
-                let mut status = "Copiado".to_string();
+                let status;
                 let mut success = true;
 
                 // Aplica regras de pular arquivo se for skip/incremental
