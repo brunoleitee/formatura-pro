@@ -232,9 +232,17 @@ export default function ReviewSidebar({
       {/* Cluster list */}
       <div className={styles.list}>
         {loading && clusters.length === 0 ? (
-          <div className={styles.listState}>
-            <RefreshCw size={18} className={styles.spin} style={{ opacity: 0.4 }} />
-            <span>Calculando...</span>
+          <div className={styles.listSkeleton}>
+            {Array.from({ length: 6 }).map((_, idx) => (
+              <div key={idx} className={styles.itemSkeleton}>
+                <div className={styles.avatarSkeleton} />
+                <div className={styles.itemInfo}>
+                  <div className={styles.textSkeleton} style={{ width: '55%', marginBottom: '4px' }} />
+                  <div className={styles.textSkeleton} style={{ width: '80%', height: '16px', borderRadius: '4px', marginBottom: '4px' }} />
+                  <div className={styles.textSkeleton} style={{ width: '35%', height: '8px' }} />
+                </div>
+              </div>
+            ))}
           </div>
         ) : processedClusters.length === 0 ? (
           <div className={styles.listState}>

@@ -1609,6 +1609,77 @@ html.scrolling-fast .photo-info {
 }
 .detail-row span:first-child { color: var(--text-secondary); }
 
+/* ── Photo Grid Skeleton (Tarefa III) ── */
+.photo-grid-skeleton {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--grid-item-size, 220px), 1fr));
+  gap: 16px;
+  width: 100%;
+  padding-bottom: 20px;
+  overflow: hidden;
+}
+
+.photo-skeleton-card {
+  background-color: rgba(255, 255, 255, 0.01);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  height: 220px;
+  overflow: hidden;
+  position: relative;
+}
+
+.photo-skeleton-img {
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.01) 25%,
+    rgba(255, 255, 255, 0.05) 50%,
+    rgba(255, 255, 255, 0.01) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.photo-skeleton-info {
+  padding: 10px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.photo-skeleton-title {
+  height: 12px;
+  width: 65%;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.01) 25%,
+    rgba(255, 255, 255, 0.03) 50%,
+    rgba(255, 255, 255, 0.01) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.photo-skeleton-meta {
+  height: 8px;
+  width: 40%;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.01) 25%,
+    rgba(255, 255, 255, 0.03) 50%,
+    rgba(255, 255, 255, 0.01) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
 /* ── Empty State ── */
 .empty-state {
   flex: 1;

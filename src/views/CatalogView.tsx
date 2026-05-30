@@ -12,6 +12,7 @@ import { PhotoFilters } from '../components/photos/PhotoFilters';
 import { ZoomControl } from '../components/photos/ZoomControl';
 import PhotoBulkActionsBar from '../components/photos/PhotoBulkActionsBar';
 import { VirtualizedPhotoGrid } from '../components/photos/VirtualizedPhotoGrid';
+import { PhotoGridSkeleton } from '../components/photos/PhotoGridSkeleton';
 import { extractSubfolders } from '../utils/pathUtils';
 import { getPhotoPath } from '../utils/catalogPathUtils';
 import { logPerf, perfNow } from '../utils/perf';
@@ -452,10 +453,7 @@ export default function CatalogView() {
       <div style={{ display: 'flex', flex: 1, gap: '16px', overflow: 'hidden', minHeight: 0 }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
           {loading && photos.length === 0 ? (
-            <div className="empty-state">
-              <RefreshCw size={32} className="spin" />
-              <p>Carregando fotos...</p>
-            </div>
+            <PhotoGridSkeleton />
           ) : (
             <>
               <VirtualizedPhotoGrid
