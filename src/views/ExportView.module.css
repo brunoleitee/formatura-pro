@@ -1,12 +1,20 @@
-/* ═══════ ExportView — Wizard Layout ═══════ */
+/* ═══════════════════════════════════════════
+   ExportView — Impeccable Style Wizard
+   Quiet Luxury Aesthetic · Fine Layout & Stepper
+   ═══════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700;800&display=swap');
 
 /* ── Step bar ── */
 .stepBar {
   display: flex;
   align-items: center;
-  padding: 0 28px;
-  border-bottom: 1px solid var(--border-default);
+  padding: 0 36px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
   flex-shrink: 0;
+  background: rgba(18, 18, 18, 0.15);
+  backdrop-filter: blur(20px);
+  font-family: 'Outfit', sans-serif;
 }
 
 .stepGroup {
@@ -18,8 +26,8 @@
 .stepItem {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 18px 0;
+  gap: 12px;
+  padding: 20px 0;
   cursor: default;
   flex-shrink: 0;
 }
@@ -29,28 +37,37 @@
 }
 
 .stepDone:hover .stepName {
-  color: var(--export-view-accent);
+  color: #ffffff;
 }
 
 .stepCircle {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.82rem;
-  font-weight: 700;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.76rem;
+  font-weight: 500;
   flex-shrink: 0;
-  background: var(--border);
-  color: var(--text-muted);
-  transition: background 0.2s, color 0.2s;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.4);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.stepActive .stepCircle,
+.stepActive .stepCircle {
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.15);
+}
+
 .stepDone .stepCircle {
-  background: var(--accent);
-  color: var(--primary-foreground);
+  background: rgba(59, 130, 246, 0.05);
+  color: var(--accent);
+  border-color: rgba(59, 130, 246, 0.3);
 }
 
 .stepText {
@@ -60,50 +77,53 @@
 }
 
 .stepName {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  transition: color 0.2s;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.4);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .stepActive .stepName {
-  color: var(--foreground);
+  color: #ffffff;
 }
 
 .stepDone .stepName {
-  color: var(--primary);
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .stepSub {
-  font-size: 0.72rem;
-  color: var(--text-secondary);
-  transition: color 0.2s;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.35);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .stepActive .stepSub {
-  color: var(--primary);
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .stepConnector {
   flex: 1;
   height: 1px;
-  background: var(--border);
-  margin: 0 12px;
-  transition: background 0.2s;
+  background: rgba(255, 255, 255, 0.03);
+  margin: 0 16px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .connectorDone {
-  background: var(--primary);
+  background: rgba(59, 130, 246, 0.2);
 }
 
 /* ── Split layout (step 1) ── */
 .splitLayout {
   display: flex;
   gap: 16px;
-  padding: 16px 28px 20px;
+  padding: 24px 36px 32px;
   flex: 1;
   overflow: hidden;
   min-height: 0;
+  font-family: 'Outfit', sans-serif;
 }
 
 .leftCol {
@@ -111,7 +131,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   overflow: hidden;
 }
 
@@ -120,15 +140,18 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 /* ── Selected chips box ── */
 .selectedBox {
-  background: var(--card);
-  border-radius: 10px;
-  padding: 16px 20px;
+  background: rgba(18, 18, 18, 0.45);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  padding: 20px 24px;
   flex-shrink: 0;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
 }
 
 .selectedHeader {
@@ -139,17 +162,20 @@
 }
 
 .selectedTitle {
+  font-family: 'Outfit', sans-serif;
   font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-weight: 500;
+  color: #ffffff;
 }
 
 .selectedCount {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  background: var(--bg-tertiary);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.72rem;
+  color: var(--accent);
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.15);
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: var(--radius-full);
 }
 
 .chipsScroll {
@@ -158,12 +184,12 @@
   overflow-x: auto;
   padding-bottom: 10px;
   scrollbar-width: thin;
-  scrollbar-color: var(--export-view-scrollbar) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
 }
 
 .chipsScroll::-webkit-scrollbar { height: 4px; }
 .chipsScroll::-webkit-scrollbar-track { background: transparent; }
-.chipsScroll::-webkit-scrollbar-thumb { background: var(--export-view-scrollbar); border-radius: 2px; }
+.chipsScroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.08); border-radius: 2px; }
 
 .chip {
   display: flex;
@@ -175,24 +201,30 @@
 
 .chipAvatarWrap {
   position: relative;
-  width: 58px;
-  height: 58px;
+  width: 54px;
+  height: 54px;
   flex-shrink: 0;
 }
 
 .chipAvatarInner {
-  width: 58px;
-  height: 58px;
+  width: 54px;
+  height: 54px;
   border-radius: 50%;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-tertiary);
-  border: 2px solid var(--accent-soft);
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #ffffff;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.chipAvatarWrap:hover .chipAvatarInner {
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: scale(1.02);
 }
 
 .chipX {
@@ -202,10 +234,10 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--muted);
-  border: 1.5px solid var(--border-default);
-  color: var(--text-secondary);
-  font-size: 13px;
+  background: rgba(18, 18, 18, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -213,19 +245,21 @@
   line-height: 1;
   padding: 0;
   z-index: 1;
-  transition: background 0.15s, border-color 0.15s;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .chipX:hover {
   background: var(--danger);
   border-color: var(--danger);
-  color: var(--export-view-text-white);
+  color: #ffffff;
+  transform: scale(1.08);
 }
 
 .chipLabel {
-  font-size: 0.67rem;
-  color: var(--text-secondary);
-  max-width: 62px;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.45);
+  max-width: 58px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -234,75 +268,94 @@
 }
 
 .emptyChips {
+  font-family: 'Outfit', sans-serif;
   font-size: 0.82rem;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.4);
   text-align: center;
-  padding: 10px 0;
+  padding: 16px 0;
   font-style: italic;
 }
 
 .chipBtns {
   display: flex;
-  gap: 6px;
-  margin-top: 12px;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 /* ── List box ── */
 .listBox {
-  background: var(--card);
-  border-radius: 10px;
-  padding: 14px 20px;
+  background: rgba(18, 18, 18, 0.45);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  padding: 16px 24px;
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
 }
 
 .listToolbar {
   display: flex;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 10px;
+  margin-bottom: 12px;
   flex-shrink: 0;
 }
 
 .searchInput {
   flex: 1;
   min-width: 0;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-default);
-  border-radius: 8px;
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  color: #ffffff;
+  font-family: 'Outfit', sans-serif;
   font-size: 0.85rem;
-  padding: 8px 12px;
+  padding: 8px 14px;
   outline: none;
-  transition: border-color 0.15s;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.searchInput:focus { border-color: var(--accent); }
-.searchInput::placeholder { color: var(--text-muted); }
+.searchInput:focus {
+  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.searchInput::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
 
 .sortSelect {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-default);
-  border-radius: 8px;
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  font-family: 'Outfit', sans-serif;
   font-size: 0.82rem;
-  padding: 8px 10px;
+  padding: 8px 12px;
   outline: none;
   cursor: pointer;
   flex-shrink: 0;
-  transition: border-color 0.15s;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.sortSelect:focus { border-color: var(--accent); }
+.sortSelect:focus {
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.sortSelect option {
+  background: #121212;
+  color: #ffffff;
+}
 
 .emptyList {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 40px;
-  color: var(--export-view-text-dim);
+  color: rgba(255, 255, 255, 0.4);
   flex: 1;
 }
 
@@ -311,36 +364,50 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   scrollbar-gutter: stable;
   padding-right: 4px;
+}
+
+.peopleList::-webkit-scrollbar {
+  width: 4px;
+}
+.peopleList::-webkit-scrollbar-track {
+  background: transparent;
+}
+.peopleList::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 2px;
 }
 
 .personRow {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border-default);
-  background: transparent;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.005);
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   text-align: left;
   width: 100%;
-  font: inherit;
-  color: inherit;
+  font-family: 'Outfit', sans-serif;
+  color: #ffffff;
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .personRow:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-strong);
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.06);
+  transform: translateY(-1px);
 }
 
 .personRow.selected {
-  background: var(--accent-soft);
-  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.03) !important;
+  border-color: rgba(59, 130, 246, 0.3) !important;
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.05) !important;
 }
 
 .personCheck {
@@ -352,39 +419,42 @@
 .personCheck input[type="checkbox"] {
   width: 16px;
   height: 16px;
-  accent-color: var(--primary);
+  accent-color: var(--accent);
   cursor: pointer;
 }
 
 .personAvatar {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-default);
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+  font-family: 'Outfit', sans-serif;
   font-size: 0.75rem;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .personName {
   flex: 1;
+  font-family: 'Outfit', sans-serif;
   font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .personPhotos {
+  font-family: 'Outfit', sans-serif;
   font-size: 0.78rem;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.4);
   flex-shrink: 0;
 }
 
@@ -392,48 +462,53 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--export-view-success);
-  background: var(--export-view-success-bg);
-  border: 1px solid var(--export-view-success-border);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--success);
+  background: rgba(16, 185, 129, 0.03);
+  border: 1px solid rgba(16, 185, 129, 0.12);
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: var(--radius-full);
   flex-shrink: 0;
 }
 
 /* ── Right column cards ── */
-.summaryCard,
-.quickCard {
-  background: var(--card);
-  border-radius: 10px;
-  padding: 18px 20px;
+.summaryCard {
+  background: rgba(18, 18, 18, 0.45);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
 }
 
 .cardTitle {
+  font-family: 'Outfit', sans-serif;
   font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 14px;
+  font-weight: 500;
+  color: #ffffff;
+  margin-bottom: 16px;
 }
 
 .summaryRows {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .summaryRow {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .summaryIcon {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  background: var(--accent-soft);
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.03);
+  border: 1px solid rgba(59, 130, 246, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -443,71 +518,57 @@
 
 .summaryLabel {
   flex: 1;
+  font-family: 'Outfit', sans-serif;
   font-size: 0.82rem;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.45);
 }
 
 .summaryValue {
+  font-family: 'Outfit', sans-serif;
   font-size: 1rem;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-weight: 600;
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
 }
-
-/* ── Quick settings (mantido para compatibilidade) ── */
-.quickFields { display: flex; flex-direction: column; gap: 14px; }
-.quickField { display: flex; flex-direction: column; gap: 6px; }
-.quickLabel { font-size: 0.78rem; color: var(--export-view-text-soft); font-weight: 500; }
-.quickSelect {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-default);
-  border-radius: 8px;
-  color: var(--text-primary);
-  font-size: 0.85rem;
-  padding: 9px 12px;
-  outline: none;
-  cursor: pointer;
-  width: 100%;
-  transition: border-color 0.15s;
-}
-.quickSelect:focus { border-color: var(--accent); }
-.quickToggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
 /* ── Config grid (step 4) ── */
 .configGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  gap: 16px;
 }
 
 /* ── Radio group ── */
 .radioGroup {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .radioOpt {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--border-default);
-  background: transparent;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.005);
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: 'Outfit', sans-serif;
   font-size: 0.85rem;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.65);
 }
 
 .radioOpt:hover {
-  background: var(--bg-hover);
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .radioActive {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--text-primary);
+  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.03);
+  color: #ffffff;
 }
 
 .radioOpt input[type="radio"] {
@@ -518,10 +579,11 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 2px solid var(--border-default);
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
   flex-shrink: 0;
   position: relative;
-  transition: border-color 0.15s;
+  transition: all 0.3s ease;
+  box-sizing: border-box;
 }
 
 .radioActive .radioDot {
@@ -533,10 +595,10 @@
   position: absolute;
   top: 3px;
   left: 3px;
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--primary);
+  background: var(--accent);
 }
 
 /* ── iOS toggle switch ── */
@@ -558,26 +620,28 @@
   display: block;
   width: 40px;
   height: 22px;
-  background: var(--border-default);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 11px;
   position: relative;
-  transition: background 0.2s;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
 }
 
 .toggleSwitch input:checked ~ .toggleTrack {
-  background: var(--primary);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .toggleThumb {
   position: absolute;
-  top: 3px;
-  left: 3px;
+  top: 2px;
+  left: 2px;
   width: 16px;
   height: 16px;
-  background: var(--export-view-text-white);
+  background: #ffffff;
   border-radius: 50%;
-  transition: transform 0.2s;
-  box-shadow: 0 1px 3px var(--export-view-preview-shadow);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .toggleSwitch input:checked ~ .toggleTrack .toggleThumb {
@@ -590,54 +654,71 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 11px 22px;
-  border-radius: 8px;
+  padding: 12px 24px;
+  border-radius: var(--radius-full);
   border: none;
   background: var(--accent);
-  color: var(--primary-foreground);
+  color: #ffffff;
+  font-family: 'Outfit', sans-serif;
   font-size: 0.9rem;
-  font-weight: 700;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s, opacity 0.15s;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   width: 100%;
 }
 
-.continueBtn:hover:not(:disabled) { background: var(--accent-hover); }
-.continueBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+.continueBtn:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+.continueBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
 /* ── Export button ── */
 .btnExport {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 24px;
-  border-radius: 8px;
+  padding: 12px 28px;
+  border-radius: var(--radius-full);
   border: none;
   background: var(--accent);
-  color: var(--primary-foreground);
+  color: #ffffff;
+  font-family: 'Outfit', sans-serif;
   font-size: 0.9rem;
-  font-weight: 700;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s, opacity 0.15s;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.btnExport:hover:not(:disabled) { background: var(--accent-hover); }
-.btnExport:disabled { opacity: 0.4; cursor: not-allowed; }
+.btnExport:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+.btnExport:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
 /* ── Step pages (2, 3, 4) ── */
 .stepPage {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 20px 28px 28px;
+  padding: 24px 36px 36px;
   overflow-y: auto;
   gap: 16px;
+  font-family: 'Outfit', sans-serif;
 }
 
 .stepCards {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .stepNav {
@@ -645,35 +726,40 @@
   align-items: center;
   justify-content: space-between;
   margin-top: auto;
-  padding-top: 8px;
+  padding-top: 16px;
 }
 
 .destRow {
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
 
 /* ── Cards ── */
 .card {
-  background: var(--card);
-  border-radius: 10px;
-  padding: 18px 20px;
+  background: rgba(18, 18, 18, 0.45);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  padding: 20px 24px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
 }
 
 .cardLabel {
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.45);
 }
 
 .cardValue {
+  font-family: 'Outfit', sans-serif;
   font-size: 0.92rem;
-  color: var(--text-primary);
+  color: #ffffff;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -681,19 +767,26 @@
 
 /* ── Inputs ── */
 .input {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-default);
-  border-radius: 8px;
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  color: #ffffff;
+  font-family: 'Outfit', sans-serif;
   font-size: 0.85rem;
-  padding: 9px 12px;
+  padding: 10px 14px;
   outline: none;
-  transition: border-color 0.15s;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   width: 100%;
 }
 
-.input:focus { border-color: var(--accent); }
-.input::placeholder { color: var(--text-muted); }
+.input:focus {
+  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
 
 /* ── Toggle rows (steps 3, 4) ── */
 .toggleRow {
@@ -702,14 +795,20 @@
   gap: 10px;
   padding: 6px 0;
   cursor: pointer;
+  font-family: 'Outfit', sans-serif;
   font-size: 0.85rem;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.7);
+  transition: all 0.2s ease;
+}
+
+.toggleRow:hover {
+  color: #ffffff;
 }
 
 .toggleRow input[type="checkbox"] {
   width: 16px;
   height: 16px;
-  accent-color: var(--primary);
+  accent-color: var(--accent);
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -721,51 +820,70 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 22px;
-  border-radius: 8px;
-  border: 1px solid var(--accent);
-  background: transparent;
-  color: var(--accent);
+  padding: 10px 24px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.01);
+  color: rgba(255, 255, 255, 0.85);
+  font-family: 'Outfit', sans-serif;
   font-size: 0.88rem;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.btnSecondary:hover { background: var(--accent-soft); }
-.btnSecondary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btnSecondary:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.btnSecondary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
 .btnOutline {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 9px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--border-default);
-  background: var(--muted);
-  color: var(--text-secondary);
+  padding: 10px 16px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.01);
+  color: rgba(255, 255, 255, 0.85);
+  font-family: 'Outfit', sans-serif;
   font-size: 0.82rem;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
-.btnOutline:hover { border-color: var(--accent); color: var(--text-primary); }
+.btnOutline:hover {
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.15);
+}
 
 .btnGhost {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
-  border-radius: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
   border: none;
   background: transparent;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.55);
+  font-family: 'Outfit', sans-serif;
   font-size: 0.78rem;
   cursor: pointer;
-  transition: color 0.15s, background 0.15s;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   white-space: nowrap;
 }
 
-.btnGhost:hover { color: var(--text-primary); background: var(--bg-hover); }
+.btnGhost:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.03);
+}
