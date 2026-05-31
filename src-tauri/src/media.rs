@@ -10,13 +10,14 @@ use exif::{Reader, Tag, Value};
 
 pub fn get_thumb_cache_dir() -> PathBuf {
     // 1. Em desenvolvimento, checar caminhos relativos ao workspace do Tauri
-    let dev_path = PathBuf::from("../backend/thumb_cache");
-    if dev_path.exists() {
-        return dev_path;
-    }
+    // PRIORIDADE: Primeiro o diretório local ativo ("backend/thumb_cache") para evitar pegar pastas de backups/versões antigas no nível superior
     let dev_path_alt = PathBuf::from("backend/thumb_cache");
     if dev_path_alt.exists() {
         return dev_path_alt;
+    }
+    let dev_path = PathBuf::from("../backend/thumb_cache");
+    if dev_path.exists() {
+        return dev_path;
     }
     
     // 2. Em produção, usar LocalAppData
@@ -101,8 +102,8 @@ pub fn generate_image_thumb(input_path: &str, output_path: &str, size: u32, qual
     let path = Path::new(input_path);
     let img = load_image_with_orientation(path)?;
     
-    // Redimensiona mantendo proporção de aspecto (Lanczos3 de alta qualidade)
-    let resized = img.resize(size, size, image::imageops::FilterType::Lanczos3);
+    // Redimensiona mantendo proporção de aspecto (Triangle rápido de excelente qualidade)
+    let resized = img.resize(size, size, image::imageops::FilterType::Triangle);
     
     // Codifica em JPEG com a qualidade definida
     let file = File::create(output_path).map_err(|e| e.to_string())?;
@@ -152,7 +153,7 @@ pub fn generate_face_thumb(
     }
     
     let cropped = img.crop_imm(crop_x, crop_y, crop_w, crop_h);
-    let resized = cropped.resize(size, size, image::imageops::FilterType::Lanczos3);
+    let resized = cropped.resize(size, size, image::imageops::FilterType::Triangle);
     
     // Codifica em JPEG
     let file = File::create(output_path).map_err(|e| e.to_string())?;

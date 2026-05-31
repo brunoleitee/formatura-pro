@@ -112,6 +112,12 @@ def get_all_subfolders(catalog: str = ""):
                 continue
             folder_path = os.path.normpath(folder_path).replace("\\", "/")
             for root, dirs, _ in os.walk(folder_path):
+                # Filter out ignored directories in-place to prevent os.walk from scanning them
+                dirs[:] = [
+                    d for d in dirs 
+                    if not d.startswith('.') 
+                    and d.lower() not in ('node_modules', '__pycache__', 'thumb_cache', 'backups', 'temp', '.git', '.gemini', '.claude')
+                ]
                 for d in dirs:
                     full = os.path.normpath(os.path.join(root, d)).replace("\\", "/")
                     if full.startswith(folder_path):

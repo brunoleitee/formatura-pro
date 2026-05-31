@@ -20,12 +20,12 @@ pub struct DetectedFace {
 }
 
 pub struct FaceEngine {
-    detection_session: Session,
-    recognition_session: Session,
+    detection_session: Option<Session>,
+    recognition_session: Option<Session>,
 }
 
 impl FaceEngine {
-    pub fn new() -> Result<Self, String> {
+    fn load_detection_session() -> Result<Session, String> {
         let home = std::env::var("USERPROFILE")
             .or_else(|_| std::env::var("HOME"))
             .map_err(|_| "Nao foi possivel determinar a pasta Home do usuario".to_string())?;
@@ -36,17 +36,12 @@ impl FaceEngine {
             .join("buffalo_l");
             
         let det_path = base_dir.join("det_10g.onnx");
-        let rec_path = base_dir.join("w600k_r50.onnx");
         
         if !det_path.exists() {
             return Err(format!("Modelo de deteccao nao encontrado em: {:?}", det_path));
         }
-        if !rec_path.exists() {
-            return Err(format!("Modelo de reconhecimento nao encontrado em: {:?}", rec_path));
-        }
         
-        // Configura carregamento com aceleracao de GPU via DirectML + Fallback CPU
-        let det_session = Session::builder()
+        Session::builder()
             .map_err(|e| format!("Erro ao criar builder para det_10g: {}", e))?
             .with_execution_providers([
                 ep::DirectML::default().build(),
@@ -54,9 +49,26 @@ impl FaceEngine {
             ])
             .map_err(|e| format!("Falha ao configurar providers para det_10g: {}", e))?
             .commit_from_file(&det_path)
-            .map_err(|e| format!("Falha ao carregar det_10g.onnx: {}", e))?;
+            .map_err(|e| format!("Falha ao carregar det_10g.onnx: {}", e))
+    }
+
+    fn load_recognition_session() -> Result<Session, String> {
+        let home = std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .map_err(|_| "Nao foi possivel determinar a pasta Home do usuario".to_string())?;
             
-        let rec_session = Session::builder()
+        let base_dir = PathBuf::from(home)
+            .join(".insightface")
+            .join("models")
+            .join("buffalo_l");
+            
+        let rec_path = base_dir.join("w600k_r50.onnx");
+        
+        if !rec_path.exists() {
+            return Err(format!("Modelo de reconhecimento nao encontrado em: {:?}", rec_path));
+        }
+        
+        Session::builder()
             .map_err(|e| format!("Erro ao criar builder para w600k_r50: {}", e))?
             .with_execution_providers([
                 ep::DirectML::default().build(),
@@ -64,12 +76,42 @@ impl FaceEngine {
             ])
             .map_err(|e| format!("Falha ao configurar providers para w600k_r50: {}", e))?
             .commit_from_file(&rec_path)
-            .map_err(|e| format!("Falha ao carregar w600k_r50.onnx: {}", e))?;
+            .map_err(|e| format!("Falha ao carregar w600k_r50.onnx: {}", e))
+    }
+
+    pub fn new() -> Result<Self, String> {
+        log::info!("Inicializando FaceEngine com carregamento antecipado das sessoes de IA...");
+        let det_session = Self::load_detection_session()?;
+        let rec_session = Self::load_recognition_session()?;
             
         Ok(FaceEngine {
-            detection_session: det_session,
-            recognition_session: rec_session,
+            detection_session: Some(det_session),
+            recognition_session: Some(rec_session),
         })
+    }
+
+    pub fn unload(&mut self) {
+        log::info!("Descarregando sessoes do ONNX Runtime no FaceEngine (liberando VRAM/RAM)...");
+        self.detection_session = None;
+        self.recognition_session = None;
+    }
+
+    fn ensure_detection_session(&mut self) -> Result<&mut Session, String> {
+        if self.detection_session.is_none() {
+            log::info!("Carregando sessao de deteccao SCRFD sob demanda (lazy loading)...");
+            let session = Self::load_detection_session()?;
+            self.detection_session = Some(session);
+        }
+        Ok(self.detection_session.as_mut().unwrap())
+    }
+
+    fn ensure_recognition_session(&mut self) -> Result<&mut Session, String> {
+        if self.recognition_session.is_none() {
+            log::info!("Carregando sessao de reconhecimento ArcFace sob demanda (lazy loading)...");
+            let session = Self::load_recognition_session()?;
+            self.recognition_session = Some(session);
+        }
+        Ok(self.recognition_session.as_mut().unwrap())
     }
 
     pub fn detect_faces(&mut self, img: &DynamicImage, score_threshold: f32) -> Result<Vec<DetectedFace>, String> {
@@ -83,8 +125,11 @@ impl FaceEngine {
         let input_value = Value::from_array(input_tensor)
             .map_err(|e| format!("Erro ao criar valor de tensor de entrada: {}", e))?;
         
-        // 2. Inferência de detecção
-        let outputs = self.detection_session.run(inputs![input_value])
+        // Garante que a sessao de deteccao esta ativa
+        let session = self.ensure_detection_session()?;
+
+        // 2. Inferencia de deteccao
+        let outputs = session.run(inputs![input_value])
             .map_err(|e| format!("Erro ao rodar deteccao SCRFD: {}", e))?;
             
         // 3. Mapeamento de outputs ONNX por shapes (imune a variacoes de nomes de nos)
@@ -228,8 +273,11 @@ impl FaceEngine {
         let input_value = Value::from_array(input_tensor)
             .map_err(|e| format!("Erro ao criar valor de tensor de entrada ArcFace: {}", e))?;
             
-        // 2. Inferência ArcFace
-        let outputs = self.recognition_session.run(inputs![input_value])
+        // Garante que a sessao de reconhecimento esta ativa
+        let session = self.ensure_recognition_session()?;
+
+        // 2. Inferencia ArcFace
+        let outputs = session.run(inputs![input_value])
             .map_err(|e| format!("Erro ao rodar extracao ArcFace: {}", e))?;
             
         let value = outputs.values().next()
@@ -240,7 +288,7 @@ impl FaceEngine {
         let flat_embedding = tensor_d.as_slice()
             .ok_ok_or_else(|| "Falha ao ler slice do tensor ArcFace".to_string())?;
             
-        // 3. Normalização L2 do vetor (essencial para similaridade de cosseno via produto escalar)
+        // 3. Normalizacao L2 do vetor (essencial para similaridade de cosseno via produto escalar)
         let mut emb = flat_embedding.to_vec();
         let mut norm = 0.0f32;
         for &val in &emb {
@@ -455,20 +503,26 @@ fn iou(box1: &(f32, f32, f32, f32), box2: &(f32, f32, f32, f32)) -> f32 {
 #[tauri::command]
 pub fn test_load_ai_models() -> Result<serde_json::Value, String> {
     let start = Instant::now();
-    let engine = FaceEngine::new()?;
+    let mut engine = FaceEngine::new()?;
     let elapsed = start.elapsed().as_millis();
+    
+    let det_inputs = engine.ensure_detection_session()?.inputs().len();
+    let det_outputs = engine.ensure_detection_session()?.outputs().len();
+    
+    let rec_inputs = engine.ensure_recognition_session()?.inputs().len();
+    let rec_outputs = engine.ensure_recognition_session()?.outputs().len();
     
     Ok(serde_json::json!({
         "status": "success",
         "elapsed_ms": elapsed,
         "models": {
             "detection": {
-                "inputs_count": engine.detection_session.inputs().len(),
-                "outputs_count": engine.detection_session.outputs().len()
+                "inputs_count": det_inputs,
+                "outputs_count": det_outputs
             },
             "recognition": {
-                "inputs_count": engine.recognition_session.inputs().len(),
-                "outputs_count": engine.recognition_session.outputs().len()
+                "inputs_count": rec_inputs,
+                "outputs_count": rec_outputs
             }
         }
     }))

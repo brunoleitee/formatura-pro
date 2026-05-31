@@ -123,4 +123,16 @@ export const catalogApi = {
     post(`${API_BASE}/catalogs/scan-folder`, { catalog, path, include_subfolders: includeSubfolders }),
   syncCatalog: (catalog: string) =>
     post<{ success: boolean; folders?: number; error?: string }>(`${API_BASE}/catalogs/sync`, { catalog }),
+  unloadAiModels: async () => {
+    if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+      try {
+        console.log('[Tauri Rust] unload_ai_models via IPC');
+        return await invoke<{ success: boolean }>('unload_ai_models');
+      } catch (err) {
+        console.error('Falha ao descarregar modelos via Rust IPC:', err);
+      }
+    }
+    console.log('[API Base] unloadAiModels chamado (web bypass)');
+    return { success: true };
+  },
 };

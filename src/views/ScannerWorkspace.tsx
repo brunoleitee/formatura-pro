@@ -16,19 +16,17 @@ import CircularGauge from '../components/scanner/CircularGauge';
 import ScannerPhotoCard from '../components/scanner/ScannerPhotoCard';
 import styles from './ScannerWorkspace.module.css';
 
+// Hooks customizados extraidos
+import { useScannerFolders } from '../hooks/useScannerFolders';
+import { useSelectedPhotoFaces, type SelectedPhotoFaceItem } from '../hooks/useSelectedPhotoFaces';
+import { useScannerMetrics } from '../hooks/useScannerMetrics';
+import { useScannerTimer } from '../hooks/useScannerTimer';
+
 interface TimelineEntry {
   id: string;
   kind: 'system' | 'face' | 'match' | 'cluster' | 'summary' | 'warning' | 'error';
   text: string;
   timestamp: number;
-}
-
-interface SelectedPhotoFaceItem {
-  id: string;
-  thumbnail: string;
-  suggestedName: string;
-  confidence: number;
-  badge: 'ia' | 'similar' | 'sem_match';
 }
 
 
@@ -45,10 +43,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     resetProcessingPanel
   } = useScan();
 
-  const [eventPath, setEventPath] = useState('');
-  const [refPath, setRefPath] = useState('');
-  const [refPathInfo, setRefPathInfo] = useState<{ photos: number; subfolders: number } | null>(null);
-  const [eventPathInfo, setEventPathInfo] = useState<{ photos: number; subfolders: number } | null>(null);
   const [catalogName, setCatalogName] = useState('');
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
@@ -56,116 +50,27 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [isCompleted, setIsCompleted] = useState(false);
   const [showSetup, setShowSetup] = useState(true);
 
-  // Subpastas de eventos selecionadas granularmente
-  const [eventSubfolders, setEventSubfolders] = useState<Array<{ name: string; path: string; totalFiles: number }>>([]);
-  const [selectedSubfolders, setSelectedSubfolders] = useState<string[]>([]);
-  const [loadingSubfolders, setLoadingSubfolders] = useState(false);
+  // 1. Hook para gerenciamento de pastas e contagens físicas
+  const {
+    eventPath,
+    setEventPath,
+    refPath,
+    setRefPath,
+    refPathInfo,
+    setRefPathInfo,
+    eventPathInfo,
+    setEventPathInfo,
+    eventSubfolders,
+    selectedSubfolders,
+    setSelectedSubfolders,
+    loadingSubfolders,
+    eventFolders,
+    eventPhotosCount,
+    eventPhotosCountStatus,
+    handlePickRef,
+    handleAddEventFolder,
+  } = useScannerFolders(setError);
 
-  // Carrega subpastas físicas imediatas da pasta de eventos selecionada
-  useEffect(() => {
-    if (eventPath) {
-      setLoadingSubfolders(true);
-      api.exploreTree(eventPath, 1)
-        .then(res => {
-          if (res && res.ok && Array.isArray(res.children)) {
-            const subs = res.children
-              .filter((c: any) => c.type === 'folder')
-              .map((c: any) => ({
-                name: c.name,
-                path: c.path,
-                totalFiles: c.total_files || 0
-              }));
-            setEventSubfolders(subs);
-            setSelectedSubfolders(subs.map(s => s.path));
-            
-            const totalPhotos = res.total_photos || res.total_files || 0;
-            const subfoldersCount = subs.length;
-            setEventPathInfo({ photos: totalPhotos, subfolders: subfoldersCount });
-          } else {
-            setEventSubfolders([]);
-            setSelectedSubfolders([]);
-            setEventPathInfo(null);
-          }
-        })
-        .catch(() => {
-          setEventSubfolders([]);
-          setSelectedSubfolders([]);
-          setEventPathInfo(null);
-        })
-        .finally(() => {
-          setLoadingSubfolders(false);
-        });
-    } else {
-      setEventSubfolders([]);
-      setSelectedSubfolders([]);
-      setEventPathInfo(null);
-    }
-  }, [eventPath]);
-
-  // Fecha o setup assim que o scanner inicia ou se já estiver rodando
-  useEffect(() => {
-    if (isScanning) {
-      setShowSetup(false);
-    }
-  }, [isScanning]);
-
-  // Sincroniza o nome do catálogo inicial e carrega as pastas já vinculadas do catálogo
-  useEffect(() => {
-    if (currentCatalog) {
-      setCatalogName(currentCatalog);
-      
-      catalogApi.listFolders(currentCatalog)
-        .then(res => {
-          const folders = res.folders || [];
-          if (Array.isArray(folders)) {
-            const eventFolder = folders.find(f => f.folder_type === 'event' || f.folderType === 'event');
-            const refFolder = folders.find(f => f.folder_type === 'reference' || f.folderType === 'reference');
-            
-            let foundEvent = '';
-            let foundRef = '';
-
-            if (eventFolder?.path) {
-              foundEvent = eventFolder.path;
-              setEventPath(eventFolder.path);
-              setEventFolders(prev => {
-                if (!prev.includes(eventFolder.path)) {
-                  return [...prev, eventFolder.path];
-                }
-                return prev;
-              });
-            }
-            if (refFolder?.path) {
-              foundRef = refFolder.path;
-              setRefPath(refFolder.path);
-              // Tenta buscar informações extras da pasta de referência de forma assíncrona
-              Promise.all([
-                api.explorePhotos(refFolder.path, { recursive: true, limit: 0, include_raw: true }),
-                api.exploreTree(refFolder.path, 1)
-              ]).then(([photosRes, treeRes]) => {
-                const subCount = treeRes && treeRes.ok && Array.isArray(treeRes.children)
-                  ? treeRes.children.filter((c: any) => c.type === 'folder').length
-                  : 0;
-                setRefPathInfo({
-                  photos: photosRes.total || 0,
-                  subfolders: subCount,
-                });
-              }).catch(() => {
-                api.explorePhotos(refFolder.path, { recursive: true, limit: 0, include_raw: true })
-                  .then(photosRes => {
-                    setRefPathInfo({
-                      photos: photosRes.total || 0,
-                      subfolders: 0,
-                    });
-                  }).catch(() => null);
-              });
-            }
-          }
-        })
-        .catch(err => {
-          console.warn('[ScannerWorkspace] falha ao carregar pastas salvas:', err);
-        });
-    }
-  }, [currentCatalog]);
   const [viewMode, setViewMode] = useLocalStorage<'grid' | 'single' | 'list'>('scanner_view_mode', 'grid');
   const [thumbSize, setThumbSize] = useLocalStorage<number>('scanner_thumb_size', 200);
   const [previewZoom, setPreviewZoom] = useState(0); // 0-100%
@@ -188,28 +93,53 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const rawEnabled = true;
   const recursiveEnabled = true;
 
-  const [eventFolders, setEventFolders] = useState<string[]>([]);
-  const [eventPhotosCount, setEventPhotosCount] = useState(0);
-  const [eventPhotosCountStatus, setEventPhotosCountStatus] = useState<'none' | 'loading' | 'done' | 'error'>('none');
-
-  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const metricsPollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // true quando o usuário clicou manualmente em uma foto durante o scan — pausa o auto-follow
   const userNavigatedRef = useRef(false);
   const startedAtRef = useRef<number | null>(null);
   const hasAutoScannedRef = useRef<Record<string, boolean>>({});
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const filmstripRef = useRef<HTMLDivElement | null>(null);
-  const [systemMetrics, setSystemMetrics] = useState<{ cpuPercent: number | null; ramUsedGb: number | null; ramPercent: number | null; gpuPercent: number | null; temperatureC: number | null; cpuTemperatureC: number | null } | null>(null);
   const [processedPhotos, setProcessedPhotos] = useState<string[]>([]);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [floatingViewerOpen, setFloatingViewerOpen] = useState(false);
 
-  // Selected photo details for bottom panels (Faces)
-  const [selectedPhotoFaces, setSelectedPhotoFaces] = useState<{
-    status: 'waiting' | 'processing' | 'done';
-    faces: SelectedPhotoFaceItem[];
-  }>({ status: 'waiting', faces: [] });
+  const activePhotos = scanStatus?.is_scanning ? processedPhotos : folderPhotos.map(p => p.path);
+  const selectedPhotoPath = activePhotos[activePhotoIndex] ?? '';
+
+  // 2. Hook para obter faces da foto ativa
+  const {
+    selectedPhotoFaces,
+    setSelectedPhotoFaces,
+  } = useSelectedPhotoFaces(selectedPhotoPath);
+
+  // 3. Hook para métricas de sistema com tratamento de erro
+  const { appendTimeline } = useScan();
+  const handleMetricsError = useCallback((msg: string) => {
+    appendTimeline({
+      id: `metrics-err-${Date.now()}`,
+      kind: 'error',
+      text: msg,
+      timestamp: Date.now(),
+    });
+  }, [appendTimeline]);
+
+  const { systemMetrics } = useScannerMetrics(handleMetricsError);
+
+  // 4. Hook para cronômetro decorrido
+  const { elapsedSeconds } = useScannerTimer(isScanning, scanStatus?.started_at);
+
+  // Sincroniza o nome do catálogo a partir do estado global do app
+  useEffect(() => {
+    if (currentCatalog) {
+      setCatalogName(currentCatalog);
+    }
+  }, [currentCatalog]);
+
+  // Fecha o setup assim que o scanner inicia ou se já estiver rodando
+  useEffect(() => {
+    if (isScanning) {
+      setShowSetup(false);
+    }
+  }, [isScanning]);
 
   // ── Consumir pendingScanConfig vindo do CatalogModal (scan já iniciado) ──
   useEffect(() => {
@@ -256,9 +186,6 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
   // Refs para estabilizar os callbacks e evitar re-renders do grid inteiro
   const activePhotosRef = useRef<string[]>([]);
-  
-  const activePhotos = scanStatus?.is_scanning ? processedPhotos : folderPhotos.map(p => p.path);
-  const selectedPhotoPath = activePhotos[activePhotoIndex] ?? '';
   
   // Atualiza a ref sem causar re-render (seguro fazer durante render)
   activePhotosRef.current = activePhotos;
@@ -320,152 +247,11 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     return () => el.removeEventListener('wheel', onWheel);
   }, [viewMode]);
 
-  // Sync bottom panels (Faces) with the selected photo
-  // Guard ref para evitar loops: só atualiza se o path realmente mudou
-  const lastSelectedPathRef = useRef('');
-
-  useEffect(() => {
-    if (!selectedPhotoPath) {
-      if (lastSelectedPathRef.current !== '') {
-        lastSelectedPathRef.current = '';
-        setSelectedPhotoFaces(prev => {
-          if (prev.status === 'waiting' && prev.faces.length === 0) return prev;
-          return { status: 'waiting', faces: [] };
-        });
-      }
-      return;
-    }
-
-    // Se for o mesmo path que já processamos, não faz nada
-    if (lastSelectedPathRef.current === selectedPhotoPath) return;
-    lastSelectedPathRef.current = selectedPhotoPath;
-
-    const controller = new AbortController();
-
-    // ── HELPER: Buscar faces (preview em tempo real) ──
-    const fetchFaces = () => {
-      api.previewFaces(selectedPhotoPath).then(result => {
-        if (controller.signal.aborted) return;
-        if (!result.ok || !result.faces?.length) {
-          setSelectedPhotoFaces(prev =>
-            prev.status === 'processing' ? { status: 'waiting', faces: [] } : prev
-          );
-          return;
-        }
-        setSelectedPhotoFaces({
-          status: 'done',
-          faces: result.faces.map((f, i) => ({
-            id: `face-${i}-${Date.now()}`,
-            thumbnail: api.faceThumbUrl(selectedPhotoPath, f.bbox[0], f.bbox[1], f.bbox[2], f.bbox[3], 80),
-            suggestedName: 'Desconhecido',
-            confidence: f.confidence * 100,
-            badge: 'sem_match' as const,
-          })),
-        });
-      }).catch(() => {
-        if (!controller.signal.aborted) {
-          setSelectedPhotoFaces(prev =>
-            prev.status === 'processing' ? { status: 'waiting', faces: [] } : prev
-          );
-        }
-      });
-    };
-
-    setSelectedPhotoFaces({ status: 'processing', faces: [] });
-
-    // ── FACES ──
-    fetchFaces();
-
-    return () => {
-      controller.abort();
-    };
-  }, [selectedPhotoPath]);
 
 
 
-  const handlePickRef = useCallback(async () => {
-    const res = await api.selectFolder().catch(() => null);
-    if (res?.path) {
-      setRefPath(res.path);
-      try {
-        const [photos, tree] = await Promise.all([
-          api.explorePhotos(res.path, { recursive: true, limit: 0, include_raw: true }),
-          api.exploreTree(res.path, 1),
-        ]);
-        const subfolderCount = tree && tree.ok && Array.isArray(tree.children)
-          ? tree.children.filter((c: any) => c.type === 'folder').length
-          : 0;
-        setRefPathInfo({
-          photos: photos.total || 0,
-          subfolders: subfolderCount,
-        });
-      } catch {
-        setError('Erro ao carregar estatísticas da pasta de referência.');
-      }
-    }
-  }, []);
-
-  const handleAddEventFolder = useCallback(async () => {
-    const res = await api.selectFolder().catch(() => null);
-    if (res?.path) {
-      setEventPath(res.path);
-      if (!eventFolders.includes(res.path)) {
-        setEventFolders(prev => [...prev, res.path]);
-      }
-      
-      // Tentar autodetectar pasta de referência
-      try {
-        const tree = await api.exploreTree(res.path, 1).catch(() => null);
-        const children = tree?.children ?? [];
-        
-        const REF_CANDIDATE_NAMES = ['Referências', 'Referencia', 'Referencias', 'Referência', 'Fotos_Referencia', 'Fotos_Referencias', 'FOTOS_REFERENCIA', 'FOTOS_REFERENCIAS', 'referencia', 'referencias'];
-        const foundChild = children.find((c: { name: string; path: string }) => 
-          REF_CANDIDATE_NAMES.some(cand => cand.toLowerCase() === c.name.toLowerCase())
-        );
-        
-        if (foundChild) {
-          setRefPath(foundChild.path);
-          // Obter dados de fotos da pasta encontrada e varrer subpastas de forma correta
-          const [photos, childTree] = await Promise.all([
-            api.explorePhotos(foundChild.path, { recursive: true, limit: 0, include_raw: true }).catch(() => null),
-            api.exploreTree(foundChild.path, 1).catch(() => null)
-          ]);
-          const subCount = childTree && childTree.ok && Array.isArray(childTree.children)
-            ? childTree.children.filter((c: any) => c.type === 'folder').length
-            : 0;
-          setRefPathInfo({
-            photos: photos?.total || 0,
-            subfolders: subCount,
-          });
-        }
-      } catch (err) {
-        console.error('[AutodetectRef] Falha:', err);
-      }
-    }
-  }, [eventFolders]);
 
 
-
-  // Sincronizar started_at para o temporizador
-  useEffect(() => {
-    if (scanStatus?.started_at) startedAtRef.current = scanStatus.started_at;
-  }, [scanStatus?.started_at]);
-
-  // Temporizador decorrido em tempo real sincronizado com a IA global
-  useEffect(() => {
-    if (!isScanning || !startedAtRef.current) {
-      setElapsedSeconds(0);
-      return;
-    }
-    const tick = () => {
-      if (startedAtRef.current) {
-        setElapsedSeconds(Math.floor(Date.now() / 1000 - startedAtRef.current));
-      }
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [isScanning]);
 
   // Monitorar conclusão do escaneamento para exibir modal de sucesso
   const prevIsScanningRef = useRef(false);
@@ -500,46 +286,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     }
   }, [scanStatus?.current_photo?.path]);
 
-  // Metrics polling: independente do scan, roda sempre que o componente está montado
-  useEffect(() => {
-    let metricsDelay = 2000;
-    let metricsFails = 0;
-    const MAX_METRICS_FAILS = 3;
-    let metricsActive = true;
-    const pollMetrics = async () => {
-      if (!metricsActive) return;
-      try {
-        const m = await api.getSystemMetrics() as { cpuPercent: number | null; ramUsedGb: number | null; ramPercent: number | null; gpuPercent: number | null; temperatureC: number | null; cpuTemperatureC: number | null; status?: string; metricsWarning?: string } | null;
-        metricsFails = 0;
-        metricsDelay = 2000;
-        if (m?.status === 'warming_up') {
-          setSystemMetrics(m);
-        } else if (m?.metricsWarning === 'gpu_unavailable') {
-          setSystemMetrics(m);
-        } else {
-          setSystemMetrics(m);
-        }
-      } catch (err) {
-        metricsFails++;
-        if (metricsFails >= MAX_METRICS_FAILS) {
-          metricsActive = false;
-          return;
-        }
-        if (metricsFails === 1) {
-          setTimeline(prev => [...prev.slice(-49), {
-            id: `metrics-err-${Date.now()}`,
-            kind: 'error',
-            text: `Erro ao buscar métricas: ${err instanceof Error ? err.message : 'desconhecido'}`,
-            timestamp: Date.now()
-          }]);
-        }
-        metricsDelay = Math.min(metricsDelay * 2, 30000);
-      }
-      if (metricsActive) metricsPollRef.current = setTimeout(pollMetrics, metricsDelay);
-    };
-    pollMetrics();
-    return () => { metricsActive = false; if (metricsPollRef.current) clearTimeout(metricsPollRef.current); };
-  }, []);
+
 
   // Floating viewer keyboard navigation
   useEffect(() => {
@@ -596,39 +343,14 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     void pollScanStatus();
   }, [pollScanStatus]);
 
+  // Descarrega ativamente os modelos de IA ao sair do painel do scanner
   useEffect(() => {
     return () => {
-      if (metricsPollRef.current) clearTimeout(metricsPollRef.current);
+      void api.unloadAiModels().catch(err => {
+        console.warn('[ScannerWorkspace] Falha ao descarregar modelos de IA:', err);
+      });
     };
   }, []);
-  
-  useEffect(() => {
-    if (eventFolders.length === 0) {
-      setEventPhotosCount(0);
-      setEventPhotosCountStatus('none');
-      return;
-    }
-    const fetchInfo = async () => {
-      setEventPhotosCountStatus('loading');
-      try {
-        let total = 0;
-        for (const path of eventFolders) {
-          const res = await api.explorePhotos(path, { 
-            recursive: recursiveEnabled, 
-            limit: 0, 
-            include_raw: rawEnabled 
-          });
-          total += res.total || 0;
-        }
-        setEventPhotosCount(total);
-        setEventPhotosCountStatus('done');
-      } catch (e) {
-        console.error('Erro ao contar fotos de eventos:', e);
-        setEventPhotosCountStatus('error');
-      }
-    };
-    fetchInfo();
-  }, [eventFolders, recursiveEnabled, rawEnabled]);
 
 
 

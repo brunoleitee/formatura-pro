@@ -1,5 +1,5 @@
 use std::sync::{Arc, Mutex};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::fs;
 use std::collections::HashMap;
 use std::time::{Instant, SystemTime};
@@ -15,6 +15,7 @@ mod media;
 mod ai;
 mod scanner;
 mod export;
+mod media_explorer;
 
 #[derive(Serialize)]
 struct CatalogMeta {
@@ -70,13 +71,14 @@ struct CatalogFolder {
 
 fn get_catalog_dir(app: &tauri::AppHandle) -> PathBuf {
     // 1. Em desenvolvimento, checar caminhos relativos ao workspace do Tauri
-    let dev_path_1 = PathBuf::from("../backend/catalogos");
-    if dev_path_1.exists() {
-        return dev_path_1;
-    }
+    // PRIORIDADE: Primeiro local ("backend/catalogos") para evitar pastas legadas de backups no nível superior
     let dev_path_2 = PathBuf::from("backend/catalogos");
     if dev_path_2.exists() {
         return dev_path_2;
+    }
+    let dev_path_1 = PathBuf::from("../backend/catalogos");
+    if dev_path_1.exists() {
+        return dev_path_1;
     }
     
     // 2. Em produção ou fallback, usar LocalAppData/Formatura PRO/catalogos
@@ -93,8 +95,8 @@ fn get_catalog_dir(app: &tauri::AppHandle) -> PathBuf {
 
 fn get_last_catalog() -> String {
     let paths = vec![
-        PathBuf::from("../backend/last_catalog.txt"),
         PathBuf::from("backend/last_catalog.txt"),
+        PathBuf::from("../backend/last_catalog.txt"),
     ];
     for p in paths {
         if p.exists() {
@@ -114,8 +116,8 @@ fn get_last_catalog() -> String {
 
 fn save_last_catalog(name: &str) {
     let paths = vec![
-        PathBuf::from("../backend/last_catalog.txt"),
         PathBuf::from("backend/last_catalog.txt"),
+        PathBuf::from("../backend/last_catalog.txt"),
     ];
     for p in paths {
         if p.parent().map_or(false, |parent| parent.exists()) {
@@ -422,6 +424,18 @@ fn toggle_catalog_folder(
     Ok(serde_json::json!({ "success": true }))
 }
 
+#[tauri::command]
+async fn unload_ai_models(
+    ai_state: tauri::State<'_, scanner::FaceEngineState>,
+) -> Result<serde_json::Value, String> {
+    let mut ai_lock = ai_state.engine.lock().unwrap();
+    if let Some(ref mut engine) = *ai_lock {
+        engine.unload();
+        log::info!("Sessoes do ONNX Runtime descarregadas ativamente via IPC.");
+    }
+    Ok(serde_json::json!({ "success": true }))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let backend_process: Arc<Mutex<Option<tauri_plugin_shell::process::CommandChild>>> = Arc::new(Mutex::new(None));
@@ -431,7 +445,7 @@ pub fn run() {
   let scan_state = scanner::ScanState { is_scanning: Mutex::new(false), cancel_requested: Mutex::new(false) };
   let ai_state = scanner::FaceEngineState { engine: Mutex::new(crate::ai::FaceEngine::new().ok()) };
   let export_state = export::ExportState::new();
-
+ 
   tauri::Builder::default()
     .plugin(tauri_plugin_shell::init())
     .manage(db_state)
@@ -448,6 +462,7 @@ pub fn run() {
         remove_catalog_folder,
         toggle_catalog_folder,
         ai::test_load_ai_models,
+        unload_ai_models,
         scanner::scan_precheck,
         scanner::start_scan,
         scanner::stop_scan,
@@ -456,28 +471,50 @@ pub fn run() {
         export::start_export,
         export::get_export_status,
         export::clear_export_summary,
-        export::get_export_history
+        export::get_export_history,
+        media_explorer::explorer_ls,
+        media_explorer::explorer_tree,
+        media_explorer::explorer_photos,
+        media_explorer::preview_faces_native,
+        media_explorer::set_photo_rating,
+        media_explorer::toggle_photo_favorite,
+        media_explorer::get_photos_ratings,
+        media_explorer::get_photo_info
     ])
     .register_uri_scheme_protocol("thumb", move |_app_handle, request| {
-      // 1. Converte e analisa a URL
+      // 1. Converte e analisa a URL de forma resiliente a contrabarras do Windows decodificadas pelo WebView2
       let uri_str = request.uri().to_string();
       
-      let parsed_url = match url::Url::parse(&uri_str) {
-          Ok(u) => u,
-          Err(_) => {
-              return tauri::http::Response::builder()
-                  .status(400)
-                  .header("content-type", "text/plain")
-                  .header("access-control-allow-origin", "*")
-                  .body(b"URL invalida".to_vec())
-                  .unwrap();
-          }
-      };
-      
-      let query: HashMap<String, String> = parsed_url.query_pairs().into_owned().collect();
-      let path = query.get("path").cloned().unwrap_or_default();
-      
+      let mut path = String::new();
+      let mut query = HashMap::new();
+      let is_face = uri_str.contains("/face");
+
+      if let Some(q_idx) = uri_str.find('?') {
+          let query_str = &uri_str[q_idx + 1..];
+          query = url::form_urlencoded::parse(query_str.as_bytes())
+              .into_owned()
+              .collect();
+          path = query.get("path").cloned().unwrap_or_default();
+      }
+
+      // Preparação do log de debug de thumbnails no scratch
+      let log_dir = PathBuf::from("scratch");
+      std::fs::create_dir_all(&log_dir).ok();
+      let log_file = log_dir.join("thumb_debug.log");
+      let mut debug_info = format!(
+          "--- THUMB REQUEST ---\nTimestamp: {}\nURI: {}\nParsed Path: {}\nOriginal Path Exists: {}\nIs Face: {}\n",
+          chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+          uri_str,
+          path,
+          Path::new(&path).exists(),
+          is_face
+      );
+
       if path.is_empty() {
+          let _ = std::fs::OpenOptions::new().create(true).write(true).append(true).open(&log_file).and_then(|mut f| {
+              use std::io::Write;
+              writeln!(f, "{}Error: Path is empty\n\n", debug_info)
+          });
           return tauri::http::Response::builder()
               .status(400)
               .header("content-type", "text/plain")
@@ -485,8 +522,6 @@ pub fn run() {
               .body(b"Caminho original ausente".to_vec())
               .unwrap();
       }
-      
-      let is_face = parsed_url.path() == "/face";
       
       // Resolve o cache path
       let cache_path = if is_face {
@@ -514,10 +549,17 @@ pub fn run() {
           
           match cache {
               Ok(cp) => {
+                  debug_info.push_str(&format!("Cache Path: {}\nCache Exists: {}\n", cp.to_string_lossy(), cp.exists()));
                   if !cp.exists() {
                       // Gera sob demanda
                       if let Err(e) = media::generate_face_thumb(&path, cp.to_str().unwrap(), x1, y1, x2, y2, size, expand, quality) {
-                          log::error!("Erro ao gerar miniatura de face: {}", e);
+                          let err_msg = format!("Erro ao gerar miniatura de face: {}", e);
+                          log::error!("{}", err_msg);
+                          debug_info.push_str(&format!("Error: {}\n\n", err_msg));
+                          let _ = std::fs::OpenOptions::new().create(true).write(true).append(true).open(&log_file).and_then(|mut f| {
+                              use std::io::Write;
+                              writeln!(f, "{}", debug_info)
+                          });
                           return tauri::http::Response::builder()
                               .status(500)
                               .header("content-type", "text/plain")
@@ -529,6 +571,12 @@ pub fn run() {
                   cp
               }
               Err(e) => {
+                  let err_msg = format!("Erro ao obter cache path: {}", e);
+                  debug_info.push_str(&format!("Error: {}\n\n", err_msg));
+                  let _ = std::fs::OpenOptions::new().create(true).write(true).append(true).open(&log_file).and_then(|mut f| {
+                      use std::io::Write;
+                      writeln!(f, "{}", debug_info)
+                  });
                   return tauri::http::Response::builder()
                       .status(404)
                       .header("content-type", "text/plain")
@@ -549,10 +597,17 @@ pub fn run() {
           
           match cache {
               Ok(cp) => {
+                  debug_info.push_str(&format!("Cache Path: {}\nCache Exists: {}\n", cp.to_string_lossy(), cp.exists()));
                   if !cp.exists() {
                       // Gera sob demanda
                       if let Err(e) = media::generate_image_thumb(&path, cp.to_str().unwrap(), size, quality) {
-                          log::error!("Erro ao gerar miniatura de imagem: {}", e);
+                          let err_msg = format!("Erro ao gerar miniatura de imagem: {}", e);
+                          log::error!("{}", err_msg);
+                          debug_info.push_str(&format!("Error: {}\n\n", err_msg));
+                          let _ = std::fs::OpenOptions::new().create(true).write(true).append(true).open(&log_file).and_then(|mut f| {
+                              use std::io::Write;
+                              writeln!(f, "{}", debug_info)
+                          });
                           return tauri::http::Response::builder()
                               .status(500)
                               .header("content-type", "text/plain")
@@ -564,6 +619,12 @@ pub fn run() {
                   cp
               }
               Err(e) => {
+                  let err_msg = format!("Erro ao obter cache path: {}", e);
+                  debug_info.push_str(&format!("Error: {}\n\n", err_msg));
+                  let _ = std::fs::OpenOptions::new().create(true).write(true).append(true).open(&log_file).and_then(|mut f| {
+                      use std::io::Write;
+                      writeln!(f, "{}", debug_info)
+                  });
                   return tauri::http::Response::builder()
                       .status(404)
                       .header("content-type", "text/plain")
@@ -574,6 +635,12 @@ pub fn run() {
           }
       };
       
+      debug_info.push_str("Status: SUCCESS\n\n");
+      let _ = std::fs::OpenOptions::new().create(true).write(true).append(true).open(&log_file).and_then(|mut f| {
+          use std::io::Write;
+          writeln!(f, "{}", debug_info)
+      });
+
       // Retorna o arquivo gerado
       match fs::read(&cache_path) {
           Ok(bytes) => {
