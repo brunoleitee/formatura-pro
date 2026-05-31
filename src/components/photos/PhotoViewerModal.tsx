@@ -557,6 +557,9 @@ export function PhotoViewerModal({
           return;
         }
         settleCurrent(fallbackUrl, photo, 'fallback');
+      }).catch(() => {
+        window.clearTimeout(timeoutId);
+        settleCurrent(fallbackUrl, photo, 'fallback');
       });
     }
 

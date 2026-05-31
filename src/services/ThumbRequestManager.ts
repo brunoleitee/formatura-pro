@@ -22,6 +22,7 @@ class ThumbRequestManager {
   private queue: RequestEntry[] = [];
   private MAX_ACTIVE = 12;
   private MAX_QUEUE = 150;
+  private MAX_RETRIES = 3;
 
   private log(...args: unknown[]): void {
     if (isPerfLoggingEnabled()) {
@@ -29,7 +30,7 @@ class ThumbRequestManager {
     }
   }
 
-  request(url: string, key: string, priority: Priority = 1): Promise<string> {
+  request(url: string, key: string, priority: Priority = 1, retryCount = 0): Promise<string> {
     const existing = this.active.get(key);
     if (existing) {
       this.log('reused active request', `key=${key}`);
@@ -56,7 +57,8 @@ class ThumbRequestManager {
       key, url, priority, controller, promise,
       resolve: resolveFn, reject: rejectFn,
       addedAt: Date.now(), startedAt: 0,
-    });
+    } as RequestEntry & { retryCount?: number });
+    (this.queue[this.queue.length - 1] as any).retryCount = retryCount;
 
     if (this.queue.length > this.MAX_QUEUE) this.dropLowestPriority();
     this.pump();
@@ -167,7 +169,13 @@ class ThumbRequestManager {
       });
       
       if (response.status === 202) {
+        const retryCount = (entry as any).retryCount ?? 0;
+        if (retryCount >= this.MAX_RETRIES) {
+          entry.resolve(entry.url);
+          return;
+        }
         entry.nextTryAt = Date.now() + 1500;
+        (entry as any).retryCount = retryCount + 1;
         isRetry = true;
         return;
       }

@@ -327,18 +327,27 @@ class DbConnection:
             db_path = os.path.join(catalog_dir, f"{use_cat}.db")
             if os.path.commonpath([catalog_dir, os.path.abspath(db_path)]) != catalog_dir:
                 raise HTTPException(400, "Nome de catalogo invalido")
-        try:
-            self.conn = sqlite3.connect(db_path, timeout=30)
-            self.conn.row_factory = sqlite3.Row
+        last_err = None
+        for attempt in range(3):
             try:
-                self.conn.execute("PRAGMA journal_mode=WAL")
-                self.conn.execute("PRAGMA synchronous=NORMAL")
-            except Exception as pragma_err:
-                logger.warning(f"Falha ao configurar PRAGMA WAL no banco {db_path}: {pragma_err}")
-        except Exception as e:
-            logger.error(f"FATAL: Erro ao conectar ao banco {db_path}: {e}")
+                self.conn = sqlite3.connect(db_path, timeout=60)
+                self.conn.row_factory = sqlite3.Row
+                try:
+                    self.conn.execute("PRAGMA journal_mode=WAL")
+                    self.conn.execute("PRAGMA synchronous=NORMAL")
+                except Exception as pragma_err:
+                    logger.warning(f"Falha ao configurar PRAGMA WAL no banco {db_path}: {pragma_err}")
+                break
+            except Exception as e:
+                last_err = e
+                logger.warning(f"Tentativa {attempt + 1}/3 falhou ao conectar ao banco {db_path}: {e}")
+                if attempt < 2:
+                    import time
+                    time.sleep(1 * (attempt + 1))
+        else:
+            logger.error(f"FATAL: Todas as tentativas falharam ao conectar ao banco {db_path}: {last_err}")
             self.conn = None
-            raise HTTPException(500, f"Falha ao abrir banco de dados: {e}")
+            raise HTTPException(500, f"Falha ao abrir banco de dados: {last_err}")
         c = self.conn.cursor()
         c.execute("""
             CREATE TABLE IF NOT EXISTS ocorrencias (

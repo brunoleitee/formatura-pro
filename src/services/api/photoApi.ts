@@ -36,10 +36,11 @@ export const photoApi = {
       { signal }
     );
   },
-  getPhotosPage: (catalog: string, limit = 100, offset = 0, subfolder?: string | null) =>
+  getPhotosPage: (catalog: string, limit = 100, offset = 0, subfolder?: string | null, signal?: AbortSignal) =>
     fetchJSON<PhotosPageResponse>(
       `${API_BASE}/photos?catalog=${encodeURIComponent(catalog)}&limit=${limit}&offset=${offset}` +
-      `${subfolder ? `&subfolder=${encodeURIComponent(subfolder)}` : ''}`
+      `${subfolder ? `&subfolder=${encodeURIComponent(subfolder)}` : ''}`,
+      { signal }
     ),
   getPersonPhotos: (aluno_id: string, catalog: string = '', signal?: AbortSignal) =>
     fetchJSON<Photo[]>(`${API_BASE}/photos/${encodeURIComponent(aluno_id)}?catalog=${encodeURIComponent(catalog)}`, { signal }),

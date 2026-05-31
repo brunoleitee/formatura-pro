@@ -1,4 +1,4 @@
-import { useReducer, useEffect, useRef } from 'react';
+import { useReducer, useEffect, useRef, useMemo } from 'react';
 import { api, type Photo, type Person, type Stats, type ScanStatus, type ReviewClustersPageResponse, type CatalogFolderStats } from '../services/api';
 import { computeDashboardMetrics } from '../utils/dashboardMetrics';
 
@@ -88,7 +88,7 @@ export function useDashboardData(currentCatalog: string | null, refreshKey: numb
 
     // Crie promises individuais com tratamento adequado de aborto
     const getStatsPromise = api.getStats(currentCatalog, controller.signal);
-    const getPhotosPromise = api.getPhotosPage(currentCatalog, 100, 0);
+    const getPhotosPromise = api.getPhotosPage(currentCatalog, 100, 0, controller.signal);
     const getPeoplePromise = api.getPeople(false, currentCatalog, controller.signal);
     
     const getScanStatusPromise = api.getScanStatus(controller.signal).catch((err) => {
@@ -138,9 +138,11 @@ export function useDashboardData(currentCatalog: string | null, refreshKey: numb
     return () => { controller.abort(); };
   }, [currentCatalog, refreshKey]);
 
-  const data = state.stats !== null || state.people.length > 0
-    ? computeDashboardMetrics(state.people, state.photos, state.stats, state.clusters, state.scanStatus)
-    : null;
+  const data = useMemo(() => {
+    return state.stats !== null || state.people.length > 0
+      ? computeDashboardMetrics(state.people, state.photos, state.stats, state.clusters, state.scanStatus)
+      : null;
+  }, [state.people, state.photos, state.stats, state.clusters, state.scanStatus]);
 
   return {
     data,

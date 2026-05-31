@@ -245,7 +245,7 @@ export default function DashboardView() {
 
     Promise.all([
       api.getStats(currentCatalog, controller.signal),
-      api.getPhotosPage(currentCatalog, 100, 0),
+      api.getPhotosPage(currentCatalog, 100, 0, null, controller.signal),
       api.getPeople(false, currentCatalog, controller.signal),
       api.getScanStatus(controller.signal).catch(() => null),
       api.getReviewClusters(currentCatalog, 50, 0, controller.signal).catch(() => null),

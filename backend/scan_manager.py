@@ -550,9 +550,11 @@ def stop_scan():
         log_info("[Scanner] STOP REQUESTED — cancelamento real ativado")
 
     from backend_state import scanner_cancel as _sc
-    _sc["cancel_requested"] = True
-    _sc["running"] = False
-    _sc["stopped"] = True
+    from state import _global_state_lock
+    with _global_state_lock:
+        _sc["cancel_requested"] = True
+        _sc["running"] = False
+        _sc["stopped"] = True
 
     from services.ai_processing_queue import ai_processing_queue
     try:
@@ -569,17 +571,17 @@ def stop_scan():
     _memory_cleanup_global(log_info)
     _log_memory("after stop")
 
-    # WATCHDOG: se o worker nao parar em 10s, força sys.exit()
+    # WATCHDOG: se o worker nao parar em 30s, força cancelamento
     def _watchdog_kill():
         import time
-        time.sleep(10)
+        time.sleep(30)
         s = _get("scan_state")
         if s is not None and s.get("is_scanning", False):
             if log_info:
-                log_info("[Scanner] WATCHDOG — worker nao parou, forçando sys.exit(1)")
+                log_info("[Scanner] WATCHDOG — worker nao parou, forçando cancelamento via flags")
+            _sc["cancel_requested"] = True
+            _sc["running"] = False
             _sc["KILL_NOW"] = True
-            import sys
-            sys.exit(1)
 
     threading.Thread(target=_watchdog_kill, daemon=True).start()
 
@@ -723,5 +725,4 @@ def exit_app():
         scan_state["is_scanning"] = False
     if isinstance(export_state, dict):
         export_state["is_exporting"] = False
-    threading.Timer(0.4, lambda: os._exit(0)).start()
     return {"status": "closing"}

@@ -1,7 +1,13 @@
 """
 Re-exporta do state.py para compatibilidade com imports existentes.
 Módulos novos devem importar de state.py diretamente.
+DeprecationWarning: Este módulo será removido no futuro. Importe de state.py diretamente.
 """
+import warnings
+warnings.warn(
+    "backend_state.py está depreciado. Importe de state.py diretamente.",
+    DeprecationWarning, stacklevel=2,
+)
 from state import (  # noqa: F401
     AppState,
     _global_state_lock,

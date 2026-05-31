@@ -791,9 +791,6 @@ _KILL_NOW = False
 def _cancel_requested():
     try:
         from backend_state import scanner_cancel as _sc
-        if _sc.get("KILL_NOW", False):
-            import os
-            os._exit(1)
         return _sc.get("cancel_requested", False)
     except Exception:
         return False

@@ -95,12 +95,6 @@ def stop_scan():
     return scm.stop_scan()
 
 
-@router.post("/api/scanner/stop")
-def scanner_stop():
-    scm.stop_scan()
-    return {"success": True}
-
-
 @router.get("/api/scanner/live-status")
 def scanner_live_status():
     s = scm.get_scan_status()
@@ -250,13 +244,11 @@ def scanner_preview_faces(path: str = ""):
         now = time.time()
         scanner_active = _scan_last_progress_at > 0 and (now - _scan_last_progress_at) < 120.0
 
-        if scanner_active:
-            acquired = FACE_INFERENCE_LOCK.acquire(timeout=0.1)
-            if not acquired:
-                log_info("[face-lock] busy by=preview-faces skipped (scanner ativo)")
-                return {"ok": False, "busy": True, "reason": "scanner_running", "faces": []}
-        else:
-            FACE_INFERENCE_LOCK.acquire()
+        FACE_INFERENCE_LOCK.acquire(timeout=5.0)
+
+        if not acquired:
+            log_info("[face-lock] busy by=preview-faces timed out")
+            return {"ok": False, "busy": True, "reason": "timeout", "faces": []}
 
         try:
             log_info(f"[face-lock] acquired by=preview-faces file={os.path.basename(decoded)}")

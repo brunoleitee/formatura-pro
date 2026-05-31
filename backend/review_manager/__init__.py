@@ -1235,6 +1235,7 @@ def _load_review_occurrence_rows(cur) -> list:
               OR lower(aluno_id) LIKE 'pessoa %'
           )
         ORDER BY aluno_id ASC, foto_path ASC, rowid ASC
+        LIMIT 10000
         """,
         list(UNKNOWN_ALUNO_IDS),
     )

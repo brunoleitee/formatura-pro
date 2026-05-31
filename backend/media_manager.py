@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from fastapi import HTTPException
 from fastapi.responses import FileResponse, StreamingResponse, Response
-from PIL import ExifTags, Image
+from PIL import ExifTags, Image, ImageDraw
 from utils import validate_config
 
 RAW_EXTENSIONS = (".cr2", ".cr3", ".nef", ".arw", ".dng", ".orf", ".rw2", ".raf", ".srw", ".x3f")
@@ -36,7 +36,7 @@ _PILLOW_MAX_CONCURRENT = 8
 # Semáforo global para limitar thumbnails simultâneas
 _THUMB_SEMAPHORE = None
 _THUMB_SEMAPHORE_LOCK = threading.Lock()
-_THUMB_MAX_CONCURRENT = 12
+_THUMB_MAX_CONCURRENT = 24
 
 # Lock + Event dict para evitar múltiplas gerações da mesma imagem
 _GENERATING_LOCK = threading.Lock()
@@ -114,17 +114,36 @@ _PLACEHOLDER_LOCK = threading.Lock()
 
 
 def _create_error_placeholder(size=300):
+    size = min(max(size, 100), 600)
     global _PLACEHOLDER_BUF
     if _PLACEHOLDER_BUF is None:
         with _PLACEHOLDER_LOCK:
             if _PLACEHOLDER_BUF is None:
-                img = Image.new("RGB", (1, 1), (200, 200, 200))
+                img = _make_error_image(300)
                 buf = io.BytesIO()
-                img.save(buf, format="JPEG", quality=70)
+                img.save(buf, format="JPEG", quality=85)
                 buf.seek(0)
                 _PLACEHOLDER_BUF = buf
-    _PLACEHOLDER_BUF.seek(0)
-    return _PLACEHOLDER_BUF
+    if size == 300:
+        _PLACEHOLDER_BUF.seek(0)
+        return _PLACEHOLDER_BUF
+    img = _make_error_image(size)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    buf.seek(0)
+    return buf
+
+
+def _make_error_image(size):
+    img = Image.new("RGB", (size, size), (30, 30, 30))
+    draw = ImageDraw.Draw(img)
+    cx, cy = size // 2, size // 2
+    r = size // 5
+    draw.ellipse([cx - r, cy - r - size // 8, cx + r, cy + r - size // 8], outline=(80, 80, 80), width=max(2, size // 60))
+    for _ in range(3):
+        y = cy + size // 8 + size // 12 * _
+        draw.line([cx - r, y, cx + r, y], fill=(60, 60, 60), width=max(1, size // 80))
+    return img
 
 
 def configure(**kwargs):
