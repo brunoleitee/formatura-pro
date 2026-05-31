@@ -88,7 +88,7 @@ export function useDashboardData(currentCatalog: string | null, refreshKey: numb
 
     // Crie promises individuais com tratamento adequado de aborto
     const getStatsPromise = api.getStats(currentCatalog, controller.signal);
-    const getPhotosPromise = api.getPhotosPage(currentCatalog, 100, 0, controller.signal);
+    const getPhotosPromise = api.getPhotosPage(currentCatalog, 100, 0, null, controller.signal);
     const getPeoplePromise = api.getPeople(false, currentCatalog, controller.signal);
     
     const getScanStatusPromise = api.getScanStatus(controller.signal).catch((err) => {

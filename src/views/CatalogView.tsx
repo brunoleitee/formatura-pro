@@ -54,7 +54,7 @@ const HOTKEYS_VIEWER = [
 
 export default function CatalogView() {
   const { currentCatalog, catalogSubfolder, catalogSubfolders, setCatalogSubfolders, setIsLoadingCatalogPhotos } = useApp();
-  const { photos, loading, loadingMore, hasMore, loadPhotos, loadMore, discardPhoto, restorePhoto } = useCatalogPhotos();
+  const { photos, loading, loadingMore, hasMore, loadPhotos, loadMore, discardPhoto, restorePhoto, error } = useCatalogPhotos();
   const [hideDiscarded, setHideDiscarded] = useState(false);
   const [zoom, setZoom] = useState(60);
   const size = zoomToSize(zoom);
@@ -423,6 +423,22 @@ export default function CatalogView() {
           </button>
         </div>
       </div>
+
+      {error && (
+        <div style={{
+          padding: '10px 16px', margin: '0 24px 8px',
+          background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.25)',
+          borderRadius: '8px', color: '#fca5a5', fontSize: '0.82rem',
+          display: 'flex', alignItems: 'center', gap: '8px',
+        }}>
+          <span style={{ flex: 1 }}>{error}</span>
+          <button onClick={loadPhotos} style={{
+            background: 'rgba(239, 68, 68, 0.2)', border: 'none',
+            borderRadius: '6px', padding: '4px 12px', color: '#fca5a5',
+            cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600,
+          }}>Tentar novamente</button>
+        </div>
+      )}
 
       <div className="catalog-audit-strip">
         <div className="catalog-audit-meta">
