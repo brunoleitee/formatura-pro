@@ -102,14 +102,15 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [floatingViewerOpen, setFloatingViewerOpen] = useState(false);
 
-  const activePhotos = scanStatus?.is_scanning ? processedPhotos : folderPhotos.map(p => p.path);
+  const activePhotos = scanStatus?.is_scanning || showCompleteModal ? processedPhotos : folderPhotos.map(p => p.path);
   const selectedPhotoPath = activePhotos[activePhotoIndex] ?? '';
+  const selectedPhotoFacesPath = isScanning || showCompleteModal ? '' : selectedPhotoPath;
 
   // 2. Hook para obter faces da foto ativa
   const {
     selectedPhotoFaces,
     setSelectedPhotoFaces,
-  } = useSelectedPhotoFaces(selectedPhotoPath);
+  } = useSelectedPhotoFaces(selectedPhotoFacesPath);
 
   // 3. Hook para métricas de sistema com tratamento de erro
   const { appendTimeline } = useScan();
@@ -302,7 +303,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
   // Carregar fotos da pasta selecionada
   useEffect(() => {
-    if (selectedFolder && !isScanning) {
+    if (selectedFolder && !isScanning && !showCompleteModal) {
       const loadPhotos = async () => {
         setIsLoadingPhotos(true);
         try {
@@ -331,7 +332,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
       };
       loadPhotos();
     }
-  }, [selectedFolder, isScanning, recursiveEnabled, rawEnabled]);
+  }, [selectedFolder, isScanning, showCompleteModal, recursiveEnabled, rawEnabled]);
 
   // Se a pasta de origem principal mudar, resetar seleção
   useEffect(() => {
@@ -400,6 +401,23 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
     }
   }, [handleCancelScan]);
 
+  const dismissCompleteModal = useCallback(() => {
+    setShowCompleteModal(false);
+    void api.clearScanSummary().catch((err) => {
+      console.warn('[ScannerWorkspace] Falha ao limpar resumo do scanner:', err);
+    });
+  }, []);
+
+  const handleGoPeople = useCallback(() => {
+    dismissCompleteModal();
+    navigate('people');
+  }, [dismissCompleteModal, navigate]);
+
+  const handleGoReview = useCallback(() => {
+    dismissCompleteModal();
+    navigate('review');
+  }, [dismissCompleteModal, navigate]);
+
   const progressPct = scanStatus ? Math.min(100, Math.max(0, ((scanStatus.total_processadas ?? 0) / (scanStatus.total_files || 1)) * 100)) : 0;
   const formatTime = (sec: number) => {
     const h = Math.floor(sec / 3600);
@@ -410,9 +428,9 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
 
   const livePhoto = scanStatus?.current_photo;
   const navPreviewUrl = activePhotos[activePhotoIndex] ? api.thumbUrl(activePhotos[activePhotoIndex], 1200) : '';
-  const previewUrl = (isScanning && livePhoto?.preview_url) ? livePhoto.preview_url : navPreviewUrl;
+  const previewUrl = (isScanning && livePhoto?.path) ? api.thumbUrl(livePhoto.path, 1200) : navPreviewUrl;
   const floatingImgUrl = activePhotos[activePhotoIndex]
-    ? (isScanning && livePhoto?.preview_url ? livePhoto.preview_url : api.previewUrl(activePhotos[activePhotoIndex], 1920))
+    ? (isScanning && livePhoto?.path ? api.previewUrl(livePhoto.path, 1920) : api.previewUrl(activePhotos[activePhotoIndex], 1920))
     : '';
   const navFileName = activePhotos[activePhotoIndex]?.split(/[\\/]/).pop() || '';
 
@@ -1009,7 +1027,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     </thead>
                     <tbody>
                       {(scanStatus?.is_scanning ? processedPhotos : folderPhotos.map(p => p.path)).map((path, i) => (
-                        <tr key={i}>
+                        <tr key={path}>
                           <td>
                             <div className={styles.listFileName}>
                               <ImageIcon size={12} />
@@ -1051,9 +1069,9 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     </div>
                   )}
 
-                  {!isLoadingPhotos && isScanning && filteredProcessedPhotos.map((path, i) => (
+                  {!isLoadingPhotos && isScanning && filteredProcessedPhotos.map((path) => (
                     <ScannerPhotoCard 
-                      key={`${path}-${i}`} 
+                      key={path} 
                       path={path} 
                       isActive={activePhotos.indexOf(path) === activePhotoIndex}
                       onClick={handleCardClick}
@@ -1061,9 +1079,9 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                     />
                   ))}
 
-                  {!isLoadingPhotos && !isScanning && filteredFolderPhotos.map((photo, i) => (
+                  {!isLoadingPhotos && !isScanning && filteredFolderPhotos.map((photo) => (
                     <ScannerPhotoCard 
-                      key={`${photo.path}-${i}`} 
+                      key={photo.path} 
                       path={photo.path} 
                       ext={photo.ext} 
                       isActive={activePhotos.indexOf(photo.path) === activePhotoIndex}
@@ -1107,7 +1125,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
                   {isScanning ? (
                     scanStatus?.recent_faces && scanStatus.recent_faces.length > 0 ? (
                       <div className={styles.filmstrip}>
-                        {scanStatus.recent_faces.slice(0, 50).map((face) => (
+                        {scanStatus.recent_faces.slice(0, 16).map((face) => (
                           <div key={face.id} className={styles.faceCard}>
                             <div className={styles.faceImageWrap}>
                               <img
@@ -1320,9 +1338,9 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
             totalPhotos={completeStats.photos}
             totalFaces={completeStats.faces}
             totalTime={completeStats.time}
-            onClose={() => setShowCompleteModal(false)}
-            onGoPeople={() => { setShowCompleteModal(false); navigate('people'); }}
-            onGoReview={() => { setShowCompleteModal(false); navigate('review'); }}
+            onClose={dismissCompleteModal}
+            onGoPeople={handleGoPeople}
+            onGoReview={handleGoReview}
           />
         </>
       )}

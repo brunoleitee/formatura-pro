@@ -17,6 +17,9 @@ const ScannerPhotoCard = memo(function ScannerPhotoCard({ path, ext, isActive, o
   const fileExt = (ext || path.split('.').pop() || '').toLowerCase().replace('.', '');
   const isRawFile = RAW_EXTENSIONS.includes(fileExt);
   const [imgError, setImgError] = useState(false);
+  const showFallback = imgError;
+  const fallbackTitle = isRawFile ? 'RAW' : 'Erro';
+  const fallbackSubtitle = isRawFile ? 'sem prévia' : 'miniatura indisponível';
 
   return (
     <div 
@@ -24,11 +27,11 @@ const ScannerPhotoCard = memo(function ScannerPhotoCard({ path, ext, isActive, o
       onClick={() => onClick(path)}
       onDoubleClick={() => onDoubleClick(path)}
     >
-      {imgError && isRawFile ? (
+      {showFallback ? (
         <div className={styles.rawPlaceholder}>
           <ImageIcon size={24} className={styles.rawIcon} />
-          <span className={styles.rawLabel}>RAW</span>
-          <span className={styles.rawSub}>sem prévia</span>
+          <span className={styles.rawLabel}>{fallbackTitle}</span>
+          <span className={styles.rawSub}>{fallbackSubtitle}</span>
         </div>
       ) : (
         <img 

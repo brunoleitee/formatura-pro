@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { CheckCircle2, ScanFace, Image as ImageIcon, Users, BookOpen, X } from 'lucide-react';
 import styles from './ScanCompleteModal.module.css';
 
@@ -12,12 +13,23 @@ interface Props {
 }
 
 export function ScanCompleteModal({ show, totalPhotos, totalFaces, totalTime, onClose, onGoPeople, onGoReview }: Props) {
+  useEffect(() => {
+    if (!show) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [show, onClose]);
+
   if (!show) return null;
 
   return (
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <button className={styles.closeBtn} onClick={onClose} title="Fechar">
+        <button type="button" className={styles.closeBtn} onClick={onClose} title="Fechar">
           <X size={18} />
         </button>
 
@@ -49,11 +61,11 @@ export function ScanCompleteModal({ show, totalPhotos, totalFaces, totalTime, on
         )}
 
         <div className={styles.actions}>
-          <button className={styles.actionBtn} onClick={onGoPeople}>
+          <button type="button" className={styles.actionBtn} onClick={onGoPeople}>
             <Users size={16} />
             <span>Formandos</span>
           </button>
-          <button className={`${styles.actionBtn} ${styles.actionBtnPrimary}`} onClick={onGoReview}>
+          <button type="button" className={`${styles.actionBtn} ${styles.actionBtnPrimary}`} onClick={onGoReview}>
             <BookOpen size={16} />
             <span>Revisão</span>
           </button>
