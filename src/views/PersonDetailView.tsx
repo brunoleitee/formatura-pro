@@ -364,6 +364,82 @@ export default function PersonDetailView() {
   const filteredBlurry = getFilteredAndSortedPhotos(blurry);
   const filteredDiscarded = getFilteredAndSortedPhotos(discarded);
 
+  // Lista única e ordenada de todas as fotos exibidas nas seções do grid para atalhos lineares de navegação
+  const displayedPhotos = useMemo(() => [
+    ...filteredGood,
+    ...filteredAttention,
+    ...filteredBlurry,
+    ...filteredDiscarded
+  ], [filteredGood, filteredAttention, filteredBlurry, filteredDiscarded]);
+
+  const lastFocusedIndexRef = useRef(0);
+
+  // Exibe a barra de ações em lote automaticamente quando itens são selecionados por clique
+  useEffect(() => {
+    if (selectedPaths.size > 0) {
+      setBulkBarVisible(true);
+    } else {
+      setBulkBarVisible(false);
+    }
+  }, [selectedPaths.size]);
+
+  // Atalhos de teclado no grid (pasta do aluno)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Ignorar quando o visualizador de fotos em tela cheia estiver aberto
+      if (viewerPhoto) return;
+      
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+
+      // Espaço — abre a foto selecionada (ou a primeira) no viewer
+      if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (selectedPaths.size > 0) {
+          const first = displayedPhotos.find((p) => selectedPaths.has(getPhotoId(p)));
+          if (first) { setViewerPhoto(first); return; }
+        }
+        if (displayedPhotos.length > 0) setViewerPhoto(displayedPhotos[0]);
+        return;
+      }
+
+      // ← → — navegar entre fotos (seleciona a anterior/próxima no grid)
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        if (displayedPhotos.length === 0) return;
+        e.preventDefault();
+        const currentIdx = lastFocusedIndexRef.current;
+        const direction = e.key === "ArrowRight" ? 1 : -1;
+        const nextIdx = Math.max(0, Math.min(displayedPhotos.length - 1, currentIdx + direction));
+        lastFocusedIndexRef.current = nextIdx;
+        const nextPhoto = displayedPhotos[nextIdx];
+        if (nextPhoto) {
+          toggleSelection(nextPhoto, { ctrlKey: false, metaKey: false, shiftKey: false } as any);
+        }
+        return;
+      }
+
+      // Enter — abre o visualizador na foto selecionada ou focada
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const idx = lastFocusedIndexRef.current;
+        const photo = displayedPhotos[idx];
+        if (photo) setViewerPhoto(photo);
+        return;
+      }
+
+      // D — descartar fotos selecionadas da pasta do formando
+      if ((e.key === "d" || e.key === "D") && !e.ctrlKey && !e.metaKey) {
+        if (selectedPaths.size === 0) return;
+        e.preventDefault();
+        handleDiscardSelected();
+        return;
+      }
+    };
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () => window.removeEventListener("keydown", onKey, { capture: true });
+  }, [viewerPhoto, displayedPhotos, selectedPaths, setViewerPhoto, toggleSelection, handleDiscardSelected]);
+
   const photoGridCtx = useMemo(() => ({
     selectedPaths, containerRef: scrollRef,
     onPhotoClick: toggleSelection, onDoubleClick: setViewerPhoto,
