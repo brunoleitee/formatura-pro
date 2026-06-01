@@ -124,11 +124,67 @@ def delete_catalog(req: SetCatalogReq):
     set_current_catalog = _get("set_current_catalog")
 
     cname = sanitize_catalog_name(req.name)
-    p = os.path.join(catalog_dir, f"{cname}.db")
-    if os.path.exists(p):
-        os.remove(p)
+    
+    # 1. Se o catálogo a ser removido for o atual, definimos o catálogo atual como vazio
+    # ANTES de tentar remover os arquivos, para liberar quaisquer conexões e locks ativos no sidecar.
     if get_current_catalog() == cname:
         set_current_catalog("")
+        
+    # 2. Forçar a coleta de lixo ativamente para que o Python destrua referências
+    # órfãs ou conexões do sqlite3 que ainda possam estar em cache na memória.
+    import gc
+    gc.collect()
+    
+    # Adicionar uma breve pausa de 100ms para que o sistema de arquivos do Windows
+    # libere completamente o descritor de arquivo.
+    time.sleep(0.1)
+
+    p = os.path.join(catalog_dir, f"{cname}.db")
+    p_wal = os.path.join(catalog_dir, f"{cname}.db-wal")
+    p_shm = os.path.join(catalog_dir, f"{cname}.db-shm")
+
+    # Função robusta para tentar deletar um arquivo com fallback de renomeação no Windows
+    def try_remove_or_rename(file_path):
+        if not os.path.exists(file_path):
+            return True
+        try:
+            os.remove(file_path)
+            return True
+        except Exception as e:
+            # Fallback robusto para Windows: se estiver trancado por outro processo/thread,
+            # renomeamos o arquivo para que ele mude de nome e suma da lista de catálogos do usuário.
+            # O arquivo físico será limpo posteriormente ou no próximo boot.
+            try:
+                temp_path = file_path + f".deleted.{int(time.time())}"
+                os.rename(file_path, temp_path)
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+                return True
+            except Exception as rename_err:
+                print(f"[delete_catalog] Falha ao remover e ao renomear {file_path}: {e} / {rename_err}")
+                return False
+
+    success = True
+    success = try_remove_or_rename(p) and success
+    try_remove_or_rename(p_wal)
+    try_remove_or_rename(p_shm)
+    
+    # Tenta remover silenciosamente quaisquer arquivos temporários de exclusões anteriores no diretório
+    try:
+        for f in os.listdir(catalog_dir):
+            if any(s in f for s in (".db.deleted.", ".db-wal.deleted.", ".db-shm.deleted.")):
+                try:
+                    os.remove(os.path.join(catalog_dir, f))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    if not success:
+        raise HTTPException(500, "Não foi possível apagar o catálogo porque o arquivo está bloqueado permanentemente pelo Windows.")
+
     return {"status": "ok"}
 
 
