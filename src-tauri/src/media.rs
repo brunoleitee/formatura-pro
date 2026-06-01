@@ -98,6 +98,7 @@ pub fn load_image_with_orientation(path: &Path) -> Result<DynamicImage, String> 
     Ok(img)
 }
 
+#[allow(dead_code)]
 pub fn generate_image_thumb(input_path: &str, output_path: &str, size: u32, quality: u8) -> Result<(), String> {
     let path = Path::new(input_path);
     let img = load_image_with_orientation(path)?;
@@ -114,6 +115,7 @@ pub fn generate_image_thumb(input_path: &str, output_path: &str, size: u32, qual
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn generate_face_thumb(
     input_path: &str,
     output_path: &str,

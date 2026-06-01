@@ -125,6 +125,7 @@ cluster_names = []
 cluster_counts = {}
 
 _EMBEDDING_DISK_CACHE = {}
+_EMBEDDING_CACHE_DIRTY = set()
 _EMBEDDING_DISK_CACHE_LOADED = False
 
 scanner_cancel = {

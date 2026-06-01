@@ -76,7 +76,7 @@ pub fn count_valid_images(paths: &[String]) -> (usize, usize) {
 }
 
 #[tauri::command]
-pub fn scan_precheck(req: ScanRequest) -> Result<PrecheckResult, String> {
+pub async fn scan_precheck(req: ScanRequest) -> Result<PrecheckResult, String> {
     let (valid, invalid) = count_valid_images(&req.scan_paths);
     Ok(PrecheckResult {
         files_count: valid,
@@ -86,7 +86,7 @@ pub fn scan_precheck(req: ScanRequest) -> Result<PrecheckResult, String> {
 }
 
 #[tauri::command]
-pub fn stop_scan(state: tauri::State<'_, ScanState>) -> Result<serde_json::Value, String> {
+pub async fn stop_scan(state: tauri::State<'_, ScanState>) -> Result<serde_json::Value, String> {
     let mut cancel = state.cancel_requested.lock().unwrap();
     *cancel = true;
     Ok(serde_json::json!({ "success": true }))
@@ -289,7 +289,7 @@ fn find_best_reference(
 }
 
 #[tauri::command]
-pub fn start_scan(
+pub async fn start_scan(
     app: tauri::AppHandle,
     req: ScanRequest,
     state: tauri::State<'_, ScanState>,

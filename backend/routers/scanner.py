@@ -244,7 +244,7 @@ def scanner_preview_faces(path: str = ""):
         now = time.time()
         scanner_active = _scan_last_progress_at > 0 and (now - _scan_last_progress_at) < 120.0
 
-        FACE_INFERENCE_LOCK.acquire(timeout=5.0)
+        acquired = FACE_INFERENCE_LOCK.acquire(timeout=5.0)
 
         if not acquired:
             log_info("[face-lock] busy by=preview-faces timed out")

@@ -139,7 +139,7 @@ fn format_system_time(st: SystemTime) -> String {
 }
 
 #[tauri::command]
-fn list_catalogs(app_handle: tauri::AppHandle) -> Result<ListCatalogsResponse, String> {
+async fn list_catalogs(app_handle: tauri::AppHandle) -> Result<ListCatalogsResponse, String> {
     let start = Instant::now();
     let catalog_dir = get_catalog_dir(&app_handle);
     
@@ -211,7 +211,7 @@ fn list_catalogs(app_handle: tauri::AppHandle) -> Result<ListCatalogsResponse, S
 }
 
 #[tauri::command]
-fn set_catalog(name: String, state: tauri::State<'_, db::DbState>) -> Result<serde_json::Value, String> {
+async fn set_catalog(name: String, state: tauri::State<'_, db::DbState>) -> Result<serde_json::Value, String> {
     let sanitized_name = name.replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '-', "");
     if sanitized_name.is_empty() {
         return Err("Nome de catalogo invalido".to_string());
@@ -235,7 +235,7 @@ fn set_catalog(name: String, state: tauri::State<'_, db::DbState>) -> Result<ser
 }
 
 #[tauri::command]
-fn get_catalog_settings(catalog: String) -> Result<CatalogSettingsResponse, String> {
+async fn get_catalog_settings(catalog: String) -> Result<CatalogSettingsResponse, String> {
     // Abre conexao SQLite sob demanda
     let conn = db::establish_connection(&catalog)
         .map_err(|e| format!("Falha ao abrir conexao do banco: {}", e))?;
@@ -291,7 +291,7 @@ fn get_catalog_settings(catalog: String) -> Result<CatalogSettingsResponse, Stri
 }
 
 #[tauri::command]
-fn save_catalog_settings(req: CatalogSettingsReq) -> Result<serde_json::Value, String> {
+async fn save_catalog_settings(req: CatalogSettingsReq) -> Result<serde_json::Value, String> {
     // Abre conexao SQLite sob demanda
     let conn = db::establish_connection(&req.catalog)
         .map_err(|e| format!("Falha ao abrir conexao do banco: {}", e))?;
@@ -310,7 +310,7 @@ fn save_catalog_settings(req: CatalogSettingsReq) -> Result<serde_json::Value, S
 }
 
 #[tauri::command]
-fn list_catalog_folders(catalog: String) -> Result<serde_json::Value, String> {
+async fn list_catalog_folders(catalog: String) -> Result<serde_json::Value, String> {
     let conn = db::establish_connection(&catalog)
         .map_err(|e| format!("Falha ao conectar ao banco: {}", e))?;
         
@@ -341,7 +341,7 @@ fn list_catalog_folders(catalog: String) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-fn add_catalog_folder(
+async fn add_catalog_folder(
     catalog: String,
     path: String,
     include_subfolders: bool,
@@ -367,7 +367,7 @@ fn add_catalog_folder(
 }
 
 #[tauri::command]
-fn remove_catalog_folder(
+async fn remove_catalog_folder(
     catalog: String,
     folder_id: Option<i64>,
     path: Option<String>,
@@ -395,7 +395,7 @@ fn remove_catalog_folder(
 }
 
 #[tauri::command]
-fn toggle_catalog_folder(
+async fn toggle_catalog_folder(
     catalog: String,
     folder_id: Option<i64>,
     path: Option<String>,
@@ -434,6 +434,20 @@ async fn unload_ai_models(
         log::info!("Sessoes do ONNX Runtime descarregadas ativamente via IPC.");
     }
     Ok(serde_json::json!({ "success": true }))
+}
+
+
+
+struct PerfTimer {
+    name: &'static str,
+    start: std::time::Instant,
+}
+
+impl Drop for PerfTimer {
+    fn drop(&mut self) {
+        let duration = self.start.elapsed().as_millis();
+        println!("[PERF] {} end {}ms", self.name, duration);
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -482,6 +496,12 @@ pub fn run() {
         media_explorer::get_photo_info
     ])
     .register_uri_scheme_protocol("thumb", move |_app_handle, request| {
+      println!("[PERF] thumb request start");
+      let _timer = PerfTimer {
+          name: "thumb request",
+          start: std::time::Instant::now(),
+      };
+      
       // 1. Converte e analisa a URL de forma resiliente a contrabarras do Windows decodificadas pelo WebView2
       let uri_str = request.uri().to_string();
       
@@ -551,22 +571,24 @@ pub fn run() {
               Ok(cp) => {
                   debug_info.push_str(&format!("Cache Path: {}\nCache Exists: {}\n", cp.to_string_lossy(), cp.exists()));
                   if !cp.exists() {
-                      // Gera sob demanda
-                      if let Err(e) = media::generate_face_thumb(&path, cp.to_str().unwrap(), x1, y1, x2, y2, size, expand, quality) {
-                          let err_msg = format!("Erro ao gerar miniatura de face: {}", e);
-                          log::error!("{}", err_msg);
-                          debug_info.push_str(&format!("Error: {}\n\n", err_msg));
-                          let _ = std::fs::OpenOptions::new().create(true).write(true).append(true).open(&log_file).and_then(|mut f| {
-                              use std::io::Write;
-                              writeln!(f, "{}", debug_info)
-                          });
-                          return tauri::http::Response::builder()
-                              .status(500)
-                              .header("content-type", "text/plain")
-                              .header("access-control-allow-origin", "*")
-                              .body(b"Erro de processamento de face".to_vec())
-                              .unwrap();
-                      }
+                      // Se a miniatura de face não existe no cache, redirecionamos para o Python FastAPI gerar de forma assíncrona
+                      let encoded_path = url::form_urlencoded::byte_serialize(path.as_bytes()).collect::<String>();
+                      let python_url = format!(
+                          "http://127.0.0.1:8000/api/thumb?path={}&x1={}&y1={}&x2={}&y2={}&size={}&expand={}&q={}",
+                          encoded_path, x1, y1, x2, y2, size, expand, quality
+                      );
+                      debug_info.push_str(&format!("Redirecting face thumb to Python: {}\n\n", python_url));
+                      let _ = std::fs::OpenOptions::new().create(true).write(true).append(true).open(&log_file).and_then(|mut f| {
+                          use std::io::Write;
+                          writeln!(f, "{}", debug_info)
+                      });
+                      
+                      return tauri::http::Response::builder()
+                          .status(307)
+                          .header("Location", &python_url)
+                          .header("access-control-allow-origin", "*")
+                          .body(Vec::new())
+                          .unwrap();
                   }
                   cp
               }
@@ -599,22 +621,24 @@ pub fn run() {
               Ok(cp) => {
                   debug_info.push_str(&format!("Cache Path: {}\nCache Exists: {}\n", cp.to_string_lossy(), cp.exists()));
                   if !cp.exists() {
-                      // Gera sob demanda
-                      if let Err(e) = media::generate_image_thumb(&path, cp.to_str().unwrap(), size, quality) {
-                          let err_msg = format!("Erro ao gerar miniatura de imagem: {}", e);
-                          log::error!("{}", err_msg);
-                          debug_info.push_str(&format!("Error: {}\n\n", err_msg));
-                          let _ = std::fs::OpenOptions::new().create(true).write(true).append(true).open(&log_file).and_then(|mut f| {
-                              use std::io::Write;
-                              writeln!(f, "{}", debug_info)
-                          });
-                          return tauri::http::Response::builder()
-                              .status(500)
-                              .header("content-type", "text/plain")
-                              .header("access-control-allow-origin", "*")
-                              .body(b"Erro de processamento de imagem".to_vec())
-                              .unwrap();
-                      }
+                      // Se a miniatura de imagem não existe no cache, redirecionamos para o Python FastAPI gerar de forma assíncrona
+                      let encoded_path = url::form_urlencoded::byte_serialize(path.as_bytes()).collect::<String>();
+                      let python_url = format!(
+                          "http://127.0.0.1:8000/api/image_thumb?path={}&size={}&q={}",
+                          encoded_path, size, quality
+                      );
+                      debug_info.push_str(&format!("Redirecting image thumb to Python: {}\n\n", python_url));
+                      let _ = std::fs::OpenOptions::new().create(true).write(true).append(true).open(&log_file).and_then(|mut f| {
+                          use std::io::Write;
+                          writeln!(f, "{}", debug_info)
+                      });
+                      
+                      return tauri::http::Response::builder()
+                          .status(307)
+                          .header("Location", &python_url)
+                          .header("access-control-allow-origin", "*")
+                          .body(Vec::new())
+                          .unwrap();
                   }
                   cp
               }

@@ -97,4 +97,12 @@ src-tauri/binaries/
 scratch/
 build-tauri-backend/
 
+backend/thumb_cache/
+backend/catalogos/
+backend/backups/
+backend/*.log
+backend/*.db
+backend/build-tauri-backend/
+dist/
+build/
 

@@ -99,6 +99,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [accentColor]);
 
   const refreshCatalogs = useCallback(async () => {
+    console.log('[PERF] loadCatalog start');
+    const start = performance.now();
     setIsLoadingCatalogs(true);
     try {
       const data = await api.getCatalogs();
@@ -126,6 +128,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setCurrentCatalog('');
         setCatalogRootPath('');
       }
+      const end = performance.now();
+      console.log(`[PERF] loadCatalog end ${Math.round(end - start)}ms`);
     } catch (e) {
       console.error('Erro ao carregar catálogos:', e);
       setIsBackendOnline(false);
@@ -160,6 +164,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [isBackendOnline, catalogs.length, refreshCatalogs]);
 
   const setCatalog = useCallback(async (name: string) => {
+    console.log('[PERF] loadCatalog start');
+    const start = performance.now();
     try {
       await api.setCatalog(name);
       setCurrentCatalog(name);
@@ -171,6 +177,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } catch {
         setCatalogRootPath('');
       }
+      const end = performance.now();
+      console.log(`[PERF] loadCatalog end ${Math.round(end - start)}ms`);
     } catch (e) {
       console.error('Erro ao definir catálogo:', e);
     }

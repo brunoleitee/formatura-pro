@@ -259,6 +259,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   useEffect(() => {
     if (prevIsScanningRef.current && !isScanning) {
       if (scanStatus && !scanStatus.stopped) {
+        console.log('[PERF] scan finished');
         setIsCompleted(true);
         const timeStr = scanStatus.scan_summary?.time_str || '';
         setCompleteStats({
@@ -267,6 +268,7 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
           time: timeStr,
         });
         setShowCompleteModal(true);
+        console.log('[PERF] modal opened');
       } else {
         setIsCompleted(false);
       }
@@ -305,6 +307,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
   useEffect(() => {
     if (selectedFolder && !isScanning && !showCompleteModal) {
       const loadPhotos = async () => {
+        console.log('[PERF] loadThumbnails start');
+        const start = performance.now();
         setIsLoadingPhotos(true);
         try {
           const res = await api.explorePhotos(selectedFolder, { 
@@ -324,6 +328,8 @@ const ScannerWorkspace = memo(function ScannerWorkspace() {
             setFolderPhotos(sorted);
             setTotalFolderPhotos(res.total);
           }
+          const end = performance.now();
+          console.log(`[PERF] loadThumbnails end ${Math.round(end - start)}ms`);
         } catch (err) {
           console.error('Erro ao carregar fotos da pasta:', err);
         } finally {

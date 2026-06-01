@@ -1,6 +1,21 @@
 import { API_BASE, fetchJSON, post } from './core';
 import type { ExplorerPhotosResponse, FolderTreeResponse, LiveScannerStatus, Photo, PhotoContextResponse, PhotosPageResponse, PreviewFacesResponse, QualityAuditStatus, ScanStatus, SystemMetrics, ScannerFolderTreeResponse } from './types';
-import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+import { invoke as tauriInvoke, convertFileSrc } from '@tauri-apps/api/core';
+
+const invoke = async <T>(cmd: string, args?: any): Promise<T> => {
+  console.log(`[PERF] invoke Rust ${cmd} start`);
+  const start = performance.now();
+  try {
+    const res = await tauriInvoke<T>(cmd, args);
+    const end = performance.now();
+    console.log(`[PERF] invoke Rust ${cmd} end ${Math.round(end - start)}ms`);
+    return res;
+  } catch (err) {
+    const end = performance.now();
+    console.log(`[PERF] invoke Rust ${cmd} error ${Math.round(end - start)}ms`);
+    throw err;
+  }
+};
 
 const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__;
 

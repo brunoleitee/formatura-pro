@@ -146,6 +146,8 @@ const wasGraduationRunningRef = useRef(false);
     loadAbortRef.current = controller;
 
     if (!currentCatalog) return;
+    console.log('[PERF] loadReview start');
+    const start = performance.now();
     setLoading(true);
     try {
       const data = await api.getReviewClusters(currentCatalog, REVIEW_PAGE_SIZE, 0, controller.signal);
@@ -169,6 +171,8 @@ const wasGraduationRunningRef = useRef(false);
         if (prev && nextClusters.some((cluster) => cluster.cluster_id === prev)) return prev;
         return nextClusters[0].cluster_id;
       });
+      const end = performance.now();
+      console.log(`[PERF] loadReview end ${Math.round(end - start)}ms`);
     } catch (e) {
       if (e instanceof Error && e.name !== 'AbortError') {
         setClusters([]);

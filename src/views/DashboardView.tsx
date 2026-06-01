@@ -241,6 +241,8 @@ export default function DashboardView() {
       return () => { controller.abort(); };
     }
 
+    console.log('[PERF] loadStats start');
+    const start = performance.now();
     setLoading(true); setError('');
 
     Promise.all([
@@ -259,6 +261,8 @@ export default function DashboardView() {
         setScanStatus(sc as ScanStatus | null);
         setClusters(cl as ReviewClustersPageResponse | null);
         setFolderStats(fs as CatalogFolderStats | null);
+        const end = performance.now();
+        console.log(`[PERF] loadStats end ${Math.round(end - start)}ms`);
       })
       .catch((err) => {
         if (err?.name === 'AbortError') return;

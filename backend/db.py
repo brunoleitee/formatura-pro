@@ -607,6 +607,9 @@ def load_embedding_disk_cache():
 
 def save_embedding_disk_cache():
     path = get_embedding_cache_path()
+    if not hasattr(_state, "_EMBEDDING_CACHE_DIRTY") or not _state._EMBEDDING_CACHE_DIRTY:
+        logger.info("[cache] Nenhum embedding novo para salvar em disco. Ignorado.")
+        return
     try:
         conn = sqlite3.connect(path)
         cur = conn.cursor()
@@ -615,12 +618,16 @@ def save_embedding_disk_cache():
                      "x1 INTEGER, y1 INTEGER, x2 INTEGER, y2 INTEGER, "
                      "mtime_ns INTEGER, size INTEGER, embedding BLOB)")
         with conn:
-            for key, data in _EMBEDDING_DISK_CACHE.items():
-                cur.execute(
-                    "INSERT OR REPLACE INTO emb_cache (path_hash, embedding, mtime_ns, size) VALUES (?, ?, ?, ?)",
-                    (key, data["embedding"], data["mtime_ns"], data["size"]),
-                )
+            for key in list(_state._EMBEDDING_CACHE_DIRTY):
+                data = _EMBEDDING_DISK_CACHE.get(key)
+                if data:
+                    cur.execute(
+                        "INSERT OR REPLACE INTO emb_cache (path_hash, embedding, mtime_ns, size) VALUES (?, ?, ?, ?)",
+                        (key, data["embedding"], data["mtime_ns"], data["size"]),
+                    )
         conn.close()
+        _state._EMBEDDING_CACHE_DIRTY.clear()
+        logger.info("[cache] Salvo em disco com sucesso.")
     except Exception as e:
         logger.warning("Erro ao salvar cache de embeddings: %s", e)
 
@@ -638,6 +645,8 @@ def set_cached_embedding(foto_path, x1, y1, x2, y2, mtime_ns, size, embedding):
     import hashlib
     key = hashlib.md5(f"{foto_path}:{x1}:{y1}:{x2}:{y2}:{mtime_ns}:{size}".encode()).hexdigest()
     _EMBEDDING_DISK_CACHE[key] = {"embedding": embedding, "mtime_ns": mtime_ns, "size": size}
+    if hasattr(_state, "_EMBEDDING_CACHE_DIRTY"):
+        _state._EMBEDDING_CACHE_DIRTY.add(key)
 
 
 def clear_embedding_cache():

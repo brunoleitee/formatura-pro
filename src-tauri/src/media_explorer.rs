@@ -820,8 +820,18 @@ pub async fn explorer_photos(
             
             let fp_str = fp.to_string_lossy().into_owned();
             let encoded_path = url::form_urlencoded::byte_serialize(fp_str.as_bytes()).collect::<String>();
-            let thumb_url = format!("thumb://localhost/?path={}&size=300", encoded_path);
-            let preview_url = format!("thumb://localhost/?path={}&size=1200", encoded_path);
+            
+            let thumb_url = if is_raw || is_video {
+                format!("http://127.0.0.1:8000/api/image_thumb?path={}&size=300", encoded_path)
+            } else {
+                format!("thumb://localhost/?path={}&size=300", encoded_path)
+            };
+            
+            let preview_url = if is_raw || is_video {
+                format!("http://127.0.0.1:8000/api/image_preview?path={}", encoded_path)
+            } else {
+                format!("thumb://localhost/?path={}&size=1200", encoded_path)
+            };
 
             photos.push(serde_json::json!({
                 "name": basic_info.name,
@@ -886,10 +896,21 @@ pub async fn preview_faces_native(
         
         let fp_str = decoded.to_string_lossy().into_owned();
         let encoded_path = url::form_urlencoded::byte_serialize(fp_str.as_bytes()).collect::<String>();
-        let crop_url = format!(
-            "thumb://localhost/face?path={}&x1={}&y1={}&x2={}&y2={}&size=120&q=80",
-            encoded_path, x1, y1, x2, y2
-        );
+        
+        let ext = decoded.extension().and_then(|s| s.to_str()).unwrap_or_default().to_lowercase();
+        let is_raw = RAW_EXTENSIONS.contains(&ext.as_str());
+        
+        let crop_url = if is_raw {
+            format!(
+                "http://127.0.0.1:8000/api/thumb?path={}&x1={}&y1={}&x2={}&y2={}&size=120&q=80",
+                encoded_path, x1, y1, x2, y2
+            )
+        } else {
+            format!(
+                "thumb://localhost/face?path={}&x1={}&y1={}&x2={}&y2={}&size=120&q=80",
+                encoded_path, x1, y1, x2, y2
+            )
+        };
         
         faces_list.push(serde_json::json!({
             "bbox": [x1, y1, x2, y2],

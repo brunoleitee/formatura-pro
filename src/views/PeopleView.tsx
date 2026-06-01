@@ -330,11 +330,15 @@ export default function PeopleView({ onRequestConfirm }: PeopleViewProps) {
     abortRef.current = controller;
 
     if (!currentCatalog) return;
+    console.log('[PERF] loadPeople start');
+    const start = performance.now();
     setLoading(true);
     try {
       const data = await api.getPeople(false, currentCatalog, controller.signal);
       if (!controller.signal.aborted) {
         setPeople(data);
+        const end = performance.now();
+        console.log(`[PERF] loadPeople end ${Math.round(end - start)}ms`);
       }
     } catch (e: any) {
       if (e?.name !== 'AbortError') {
